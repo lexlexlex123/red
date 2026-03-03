@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SlideForge Pro 4</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div id="ribbon">
+  <div id="ribbon-top">
+    <div class="app-logo">
+      <svg viewBox="0 0 24 24" fill="none"><rect x="2" y="3" width="20" height="14" rx="2.5" fill="#3b82f6" opacity=".2"/><rect x="2" y="3" width="20" height="14" rx="2.5" stroke="#3b82f6" stroke-width="1.5"/><path d="M2 9h20" stroke="#3b82f6" stroke-width="1" opacity=".4"/><path d="M8 21h8M12 17v4" stroke="#3b82f6" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <span>SlideForge Pro</span>
+    </div>
+    <input id="pres-title" type="text" value="New Presentation" spellcheck="false">
+    <div class="spacer"></div>
+    <div class="ar-group">
+      <button class="ar-btn active" onclick="setAR('16:9',this)">16:9</button>
+      <button class="ar-btn" onclick="setAR('4:3',this)">4:3</button>
+    </div>
+  </div>
+  <div id="ribbon-tabs">
+    <button class="rtab" onclick="openSettings()" title="Settings" style="padding:5px 10px;font-size:14px;">⚙</button>
+    <button class="rtab active" onclick="switchTab('home',this)">Home</button>
+    <button class="rtab" onclick="switchTab('insert',this)">Insert</button>
+    <button class="rtab" onclick="switchTab('design',this)">Design</button>
+    <button class="rtab" onclick="switchTab('anim',this)">Animations</button>
+    <button class="rtab" onclick="switchTab('transitions',this)">Transitions</button>
+    <button class="rtab" onclick="switchTab('slideshow',this)">Slideshow</button>
+  </div>
+  <div id="ribbon-body">
+    <!-- HOME -->
+    <div class="rg" data-tab="home">
+      <button class="rb" onclick="addSlide()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8M8 12h8"/></svg><span class="rbl">New Slide</span></button>
+      <button class="rb" onclick="dupSlide()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg><span class="rbl">Duplicate</span></button>
+      <button class="rb warn" onclick="delSlide()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg><span class="rbl">Delete</span></button>
+      <div class="rglbl">Slides</div>
+    </div>
+    <div class="rg" data-tab="home">
+      <button class="rb" onclick="addText()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg><span class="rbl">Text</span></button>
+      <button class="rb" onclick="document.getElementById('imgup').click()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><span class="rbl">Image</span></button>
+      <button class="rb" onclick="openShapeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l9 18H3L12 3z"/></svg><span class="rbl">Shape</span></button>
+      <button class="rb" onclick="openAppletModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 4v16M15 4v16M4 9h16M4 15h16" stroke-opacity=".4"/></svg><span class="rbl">Applet</span></button>
+      <button class="rb" onclick="openLinkModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg><span class="rbl">Link</span></button>
+      <div class="rglbl">Objects</div>
+    </div>
+    <div class="rg" data-tab="home">
+      <button class="rb" onclick="doUndo()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 010 11H11"/></svg><span class="rbl">Undo</span></button>
+      <button class="rb" onclick="doRedo()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5 5.5 5.5 0 0 0 9.5 20H13"/></svg><span class="rbl">Redo</span></button>
+      <div class="rglbl">Edit</div>
+    </div>
+    <!-- INSERT -->
+    <div class="rg" data-tab="insert" style="display:none">
+      <button class="rb" onclick="addText()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg><span class="rbl">Text Box</span></button>
+      <button class="rb" onclick="document.getElementById('imgup').click()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><span class="rbl">Image</span></button>
+      <button class="rb" onclick="openShapeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l9 18H3L12 3z"/></svg><span class="rbl">Shape</span></button>
+      <button class="rb" onclick="openIconModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg><span class="rbl">Значки</span></button>
+      <button class="rb" onclick="openSVGModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg><span class="rbl">SVG</span></button>
+      <button class="rb" onclick="addCodeBlock()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg><span class="rbl">Code</span></button>
+      <button class="rb" onclick="addMarkdownBlock()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 17V7h2l2 4 2-4h2v10M17 13l-2 2-2-2"/></svg><span class="rbl">Markdown</span></button>
+      <button class="rb" onclick="openAppletModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/></svg><span class="rbl">Applet</span></button>
+      <div class="rglbl">Insert</div>
+    </div>
+    <!-- DESIGN -->
+    <div class="rg" data-tab="design" style="display:none">
+      <div style="display:flex;flex-direction:column;gap:4px;justify-content:center">
+        <span style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Background</span>
+        <div style="display:flex;gap:3px;align-items:center">
+          <div class="bgswatches" id="bgswatches"></div>
+          <input type="color" id="bgcustom" title="Custom BG" onchange="setCustomBg(this.value)">
+        </div>
+      </div>
+      <div class="rglbl">Background</div>
+    </div>
+    <div class="rg" data-tab="design" style="display:none">
+      <button class="rb" onclick="openThemeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 000 18"/><path d="M3 12h18"/></svg><span class="rbl">Themes</span></button>
+      <button class="rb" onclick="openLayoutModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg><span class="rbl">Layout</span></button>
+      <div class="rglbl">Design</div>
+    </div>
+    <!-- ANIMATIONS -->
+    <div class="rg" data-tab="anim" style="display:none">
+      <div style="display:flex;flex-direction:column;gap:4px;justify-content:center">
+        <span style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Add Animation</span>
+        <div style="display:flex;gap:3px;flex-wrap:wrap;max-width:280px">
+          <button class="tbtn2" style="color:#22c55e" onclick="addAnim('fadeIn','entrance')">Fade In</button>
+          <button class="tbtn2" style="color:#22c55e" onclick="addAnim('slideUp','entrance')">Slide Up</button>
+          <button class="tbtn2" style="color:#22c55e" onclick="addAnim('zoomIn','entrance')">Zoom In</button>
+          <button class="tbtn2" style="color:#22c55e" onclick="addAnim('bounceIn','entrance')">Bounce</button>
+          <button class="tbtn2" style="color:#22c55e" onclick="addAnim('spinIn','entrance')">Spin</button>
+          <button class="tbtn2" style="color:#ec4899" onclick="addAnim('fadeOut','exit')">Fade Out</button>
+          <button class="tbtn2" style="color:#ec4899" onclick="addAnim('slideOut','exit')">Slide Out</button>
+          <button class="tbtn2" style="color:#ec4899" onclick="addAnim('zoomOut','exit')">Zoom Out</button>
+          <button class="tbtn2" style="color:#f59e0b" onclick="addAnim('pulse','emphasis')">Pulse</button>
+          <button class="tbtn2" style="color:#f59e0b" onclick="addAnim('shake','emphasis')">Shake</button>
+          <button class="tbtn2" style="color:#f59e0b" onclick="addAnim('flash','emphasis')">Flash</button>
+        </div>
+      </div>
+      <div class="rglbl">Animations</div>
+    </div>
+    <div class="rg" data-tab="anim" style="display:none">
+      <div style="display:flex;flex-direction:column;gap:4px;justify-content:center">
+        <span style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Timing</span>
+        <div style="display:flex;gap:6px;flex-direction:column">
+          <div style="display:flex;gap:5px;align-items:center">
+            <label style="font-size:10px;color:var(--text2);width:48px">Delay</label>
+            <input type="number" id="anim-delay" value="0" min="0" max="10" step="0.1" style="width:52px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:2px 5px;font-size:10px;font-family:inherit" oninput="updateAnimTiming()">
+            <span style="font-size:10px;color:var(--text2)">s</span>
+          </div>
+          <div style="display:flex;gap:5px;align-items:center">
+            <label style="font-size:10px;color:var(--text2);width:48px">Duration</label>
+            <input type="number" id="anim-dur" value="0.5" min="0.1" max="5" step="0.1" style="width:52px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:2px 5px;font-size:10px;font-family:inherit" oninput="updateAnimTiming()">
+            <span style="font-size:10px;color:var(--text2)">s</span>
+          </div>
+          <label style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text2)">
+            <input type="checkbox" id="anim-click" style="accent-color:var(--accent)"> On click
+          </label>
+        </div>
+      </div>
+      <div class="rglbl">Timing</div>
+    </div>
+    <!-- TRANSITIONS -->
+    <div class="rg" data-tab="transitions" style="display:none">
+      <div style="display:flex;flex-direction:column;gap:4px;justify-content:center">
+        <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Effect</div>
+        <div style="display:flex;gap:3px;flex-wrap:wrap">
+          <button class="tbtn2 active" data-t="none" onclick="setGlobalTrans('none',this)">None</button>
+          <button class="tbtn2" data-t="fade" onclick="setGlobalTrans('fade',this)">Fade</button>
+          <button class="tbtn2" data-t="slide" onclick="setGlobalTrans('slide',this)">Slide</button>
+          <button class="tbtn2" data-t="zoom" onclick="setGlobalTrans('zoom',this)">Zoom</button>
+          <button class="tbtn2" data-t="flip" onclick="setGlobalTrans('flip',this)">Flip</button>
+          <button class="tbtn2" data-t="cube" onclick="setGlobalTrans('cube',this)">Cube</button>
+          <button class="tbtn2" data-t="dissolve" onclick="setGlobalTrans('dissolve',this)">Dissolve</button>
+          <button class="tbtn2" data-t="morph" onclick="setGlobalTrans('morph',this)">Morph</button>
+        </div>
+      </div>
+      <div class="rglbl">Transition Effect</div>
+    </div>
+    <div class="rg" data-tab="transitions" style="display:none">
+      <div style="display:flex;flex-direction:column;gap:5px;justify-content:center">
+        <div class="pr" style="margin:0"><label>Duration</label>
+          <select id="trans-dur" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 7px;font-size:10px;font-family:inherit" onchange="transitionDur=+this.value">
+            <option value="250">Fast</option><option value="500" selected>Normal</option><option value="800">Slow</option><option value="1200">Very Slow</option>
+          </select>
+        </div>
+        <button class="tbtn2" onclick="applyTransToAll()" style="font-size:10px">Apply to All</button>
+      </div>
+      <div class="rglbl">Settings</div>
+    </div>
+    <!-- SLIDESHOW -->
+    <div class="rg" data-tab="slideshow" style="display:none">
+      <button class="rb pri" onclick="startPreview(0)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="5 3 19 12 5 21 5 3"/></svg><span class="rbl">From Start</span></button>
+      <button class="rb" onclick="startPreview(cur)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="5 3 19 12 5 21 5 3" fill="currentColor"/></svg><span class="rbl">Current</span></button>
+      <div class="rglbl">Present</div>
+    </div>
+    <div class="rg" data-tab="slideshow" style="display:none">
+      <div style="display:flex;flex-direction:column;gap:5px;justify-content:center">
+        <label style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Auto Advance</label>
+        <div style="display:flex;align-items:center;gap:5px">
+          <input type="checkbox" id="auto-adv-chk" onchange="toggleAutoAdv(this.checked)" style="accent-color:var(--accent4)">
+          <label for="auto-adv-chk" style="font-size:11px;color:var(--text2);cursor:pointer">Enabled</label>
+        </div>
+        <div style="display:flex;align-items:center;gap:4px">
+          <label style="font-size:10px;color:var(--text2)">Delay:</label>
+          <input type="number" id="auto-delay" value="5" min="1" max="60" style="width:48px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:2px 5px;font-size:10px;font-family:inherit" oninput="autoDelay=+this.value">
+          <span style="font-size:10px;color:var(--text2)">sec</span>
+        </div>
+        <button class="tbtn2" onclick="applyAutoToAll()" style="font-size:10px">Apply to All</button>
+      </div>
+      <div class="rglbl">Auto Advance</div>
+    </div>
+    <!-- FILE -->
+    <div class="rg" data-tab="slideshow" style="display:none">
+      <div style="display:flex;flex-direction:column;gap:5px;justify-content:center">
+        <button id="p-loop-btn" class="tbtn2" onclick="togglePresLoop()" style="min-width:72px">↺ Loop</button>
+        <button id="p-shuffle-btn" class="tbtn2" onclick="togglePresShuffle()" style="min-width:72px">⇄ Shuffle</button>
+      </div>
+      <div class="rglbl">Playback</div>
+    </div>
+    <!-- FILE -->
+    <div class="rg">
+      <button class="rb" onclick="document.getElementById('fileup').click()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span class="rbl">Import</span></button>
+      <button class="rb pri" onclick="exportHTML()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span class="rbl">Export</span></button>
+      <div class="rglbl">File</div>
+    </div>
+  </div>
+</div>
+<input type="file" id="imgup" accept="image/*" style="display:none" onchange="handleImg(event)">
+<input type="file" id="fileup" accept=".html,.pptx,.ppt,.odp" style="display:none" onchange="handleFileImport(event)">
+<div id="app">
+  <div id="sidebar">
+    <div id="sb-hdr"><span>Slides</span><span id="sb-count">0</span></div>
+    <div id="slide-list"></div>
+  </div>
+  <div id="canvas-area">
+    <div id="ctoolbar">
+      <!-- Align scope toggle shown when multi-select -->
+      <div id="align-scope-grp" style="display:flex;align-items:center;gap:3px;margin-right:2px">
+        <span style="font-size:9px;color:var(--text3);white-space:nowrap">Align to:</span>
+        <button id="align-scope-sel" class="albtn active" title="Align to selection" onclick="setAlignScope('sel')" style="font-size:9px;padding:2px 6px;min-width:unset">Sel</button>
+        <button id="align-scope-slide" class="albtn" title="Align to slide" onclick="setAlignScope('slide')" style="font-size:9px;padding:2px 6px;min-width:unset">Slide</button>
+      </div>
+      <div class="ctl-sep"></div>
+      <div class="align-group">
+        <button class="albtn" id="alb-left" title="Align Left" onclick="alignEl('left',_alignScope)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="10" height="10" rx="1"/><line x1="3" y1="4" x2="3" y2="20"/></svg></button>
+        <button class="albtn" id="alb-centerH" title="Center Horizontally" onclick="alignEl('centerH',_alignScope)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="7" width="10" height="10" rx="1"/><line x1="12" y1="3" x2="12" y2="21"/></svg></button>
+        <button class="albtn" id="alb-right" title="Align Right" onclick="alignEl('right',_alignScope)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="11" y="7" width="10" height="10" rx="1"/><line x1="21" y1="4" x2="21" y2="20"/></svg></button>
+        <button class="albtn" id="alb-top" title="Align Top" onclick="alignEl('top',_alignScope)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="3" width="10" height="10" rx="1"/><line x1="3" y1="3" x2="21" y2="3"/></svg></button>
+        <button class="albtn" id="alb-centerV" title="Center Vertically" onclick="alignEl('centerV',_alignScope)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="7" width="10" height="10" rx="1"/><line x1="3" y1="12" x2="21" y2="12"/></svg></button>
+        <button class="albtn" id="alb-bottom" title="Align Bottom" onclick="alignEl('bottom',_alignScope)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="11" width="10" height="10" rx="1"/><line x1="3" y1="21" x2="21" y2="21"/></svg></button>
+        <button class="albtn" title="Center Both" onclick="alignEl('center',_alignScope)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="3" x2="12" y2="21"/><line x1="3" y1="12" x2="21" y2="12"/></svg></button>
+      </div>
+      <div class="ctl-sep"></div>
+      <div class="align-group" title="Distribute (select 2+ elements)">
+        <button class="albtn" title="Distribute Horizontally (relative to selection)" onclick="distributeEls('h','sel')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="8" width="5" height="8" rx="1"/><rect x="9.5" y="6" width="5" height="12" rx="1"/><rect x="17" y="9" width="5" height="6" rx="1"/><line x1="2" y1="20" x2="22" y2="20" stroke-opacity=".4"/></svg></button>
+        <button class="albtn" title="Distribute Horizontally (across slide)" onclick="distributeEls('h','slide')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="2" y1="4" x2="2" y2="20"/><rect x="6" y="8" width="5" height="8" rx="1"/><rect x="13" y="6" width="5" height="12" rx="1"/><line x1="22" y1="4" x2="22" y2="20"/></svg></button>
+        <button class="albtn" title="Distribute Vertically (relative to selection)" onclick="distributeEls('v','sel')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="2" width="8" height="5" rx="1"/><rect x="6" y="9.5" width="12" height="5" rx="1"/><rect x="9" y="17" width="6" height="5" rx="1"/><line x1="20" y1="2" x2="20" y2="22" stroke-opacity=".4"/></svg></button>
+        <button class="albtn" title="Distribute Vertically (across slide)" onclick="distributeEls('v','slide')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="2" x2="20" y2="2"/><rect x="8" y="6" width="8" height="5" rx="1"/><rect x="6" y="13" width="12" height="5" rx="1"/><line x1="4" y1="22" x2="20" y2="22"/></svg></button>
+      </div>
+      <div class="ctl-sep"></div>
+      <div class="layer-group">
+        <button class="albtn" title="Bring to Front" onclick="layerEl('front')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="1.5"/><rect x="3" y="3" width="12" height="12" rx="1.5" fill="var(--surface2)"/><path d="M3 3h12v12H3z" stroke-opacity=".3"/><polyline points="17 7 20 4 23 7" transform="scale(0.6) translate(8,-2)"/></svg></button>
+        <button class="albtn" title="Bring Forward" onclick="layerEl('up')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+        <button class="albtn" title="Send Backward" onclick="layerEl('down')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12l7 7 7-7"/></svg></button>
+        <button class="albtn" title="Send to Back" onclick="layerEl('back')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="12" height="12" rx="1.5"/><rect x="9" y="9" width="12" height="12" rx="1.5" fill="var(--surface2)" stroke-opacity=".3"/></svg></button>
+      </div>
+      <div class="ctl-sep"></div>
+      <label class="sntog"><input type="checkbox" id="snap-chk" checked onchange=""><label for="snap-chk">Snap</label></label>
+    </div>
+    <div id="cwrap">
+      <canvas id="grid-canvas"></canvas>
+      <div id="canvas-container"><div id="canvas"><div id="cvbg"></div><div id="rubberband"></div></div></div>
+    </div>
+  </div>
+  <div id="props">
+    <div id="props-scroll">
+      <div id="slide-props">
+      <div class="ph">Slide</div>
+      <div class="psec">
+        <div class="pr"><label>Title</label><input type="text" id="p-st" placeholder="Slide title…" oninput="onTitleInput(this.value)"></div>
+        <div class="pr"><label>Background</label>
+          <div style="display:flex;flex-direction:column;gap:5px">
+            <div class="bgswatches" id="bgswatches2"></div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <input type="color" id="bgcustom2" title="Custom color" onchange="setCustomBg(this.value)" style="width:32px;height:24px;border:none;border-radius:4px;cursor:pointer;background:none">
+              <span style="font-size:10px;color:var(--text3)">Custom color</span>
+            </div>
+          </div>
+        </div>
+        <div class="pr"><label>Transition</label>
+          <select id="p-strans" onchange="setSlideTrans(this.value)">
+            <option value="">Global</option><option value="none">None</option>
+            <option value="fade">Fade</option><option value="slide">Slide</option>
+            <option value="zoom">Zoom</option><option value="flip">Flip</option>
+            <option value="cube">Cube</option><option value="dissolve">Dissolve</option>
+            <option value="morph">Morph</option>
+          </select>
+        </div>
+        <div class="pr"><label>Auto-advance (sec, 0=off)</label>
+          <input type="number" id="p-auto" min="0" max="120" value="0" oninput="setSlideAuto(+this.value)">
+        </div>
+        <div class="pr">
+          <div style="display:flex;align-items:center;gap:6px">
+            <input type="checkbox" id="slide-click-nav" checked onchange="slides[cur].clickNav=this.checked;saveState()" style="accent-color:var(--accent4)">
+            <label for="slide-click-nav" style="font-size:11px;color:var(--text2);cursor:pointer">Click anywhere to advance</label>
+          </div>
+        </div>
+      </div>
+      </div>
+      <div id="elprops" style="display:none">
+        <div class="ph">Element</div>
+        <div class="psec">
+          <div class="grid2">
+            <div class="pr"><label>X</label><input type="number" id="p-x" oninput="setES('left',snapV(+this.value),'px')"></div>
+            <div class="pr"><label>Y</label><input type="number" id="p-y" oninput="setES('top',snapV(+this.value),'px')"></div>
+            <div class="pr"><label>W</label><input type="number" id="p-w" oninput="setES('width',Math.max(20,snapV(+this.value)),'px')"></div>
+            <div class="pr"><label>H</label><input type="number" id="p-h" oninput="setES('height',Math.max(10,snapV(+this.value)),'px')"></div>
+          </div>
+          <div class="pr"><label>Rotation (deg)</label><input type="number" id="p-rot" value="0" oninput="setElRotation(+this.value)"></div>
+        </div>
+        <!-- TEXT PROPS -->
+        <div id="tprops" style="display:none" onmousedown="_rtOnPanelMousedown(event)">
+          <div class="ph">Text</div>
+          <!-- Text role selector -->
+          <div class="pr" style="margin-bottom:6px">
+            <label>Role</label>
+            <div style="display:flex;gap:4px">
+              <button id="role-body" class="tbtn2 active" onclick="setTextRole('body')" style="flex:1">Body Text</button>
+              <button id="role-heading" class="tbtn2" onclick="setTextRole('heading')" style="flex:1">Heading</button>
+            </div>
+          </div>
+          <div class="fmt-block">
+            <div class="fmt-row">
+              <button class="ftbtn" id="ft-b" onclick="rtBold()" title="Bold (Ctrl+B)" onmousedown="event.preventDefault()"><b>B</b></button>
+              <button class="ftbtn" id="ft-i" onclick="rtItalic()" title="Italic (Ctrl+I)" onmousedown="event.preventDefault()"><i>I</i></button>
+              <button class="ftbtn" id="ft-u" onclick="rtUnderline()" title="Underline (Ctrl+U)" onmousedown="event.preventDefault()"><u>U</u></button>
+              <button class="ftbtn" id="ft-sup" onclick="rtSuperscript()" title="Superscript" style="font-size:9px;letter-spacing:-0.5px" onmousedown="event.preventDefault()">X<sup style="font-size:7px;line-height:1">²</sup></button>
+              <button class="ftbtn" id="ft-sub" onclick="rtSubscript()" title="Subscript" style="font-size:9px;letter-spacing:-0.5px" onmousedown="event.preventDefault()">X<sub style="font-size:7px;line-height:1">₂</sub></button>
+            </div>
+            <div class="fmt-row">
+              <button class="ftbtn" id="ft-al" onclick="setTS('text-align','left')" title="Align Left" onmousedown="event.preventDefault()"><svg width="14" height="12" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="5" x2="9" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="9" x2="12" y2="9" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="13" x2="7" y2="13" stroke="currentColor" stroke-width="1.5"/></svg></button>
+              <button class="ftbtn" id="ft-ac" onclick="setTS('text-align','center')" title="Center" onmousedown="event.preventDefault()"><svg width="14" height="12" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="2.5" y1="5" x2="11.5" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="1" y1="9" x2="13" y2="9" stroke="currentColor" stroke-width="1.5"/><line x1="3.5" y1="13" x2="10.5" y2="13" stroke="currentColor" stroke-width="1.5"/></svg></button>
+              <button class="ftbtn" id="ft-ar" onclick="setTS('text-align','right')" title="Align Right" onmousedown="event.preventDefault()"><svg width="14" height="12" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="5" y1="5" x2="14" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="2" y1="9" x2="14" y2="9" stroke="currentColor" stroke-width="1.5"/><line x1="7" y1="13" x2="14" y2="13" stroke="currentColor" stroke-width="1.5"/></svg></button>
+              <button class="ftbtn" id="ft-aj" onclick="setTS('text-align','justify')" title="Justify" onmousedown="event.preventDefault()"><svg width="14" height="12" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="5" x2="14" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="9" x2="14" y2="9" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="13" x2="10" y2="13" stroke="currentColor" stroke-width="1.5"/></svg></button>
+              <div class="fmt-sep"></div>
+              <span class="fmt-label">V:</span>
+              <button class="ftbtn" id="ft-vt" onclick="setTextVAlign('top')" title="Top" onmousedown="event.preventDefault()"><svg width="12" height="14" viewBox="0 0 12 14"><line x1="0" y1="0" x2="12" y2="0" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="2" width="6" height="9" rx="1" fill="currentColor" opacity=".4"/><path d="M6 2 L6 11" stroke="currentColor" stroke-width="1.5"/></svg></button>
+              <button class="ftbtn" id="ft-vm" onclick="setTextVAlign('middle')" title="Middle" onmousedown="event.preventDefault()"><svg width="12" height="14" viewBox="0 0 12 14"><line x1="0" y1="7" x2="12" y2="7" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="1" width="6" height="5" rx="1" fill="currentColor" opacity=".4"/><rect x="3" y="8" width="6" height="5" rx="1" fill="currentColor" opacity=".4"/></svg></button>
+              <button class="ftbtn" id="ft-vb" onclick="setTextVAlign('bottom')" title="Bottom" onmousedown="event.preventDefault()"><svg width="12" height="14" viewBox="0 0 12 14"><line x1="0" y1="14" x2="12" y2="14" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="3" width="6" height="9" rx="1" fill="currentColor" opacity=".4"/><path d="M6 3 L6 12" stroke="currentColor" stroke-width="1.5"/></svg></button>
+            </div>
+          </div>
+            <div class="grid2">
+            <div class="pr"><label>Size</label><input type="number" id="p-fs" oninput="rtFontSize(+this.value)"></div>
+            <div class="pr"><label>Weight</label>
+              <select id="p-fw" onchange="rtFontWeight(this.value)">
+                <option value="300">Light</option><option value="400">Regular</option>
+                <option value="600">SemiBold</option><option value="700">Bold</option><option value="900">Black</option>
+              </select>
+            </div>
+          </div>
+          <div class="pr"><label>Text Color <span id="sel-hint" style="font-size:9px;color:var(--accent4);display:none">· выделение</span></label>
+            <div style="display:flex;flex-direction:column;gap:5px">
+              <div style="display:flex;gap:4px;align-items:center">
+                <div class="cp-hex" style="flex:1"><input type="color" id="p-col" oninput="onColorPick(this.value,'text')"><input type="text" id="p-hex" placeholder="#ffffff" oninput="onColorHex(this.value,'text')"></div>
+                <button onclick="togglePipetteMode()" id="eye-text" class="pipette-btn" title="Pipette: click another element to inherit its style" style="background:var(--surface2);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:3px 6px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;width:26px;height:26px"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M20.71 5.63l-2.34-2.34a1 1 0 0 0-1.41 0l-3.12 3.12-1.41-1.42-1.42 1.42 1.41 1.41-6.6 6.6A2 2 0 0 0 5 16v3h3a2 2 0 0 0 1.42-.59l6.6-6.6 1.41 1.42 1.42-1.42-1.42-1.41 3.12-3.12a1 1 0 0 0 0-1.65z"/></svg></button>
+              </div>
+              <div id="cp-text-palette" class="cpicker"></div>
+            </div>
+          </div>
+          <div class="pr"><label>Background Color</label>
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <div style="display:flex;gap:6px;align-items:center">
+                <div class="cp-hex" style="flex:1"><input type="color" id="p-bg-col" oninput="setTextBg(this.value)"><input type="text" id="p-bg-hex" placeholder="transparent" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('p-bg-col').value=this.value;setTextBg(this.value);}"></div>
+                <button onclick="clearTextBg()" title="Remove background" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:2px 6px;cursor:pointer;font-size:10px;white-space:nowrap">✕ None</button>
+              </div>
+              <div style="display:flex;align-items:center;gap:6px">
+                <label style="font-size:10px;color:var(--text2);white-space:nowrap">Opacity:</label>
+                <input type="range" id="p-bg-op" min="0" max="1" step="0.05" value="1" style="flex:1" oninput="document.getElementById('p-bg-op-val').textContent=Math.round(this.value*100)+'%';setTextBgOp(+this.value)">
+                <span id="p-bg-op-val" style="font-size:10px;color:var(--text2);width:32px">100%</span>
+              </div>
+            </div>
+          </div>
+          <div class="grid2">
+            <div class="pr"><label>Line H</label><input type="number" id="p-lh" step="0.1" oninput="setTS('line-height',this.value)"></div>
+            <div class="pr"><label>Spacing</label><input type="number" id="p-ls" step="0.5" oninput="setTS('letter-spacing',this.value+'px')"></div>
+          </div>
+          <div class="pr"><label>Corner Radius</label>
+            <div style="display:flex;align-items:center;gap:4px;margin-bottom:3px">
+              <label style="font-size:9px;color:var(--text3)">Unit:</label>
+              <button id="rx-unit-px" class="tbtn2 active" onclick="setTextRxUnit('px')" style="padding:2px 6px;font-size:9px">px</button>
+              <button id="rx-unit-pct" class="tbtn2" onclick="setTextRxUnit('%')" style="padding:2px 6px;font-size:9px">%</button>
+              <label style="display:flex;align-items:center;gap:3px;font-size:9px;color:var(--text3);cursor:pointer;margin-left:4px"><input type="checkbox" id="rx-linked" checked style="accent-color:var(--accent)"> Lock</label>
+            </div>
+            <div class="grid2" style="gap:3px">
+              <div style="display:flex;flex-direction:column;gap:1px;align-items:center">
+                <span style="font-size:8px;color:var(--text3)">↖ TL</span>
+                <input type="number" id="p-rx-tl" min="0" max="999" value="0" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;font-family:inherit;width:100%;text-align:center" oninput="setTextRadius('tl',+this.value)">
+              </div>
+              <div style="display:flex;flex-direction:column;gap:1px;align-items:center">
+                <span style="font-size:8px;color:var(--text3)">↗ TR</span>
+                <input type="number" id="p-rx-tr" min="0" max="999" value="0" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;font-family:inherit;width:100%;text-align:center" oninput="setTextRadius('tr',+this.value)">
+              </div>
+              <div style="display:flex;flex-direction:column;gap:1px;align-items:center">
+                <span style="font-size:8px;color:var(--text3)">↙ BL</span>
+                <input type="number" id="p-rx-bl" min="0" max="999" value="0" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;font-family:inherit;width:100%;text-align:center" oninput="setTextRadius('bl',+this.value)">
+              </div>
+              <div style="display:flex;flex-direction:column;gap:1px;align-items:center">
+                <span style="font-size:8px;color:var(--text3)">↘ BR</span>
+                <input type="number" id="p-rx-br" min="0" max="999" value="0" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;font-family:inherit;width:100%;text-align:center" oninput="setTextRadius('br',+this.value)">
+              </div>
+            </div>
+          </div>
+          <!-- Text padding -->
+          <div class="pr"><label>Inner Padding (px)</label>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px">
+              <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+                <span style="font-size:8px;color:var(--text3)">Top</span>
+                <input type="number" id="p-pad-t" min="0" max="200" value="6" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:2px 5px;font-size:10px;text-align:center" oninput="setTextPadding4()">
+              </div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+                <span style="font-size:8px;color:var(--text3)">Right</span>
+                <input type="number" id="p-pad-r" min="0" max="200" value="8" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:2px 5px;font-size:10px;text-align:center" oninput="setTextPadding4()">
+              </div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+                <span style="font-size:8px;color:var(--text3)">Bottom</span>
+                <input type="number" id="p-pad-b" min="0" max="200" value="6" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:2px 5px;font-size:10px;text-align:center" oninput="setTextPadding4()">
+              </div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+                <span style="font-size:8px;color:var(--text3)">Left</span>
+                <input type="number" id="p-pad-l" min="0" max="200" value="8" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:2px 5px;font-size:10px;text-align:center" oninput="setTextPadding4()">
+              </div>
+            </div>
+          </div>
+          <!-- Text box border -->
+          <div class="pr"><label>Border</label>
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <div style="display:flex;gap:5px;align-items:center">
+                <div class="cp-hex" style="flex:1"><input type="color" id="p-border-col" value="#ffffff" oninput="setTextBorder('color',this.value)"><input type="text" id="p-border-hex" placeholder="#ffffff" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('p-border-col').value=this.value;setTextBorder('color',this.value);}"></div>
+                <input type="number" id="p-border-w" min="0" max="20" value="0" placeholder="0" style="width:44px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;" oninput="setTextBorder('width',+this.value)" title="Border width px">
+                <span style="font-size:9px;color:var(--text3)">px</span>
+              </div>
+            </div>
+          </div>
+          <!-- Text opacity -->
+          <div class="pr"><label>Element Opacity</label>
+            <div style="display:flex;align-items:center;gap:6px">
+              <input type="range" id="p-el-op" min="0" max="1" step="0.05" value="1" style="flex:1" oninput="document.getElementById('p-el-op-val').textContent=Math.round(this.value*100)+'%';setTextElOpacity(+this.value)">
+              <span id="p-el-op-val" style="font-size:10px;color:var(--text2);width:32px">100%</span>
+            </div>
+          </div>
+        </div><!-- end tprops -->
+        <!-- SHAPE PROPS -->
+        <div id="shprops" style="display:none">
+          <div class="ph">Shape Style</div>
+          <div class="pr"><label>Fill Color</label>
+            <div style="display:flex;flex-direction:column;gap:5px">
+              <div style="display:flex;gap:4px;align-items:center">
+                <div class="cp-hex" style="flex:1"><input type="color" id="sh-fill" oninput="updateShapeStyle('fill',this.value)"><input type="text" id="sh-fill-hex" placeholder="#3b82f6" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('sh-fill').value=this.value;updateShapeStyle('fill',this.value);}"></div>
+                <button onclick="togglePipetteMode()" id="eye-fill" class="pipette-btn" title="Pipette: click another element to inherit its style" style="background:var(--surface2);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:3px 6px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;width:26px;height:26px"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M20.71 5.63l-2.34-2.34a1 1 0 0 0-1.41 0l-3.12 3.12-1.41-1.42-1.42 1.42 1.41 1.41-6.6 6.6A2 2 0 0 0 5 16v3h3a2 2 0 0 0 1.42-.59l6.6-6.6 1.41 1.42 1.42-1.42-1.42-1.41 3.12-3.12a1 1 0 0 0 0-1.65z"/></svg></button>
+              </div>
+              <div id="cp-fill-palette" class="cpicker"></div>
+              <div style="display:flex;align-items:center;gap:6px"><label style="font-size:10px;color:var(--text2)">Opacity:</label><input type="range" id="sh-fill-op" min="0" max="1" step="0.05" value="1" style="flex:1" oninput="document.getElementById('sh-fill-op-val').textContent=Math.round(this.value*100)+'%';updateShapeStyle('fillOp',this.value)"><span id="sh-fill-op-val" style="font-size:10px;color:var(--text2);width:32px">100%</span></div>
+            </div>
+          </div>
+          <div class="pr" style="margin-top:4px"><label>Stroke Color</label>
+            <div class="cp-hex"><input type="color" id="sh-stroke" oninput="updateShapeStyle('stroke',this.value)"><input type="text" id="sh-stroke-hex" placeholder="#ffffff" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('sh-stroke').value=this.value;updateShapeStyle('stroke',this.value);}"></div>
+          </div>
+          <div class="grid2">
+            <div class="pr"><label>Stroke Width</label>
+              <div style="display:flex;gap:4px;align-items:center">
+                <input type="number" id="sh-sw" min="0" max="20" value="2" style="flex:1" oninput="updateShapeStyle('sw',this.value)">
+                <label style="display:flex;align-items:center;gap:3px;font-size:9px;color:var(--text2);white-space:nowrap;cursor:pointer">
+                  <input type="checkbox" id="sh-no-stroke" style="accent-color:var(--accent)" onchange="updateShapeStyle('sw',this.checked?0:2);document.getElementById('sh-sw').value=this.checked?0:2"> No stroke
+                </label>
+              </div>
+            </div>
+            <div class="pr"><label>Corner Radius</label><input type="number" id="sh-rx" min="0" max="100" value="0" oninput="updateShapeStyle('rx',this.value)"></div>
+          </div>
+          <div class="pr"><label>Shadow</label>
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2)"><input type="checkbox" id="sh-shadow" onchange="updateShapeStyle('shadow',this.checked)" style="accent-color:var(--accent)">Enable shadow</label>
+              <div class="grid2" id="shadow-options">
+                <div class="pr" style="margin:0"><label>Blur</label><input type="number" id="sh-sb" value="8" min="0" max="40" oninput="updateShapeStyle('shadowBlur',this.value)"></div>
+                <div class="pr" style="margin:0"><label>Color</label><input type="color" id="sh-sc" value="#000000" oninput="updateShapeStyle('shadowColor',this.value)"></div>
+              </div>
+            </div>
+          </div>
+          <div class="ph" style="margin-top:4px">Shape Text</div>
+          <button class="mbtn-sm" onclick="startEditShapeText()" style="margin-bottom:6px;width:100%">✏️ Edit Text (or double-click shape)</button>
+          <div class="pr"><label>Text Color</label>
+            <div class="cp-hex"><input type="color" id="sh-tc" value="#ffffff" oninput="updateShapeTextColor(this.value)"><input type="text" id="sh-tc-hex" placeholder="#ffffff"></div>
+          </div>
+          <div class="grid2">
+            <div class="pr"><label>Font Size</label><input type="number" id="sh-fs" value="24" min="8" max="200" oninput="updateShapeTextStyle('font-size',this.value+'px')"></div>
+            <div class="pr"><label>Weight</label>
+              <select id="sh-fw" onchange="updateShapeTextStyle('font-weight',this.value)">
+                <option value="400">Regular</option><option value="700" selected>Bold</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <!-- IMAGE PROPS -->
+        <div id="imgprops" style="display:none">
+          <div class="ph">Image</div>
+          <div class="psec" style="display:flex;flex-direction:column;gap:6px">
+            <div class="pr" style="margin:0"><label>Fit</label>
+              <select id="img-fit" onchange="updateImgStyle('fit',this.value)">
+                <option value="contain">Contain</option>
+                <option value="cover">Cover</option>
+                <option value="fill">Stretch</option>
+                <option value="none">None</option>
+              </select>
+            </div>
+            <button class="mbtn-sm" onclick="imgCoverSlide()" style="width:100%">📐 Cover Entire Slide (back)</button>
+            <div class="pr" style="margin:0"><label>Corner Radius (px)</label>
+              <input type="number" id="img-rx" min="0" max="600" value="0" oninput="updateImgStyle('rx',this.value)">
+            </div>
+            <div class="pr" style="margin:0"><label>Border</label>
+              <div style="display:flex;gap:4px;align-items:center">
+                <input type="number" id="img-bw" min="0" max="20" value="0" placeholder="px" style="width:50px" oninput="updateImgStyle('bw',this.value)">
+                <input type="color" id="img-bc" value="#ffffff" oninput="updateImgStyle('bc',this.value)" style="width:32px;height:26px;border:none;cursor:pointer;border-radius:3px">
+              </div>
+            </div>
+            <div class="pr" style="margin:0"><label>Shadow</label>
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2)"><input type="checkbox" id="img-shadow" onchange="updateImgStyle('shadow',this.checked)" style="accent-color:var(--accent)">Enable shadow</label>
+                <div class="grid2">
+                  <div class="pr" style="margin:0"><label>Blur</label><input type="number" id="img-sb" value="15" min="0" max="60" oninput="updateImgStyle('shadowBlur',this.value)"></div>
+                  <div class="pr" style="margin:0"><label>Color</label><input type="color" id="img-sc" value="#000000" oninput="updateImgStyle('shadowColor',this.value)"></div>
+                </div>
+              </div>
+            </div>
+            <div class="pr" style="margin:0"><label>Opacity</label>
+              <div style="display:flex;align-items:center;gap:6px">
+                <input type="range" id="img-op" min="0" max="1" step="0.05" value="1" style="flex:1" oninput="document.getElementById('img-op-val').textContent=Math.round(this.value*100)+'%';updateImgStyle('opacity',this.value)">
+                <span id="img-op-val" style="font-size:10px;color:var(--text2);width:32px">100%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- CODE PROPS -->
+        <div id="codeprops" style="display:none">
+          <div class="ph">Code Block</div>
+          <div class="psec" style="display:flex;flex-direction:column;gap:6px">
+            <div class="pr" style="margin:0"><label>Language</label>
+              <select id="code-lang" onchange="updateCodeLang(this.value)">
+                <option value="js">JavaScript</option><option value="ts">TypeScript</option>
+                <option value="py">Python</option><option value="rust">Rust</option>
+                <option value="go">Go</option><option value="java">Java</option>
+                <option value="cpp">C++</option><option value="cs">C#</option>
+                <option value="html">HTML</option><option value="css">CSS</option>
+                <option value="sql">SQL</option><option value="bash">Bash</option>
+                <option value="json">JSON</option><option value="yaml">YAML</option>
+                <option value="plain">Plain text</option>
+              </select>
+            </div>
+            <div class="pr" style="margin:0"><label>Font Size</label>
+              <input type="number" id="code-fs" min="8" max="32" value="13" oninput="updateCodeFontSize(this.value)">
+            </div>
+            <div class="pr" style="margin:0;font-size:10px;color:var(--text3)">Color theme matches presentation theme</div>
+            <button class="mbtn-sm" onclick="openCodeEditor()" style="width:100%">✏️ Edit Code</button>
+          </div>
+        </div>
+        <!-- MARKDOWN PROPS -->
+        <div id="mdprops" style="display:none">
+          <div class="ph">Markdown</div>
+          <div class="psec" style="display:flex;flex-direction:column;gap:6px">
+            <div class="pr" style="margin:0"><label>Font Size</label>
+              <input type="number" id="md-fs" min="8" max="32" value="16" oninput="updateMdFontSize(this.value)">
+            </div>
+            <button class="mbtn-sm" onclick="openMdEditor()" style="width:100%">✏️ Edit Markdown</button>
+          </div>
+        </div>
+        <!-- ICON PROPS -->
+        <div id="iconprops" style="display:none">
+          <div class="ph">Значок</div>
+          <div class="psec" style="display:flex;flex-direction:column;gap:6px">
+            <div class="pr" style="margin:0"><label>Стиль</label>
+              <select id="ic-p-style" onchange="updateIconStyle('style',this.value)" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 6px;font-size:11px;font-family:inherit;width:100%">
+                <option value="stroke">Контур</option>
+                <option value="fill">Заливка</option>
+                <option value="duotone">Дуотон</option>
+              </select>
+            </div>
+            <div class="pr" style="margin:0"><label>Цвет</label>
+              <div class="cp-hex">
+                <input type="color" id="ic-p-color" oninput="updateIconStyle('color',this.value);document.getElementById('ic-p-color-hex').value=this.value">
+                <input type="text" id="ic-p-color-hex" placeholder="#3b82f6" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('ic-p-color').value=this.value;updateIconStyle('color',this.value);}">
+              </div>
+            </div>
+            <div class="pr" style="margin:0"><label>Толщина обводки</label>
+              <input type="number" id="ic-p-sw" min="0.5" max="5" step="0.2" value="1.8" oninput="updateIconStyle('sw',this.value)">
+            </div>
+            <div class="pr" style="margin:0">
+              <div style="display:flex;align-items:center;gap:6px">
+                <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2)">
+                  <input type="checkbox" id="ic-p-shadow" onchange="updateIconStyle('shadow',this.checked)" style="accent-color:var(--accent)">Тень
+                </label>
+              </div>
+              <div id="ic-p-shadow-opts" style="display:none;gap:6px;margin-top:4px">
+                <div class="pr" style="margin:0"><label>Размытие</label><input type="number" id="ic-p-sb" value="8" min="0" max="40" oninput="updateIconStyle('shadowBlur',this.value)"></div>
+                <div class="pr" style="margin:0"><label>Цвет</label><input type="color" id="ic-p-sc" value="#000000" oninput="updateIconStyle('shadowColor',this.value)"></div>
+              </div>
+            </div>
+            <div class="pr" style="margin:0">
+              <label>Прозрачность</label>
+              <div style="display:flex;align-items:center;gap:6px">
+                <input type="range" id="ic-p-op" min="0" max="1" step="0.05" value="1" style="flex:1" oninput="document.getElementById('ic-p-op-val').textContent=Math.round(this.value*100)+'%';updateIconStyle('op',this.value)">
+                <span id="ic-p-op-val" style="font-size:10px;color:var(--text2);width:32px">100%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- ANIMATION PROPS -->
+        <div id="animprops" style="display:none">
+          <div class="ph">Animations</div>
+          <div class="anim-list" id="el-anim-list"></div>
+          <button class="mbtn-sm" onclick="removeAllAnims()">Clear All</button>
+        </div>
+        <!-- HOVER EFFECTS (separate panel, always shown for elements) -->
+        <div id="hoverprops" style="display:none">
+          <div class="ph" style="margin-top:4px">🖱 Hover Effect</div>
+          <div style="display:flex;flex-direction:column;gap:5px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:6px">
+            <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2)"><input type="checkbox" id="hfx-on" style="accent-color:var(--accent)" onchange="setHoverFx('enabled',this.checked)"> Enable on hover (cursor becomes pointer)</label>
+            <!-- Quick presets -->
+            <div style="display:flex;gap:4px;flex-wrap:wrap">
+              <button onclick="applyHoverPreset('lift')" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:3px 7px;cursor:pointer;font-size:10px">↑ Lift</button>
+              <button onclick="applyHoverPreset('lighter')" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:3px 7px;cursor:pointer;font-size:10px">☀ Lighter</button>
+              <button onclick="applyHoverPreset('darker')" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:3px 7px;cursor:pointer;font-size:10px">🌑 Darker</button>
+              <button onclick="applyHoverPreset('glow')" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:3px 7px;cursor:pointer;font-size:10px">✨ Glow</button>
+              <button onclick="applyHoverPreset('none')" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text3);border-radius:3px;padding:3px 7px;cursor:pointer;font-size:10px">✕ Clear</button>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:5px">
+              <div class="grid2">
+                <div class="pr" style="margin:0"><label>Scale</label>
+                  <div style="display:flex;align-items:center;gap:3px">
+                    <input type="number" id="hfx-scale" min="0.5" max="3" step="0.05" value="1.05" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="setHoverFx('scale',+this.value)">
+                    <span style="font-size:9px;color:var(--text3)">×</span>
+                  </div>
+                </div>
+                <div class="pr" style="margin:0"><label>Duration</label>
+                  <div style="display:flex;align-items:center;gap:3px">
+                    <input type="number" id="hfx-dur" min="0.05" max="2" step="0.05" value="0.2" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="setHoverFx('dur',+this.value)">
+                    <span style="font-size:9px;color:var(--text3)">s</span>
+                  </div>
+                </div>
+              </div>
+              <div class="pr" style="margin:0"><label>Glow / Shadow Color</label>
+                <div style="display:flex;gap:5px;align-items:center">
+                  <div class="cp-hex" style="flex:1"><input type="color" id="hfx-col" oninput="setHoverFx('color',this.value)"><input type="text" id="hfx-col-hex" placeholder="unchanged" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 6px;font-size:11px;width:100%" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('hfx-col').value=this.value;setHoverFx('color',this.value);}"></div>
+                  <button onclick="setHoverFx('color','')" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:2px 5px;cursor:pointer;font-size:10px;white-space:nowrap">✕</button>
+                </div>
+              </div>
+              <div class="grid2">
+                <div class="pr" style="margin:0"><label>Opacity</label><input type="number" id="hfx-op" min="0" max="1" step="0.05" value="1" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="setHoverFx('opacity',+this.value)"></div>
+                <div class="pr" style="margin:0"><label>Shadow blur</label><input type="number" id="hfx-shadow" min="0" max="60" value="0" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="setHoverFx('shadow',+this.value)"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- LINK PROPS -->
+        <div class="ph" style="margin-top:8px">Link</div>
+        <div>
+          <div class="pr"><label>URL or #slide-N</label><input type="text" id="p-link" placeholder="https:// or #slide-3" oninput="updateElLink(this.value)"></div>
+          <div class="pr"><label>Target</label>
+            <select id="p-linkt" onchange="updateElLinkTarget(this.value)">
+              <option value="_blank">New tab</option><option value="_self">Same tab</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div id="nosel">Select an element<br>to edit properties<br><br><span style="font-size:10px;opacity:.4">Click: select<br>Drag: move · Corners: resize<br>Dbl-click text: edit<br>Ctrl+D: duplicate<br>Del: remove<br>Ctrl+Z / Y: undo/redo</span></div>
+    </div>
+  </div>
+</div>
+<!-- ANIMATION PANEL (slides in over props when Animations tab active) -->
+<div id="anim-panel">
+  <div id="anim-panel-hdr">
+    <span>🎬 Animation Timeline</span>
+    <button id="anim-panel-close" onclick="closeAnimPanel()">✕</button>
+  </div>
+  <div id="anim-slide-list">
+    <div style="font-size:10px;color:var(--text3);text-align:center;margin-top:20px" id="anim-empty">Select a slide to see its animations.<br>Add elements and assign animations<br>from the Animations ribbon tab.</div>
+  </div>
+</div>
+
+<!-- PREVIEW -->
+<div id="preview-ov">
+  <div id="p-prog"></div>
+  <button id="p-exit" onclick="stopPreview()">✕ Esc</button>
+  <div id="preview-stage"><div id="psa"></div><div id="psb"></div></div>
+  <button id="p-prev" onclick="prevPreview()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg></button>
+  <button id="p-next" onclick="nextPreview()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></button>
+  <div id="p-info">
+    <div id="p-auto-indicator">▶ Auto</div>
+    <div class="p-dot-nav" id="p-dot-nav"></div>
+    <div id="p-counter"></div>
+  </div>
+</div>
+<!-- THEME MODAL -->
+<!-- CODE EDITOR MODAL -->
+<div class="modal-ov" id="code-modal">
+  <div class="modal" style="max-width:680px;width:95%">
+    <h3>⌨️ Code Block</h3>
+    <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
+      <select id="cm-lang" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:5px 8px;font-size:11px">
+        <option value="js">JavaScript</option><option value="ts">TypeScript</option>
+        <option value="py">Python</option><option value="rust">Rust</option>
+        <option value="go">Go</option><option value="java">Java</option>
+        <option value="cpp">C++</option><option value="cs">C#</option>
+        <option value="html">HTML</option><option value="css">CSS</option>
+        <option value="sql">SQL</option><option value="bash">Bash</option>
+        <option value="json">JSON</option><option value="yaml">YAML</option>
+        <option value="plain">Plain text</option>
+      </select>
+      <span id="cm-theme-label" style="font-size:10px;color:var(--text3);padding:4px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:4px">Theme: auto</span>
+    </div>
+    <textarea id="cm-code" rows="16" style="width:100%;font-family:'JetBrains Mono',monospace;font-size:12px;background:#0d1117;color:#e6edf3;border:1px solid var(--border2);border-radius:6px;padding:12px;resize:vertical;line-height:1.6;tab-size:2" placeholder="Paste your code here…" onkeydown="if(event.key==='Tab'){event.preventDefault();const s=this.selectionStart,e=this.selectionEnd;this.value=this.value.substring(0,s)+'  '+this.value.substring(e);this.selectionStart=this.selectionEnd=s+2;}"></textarea>
+    <div class="mfooter">
+      <button class="mbtn" onclick="document.getElementById('code-modal').classList.remove('open')">Cancel</button>
+      <button class="mbtn pri" onclick="insertCodeBlock()">Insert / Update</button>
+    </div>
+  </div>
+</div>
+<!-- MARKDOWN EDITOR MODAL -->
+<div class="modal-ov" id="md-modal">
+  <div class="modal" style="max-width:680px;width:95%">
+    <h3>📝 Markdown</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div>
+        <div style="font-size:10px;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Source</div>
+        <textarea id="md-source" rows="16" style="width:100%;font-family:'JetBrains Mono',monospace;font-size:12px;background:var(--surface2);color:var(--text);border:1px solid var(--border2);border-radius:6px;padding:12px;resize:vertical;line-height:1.6" placeholder="# Title&#10;&#10;Write **markdown** here…" oninput="updateMdPreview()"></textarea>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Preview</div>
+        <div id="md-preview" class="md-el" style="background:var(--surface2);border:1px solid var(--border2);border-radius:6px;height:100%;min-height:200px;overflow:auto;color:var(--text)"></div>
+      </div>
+    </div>
+    <div class="mfooter">
+      <button class="mbtn" onclick="document.getElementById('md-modal').classList.remove('open')">Cancel</button>
+      <button class="mbtn pri" onclick="insertMarkdownBlock()">Insert / Update</button>
+    </div>
+  </div>
+</div>
+<!-- LAYOUT MODAL -->
+<div class="modal-ov" id="layout-modal">
+  <div class="modal" style="max-width:720px">
+    <h3>🎨 Decorative Layout</h3>
+    <p style="font-size:11px;color:var(--text2);margin-bottom:12px">Choose a decorative style. Preview shows your title slide. Uses current theme accent colors.</p>
+    <div id="layout-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:14px;max-height:70vh;overflow-y:auto;padding-right:2px"></div>
+    <div class="mfooter">
+      <button class="mbtn" onclick="closeLayoutModal()">Cancel</button>
+      <button class="mbtn pri" onclick="applyLayoutDecor()">Apply to Presentation</button>
+    </div>
+  </div>
+</div>
+<div class="modal-ov" id="theme-modal">
+  <div class="modal" style="max-width:520px">
+    <h3>🎨 Apply Theme</h3>
+    <div class="theme-grid" id="theme-grid"></div>
+    <div class="mfooter">
+      <button class="mbtn" onclick="closeThemeModal()">Cancel</button>
+      <button class="mbtn pri" onclick="applyTheme()">Apply to All</button>
+    </div>
+  </div>
+</div>
+<!-- SHAPE MODAL -->
+<!-- ICON MODAL -->
+<div class="modal-ov" id="icon-modal">
+  <div class="modal" style="max-width:720px;width:96vw">
+    <h3>⬟ Значки</h3>
+    <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap">
+      <input type="text" id="icon-search" placeholder="Поиск иконок..." oninput="filterIcons(this.value)"
+        style="flex:1;min-width:140px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:12px;font-family:inherit">
+      <div style="display:flex;align-items:center;gap:5px">
+        <label style="font-size:10px;color:var(--text2)">Стиль</label>
+        <select id="ic-style" onchange="refreshIconGrid()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 6px;font-size:11px;font-family:inherit">
+          <option value="stroke">Контур</option>
+          <option value="fill">Заливка</option>
+          <option value="duotone">Дуотон</option>
+        </select>
+      </div>
+      <div style="display:flex;align-items:center;gap:5px">
+        <label style="font-size:10px;color:var(--text2)">Цвет</label>
+        <input type="color" id="ic-color" value="#3b82f6" oninput="refreshIconGrid()" style="width:32px;height:28px;cursor:pointer;border:none;background:none">
+      </div>
+      <div style="display:flex;align-items:center;gap:5px">
+        <label style="font-size:10px;color:var(--text2)">Толщина</label>
+        <input type="number" id="ic-sw" value="1.8" min="0.5" max="5" step="0.2" oninput="refreshIconGrid()"
+          style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 6px;font-size:11px;width:56px">
+      </div>
+    </div>
+    <div id="icon-cat-tabs" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px"></div>
+    <div id="icon-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(52px,1fr));gap:5px;max-height:320px;overflow-y:auto;padding:2px 0"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px">
+      <span id="icon-count" style="font-size:10px;color:var(--text3)"></span>
+      <span id="icon-sel-name" style="font-size:11px;color:var(--accent4);font-weight:600"></span>
+    </div>
+    <div class="mfooter">
+      <button class="mbtn" onclick="document.getElementById('icon-modal').classList.remove('open')">Отмена</button>
+      <button class="mbtn pri" onclick="insertIconSelected()">Вставить</button>
+    </div>
+  </div>
+</div>
+<!-- SHAPE MODAL -->
+  <div class="modal" style="max-width:480px">
+    <h3>⬡ Insert Shape</h3>
+    <div class="shape-gallery" id="shape-gallery"></div>
+    <div style="display:flex;gap:10px;margin-bottom:10px">
+      <div class="pr" style="flex:1;margin:0"><label>Fill</label><input type="color" id="sm-fill" value="#3b82f6"></div>
+      <div class="pr" style="flex:1;margin:0"><label>Stroke</label><input type="color" id="sm-stroke" value="#1d4ed8"></div>
+      <div class="pr" style="flex:1;margin:0"><label>Stroke W</label><input type="number" id="sm-sw" value="2" min="0" max="20" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 8px;font-size:11px;font-family:inherit;width:100%"></div>
+    </div>
+    <div class="mfooter">
+      <button class="mbtn" onclick="document.getElementById('shape-modal').classList.remove('open')">Cancel</button>
+      <button class="mbtn pri" onclick="insertShapeSelected()">Insert</button>
+    </div>
+  </div>
+</div>
+<!-- SVG MODAL -->
+<div class="modal-ov" id="svg-modal">
+  <div class="modal" style="max-width:520px">
+    <h3>⬡ Insert SVG</h3>
+    <p style="font-size:11px;color:var(--text2);margin-bottom:10px">Paste SVG code or upload an SVG file</p>
+    <div class="pr"><label>SVG Code</label><textarea id="svg-code" rows="8" style="font-family:monospace;font-size:10px;resize:vertical" placeholder="<svg viewBox=&quot;0 0 100 100&quot;>...</svg>"></textarea></div>
+    <div style="margin-bottom:8px"><input type="file" id="svg-file" accept=".svg,image/svg+xml" style="display:none" onchange="loadSVGFile(event)"><button class="mbtn-sm" onclick="document.getElementById('svg-file').click()">Upload SVG File</button></div>
+    <div class="mfooter">
+      <button class="mbtn" onclick="document.getElementById('svg-modal').classList.remove('open')">Cancel</button>
+      <button class="mbtn pri" onclick="insertSVG()">Insert</button>
+    </div>
+  </div>
+</div>
+<!-- APPLET MODAL -->
+<div class="modal-ov" id="applet-modal">
+  <div class="modal" style="max-width:520px">
+    <h3>🔧 Insert Applet</h3>
+    <div class="applet-gallery" id="applet-gallery"></div>
+    <div class="mfooter">
+      <button class="mbtn" onclick="document.getElementById('applet-modal').classList.remove('open')">Cancel</button>
+    </div>
+  </div>
+</div>
+<!-- LINK MODAL -->
+<div class="modal-ov" id="link-modal">
+  <div class="modal">
+    <h3>🔗 Hyperlink</h3>
+    <div class="pr"><label>Type</label>
+      <select id="lm-type" onchange="onLMTypeChange(this.value)">
+        <option value="url">External URL</option><option value="slide">Go to slide</option>
+      </select>
+    </div>
+    <div id="lm-url-wrap" class="pr"><label>URL</label><input type="text" id="lm-url" placeholder="https://example.com"></div>
+    <div id="lm-slide-wrap" style="display:none">
+      <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Select slide</label>
+      <div class="lsi-list" id="lm-slides"></div>
+    </div>
+    <div class="pr" style="margin-top:8px"><label>Open in</label>
+      <select id="lm-target"><option value="_blank">New tab</option><option value="_self">Same tab</option></select>
+    </div>
+    <div class="mfooter">
+      <button class="mbtn" onclick="closeLinkModal()">Cancel</button>
+      <button class="mbtn dan" onclick="removeLink()">Remove</button>
+      <button class="mbtn pri" onclick="applyLink()">Apply</button>
+    </div>
+  </div>
+</div>
+<!-- LOADING -->
+<div id="loading">
+  <div class="spinner"></div>
+  <div class="load-bar"><div class="load-bar-inner" id="load-bar-inner"></div></div>
+  <span id="load-msg" style="font-size:11px;color:var(--text2)">Processing…</span>
+</div>
+<div id="toast"></div>
+<!-- SETTINGS MODAL -->
+<div id="settings-modal">
+  <div id="settings-box">
+    <h2>⚙ Settings</h2>
+    <div class="srow">
+      <div><div class="srow-label">Theme</div><div class="srow-sub">Interface color scheme</div></div>
+      <div class="theme-toggle">
+        <button class="theme-btn" id="theme-dark" onclick="setTheme('dark')">🌙 Dark</button>
+        <button class="theme-btn" id="theme-light" onclick="setTheme('light')">☀ Light</button>
+      </div>
+    </div>
+    <div class="srow">
+      <div><div class="srow-label">Snap to grid</div><div class="srow-sub">Align elements to 10px grid</div></div>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;color:var(--text2)"><input type="checkbox" id="settings-snap" style="accent-color:var(--accent)" onchange="document.getElementById('snap-chk').checked=this.checked"></label>
+    </div>
+    <button class="sclose" onclick="closeSettings()">Done</button>
+  </div>
+</div>
+<!-- RUBBER-BAND SELECTION -->
+<script src="js/01-state.js"></script>
+<script src="js/02-applets.js"></script>
+<script src="js/02b-icons.js"></script>
+<script src="js/03-boot.js"></script>
+<script src="js/04-ui.js"></script>
+<script src="js/05-backgrounds.js"></script>
+<script src="js/06-themes.js"></script>
+<script src="js/07-transitions.js"></script>
+<script src="js/08-slides.js"></script>
+<script src="js/09-shapes.js"></script>
+<script src="js/10-animations.js"></script>
+<script src="js/11-elements.js"></script>
+<script src="js/12-markdown.js"></script>
+<script src="js/13-images.js"></script>
+<script src="js/14-drag.js"></script>
+<script src="js/15-align.js"></script>
+<script src="js/16-props.js"></script>
+<script src="js/17-text.js"></script>
+<script src="js/19-hover.js"></script>
+<script src="js/20-thumbnails.js"></script>
+<script src="js/21-keyboard.js"></script>
+<script src="js/22-undo.js"></script>
+<script src="js/23-layout.js"></script>
+<script src="js/24-preview.js"></script>
+<script src="js/25-links.js"></script>
+<script src="js/26-export.js"></script>
+<script src="js/27-persist.js"></script>
+<script src="js/28-multisel.js"></script>
+<script src="js/29-icons.js"></script>
+<script src="js/30-rich-text.js"></script>
+
+</body>
+</html>
