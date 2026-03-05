@@ -13,6 +13,7 @@ function syncProps(){
   const cdp=document.getElementById('codeprops');
   const mdp=document.getElementById('mdprops');
   const icp=document.getElementById('iconprops');
+  const tblp=document.getElementById('tableprops');
   if(!sel){
     ep.style.display='none';ns.style.display='block';
     if(sp)sp.style.display='block';
@@ -32,6 +33,7 @@ function syncProps(){
   if(imp){imp.style.display=t==='image'?'flex':'none';imp.style.flexDirection='column';}
   if(cdp){cdp.style.display=t==='code'?'flex':'none';cdp.style.flexDirection='column';}
   if(mdp){mdp.style.display=t==='markdown'?'flex':'none';mdp.style.flexDirection='column';}
+  if(tblp){tblp.style.display=t==='table'?'flex':'none';tblp.style.flexDirection='column';if(t==='table')syncTableProps();}
   if(icp){
     icp.style.display=t==='icon'?'flex':'none';icp.style.flexDirection='column';
     if(t==='icon'){
@@ -49,10 +51,9 @@ function syncProps(){
     }
   }
   if(t==='text'){
-    const cs=sel.querySelector('.ec').getAttribute('style')||'';
+    const cs=(sel.querySelector('.tel')||sel.querySelector('.ec')).getAttribute('style')||'';
     const m=(re,fb)=>{const x=cs.match(re);return x?x[1]:fb;};
     document.getElementById('p-fs').value=parseFloat(m(/font-size:([\d.]+)px/,'48'));
-    document.getElementById('p-fw').value=m(/font-weight:(\d+)/,'700');
     const col=m(/(?:^|;|\s)color:(#[0-9a-fA-F]{3,8})/,'#ffffff');
     try{document.getElementById('p-col').value=col;document.getElementById('p-hex').value=col;}catch(e){}
     document.getElementById('p-lh').value=parseFloat(m(/line-height:([\d.]+)/,'1.2'));
@@ -72,7 +73,6 @@ function syncProps(){
       document.getElementById('p-bg-col').value=bgCol||'#000000';
       document.getElementById('p-bg-hex').value=bgCol||'';
       document.getElementById('p-bg-op').value=bgOp;
-      document.getElementById('p-bg-op-val').textContent=Math.round(bgOp*100)+'%';
     }catch(e){}
     // Text role
     const role=sel.dataset.textRole||'body';
@@ -80,7 +80,7 @@ function syncProps(){
     // Border
     try{document.getElementById('p-border-col').value=sel.dataset.textBorderColor||'#ffffff';document.getElementById('p-border-hex').value=sel.dataset.textBorderColor||'';document.getElementById('p-border-w').value=sel.dataset.textBorderW||0;}catch(e){}
     // Opacity
-    try{const op=parseFloat(sel.dataset.elOpacity!=null?sel.dataset.elOpacity:1);document.getElementById('p-el-op').value=op;document.getElementById('p-el-op-val').textContent=Math.round(op*100)+'%';}catch(e){}
+    try{const op=parseFloat(sel.dataset.elOpacity!=null?sel.dataset.elOpacity:1);document.getElementById('p-el-op').value=op;}catch(e){}
     // Padding - parse 4-sided
     try{
       const padMatch=cs.match(/\bpadding:([\d.\s]+px(?:\s[\d.\s]+px){0,3})/);
@@ -161,14 +161,14 @@ function debouncedPushUndo(){
 function setTS(prop,val){
   if(!sel||sel.dataset.type!=='text')return;
   debouncedPushUndo();
-  const c=sel.querySelector('.ec');let cs=c.getAttribute('style')||'';
+  const c=sel.querySelector('.tel')||sel.querySelector('.ec');let cs=c.getAttribute('style')||'';
   const re=new RegExp(prop+'\\s*:[^;]+;?','i');
   cs=re.test(cs)?cs.replace(re,prop+':'+val+';'):cs+prop+':'+val+';';
   c.setAttribute('style',cs);save();drawThumbs();syncProps();
 }
 function toggleFmt(fmt){
   if(!sel||sel.dataset.type!=='text')return;
-  const c=sel.querySelector('.ec');const cs=c.getAttribute('style')||'';
+  const c=sel.querySelector('.tel')||sel.querySelector('.ec');const cs=c.getAttribute('style')||'';
   if(fmt==='bold')setTS('font-weight',/font-weight:(700|800|900)/.test(cs)?'400':'700');
   else if(fmt==='italic')setTS('font-style',cs.includes('font-style:italic')?'normal':'italic');
   else if(fmt==='underline')setTS('text-decoration',cs.includes('text-decoration:underline')?'none':'underline');
@@ -181,11 +181,17 @@ function setTextVAlign(va){
   save();saveState();syncProps();
 }
 function applyTextVAlign(el,va){
-  const c=el.querySelector('.tel');if(!c)return;
-  if(va==='top'){c.style.display='flex';c.style.flexDirection='column';c.style.justifyContent='flex-start';}
-  else if(va==='middle'){c.style.display='flex';c.style.flexDirection='column';c.style.justifyContent='center';}
-  else if(va==='bottom'){c.style.display='flex';c.style.flexDirection='column';c.style.justifyContent='flex-end';}
-  else{c.style.display='';c.style.flexDirection='';c.style.justifyContent='';}
+  const ec=el.querySelector('.ec.tel');if(!ec)return;
+  // Remove old wrapper if present, restore content flat
+  const oldWrap=ec.querySelector('.ec-valign-wrap');
+  if(oldWrap){while(oldWrap.firstChild)ec.insertBefore(oldWrap.firstChild,oldWrap);oldWrap.remove();}
+  el.dataset.valign=va||'top';
+  if(!va||va==='top'){delete el.dataset.valign;return;}
+  // Wrap all content in one div — so flex only has ONE child and text stays horizontal
+  const wrap=document.createElement('div');
+  wrap.className='ec-valign-wrap';
+  while(ec.firstChild)wrap.appendChild(ec.firstChild);
+  ec.appendChild(wrap);
 }
 function setTextBg(col){
   if(!sel||sel.dataset.type!=='text')return;
@@ -219,7 +225,7 @@ function setTextRole(role){
   if(!sel||sel.dataset.type!=='text')return;
   sel.dataset.textRole=role;
   try{document.getElementById('role-body').classList.toggle('active',role==='body');document.getElementById('role-heading').classList.toggle('active',role==='heading');}catch(e){}
-  const c=sel.querySelector('.ec');
+  const c=sel.querySelector('.tel')||sel.querySelector('.ec');
   if(c){
     let cs=c.getAttribute('style')||'';
     // Remove text-transform
@@ -246,7 +252,7 @@ function setTextRole(role){
 
 function setTextPadding4(){
   if(!sel||sel.dataset.type!=='text')return;
-  const c=sel.querySelector('.ec');if(!c)return;
+  const c=sel.querySelector('.tel')||sel.querySelector('.ec');if(!c)return;
   const t=+(document.getElementById('p-pad-t').value||0);
   const r=+(document.getElementById('p-pad-r').value||0);
   const b=+(document.getElementById('p-pad-b').value||0);
@@ -263,4 +269,50 @@ function setTextPadding(v){
   const ids=['p-pad-t','p-pad-r','p-pad-b','p-pad-l'];
   ids.forEach(id=>{try{document.getElementById(id).value=v;}catch(e){}});
   setTextPadding4();
+}
+// ══════════════ RESET TEXT FORMATTING ══════════════
+function resetTextFormatting() {
+  if (!sel || sel.dataset.type !== 'text') return;
+  pushUndo();
+  const d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (!d) return;
+
+  // 1. Strip ALL inline styles from every element inside the html content
+  const tmp = document.createElement('div');
+  tmp.innerHTML = d.html || '';
+  // Remove style attrs recursively
+  tmp.querySelectorAll('[style]').forEach(el => el.removeAttribute('style'));
+  tmp.querySelectorAll('[color]').forEach(el => el.removeAttribute('color'));
+  tmp.querySelectorAll('[face]').forEach(el => el.removeAttribute('face'));
+  tmp.querySelectorAll('[size]').forEach(el => el.removeAttribute('size'));
+  // Remove empty <span> and <font> wrappers that only carried formatting
+  tmp.querySelectorAll('span,font').forEach(el => {
+    if (!el.attributes.length) {
+      const frag = document.createDocumentFragment();
+      while (el.firstChild) frag.appendChild(el.firstChild);
+      el.replaceWith(frag);
+    }
+  });
+  d.html = tmp.innerHTML;
+
+  // 2. Reset container style (cs) to clean defaults — keep font-size if set
+  const prevCs = d.cs || '';
+  const fsMatch = prevCs.match(/font-size:([\d.]+px)/);
+  const fs = fsMatch ? fsMatch[1] : '32px';
+  d.cs = 'font-size:' + fs + ';font-weight:400;color:#ffffff;text-align:left;line-height:1.3;';
+
+  // 3. Clear text background
+  delete d.textBg; delete d.textBgOp;
+  sel.dataset.textBg = ''; sel.dataset.textBgOp = '';
+  const ec2 = sel.querySelector('.ec'); if (ec2) ec2.style.background = '';
+
+  // 4. Re-render element
+  const ecEl = sel.querySelector('.tel') || sel.querySelector('.ec');
+  if (ecEl) {
+    ecEl.setAttribute('style', d.cs);
+    ecEl.innerHTML = d.html;
+  }
+
+  save(); drawThumbs(); saveState(); syncProps();
+  toast((getLang()==='ru'?'Форматирование сброшено':'Formatting reset'),'ok');
 }

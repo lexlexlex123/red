@@ -61,14 +61,20 @@ function buildIconGrid(catId){
   if(info)info.textContent=icons.length+' иконок';
 }
 
-function _buildIconSVG(ic, color, sw, style){
+function _buildIconSVG(ic, color, sw, style, shadow, shadowBlur, shadowColor){
   const paths=ic.p.split('||').map(p=>p.trim()).filter(Boolean);
   const pathEls=paths.map(p=>`<path d="${p}"/>`).join('');
   let attrs='';
   if(style==='fill') attrs=`fill="${color}" stroke="none"`;
   else if(style==='duotone') attrs=`fill="${color}" fill-opacity="0.18" stroke="${color}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"`;
   else attrs=`fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${attrs} style="width:100%;height:100%">${pathEls}</svg>`;
+  let filterDef='', filterAttr='';
+  if(shadow){
+    const sb=shadowBlur||8, sc=shadowColor||'#000000';
+    filterDef=`<defs><filter id="isf_${ic.id}" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="2" dy="2" stdDeviation="${sb*0.4}" flood-color="${sc}" flood-opacity="0.7"/></filter></defs>`;
+    filterAttr=`filter="url(#isf_${ic.id})"`;
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${attrs} ${filterAttr} style="width:100%;height:100%;overflow:visible">${filterDef}<g>${pathEls}</g></svg>`;
 }
 
 function _renderIconCells(grid,icons){
@@ -144,15 +150,18 @@ function updateIconStyle(prop,val){
   pushUndo();
   var d=slides[cur].els.find(function(e){return e.id===sel.dataset.id;});
   if(!d)return;
-  if(prop==='color')d.iconColor=val;
-  else if(prop==='sw')d.iconSw=parseFloat(val);
-  else if(prop==='style')d.iconStyle=val;
-  else if(prop==='shadow')d.shadow=val;
-  else if(prop==='shadowBlur')d.shadowBlur=parseFloat(val);
-  else if(prop==='shadowColor')d.shadowColor=val;
+  if(prop==='color'){d.iconColor=val;sel.dataset.iconColor=val;}
+  else if(prop==='sw'){d.iconSw=parseFloat(val);sel.dataset.iconSw=val;}
+  else if(prop==='style'){d.iconStyle=val;sel.dataset.iconStyle=val;}
+  else if(prop==='shadow'){d.shadow=val;sel.dataset.shadow=val;
+    var shOpts=document.getElementById('ic-p-shadow-opts');
+    if(shOpts)shOpts.style.display=val?'flex':'none';}
+  else if(prop==='shadowBlur'){d.shadowBlur=parseFloat(val);sel.dataset.shadowBlur=val;}
+  else if(prop==='shadowColor'){d.shadowColor=val;sel.dataset.shadowColor=val;}
+  else if(prop==='op'){d.elOpacity=parseFloat(val);sel.dataset.elOpacity=val;sel.style.opacity=val;}
   var ic=ICONS.find(function(x){return x.id===d.iconId;});
   if(ic){
-    d.svgContent=_buildIconSVG(ic,d.iconColor||'#3b82f6',d.iconSw!=null?d.iconSw:1.8,d.iconStyle||'stroke');
+    d.svgContent=_buildIconSVG(ic,d.iconColor||'#3b82f6',d.iconSw!=null?d.iconSw:1.8,d.iconStyle||'stroke',d.shadow,d.shadowBlur,d.shadowColor);
     var c=sel.querySelector('.ec');
     if(c){c.innerHTML=d.svgContent;var s=c.querySelector('svg');if(s){s.style.width='100%';s.style.height='100%';}}
   }

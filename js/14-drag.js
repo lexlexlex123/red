@@ -3,14 +3,14 @@ function mkDrag(el,c){
   let ox,oy,ol,ot,on=false,groupStart=null;
   el.addEventListener('mousedown',e=>{
     const cn=e.target.className||'';
-    // Exit text editing on a DIFFERENT element when this one is clicked
-    if(sel&&sel!==el&&sel.dataset.editing==='true'){
-      const pt=sel.querySelector('.tel');
-      if(pt){pt.contentEditable='false';pt.blur();}
-      delete sel.dataset.editing;sel.style.cursor='';
-      save();drawThumbs();saveState();
-    }
-    if(typeof cn==='string'&&(cn.includes('rh')||cn.includes('db')||c.contentEditable==='true'))return;
+    // Exit text editing when clicking any element (different or same, outside the .tel)
+    const clickedInsideTel = e.target && e.target.closest && e.target.closest('.tel');
+    if(!clickedInsideTel && typeof stopTextEditing==='function') stopTextEditing();
+    const telEl=el.querySelector('.tel');const isEditing=c.contentEditable==='true'||(telEl&&telEl.contentEditable==='true');
+    if(typeof cn==='string'&&(cn.includes('rh')||cn.includes('db')||isEditing))return;
+    // Table cells handle their own events; tbl-drag-border has its own drag handler
+    if(e.target.closest&&e.target.closest('.tbl-drag-border'))return;
+    if(el.dataset.type==='table'&&(e.target.tagName==='TD'||e.target.tagName==='TH'))return;
     if(e.target.closest&&e.target.closest('.interactive'))return;
     // For shapes: only start drag if clicking on actual SVG fill, not empty bounding box
     if(el.dataset.type==='shape'){
@@ -62,6 +62,9 @@ function mkResize(el,rh,cfg){
     const aspect=sw/sh; // for proportional resize
     const isCorner=cfg.dx!==0&&cfg.dy!==0;
     const isImgCorner=el.dataset.type==='image'&&isCorner;
+    // Applets with stored aspect ratio always resize proportionally from corners
+    const _appletD=el.dataset.type==='applet'&&slides[cur]?slides[cur].els.find(x=>x.id===el.dataset.id):null;
+    const appletAspect=_appletD&&_appletD._appletAspect||null;
     const mm=e2=>{
       let nw,nh;
       if(isImgCorner){
@@ -71,6 +74,12 @@ function mkResize(el,rh,cfg){
         const delta=Math.abs(rawDx)>=Math.abs(rawDy)?rawDx:rawDy*aspect;
         nw=Math.max(40,sw+delta);
         nh=Math.max(20,nw/aspect);
+      } else if(appletAspect&&isCorner){
+        const rawDx=cfg.dx*(e2.clientX-sx);
+        const rawDy=cfg.dy*(e2.clientY-sy);
+        const delta=Math.abs(rawDx)>=Math.abs(rawDy)?rawDx:rawDy*appletAspect;
+        nw=Math.max(120,sw+delta);
+        nh=Math.max(80,nw/appletAspect);
       } else {
         nw=cfg.dx!==0?Math.max(40,sw+cfg.dx*(e2.clientX-sx)):sw;
         nh=cfg.dy!==0?Math.max(20,sh+cfg.dy*(e2.clientY-sy)):sh;
@@ -80,6 +89,7 @@ function mkResize(el,rh,cfg){
       if(cfg.ax)el.style.left=(sl+sw-nw)+'px';if(cfg.ay)el.style.top=(st+sh-nh)+'px';
       const d=slides[cur]&&slides[cur].els.find(x=>x.id===el.dataset.id);
       if(d&&el.dataset.type==='shape')renderShapeEl(el,d);
+      if(d&&el.dataset.type==='table'){d.w=nw;d.h=nh;if(typeof renderTableEl==='function')renderTableEl(el,d);}
       // For image side-handle drag: show stretch in real time
       if(el.dataset.type==='image'&&(cfg.dx===0||cfg.dy===0)){
         const img=el.querySelector('img');if(img)img.style.objectFit='fill';

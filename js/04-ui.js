@@ -4,7 +4,7 @@ function drawGrid(){
   const W=wrap.clientWidth||800,H=wrap.clientHeight||600;
   gc.width=W;gc.height=H;gc.style.width=W+'px';gc.style.height=H+'px';
   const ctx=gc.getContext('2d');ctx.clearRect(0,0,W,H);
-  ctx.fillStyle='rgba(59,130,246,0.06)';
+  const _isLight=document.documentElement.classList.contains('light');ctx.fillStyle=_isLight?'rgba(80,80,120,0.25)':'rgba(180,180,200,0.18)';
   for(let x=0;x<W;x+=SNAP)for(let y=0;y<H;y+=SNAP)ctx.fillRect(x,y,1,1);
 }
 
@@ -71,5 +71,7 @@ function setAR(ratio,btn){
     });
   });
   clampEls(canvasW,canvasH);
-  renderAll();saveState();drawThumbs();
+  // Regenerate decor SVGs for new canvas dimensions
+  if(typeof refreshDecorColors==='function')refreshDecorColors();
+  else{renderAll();saveState();drawThumbs();}
 }

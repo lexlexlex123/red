@@ -139,8 +139,13 @@ function setTextRadius(corner,val){
 function applyTextRadius(el){
   const u=el.dataset.rxUnit||'px';
   const tl=el.dataset.rx_tl||0,tr=el.dataset.rx_tr||0,bl=el.dataset.rx_bl||0,br=el.dataset.rx_br||0;
-  el.style.borderRadius=`${tl}${u} ${tr}${u} ${br}${u} ${bl}${u}`;
-  el.style.overflow='hidden';
+  const rx=`${tl}${u} ${tr}${u} ${br}${u} ${bl}${u}`;
+  // Apply radius+clip to .ec (inner container) — keeps .rh handles outside and visible
+  const ec=el.querySelector('.ec');
+  if(ec){ec.style.borderRadius=rx;ec.style.overflow='hidden';}
+  // Also set on .el for visual border outline match, but WITHOUT overflow:hidden
+  el.style.borderRadius=rx;
+  el.style.overflow='visible';
 }
 function syncTextRadiusUI(){
   if(!sel||sel.dataset.type!=='text')return;

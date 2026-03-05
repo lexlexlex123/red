@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SlideForge Pro 4</title>
+<title>Слайды</title>
 <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
@@ -11,9 +11,9 @@
   <div id="ribbon-top">
     <div class="app-logo">
       <svg viewBox="0 0 24 24" fill="none"><rect x="2" y="3" width="20" height="14" rx="2.5" fill="#3b82f6" opacity=".2"/><rect x="2" y="3" width="20" height="14" rx="2.5" stroke="#3b82f6" stroke-width="1.5"/><path d="M2 9h20" stroke="#3b82f6" stroke-width="1" opacity=".4"/><path d="M8 21h8M12 17v4" stroke="#3b82f6" stroke-width="1.5" stroke-linecap="round"/></svg>
-      <span>SlideForge Pro</span>
+      <span id="app-name-span" data-i18n="appName">Слайды</span>
     </div>
-    <input id="pres-title" type="text" value="New Presentation" spellcheck="false">
+    <input id="pres-title" type="text" value="" data-i18n-placeholder="newPresentation" placeholder="Новая презентация" spellcheck="false">
     <div class="spacer"></div>
     <div class="ar-group">
       <button class="ar-btn active" onclick="setAR('16:9',this)">16:9</button>
@@ -21,46 +21,49 @@
     </div>
   </div>
   <div id="ribbon-tabs">
-    <button class="rtab" onclick="openSettings()" title="Settings" style="padding:5px 10px;font-size:14px;">⚙</button>
-    <button class="rtab active" onclick="switchTab('home',this)">Home</button>
-    <button class="rtab" onclick="switchTab('insert',this)">Insert</button>
-    <button class="rtab" onclick="switchTab('design',this)">Design</button>
-    <button class="rtab" onclick="switchTab('anim',this)">Animations</button>
-    <button class="rtab" onclick="switchTab('transitions',this)">Transitions</button>
-    <button class="rtab" onclick="switchTab('slideshow',this)">Slideshow</button>
+    <button class="rtab" onclick="openSettings()" data-i18n-title="settingsTitle" style="padding:5px 10px;font-size:14px;">⚙</button>
+    <button class="rtab active" onclick="switchTab('home',this)"><span data-i18n="tabHome">Главная</span></button>
+    <button class="rtab" onclick="switchTab('insert',this)"><span data-i18n="tabInsert">Вставка</span></button>
+    <button class="rtab" onclick="switchTab('design',this)"><span data-i18n="tabDesign">Дизайн</span></button>
+    <button class="rtab" onclick="switchTab('anim',this)"><span data-i18n="tabAnim">Анимации</span></button>
+    <button class="rtab" onclick="switchTab('transitions',this)"><span data-i18n="tabTransitions">Переходы</span></button>
+    <button class="rtab" onclick="switchTab('slideshow',this)"><span data-i18n="tabSlideshow">Показ</span></button>
   </div>
   <div id="ribbon-body">
     <!-- HOME -->
     <div class="rg" data-tab="home">
-      <button class="rb" onclick="addSlide()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8M8 12h8"/></svg><span class="rbl">New Slide</span></button>
-      <button class="rb" onclick="dupSlide()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg><span class="rbl">Duplicate</span></button>
-      <button class="rb warn" onclick="delSlide()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg><span class="rbl">Delete</span></button>
-      <div class="rglbl">Slides</div>
+      <button class="rb" onclick="addSlide()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8M8 12h8"/></svg><span class="rbl" data-i18n="btnNewSlide">Новый слайд</span></button>
+      <button class="rb" onclick="dupSlide()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg><span class="rbl"><span class="rbl" data-i18n="btnDuplicate">Дублировать</span></button>
+      <button class="rb warn" onclick="delSlide()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg><span class="rbl" data-i18n="btnDelete">Удалить</span></button>
+      <div class="rglbl"><span data-i18n="grpSlides">Слайды</span></div>
     </div>
     <div class="rg" data-tab="home">
-      <button class="rb" onclick="addText()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg><span class="rbl">Text</span></button>
-      <button class="rb" onclick="document.getElementById('imgup').click()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><span class="rbl">Image</span></button>
-      <button class="rb" onclick="openShapeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l9 18H3L12 3z"/></svg><span class="rbl">Shape</span></button>
-      <button class="rb" onclick="openAppletModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 4v16M15 4v16M4 9h16M4 15h16" stroke-opacity=".4"/></svg><span class="rbl">Applet</span></button>
-      <button class="rb" onclick="openLinkModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg><span class="rbl">Link</span></button>
-      <div class="rglbl">Objects</div>
+      <button class="rb" onclick="addText()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg><span class="rbl" data-i18n="btnText">Текст</span></button>
+      <button class="rb" onclick="document.getElementById('imgup').click()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><span class="rbl" data-i18n="btnImage">Изображение</span></button>
+      <button class="rb" onclick="openShapeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l9 18H3L12 3z"/></svg><span class="rbl" data-i18n="btnShape">Фигура</span></button>
+      <button class="rb" onclick="openIconModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg><span class="rbl" data-i18n="btnIcon">Значки</span></button>
+      <button class="rb" onclick="openTableModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg><span class="rbl">Таблица</span></button>
+      <button class="rb" onclick="openLinkModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg><span class="rbl" data-i18n="btnLink">Ссылка</span></button>
+      <div class="rglbl"><span data-i18n="grpObjects">Объекты</span></div>
     </div>
     <div class="rg" data-tab="home">
-      <button class="rb" onclick="doUndo()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 010 11H11"/></svg><span class="rbl">Undo</span></button>
-      <button class="rb" onclick="doRedo()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5 5.5 5.5 0 0 0 9.5 20H13"/></svg><span class="rbl">Redo</span></button>
-      <div class="rglbl">Edit</div>
+      <button class="rb" onclick="doUndo()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 010 11H11"/></svg><span class="rbl" data-i18n="btnUndo">Отменить</span></button>
+      <button class="rb" onclick="doRedo()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5 5.5 5.5 0 0 0 9.5 20H13"/></svg><span class="rbl" data-i18n="btnRedo">Повторить</span></button>
+      <div class="rglbl"><span data-i18n="grpEdit">Правка</span></div>
     </div>
     <!-- INSERT -->
     <div class="rg" data-tab="insert" style="display:none">
-      <button class="rb" onclick="addText()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg><span class="rbl">Text Box</span></button>
-      <button class="rb" onclick="document.getElementById('imgup').click()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><span class="rbl">Image</span></button>
-      <button class="rb" onclick="openShapeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l9 18H3L12 3z"/></svg><span class="rbl">Shape</span></button>
-      <button class="rb" onclick="openIconModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg><span class="rbl">Значки</span></button>
+      <button class="rb" onclick="addText()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg><span class="rbl" data-i18n="btnText">Текст</span></button>
+      <button class="rb" onclick="document.getElementById('imgup').click()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><span class="rbl" data-i18n="btnImage">Изображение</span></button>
+      <button class="rb" onclick="openShapeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l9 18H3L12 3z"/></svg><span class="rbl" data-i18n="btnShape">Фигура</span></button>
+      <button class="rb" onclick="openIconModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg><span class="rbl" data-i18n="btnIcon">Значки</span></button>
       <button class="rb" onclick="openSVGModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg><span class="rbl">SVG</span></button>
-      <button class="rb" onclick="addCodeBlock()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg><span class="rbl">Code</span></button>
+      <button class="rb" onclick="addCodeBlock()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg><span class="rbl" data-i18n="btnCode">Код</span></button>
       <button class="rb" onclick="addMarkdownBlock()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 17V7h2l2 4 2-4h2v10M17 13l-2 2-2-2"/></svg><span class="rbl">Markdown</span></button>
-      <button class="rb" onclick="openAppletModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/></svg><span class="rbl">Applet</span></button>
-      <div class="rglbl">Insert</div>
+      <button class="rb" onclick="openAppletModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/></svg><span class="rbl" data-i18n="btnApplet">Аплет</span></button>
+      <button class="rb" onclick="openTableModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg><span class="rbl">Таблица</span></button>
+      <button class="rb" onclick="openLinkModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg><span class="rbl" data-i18n="btnLink">Ссылка</span></button>
+      <div class="rglbl"><span data-i18n="grpInsert">Вставить</span></div>
     </div>
     <!-- DESIGN -->
     <div class="rg" data-tab="design" style="display:none">
@@ -71,32 +74,32 @@
           <input type="color" id="bgcustom" title="Custom BG" onchange="setCustomBg(this.value)">
         </div>
       </div>
-      <div class="rglbl">Background</div>
+      <div class="rglbl"><span data-i18n="grpBackground">Фон</span></div>
     </div>
     <div class="rg" data-tab="design" style="display:none">
-      <button class="rb" onclick="openThemeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 000 18"/><path d="M3 12h18"/></svg><span class="rbl">Themes</span></button>
-      <button class="rb" onclick="openLayoutModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg><span class="rbl">Layout</span></button>
-      <div class="rglbl">Design</div>
+      <button class="rb" onclick="openThemeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 000 18"/><path d="M3 12h18"/></svg><span class="rbl" data-i18n="btnTheme">Темы</span></button>
+      <button class="rb" onclick="openLayoutModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg><span class="rbl" data-i18n="btnLayout">Макет</span></button>
+      <div class="rglbl"><span data-i18n="grpDesign">Дизайн</span></div>
     </div>
     <!-- ANIMATIONS -->
     <div class="rg" data-tab="anim" style="display:none">
       <div style="display:flex;flex-direction:column;gap:4px;justify-content:center">
-        <span style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Add Animation</span>
+        <span style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px" data-i18n="btnAddAnim">Добавить анимацию</span>
         <div style="display:flex;gap:3px;flex-wrap:wrap;max-width:280px">
-          <button class="tbtn2" style="color:#22c55e" onclick="addAnim('fadeIn','entrance')">Fade In</button>
-          <button class="tbtn2" style="color:#22c55e" onclick="addAnim('slideUp','entrance')">Slide Up</button>
-          <button class="tbtn2" style="color:#22c55e" onclick="addAnim('zoomIn','entrance')">Zoom In</button>
-          <button class="tbtn2" style="color:#22c55e" onclick="addAnim('bounceIn','entrance')">Bounce</button>
-          <button class="tbtn2" style="color:#22c55e" onclick="addAnim('spinIn','entrance')">Spin</button>
-          <button class="tbtn2" style="color:#ec4899" onclick="addAnim('fadeOut','exit')">Fade Out</button>
-          <button class="tbtn2" style="color:#ec4899" onclick="addAnim('slideOut','exit')">Slide Out</button>
-          <button class="tbtn2" style="color:#ec4899" onclick="addAnim('zoomOut','exit')">Zoom Out</button>
-          <button class="tbtn2" style="color:#f59e0b" onclick="addAnim('pulse','emphasis')">Pulse</button>
-          <button class="tbtn2" style="color:#f59e0b" onclick="addAnim('shake','emphasis')">Shake</button>
-          <button class="tbtn2" style="color:#f59e0b" onclick="addAnim('flash','emphasis')">Flash</button>
+          <button class="tbtn2" style="color:#22c55e" onclick="addAnim('fadeIn','entrance')" data-i18n="animFadeIn">Появление</button>
+          <button class="tbtn2" style="color:#22c55e" onclick="addAnim('slideUp','entrance')" data-i18n="animSlideUp">Подъём</button>
+          <button class="tbtn2" style="color:#22c55e" onclick="addAnim('zoomIn','entrance')" data-i18n="animZoomIn">Масштаб</button>
+          <button class="tbtn2" style="color:#22c55e" onclick="addAnim('bounceIn','entrance')" data-i18n="animBounce">Отскок</button>
+          <button class="tbtn2" style="color:#22c55e" onclick="addAnim('spinIn','entrance')" data-i18n="animSpin">Вращение</button>
+          <button class="tbtn2" style="color:#ec4899" onclick="addAnim('fadeOut','exit')" data-i18n="animFadeOut">Исчезновение</button>
+          <button class="tbtn2" style="color:#ec4899" onclick="addAnim('slideOut','exit')" data-i18n="animSlideOut">Выезд</button>
+          <button class="tbtn2" style="color:#ec4899" onclick="addAnim('zoomOut','exit')" data-i18n="animZoomOut">Уменьшение</button>
+          <button class="tbtn2" style="color:#f59e0b" onclick="addAnim('pulse','emphasis')" data-i18n="animPulse">Пульс</button>
+          <button class="tbtn2" style="color:#f59e0b" onclick="addAnim('shake','emphasis')" data-i18n="animShake">Дрожание</button>
+          <button class="tbtn2" style="color:#f59e0b" onclick="addAnim('flash','emphasis')" data-i18n="animFlash">Мигание</button>
         </div>
       </div>
-      <div class="rglbl">Animations</div>
+      <div class="rglbl"><span data-i18n="grpAnimations">Анимации</span></div>
     </div>
     <div class="rg" data-tab="anim" style="display:none">
       <div style="display:flex;flex-direction:column;gap:4px;justify-content:center">
@@ -117,41 +120,44 @@
           </label>
         </div>
       </div>
-      <div class="rglbl">Timing</div>
+      <div class="rglbl"><span data-i18n="grpTiming">Тайминг</span></div>
     </div>
     <!-- TRANSITIONS -->
     <div class="rg" data-tab="transitions" style="display:none">
-      <div style="display:flex;flex-direction:column;gap:4px;justify-content:center">
-        <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Effect</div>
-        <div style="display:flex;gap:3px;flex-wrap:wrap">
-          <button class="tbtn2 active" data-t="none" onclick="setGlobalTrans('none',this)">None</button>
-          <button class="tbtn2" data-t="fade" onclick="setGlobalTrans('fade',this)">Fade</button>
-          <button class="tbtn2" data-t="slide" onclick="setGlobalTrans('slide',this)">Slide</button>
-          <button class="tbtn2" data-t="zoom" onclick="setGlobalTrans('zoom',this)">Zoom</button>
-          <button class="tbtn2" data-t="flip" onclick="setGlobalTrans('flip',this)">Flip</button>
-          <button class="tbtn2" data-t="cube" onclick="setGlobalTrans('cube',this)">Cube</button>
-          <button class="tbtn2" data-t="dissolve" onclick="setGlobalTrans('dissolve',this)">Dissolve</button>
-          <button class="tbtn2" data-t="morph" onclick="setGlobalTrans('morph',this)">Morph</button>
+      <div style="display:flex;flex-direction:column;gap:5px">
+        <div id="trans-btn-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:3px">
+          <button class="tbtn2 active" data-t="none"     onclick="setGlobalTrans('none',this)"    >—&nbsp;None</button>
+          <button class="tbtn2"        data-t="fade"     onclick="setGlobalTrans('fade',this)"    >⬛ Fade</button>
+          <button class="tbtn2"        data-t="slide"    onclick="setGlobalTrans('slide',this)"   >→ Slide</button>
+          <button class="tbtn2"        data-t="slideUp"  onclick="setGlobalTrans('slideUp',this)" >↑ Slide Up</button>
+          <button class="tbtn2"        data-t="zoom"     onclick="setGlobalTrans('zoom',this)"    >⊕ Zoom</button>
+          <button class="tbtn2"        data-t="zoomOut"  onclick="setGlobalTrans('zoomOut',this)" >⊖ Zoom Out</button>
+          <button class="tbtn2"        data-t="flip"     onclick="setGlobalTrans('flip',this)"    >↔ Flip</button>
+          <button class="tbtn2"        data-t="flipV"    onclick="setGlobalTrans('flipV',this)"   >↕ Flip V</button>
+          <button class="tbtn2"        data-t="cube"     onclick="setGlobalTrans('cube',this)"    >◻ Cube</button>
+          <button class="tbtn2"        data-t="dissolve" onclick="setGlobalTrans('dissolve',this)">▒ Dissolve</button>
+          <button class="tbtn2"        data-t="morph"    onclick="setGlobalTrans('morph',this)"   >✦ Morph</button>
+          <button class="tbtn2"        data-t="push"     onclick="setGlobalTrans('push',this)"    >⇒ Push</button>
+          <button class="tbtn2"        data-t="wipe"     onclick="setGlobalTrans('wipe',this)"    >▶ Wipe</button>
+          <button class="tbtn2"        data-t="split"    onclick="setGlobalTrans('split',this)"   >⧻ Split</button>
+          <button class="tbtn2"        data-t="reveal"   onclick="setGlobalTrans('reveal',this)"  >◐ Reveal</button>
+          <button class="tbtn2"        data-t="glitch"   onclick="setGlobalTrans('glitch',this)"  >⚡ Glitch</button>
         </div>
-      </div>
-      <div class="rglbl">Transition Effect</div>
-    </div>
-    <div class="rg" data-tab="transitions" style="display:none">
-      <div style="display:flex;flex-direction:column;gap:5px;justify-content:center">
-        <div class="pr" style="margin:0"><label>Duration</label>
-          <select id="trans-dur" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 7px;font-size:10px;font-family:inherit" onchange="transitionDur=+this.value">
+        <div style="display:flex;align-items:center;gap:5px;margin-top:2px">
+          <label style="font-size:9px;color:var(--text3)">Duration</label>
+          <select id="trans-dur" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 5px;font-size:10px;font-family:inherit" onchange="transitionDur=+this.value">
             <option value="250">Fast</option><option value="500" selected>Normal</option><option value="800">Slow</option><option value="1200">Very Slow</option>
           </select>
+          <button class="tbtn2" onclick="applyTransToAll()" style="font-size:10px;white-space:nowrap"><span data-i18n="btnApplyAll">Apply all</span></button>
         </div>
-        <button class="tbtn2" onclick="applyTransToAll()" style="font-size:10px">Apply to All</button>
       </div>
-      <div class="rglbl">Settings</div>
+      <div class="rglbl"><span data-i18n="grpTransition">Переход</span></div>
     </div>
     <!-- SLIDESHOW -->
     <div class="rg" data-tab="slideshow" style="display:none">
-      <button class="rb pri" onclick="startPreview(0)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="5 3 19 12 5 21 5 3"/></svg><span class="rbl">From Start</span></button>
-      <button class="rb" onclick="startPreview(cur)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="5 3 19 12 5 21 5 3" fill="currentColor"/></svg><span class="rbl">Current</span></button>
-      <div class="rglbl">Present</div>
+      <button class="rb pri" onclick="startPreview(0)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="5 3 19 12 5 21 5 3"/></svg><span class="rbl" data-i18n="btnFromStart">С начала</span></button>
+      <button class="rb" onclick="startPreview(cur)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="5 3 19 12 5 21 5 3" fill="currentColor"/></svg><span class="rbl" data-i18n="btnCurrent">Текущий</span></button>
+      <div class="rglbl"><span data-i18n="grpPresent">Показ</span></div>
     </div>
     <div class="rg" data-tab="slideshow" style="display:none">
       <div style="display:flex;flex-direction:column;gap:5px;justify-content:center">
@@ -165,9 +171,9 @@
           <input type="number" id="auto-delay" value="5" min="1" max="60" style="width:48px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:2px 5px;font-size:10px;font-family:inherit" oninput="autoDelay=+this.value">
           <span style="font-size:10px;color:var(--text2)">sec</span>
         </div>
-        <button class="tbtn2" onclick="applyAutoToAll()" style="font-size:10px">Apply to All</button>
+        <button class="tbtn2" onclick="applyAutoToAll()" style="font-size:10px"><span data-i18n="btnApplyAll">Применить ко всем</span></button>
       </div>
-      <div class="rglbl">Auto Advance</div>
+      <div class="rglbl"><span data-i18n="grpAutoAdvance">Авто-переход</span></div>
     </div>
     <!-- FILE -->
     <div class="rg" data-tab="slideshow" style="display:none">
@@ -175,13 +181,13 @@
         <button id="p-loop-btn" class="tbtn2" onclick="togglePresLoop()" style="min-width:72px">↺ Loop</button>
         <button id="p-shuffle-btn" class="tbtn2" onclick="togglePresShuffle()" style="min-width:72px">⇄ Shuffle</button>
       </div>
-      <div class="rglbl">Playback</div>
+      <div class="rglbl"><span data-i18n="grpPlayback">Воспроизведение</span></div>
     </div>
     <!-- FILE -->
     <div class="rg">
-      <button class="rb" onclick="document.getElementById('fileup').click()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span class="rbl">Import</span></button>
-      <button class="rb pri" onclick="exportHTML()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span class="rbl">Export</span></button>
-      <div class="rglbl">File</div>
+      <button class="rb" onclick="document.getElementById('fileup').click()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span class="rbl" data-i18n="btnImport">Импорт</span></button>
+      <button class="rb pri" onclick="exportHTML()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span class="rbl" data-i18n="btnExport">Экспорт</span></button>
+      <div class="rglbl"><span data-i18n="grpFile">Файл</span></div>
     </div>
   </div>
 </div>
@@ -197,8 +203,8 @@
       <!-- Align scope toggle shown when multi-select -->
       <div id="align-scope-grp" style="display:flex;align-items:center;gap:3px;margin-right:2px">
         <span style="font-size:9px;color:var(--text3);white-space:nowrap">Align to:</span>
-        <button id="align-scope-sel" class="albtn active" title="Align to selection" onclick="setAlignScope('sel')" style="font-size:9px;padding:2px 6px;min-width:unset">Sel</button>
-        <button id="align-scope-slide" class="albtn" title="Align to slide" onclick="setAlignScope('slide')" style="font-size:9px;padding:2px 6px;min-width:unset">Slide</button>
+        <button id="align-scope-sel" class="albtn active" data-i18n-title="btnAlignSel" onclick="setAlignScope('sel')" style="font-size:9px;padding:2px 6px;min-width:unset"><span data-i18n="btnAlignSelShort">Выд.</span></button>
+        <button id="align-scope-slide" class="albtn" data-i18n-title="btnAlignSlide" onclick="setAlignScope('slide')" style="font-size:9px;padding:2px 6px;min-width:unset"><span data-i18n="btnAlignSlideShort">Слайд</span></button>
       </div>
       <div class="ctl-sep"></div>
       <div class="align-group">
@@ -237,7 +243,7 @@
       <div id="slide-props">
       <div class="ph">Slide</div>
       <div class="psec">
-        <div class="pr"><label>Title</label><input type="text" id="p-st" placeholder="Slide title…" oninput="onTitleInput(this.value)"></div>
+        <div class="pr"><label data-i18n="slideTitle">Заголовок</label><input type="text" id="p-st" data-i18n-placeholder="slideTitle" placeholder="Заголовок слайда…" oninput="onTitleInput(this.value)"></div>
         <div class="pr"><label>Background</label>
           <div style="display:flex;flex-direction:column;gap:5px">
             <div class="bgswatches" id="bgswatches2"></div>
@@ -247,25 +253,111 @@
             </div>
           </div>
         </div>
-        <div class="pr"><label>Transition</label>
-          <select id="p-strans" onchange="setSlideTrans(this.value)">
-            <option value="">Global</option><option value="none">None</option>
-            <option value="fade">Fade</option><option value="slide">Slide</option>
-            <option value="zoom">Zoom</option><option value="flip">Flip</option>
-            <option value="cube">Cube</option><option value="dissolve">Dissolve</option>
-            <option value="morph">Morph</option>
-          </select>
+        <div class="pr"><label data-i18n="slideTransition">Переход слайда</label></div>
+        <div id="slide-trans-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin:0 0 4px">
+          <button class="tbtn2" data-st="none"    onclick="setSlideTrans('none')"   style="font-size:9px">— None</button>
+          <button class="tbtn2" data-st="fade"    onclick="setSlideTrans('fade')"   style="font-size:9px">⬛ Fade</button>
+          <button class="tbtn2" data-st="slide"   onclick="setSlideTrans('slide')"  style="font-size:9px">→ Slide</button>
+          <button class="tbtn2" data-st="slideUp" onclick="setSlideTrans('slideUp')" style="font-size:9px">↑ SlideUp</button>
+          <button class="tbtn2" data-st="zoom"    onclick="setSlideTrans('zoom')"   style="font-size:9px">⊕ Zoom</button>
+          <button class="tbtn2" data-st="zoomOut" onclick="setSlideTrans('zoomOut')" style="font-size:9px">⊖ ZoomOut</button>
+          <button class="tbtn2" data-st="flip"    onclick="setSlideTrans('flip')"   style="font-size:9px">↔ Flip</button>
+          <button class="tbtn2" data-st="flipV"   onclick="setSlideTrans('flipV')"  style="font-size:9px">↕ FlipV</button>
+          <button class="tbtn2" data-st="cube"    onclick="setSlideTrans('cube')"   style="font-size:9px">◻ Cube</button>
+          <button class="tbtn2" data-st="dissolve" onclick="setSlideTrans('dissolve')" style="font-size:9px">▒ Dissolve</button>
+          <button class="tbtn2" data-st="morph"   onclick="setSlideTrans('morph')"  style="font-size:9px">✦ Morph</button>
+          <button class="tbtn2" data-st="push"    onclick="setSlideTrans('push')"   style="font-size:9px">⇒ Push</button>
+          <button class="tbtn2" data-st="wipe"    onclick="setSlideTrans('wipe')"   style="font-size:9px">▶ Wipe</button>
+          <button class="tbtn2" data-st="split"   onclick="setSlideTrans('split')"  style="font-size:9px">⧻ Split</button>
+          <button class="tbtn2" data-st="reveal"  onclick="setSlideTrans('reveal')" style="font-size:9px">◐ Reveal</button>
+          <button class="tbtn2" data-st="glitch"  onclick="setSlideTrans('glitch')" style="font-size:9px">⚡ Glitch</button>
         </div>
-        <div class="pr"><label>Auto-advance (sec, 0=off)</label>
+        <div class="pr"><label data-i18n="slideAutoAdvance">Auto-advance (sec, 0=off)</label>
           <input type="number" id="p-auto" min="0" max="120" value="0" oninput="setSlideAuto(+this.value)">
         </div>
         <div class="pr">
           <div style="display:flex;align-items:center;gap:6px">
             <input type="checkbox" id="slide-click-nav" checked onchange="slides[cur].clickNav=this.checked;saveState()" style="accent-color:var(--accent4)">
-            <label for="slide-click-nav" style="font-size:11px;color:var(--text2);cursor:pointer">Click anywhere to advance</label>
+            <label for="slide-click-nav" style="font-size:11px;color:var(--text2);cursor:pointer" data-i18n="propAlign">Click anywhere to advance</label>
           </div>
         </div>
       </div>
+      </div>
+
+      <!-- PAGE NUMBERING -->
+      <div id="slide-props-pn">
+        <div class="ph" style="display:flex;align-items:center;justify-content:space-between;padding-right:10px">
+          <span>Нумерация страниц</span>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:10px;font-weight:400;color:var(--text2)">
+            <input type="checkbox" id="pn-enabled" onchange="if(typeof _pnLocked!=='undefined'&&_pnLocked)return;pnGetSettings().enabled=this.checked;document.getElementById('pn-settings-panel').style.display=this.checked?'flex':'none';pnOnChange()" style="accent-color:var(--accent4)">
+            Вкл
+          </label>
+        </div>
+        <div id="pn-settings-panel" style="display:none;flex-direction:column;gap:6px;padding:0 10px 10px">
+
+          <!-- Style -->
+          <div class="pr" style="margin-bottom:0">
+            <label style="font-size:10px;color:var(--text3)">Стиль</label>
+            <select id="pn-style" onchange="pnOnChange()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;width:100%">
+              <option value="simple">Простой</option>
+              <option value="circle">Круг</option>
+              <option value="ring">Кольцо</option>
+              <option value="pill">Таблетка</option>
+              <option value="box">Прямоугольник</option>
+              <option value="slash">Черта</option>
+            </select>
+          </div>
+
+          <!-- Show total -->
+          <div style="display:flex;align-items:center;gap:6px">
+            <input type="checkbox" id="pn-show-total" onchange="pnOnChange()" style="accent-color:var(--accent4)">
+            <label for="pn-show-total" style="font-size:11px;color:var(--text2);cursor:pointer">Показывать итого (3 / 12)</label>
+          </div>
+
+          <!-- Position grid -->
+          <div class="pr" style="margin-bottom:0">
+            <label style="font-size:10px;color:var(--text3)">Позиция</label>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:3px;width:96px">
+              <button class="pn-pos-btn tbtn2" data-pos="tl" onclick="pnSetPos('tl')" style="font-size:9px;padding:3px">↖</button>
+              <button class="pn-pos-btn tbtn2" data-pos="tc" onclick="pnSetPos('tc')" style="font-size:9px;padding:3px">↑</button>
+              <button class="pn-pos-btn tbtn2" data-pos="tr" onclick="pnSetPos('tr')" style="font-size:9px;padding:3px">↗</button>
+              <button class="pn-pos-btn tbtn2" data-pos="bl" onclick="pnSetPos('bl')" style="font-size:9px;padding:3px">↙</button>
+              <button class="pn-pos-btn tbtn2" data-pos="bc" onclick="pnSetPos('bc')" style="font-size:9px;padding:3px">↓</button>
+              <button class="pn-pos-btn tbtn2 active" data-pos="br" onclick="pnSetPos('br')" style="font-size:9px;padding:3px">↘</button>
+            </div>
+          </div>
+
+          <!-- Font size -->
+          <div class="pr" style="margin-bottom:0">
+            <label style="font-size:10px;color:var(--text3)">Размер шрифта</label>
+            <input type="number" id="pn-fontsize" value="14" min="8" max="48" oninput="pnOnChange()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;width:70px">
+          </div>
+
+          <!-- Opacity -->
+          <div class="pr" style="margin-bottom:0">
+            <label style="font-size:10px;color:var(--text3)">Прозрачность: <span id="pn-opacity-val">100%</span></label>
+            <input type="range" id="pn-opacity" min="0" max="1" step="0.05" value="1" oninput="pnOnChange()" style="width:100%;accent-color:var(--accent4)">
+          </div>
+
+          <!-- Custom color toggle -->
+          <div style="display:flex;align-items:center;gap:6px">
+            <input type="checkbox" id="pn-custom-color" onchange="pnOnChange()" style="accent-color:var(--accent4)">
+            <label for="pn-custom-color" style="font-size:11px;color:var(--text2);cursor:pointer">Свой цвет (иначе из темы)</label>
+          </div>
+
+          <!-- Custom color pickers -->
+          <div id="pn-custom-color-panel" style="display:none;flex-direction:column;gap:5px;padding:6px 8px;background:var(--surface3);border-radius:5px;border:1px solid var(--border)">
+            <div style="display:flex;align-items:center;gap:8px">
+              <label style="font-size:10px;color:var(--text3);width:70px">Фон/акцент</label>
+              <input type="color" id="pn-color" value="#3b82f6" oninput="pnOnChange()" style="width:28px;height:22px;padding:1px;border-radius:3px;border:1px solid var(--border);cursor:pointer">
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <label style="font-size:10px;color:var(--text3);width:70px">Текст</label>
+              <input type="color" id="pn-text-color" value="#ffffff" oninput="pnOnChange()" style="width:28px;height:22px;padding:1px;border-radius:3px;border:1px solid var(--border);cursor:pointer">
+            </div>
+          </div>
+
+        </div>
       </div>
       <div id="elprops" style="display:none">
         <div class="ph">Element</div>
@@ -276,17 +368,17 @@
             <div class="pr"><label>W</label><input type="number" id="p-w" oninput="setES('width',Math.max(20,snapV(+this.value)),'px')"></div>
             <div class="pr"><label>H</label><input type="number" id="p-h" oninput="setES('height',Math.max(10,snapV(+this.value)),'px')"></div>
           </div>
-          <div class="pr"><label>Rotation (deg)</label><input type="number" id="p-rot" value="0" oninput="setElRotation(+this.value)"></div>
+          <div class="pr"><label data-i18n="propRotation">Rotation (deg)</label><input type="number" id="p-rot" value="0" oninput="setElRotation(+this.value)"></div>
         </div>
         <!-- TEXT PROPS -->
         <div id="tprops" style="display:none" onmousedown="_rtOnPanelMousedown(event)">
           <div class="ph">Text</div>
           <!-- Text role selector -->
           <div class="pr" style="margin-bottom:6px">
-            <label>Role</label>
+            <label data-i18n="propRole">Role</label>
             <div style="display:flex;gap:4px">
-              <button id="role-body" class="tbtn2 active" onclick="setTextRole('body')" style="flex:1">Body Text</button>
-              <button id="role-heading" class="tbtn2" onclick="setTextRole('heading')" style="flex:1">Heading</button>
+              <button id="role-body" class="tbtn2 active" onclick="setTextRole('body')" style="flex:1" data-i18n="roleBodyText">Основной текст</button>
+              <button id="role-heading" class="tbtn2" onclick="setTextRole('heading')" style="flex:1" data-i18n="roleHeading">Заголовок</button>
             </div>
           </div>
           <div class="fmt-block">
@@ -296,117 +388,100 @@
               <button class="ftbtn" id="ft-u" onclick="rtUnderline()" title="Underline (Ctrl+U)" onmousedown="event.preventDefault()"><u>U</u></button>
               <button class="ftbtn" id="ft-sup" onclick="rtSuperscript()" title="Superscript" style="font-size:9px;letter-spacing:-0.5px" onmousedown="event.preventDefault()">X<sup style="font-size:7px;line-height:1">²</sup></button>
               <button class="ftbtn" id="ft-sub" onclick="rtSubscript()" title="Subscript" style="font-size:9px;letter-spacing:-0.5px" onmousedown="event.preventDefault()">X<sub style="font-size:7px;line-height:1">₂</sub></button>
+              <button class="ftbtn" onclick="resetTextFormatting()" onmousedown="event.preventDefault()" data-i18n-title="resetFormat" title="Сбросить форматирование" style="color:var(--text3)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="1" y="12" font-family="serif" font-size="12" font-weight="700" fill="currentColor">A</text><line x1="10" y1="4" x2="15" y2="9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="15" y1="4" x2="10" y2="9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
             </div>
             <div class="fmt-row">
               <button class="ftbtn" id="ft-al" onclick="setTS('text-align','left')" title="Align Left" onmousedown="event.preventDefault()"><svg width="14" height="12" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="5" x2="9" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="9" x2="12" y2="9" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="13" x2="7" y2="13" stroke="currentColor" stroke-width="1.5"/></svg></button>
               <button class="ftbtn" id="ft-ac" onclick="setTS('text-align','center')" title="Center" onmousedown="event.preventDefault()"><svg width="14" height="12" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="2.5" y1="5" x2="11.5" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="1" y1="9" x2="13" y2="9" stroke="currentColor" stroke-width="1.5"/><line x1="3.5" y1="13" x2="10.5" y2="13" stroke="currentColor" stroke-width="1.5"/></svg></button>
               <button class="ftbtn" id="ft-ar" onclick="setTS('text-align','right')" title="Align Right" onmousedown="event.preventDefault()"><svg width="14" height="12" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="5" y1="5" x2="14" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="2" y1="9" x2="14" y2="9" stroke="currentColor" stroke-width="1.5"/><line x1="7" y1="13" x2="14" y2="13" stroke="currentColor" stroke-width="1.5"/></svg></button>
               <button class="ftbtn" id="ft-aj" onclick="setTS('text-align','justify')" title="Justify" onmousedown="event.preventDefault()"><svg width="14" height="12" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="5" x2="14" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="9" x2="14" y2="9" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="13" x2="10" y2="13" stroke="currentColor" stroke-width="1.5"/></svg></button>
-              <div class="fmt-sep"></div>
-              <span class="fmt-label">V:</span>
+            </div>
+            <div class="fmt-row">
               <button class="ftbtn" id="ft-vt" onclick="setTextVAlign('top')" title="Top" onmousedown="event.preventDefault()"><svg width="12" height="14" viewBox="0 0 12 14"><line x1="0" y1="0" x2="12" y2="0" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="2" width="6" height="9" rx="1" fill="currentColor" opacity=".4"/><path d="M6 2 L6 11" stroke="currentColor" stroke-width="1.5"/></svg></button>
               <button class="ftbtn" id="ft-vm" onclick="setTextVAlign('middle')" title="Middle" onmousedown="event.preventDefault()"><svg width="12" height="14" viewBox="0 0 12 14"><line x1="0" y1="7" x2="12" y2="7" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="1" width="6" height="5" rx="1" fill="currentColor" opacity=".4"/><rect x="3" y="8" width="6" height="5" rx="1" fill="currentColor" opacity=".4"/></svg></button>
               <button class="ftbtn" id="ft-vb" onclick="setTextVAlign('bottom')" title="Bottom" onmousedown="event.preventDefault()"><svg width="12" height="14" viewBox="0 0 12 14"><line x1="0" y1="14" x2="12" y2="14" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="3" width="6" height="9" rx="1" fill="currentColor" opacity=".4"/><path d="M6 3 L6 12" stroke="currentColor" stroke-width="1.5"/></svg></button>
             </div>
           </div>
-            <div class="grid2">
-            <div class="pr"><label>Size</label><input type="number" id="p-fs" oninput="rtFontSize(+this.value)"></div>
-            <div class="pr"><label>Weight</label>
-              <select id="p-fw" onchange="rtFontWeight(this.value)">
-                <option value="300">Light</option><option value="400">Regular</option>
-                <option value="600">SemiBold</option><option value="700">Bold</option><option value="900">Black</option>
-              </select>
-            </div>
-          </div>
-          <div class="pr"><label>Text Color <span id="sel-hint" style="font-size:9px;color:var(--accent4);display:none">· выделение</span></label>
+            <div class="pr"><label data-i18n="propSize">Size</label><input type="number" id="p-fs" min="0" max="400" value="48" onmousedown="_rtOnPanelMousedown(event)" oninput="rtFontSize(+this.value)"></div>
+          <div class="pr"><label data-i18n="propTextColor">Text Color <span id="sel-hint" style="font-size:9px;color:var(--accent4);display:none">· выделение</span></label>
             <div style="display:flex;flex-direction:column;gap:5px">
               <div style="display:flex;gap:4px;align-items:center">
-                <div class="cp-hex" style="flex:1"><input type="color" id="p-col" oninput="onColorPick(this.value,'text')"><input type="text" id="p-hex" placeholder="#ffffff" oninput="onColorHex(this.value,'text')"></div>
+                <div class="cp-hex" style="flex:1"><input type="color" id="p-col" onmousedown="_rtOnPanelMousedown(event)" oninput="onColorPick(this.value,'text')"><input type="text" id="p-hex" placeholder="#ffffff" onmousedown="_rtOnPanelMousedown(event)" oninput="onColorHex(this.value,'text')"></div>
                 <button onclick="togglePipetteMode()" id="eye-text" class="pipette-btn" title="Pipette: click another element to inherit its style" style="background:var(--surface2);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:3px 6px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;width:26px;height:26px"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M20.71 5.63l-2.34-2.34a1 1 0 0 0-1.41 0l-3.12 3.12-1.41-1.42-1.42 1.42 1.41 1.41-6.6 6.6A2 2 0 0 0 5 16v3h3a2 2 0 0 0 1.42-.59l6.6-6.6 1.41 1.42 1.42-1.42-1.42-1.41 3.12-3.12a1 1 0 0 0 0-1.65z"/></svg></button>
               </div>
               <div id="cp-text-palette" class="cpicker"></div>
             </div>
           </div>
-          <div class="pr"><label>Background Color</label>
+          <div class="pr"><label data-i18n="propBgColor">Background Color</label>
             <div style="display:flex;flex-direction:column;gap:4px">
               <div style="display:flex;gap:6px;align-items:center">
                 <div class="cp-hex" style="flex:1"><input type="color" id="p-bg-col" oninput="setTextBg(this.value)"><input type="text" id="p-bg-hex" placeholder="transparent" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('p-bg-col').value=this.value;setTextBg(this.value);}"></div>
                 <button onclick="clearTextBg()" title="Remove background" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:2px 6px;cursor:pointer;font-size:10px;white-space:nowrap">✕ None</button>
               </div>
-              <div style="display:flex;align-items:center;gap:6px">
-                <label style="font-size:10px;color:var(--text2);white-space:nowrap">Opacity:</label>
-                <input type="range" id="p-bg-op" min="0" max="1" step="0.05" value="1" style="flex:1" oninput="document.getElementById('p-bg-op-val').textContent=Math.round(this.value*100)+'%';setTextBgOp(+this.value)">
-                <span id="p-bg-op-val" style="font-size:10px;color:var(--text2);width:32px">100%</span>
-              </div>
+              <div style="display:flex;align-items:center;gap:6px"><label style="font-size:10px;color:var(--text2);white-space:nowrap" data-i18n="propOpacity">Opacity:</label><input type="number" id="p-bg-op" min="0" max="1" step="0.05" value="1" oninput="setTextBgOp(+this.value)"></div>
             </div>
           </div>
           <div class="grid2">
-            <div class="pr"><label>Line H</label><input type="number" id="p-lh" step="0.1" oninput="setTS('line-height',this.value)"></div>
-            <div class="pr"><label>Spacing</label><input type="number" id="p-ls" step="0.5" oninput="setTS('letter-spacing',this.value+'px')"></div>
+            <div class="pr"><label data-i18n="propLineH">Line H</label><input type="number" id="p-lh" min="0.5" max="5" step="0.1" value="1.2" oninput="setTS('line-height',this.value)"></div>
+            <div class="pr"><label data-i18n="propSpacing">Spacing</label><input type="number" id="p-ls" min="-10" max="50" step="0.1" value="0" oninput="setTS('letter-spacing',this.value+'px')"></div>
           </div>
-          <div class="pr"><label>Corner Radius</label>
+          <div class="pr"><label data-i18n="propCornerRadius">Corner Radius</label>
             <div style="display:flex;align-items:center;gap:4px;margin-bottom:3px">
-              <label style="font-size:9px;color:var(--text3)">Unit:</label>
+              <label style="font-size:9px;color:var(--text3)" data-i18n="propUnit">Unit:</label>
               <button id="rx-unit-px" class="tbtn2 active" onclick="setTextRxUnit('px')" style="padding:2px 6px;font-size:9px">px</button>
               <button id="rx-unit-pct" class="tbtn2" onclick="setTextRxUnit('%')" style="padding:2px 6px;font-size:9px">%</button>
-              <label style="display:flex;align-items:center;gap:3px;font-size:9px;color:var(--text3);cursor:pointer;margin-left:4px"><input type="checkbox" id="rx-linked" checked style="accent-color:var(--accent)"> Lock</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:9px;color:var(--text3);cursor:pointer;margin-left:4px"><input type="checkbox" id="rx-linked" checked style="accent-color:var(--accent)" data-i18n="propLock"> Lock</label>
             </div>
             <div class="grid2" style="gap:3px">
               <div style="display:flex;flex-direction:column;gap:1px;align-items:center">
                 <span style="font-size:8px;color:var(--text3)">↖ TL</span>
-                <input type="number" id="p-rx-tl" min="0" max="999" value="0" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;font-family:inherit;width:100%;text-align:center" oninput="setTextRadius('tl',+this.value)">
+                <input type="number" id="p-rx-tl" min="0" max="999" value="0" oninput="setTextRadius('tl',+this.value)">
               </div>
               <div style="display:flex;flex-direction:column;gap:1px;align-items:center">
                 <span style="font-size:8px;color:var(--text3)">↗ TR</span>
-                <input type="number" id="p-rx-tr" min="0" max="999" value="0" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;font-family:inherit;width:100%;text-align:center" oninput="setTextRadius('tr',+this.value)">
+                <input type="number" id="p-rx-tr" min="0" max="999" value="0" oninput="setTextRadius('tr',+this.value)">
               </div>
               <div style="display:flex;flex-direction:column;gap:1px;align-items:center">
                 <span style="font-size:8px;color:var(--text3)">↙ BL</span>
-                <input type="number" id="p-rx-bl" min="0" max="999" value="0" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;font-family:inherit;width:100%;text-align:center" oninput="setTextRadius('bl',+this.value)">
+                <input type="number" id="p-rx-bl" min="0" max="999" value="0" oninput="setTextRadius('bl',+this.value)">
               </div>
               <div style="display:flex;flex-direction:column;gap:1px;align-items:center">
                 <span style="font-size:8px;color:var(--text3)">↘ BR</span>
-                <input type="number" id="p-rx-br" min="0" max="999" value="0" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;font-family:inherit;width:100%;text-align:center" oninput="setTextRadius('br',+this.value)">
+                <input type="number" id="p-rx-br" min="0" max="999" value="0" oninput="setTextRadius('br',+this.value)">
               </div>
             </div>
           </div>
           <!-- Text padding -->
-          <div class="pr"><label>Inner Padding (px)</label>
+          <div class="pr"><label data-i18n="propPadding">Inner Padding (px)</label>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px">
               <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
                 <span style="font-size:8px;color:var(--text3)">Top</span>
-                <input type="number" id="p-pad-t" min="0" max="200" value="6" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:2px 5px;font-size:10px;text-align:center" oninput="setTextPadding4()">
+                <input type="number" id="p-pad-t" min="0" max="200" value="6" oninput="setTextPadding4()">
               </div>
               <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
                 <span style="font-size:8px;color:var(--text3)">Right</span>
-                <input type="number" id="p-pad-r" min="0" max="200" value="8" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:2px 5px;font-size:10px;text-align:center" oninput="setTextPadding4()">
+                <input type="number" id="p-pad-r" min="0" max="200" value="8" oninput="setTextPadding4()">
               </div>
               <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
                 <span style="font-size:8px;color:var(--text3)">Bottom</span>
-                <input type="number" id="p-pad-b" min="0" max="200" value="6" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:2px 5px;font-size:10px;text-align:center" oninput="setTextPadding4()">
+                <input type="number" id="p-pad-b" min="0" max="200" value="6" oninput="setTextPadding4()">
               </div>
               <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
                 <span style="font-size:8px;color:var(--text3)">Left</span>
-                <input type="number" id="p-pad-l" min="0" max="200" value="8" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:2px 5px;font-size:10px;text-align:center" oninput="setTextPadding4()">
+                <input type="number" id="p-pad-l" min="0" max="200" value="8" oninput="setTextPadding4()">
               </div>
             </div>
           </div>
           <!-- Text box border -->
-          <div class="pr"><label>Border</label>
+          <div class="pr"><label data-i18n="propBorder">Border</label>
             <div style="display:flex;flex-direction:column;gap:4px">
-              <div style="display:flex;gap:5px;align-items:center">
-                <div class="cp-hex" style="flex:1"><input type="color" id="p-border-col" value="#ffffff" oninput="setTextBorder('color',this.value)"><input type="text" id="p-border-hex" placeholder="#ffffff" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('p-border-col').value=this.value;setTextBorder('color',this.value);}"></div>
-                <input type="number" id="p-border-w" min="0" max="20" value="0" placeholder="0" style="width:44px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;" oninput="setTextBorder('width',+this.value)" title="Border width px">
-                <span style="font-size:9px;color:var(--text3)">px</span>
-              </div>
+              <div class="cp-hex"><input type="color" id="p-border-col" value="#ffffff" oninput="setTextBorder('color',this.value)"><input type="text" id="p-border-hex" placeholder="#ffffff" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('p-border-col').value=this.value;setTextBorder('color',this.value);}"></div>
+              <div class="pr" style="margin-top:4px;margin-bottom:0"><label data-i18n="propStrokeWidth">Width</label><input type="number" id="p-border-w" min="0" max="20" step="0.5" value="0" oninput="setTextBorder('width',+this.value)"></div>
             </div>
           </div>
           <!-- Text opacity -->
-          <div class="pr"><label>Element Opacity</label>
-            <div style="display:flex;align-items:center;gap:6px">
-              <input type="range" id="p-el-op" min="0" max="1" step="0.05" value="1" style="flex:1" oninput="document.getElementById('p-el-op-val').textContent=Math.round(this.value*100)+'%';setTextElOpacity(+this.value)">
-              <span id="p-el-op-val" style="font-size:10px;color:var(--text2);width:32px">100%</span>
-            </div>
+          <div class="pr"><label data-i18n="propElOpacity">Element Opacity</label>
+            <input type="number" id="p-el-op" min="0" max="1" step="0.05" value="1" oninput="setTextElOpacity(+this.value)">
           </div>
         </div><!-- end tprops -->
         <!-- SHAPE PROPS -->
@@ -436,11 +511,11 @@
             </div>
             <div class="pr"><label>Corner Radius</label><input type="number" id="sh-rx" min="0" max="100" value="0" oninput="updateShapeStyle('rx',this.value)"></div>
           </div>
-          <div class="pr"><label>Shadow</label>
+          <div class="pr"><label data-i18n="propShadow">Тень</label>
             <div style="display:flex;flex-direction:column;gap:4px">
               <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2)"><input type="checkbox" id="sh-shadow" onchange="updateShapeStyle('shadow',this.checked)" style="accent-color:var(--accent)">Enable shadow</label>
               <div class="grid2" id="shadow-options">
-                <div class="pr" style="margin:0"><label>Blur</label><input type="number" id="sh-sb" value="8" min="0" max="40" oninput="updateShapeStyle('shadowBlur',this.value)"></div>
+                <div class="pr" style="margin:0"><label data-i18n="propShadowBlur">Размытие</label><input type="number" id="sh-sb" value="8" min="0" max="40" oninput="updateShapeStyle('shadowBlur',this.value)"></div>
                 <div class="pr" style="margin:0"><label>Color</label><input type="color" id="sh-sc" value="#000000" oninput="updateShapeStyle('shadowColor',this.value)"></div>
               </div>
             </div>
@@ -468,7 +543,7 @@
                 <option value="contain">Contain</option>
                 <option value="cover">Cover</option>
                 <option value="fill">Stretch</option>
-                <option value="none">None</option>
+                <option value="none" data-i18n="transNone">Нет</option>
               </select>
             </div>
             <button class="mbtn-sm" onclick="imgCoverSlide()" style="width:100%">📐 Cover Entire Slide (back)</button>
@@ -481,11 +556,11 @@
                 <input type="color" id="img-bc" value="#ffffff" oninput="updateImgStyle('bc',this.value)" style="width:32px;height:26px;border:none;cursor:pointer;border-radius:3px">
               </div>
             </div>
-            <div class="pr" style="margin:0"><label>Shadow</label>
+            <div class="pr" style="margin:0"><label data-i18n="propShadow">Тень</label>
               <div style="display:flex;flex-direction:column;gap:4px">
                 <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2)"><input type="checkbox" id="img-shadow" onchange="updateImgStyle('shadow',this.checked)" style="accent-color:var(--accent)">Enable shadow</label>
                 <div class="grid2">
-                  <div class="pr" style="margin:0"><label>Blur</label><input type="number" id="img-sb" value="15" min="0" max="60" oninput="updateImgStyle('shadowBlur',this.value)"></div>
+                  <div class="pr" style="margin:0"><label data-i18n="propShadowBlur">Размытие</label><input type="number" id="img-sb" value="15" min="0" max="60" oninput="updateImgStyle('shadowBlur',this.value)"></div>
                   <div class="pr" style="margin:0"><label>Color</label><input type="color" id="img-sc" value="#000000" oninput="updateImgStyle('shadowColor',this.value)"></div>
                 </div>
               </div>
@@ -571,11 +646,96 @@
             </div>
           </div>
         </div>
+        <!-- TABLE PROPS -->
+        <div id="tableprops" style="display:none;flex-direction:column;gap:0">
+          <div class="ph">Таблица</div>
+
+          <!-- Row/col actions -->
+          <div class="pr" style="display:flex;flex-direction:column;gap:5px">
+            <label>Строки</label>
+            <div style="display:flex;gap:4px">
+              <button class="tbtn2" onclick="tblAddRow(false)" title="Строку выше" style="flex:1">▲ До</button>
+              <button class="tbtn2" onclick="tblAddRow(true)"  title="Строку ниже" style="flex:1">▼ После</button>
+              <button class="tbtn2 warn" onclick="tblDelRow()" title="Удалить строку" style="flex:1;color:#f87171">✕ Стр.</button>
+            </div>
+            <label style="margin-top:4px">Столбцы</label>
+            <div style="display:flex;gap:4px">
+              <button class="tbtn2" onclick="tblAddCol(false)" title="Столбец левее" style="flex:1">◀ До</button>
+              <button class="tbtn2" onclick="tblAddCol(true)"  title="Столбец правее" style="flex:1">▶ После</button>
+              <button class="tbtn2 warn" onclick="tblDelCol()" title="Удалить столбец" style="flex:1;color:#f87171">✕ Ст.</button>
+            </div>
+            <div style="display:flex;gap:4px;margin-top:4px">
+              <button class="tbtn2" onclick="tblMerge()" style="flex:1">⊞ Объединить</button>
+              <button class="tbtn2" onclick="tblSplit()"  style="flex:1">⊟ Разделить</button>
+            </div>
+          </div>
+
+          <!-- Cell panel -->
+          <div id="tbl-cell-panel" style="display:none;flex-direction:column;gap:4px;padding:6px 10px;background:var(--surface2);border-radius:6px;margin:0 10px 6px">
+            <div style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px" id="tbl-cell-lbl">Ячейка</div>
+            <div style="display:flex;gap:3px;align-items:center">
+              <span style="font-size:10px;color:var(--text3);width:20px">H:</span>
+              <button id="tbl-ca-left"   class="ftbtn active" onclick="tblSetCellAlign('left')"   title="Лево"><svg width="13" height="11" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="5" x2="9" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="9" x2="12" y2="9" stroke="currentColor" stroke-width="1.5"/></svg></button>
+              <button id="tbl-ca-center" class="ftbtn"        onclick="tblSetCellAlign('center')" title="Центр"><svg width="13" height="11" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="2.5" y1="5" x2="11.5" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="1" y1="9" x2="13" y2="9" stroke="currentColor" stroke-width="1.5"/></svg></button>
+              <button id="tbl-ca-right"  class="ftbtn"        onclick="tblSetCellAlign('right')"  title="Право"><svg width="13" height="11" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="5" y1="5" x2="14" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="2" y1="9" x2="14" y2="9" stroke="currentColor" stroke-width="1.5"/></svg></button>
+              <span style="font-size:10px;color:var(--text3);margin-left:4px;width:20px">V:</span>
+              <button id="tbl-va-top"    class="ftbtn"        onclick="tblSetCellVAlign('top')"    title="Верх"><svg width="12" height="13" viewBox="0 0 12 14"><line x1="0" y1="0" x2="12" y2="0" stroke="currentColor" stroke-width="1.5"/><path d="M6 2v9" stroke="currentColor" stroke-width="1.5"/><path d="M3 5l3-4 3 4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button>
+              <button id="tbl-va-middle" class="ftbtn active" onclick="tblSetCellVAlign('middle')" title="Середина"><svg width="12" height="13" viewBox="0 0 12 14"><line x1="0" y1="7" x2="12" y2="7" stroke="currentColor" stroke-width="1.5"/><path d="M6 3v3M6 8v3" stroke="currentColor" stroke-width="1.5"/></svg></button>
+              <button id="tbl-va-bottom" class="ftbtn"        onclick="tblSetCellVAlign('bottom')" title="Низ"><svg width="12" height="13" viewBox="0 0 12 14"><line x1="0" y1="14" x2="12" y2="14" stroke="currentColor" stroke-width="1.5"/><path d="M6 5v7" stroke="currentColor" stroke-width="1.5"/><path d="M3 9l3 4 3-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;margin-top:2px">
+              <span style="font-size:10px;color:var(--text3)">Цвет ячейки:</span>
+              <input type="color" id="tbl-own-bg" value="#3b82f6" oninput="tblSetCellBg(this.value);document.getElementById('tbl-own-bg-hex').value=this.value" style="width:24px;height:22px;padding:1px;border-radius:3px;border:1px solid var(--border);cursor:pointer">
+              <input type="text" id="tbl-own-bg-hex" value="" placeholder="hex" style="width:60px;background:var(--surface3);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:2px 5px;font-size:10px;font-family:monospace" oninput="if(this.value.match(/^#[0-9a-fA-F]{6}$/)){tblSetCellBg(this.value);document.getElementById('tbl-own-bg').value=this.value}">
+              <button class="tbtn2" style="font-size:10px;padding:2px 6px" onclick="tblSetCellBg('')">✕</button>
+            </div>
+          </div>
+
+          <!-- Appearance -->
+          <div class="grid2">
+            <div class="pr"><label>Размер шрифта</label><input type="number" id="tbl-fs" value="15" min="8" max="72" oninput="tblSet('fs',+this.value)"></div>
+            <div class="pr"><label>Скругление</label><input type="number" id="tbl-rx" value="8" min="0" max="60" oninput="tblSet('rx',+this.value)"></div>
+          </div>
+          <div class="grid2">
+            <div class="pr"><label>Толщина линий</label><input type="number" id="tbl-bw" value="1" min="0" max="10" step="0.5" oninput="tblSet('borderW',+this.value)"></div>
+            <div class="pr" style="display:flex;align-items:flex-end;gap:4px">
+              <div style="flex:1"><label>Цвет линий</label><input type="color" id="tbl-bc" value="#3b82f6" oninput="tblSet('borderColor',this.value);document.getElementById('tbl-bc-hex').value=this.value" style="width:100%;height:26px;padding:1px 2px;border-radius:3px;border:1px solid var(--border);cursor:pointer"></div>
+              <input type="text" id="tbl-bc-hex" value="#3b82f6" style="width:60px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 6px;font-size:10px;font-family:monospace;align-self:flex-end" oninput="if(this.value.match(/^#[0-9a-fA-F]{6}/)){tblSet('borderColor',this.value);document.getElementById('tbl-bc').value=this.value.slice(0,7)}">
+            </div>
+          </div>
+          <div class="grid2">
+            <div class="pr" style="display:flex;align-items:flex-end;gap:4px">
+              <div style="flex:1"><label>Цвет текста</label><input type="color" id="tbl-tc" value="#ffffff" oninput="tblSet('textColor',this.value);document.getElementById('tbl-tc-hex').value=this.value" style="width:100%;height:26px;padding:1px 2px;border-radius:3px;border:1px solid var(--border);cursor:pointer"></div>
+              <input type="text" id="tbl-tc-hex" value="#ffffff" style="width:56px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 6px;font-size:10px;font-family:monospace;align-self:flex-end" oninput="if(this.value.match(/^#[0-9a-fA-F]{6}/)){tblSet('textColor',this.value);document.getElementById('tbl-tc').value=this.value.slice(0,7)}">
+            </div>
+            <div class="pr"><label>Заголовок</label>
+              <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px">
+                <input type="checkbox" id="tbl-hrow" checked onchange="tblSet('headerRow',this.checked)"> Первая строка
+              </label>
+            </div>
+          </div>
+          <div class="grid2">
+            <div class="pr" style="display:flex;align-items:flex-end;gap:4px">
+              <div style="flex:1"><label>Цвет заголовка</label><input type="color" id="tbl-hbg" value="#3b82f6" oninput="tblSet('headerBg',this.value);document.getElementById('tbl-hbg-hex').value=this.value" style="width:100%;height:26px;padding:1px 2px;border-radius:3px;border:1px solid var(--border);cursor:pointer"></div>
+              <input type="text" id="tbl-hbg-hex" value="#3b82f6" style="width:56px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 6px;font-size:10px;font-family:monospace;align-self:flex-end" oninput="if(this.value.match(/^#[0-9a-fA-F]{6}/)){tblSet('headerBg',this.value);document.getElementById('tbl-hbg').value=this.value.slice(0,7)}">
+            </div>
+            <div class="pr" style="display:flex;align-items:flex-end;gap:4px">
+              <div style="flex:1"><label>Цвет ячеек</label><input type="color" id="tbl-cbg" value="#1e293b" oninput="tblSet('cellBg',this.value);document.getElementById('tbl-cbg-hex').value=this.value" style="width:100%;height:26px;padding:1px 2px;border-radius:3px;border:1px solid var(--border);cursor:pointer"></div>
+              <input type="text" id="tbl-cbg-hex" value="#1e293b" style="width:56px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 6px;font-size:10px;font-family:monospace;align-self:flex-end" oninput="if(this.value.match(/^#[0-9a-fA-F]{6}/)){tblSet('cellBg',this.value);document.getElementById('tbl-cbg').value=this.value.slice(0,7)}">
+            </div>
+          </div>
+          <div class="pr">
+            <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px">
+              <input type="checkbox" id="tbl-alt" onchange="tblSet('altBg',this.checked?(document.getElementById('tbl-hbg').value+'18'):'')"> Чередовать цвет строк
+            </label>
+          </div>
+        </div>
+
         <!-- ANIMATION PROPS -->
         <div id="animprops" style="display:none">
           <div class="ph">Animations</div>
           <div class="anim-list" id="el-anim-list"></div>
-          <button class="mbtn-sm" onclick="removeAllAnims()">Clear All</button>
+          <button class="mbtn-sm" onclick="removeAllAnims()" data-i18n="propClearAllAnims">Очистить всё</button>
         </div>
         <!-- HOVER EFFECTS (separate panel, always shown for elements) -->
         <div id="hoverprops" style="display:none">
@@ -647,7 +807,7 @@
 <!-- PREVIEW -->
 <div id="preview-ov">
   <div id="p-prog"></div>
-  <button id="p-exit" onclick="stopPreview()">✕ Esc</button>
+  <button id="p-exit" onclick="if(typeof pidx!=='undefined')cur=pidx;stopPreview()">✕ Esc</button>
   <div id="preview-stage"><div id="psa"></div><div id="psb"></div></div>
   <button id="p-prev" onclick="prevPreview()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg></button>
   <button id="p-next" onclick="nextPreview()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></button>
@@ -677,8 +837,8 @@
     </div>
     <textarea id="cm-code" rows="16" style="width:100%;font-family:'JetBrains Mono',monospace;font-size:12px;background:#0d1117;color:#e6edf3;border:1px solid var(--border2);border-radius:6px;padding:12px;resize:vertical;line-height:1.6;tab-size:2" placeholder="Paste your code here…" onkeydown="if(event.key==='Tab'){event.preventDefault();const s=this.selectionStart,e=this.selectionEnd;this.value=this.value.substring(0,s)+'  '+this.value.substring(e);this.selectionStart=this.selectionEnd=s+2;}"></textarea>
     <div class="mfooter">
-      <button class="mbtn" onclick="document.getElementById('code-modal').classList.remove('open')">Cancel</button>
-      <button class="mbtn pri" onclick="insertCodeBlock()">Insert / Update</button>
+      <button class="mbtn" onclick="document.getElementById('code-modal').classList.remove('open')"><span data-i18n="btnCancel">Отмена</span></button>
+      <button class="mbtn pri" onclick="insertCodeBlock()"><span data-i18n="btnInsertUpdate">Вставить / Обновить</span></button>
     </div>
   </div>
 </div>
@@ -697,30 +857,30 @@
       </div>
     </div>
     <div class="mfooter">
-      <button class="mbtn" onclick="document.getElementById('md-modal').classList.remove('open')">Cancel</button>
-      <button class="mbtn pri" onclick="insertMarkdownBlock()">Insert / Update</button>
+      <button class="mbtn" onclick="document.getElementById('md-modal').classList.remove('open')"><span data-i18n="btnCancel">Отмена</span></button>
+      <button class="mbtn pri" onclick="insertMarkdownBlock()"><span data-i18n="btnInsertUpdate">Вставить / Обновить</span></button>
     </div>
   </div>
 </div>
 <!-- LAYOUT MODAL -->
 <div class="modal-ov" id="layout-modal">
-  <div class="modal" style="max-width:720px">
-    <h3>🎨 Decorative Layout</h3>
-    <p style="font-size:11px;color:var(--text2);margin-bottom:12px">Choose a decorative style. Preview shows your title slide. Uses current theme accent colors.</p>
-    <div id="layout-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:14px;max-height:70vh;overflow-y:auto;padding-right:2px"></div>
-    <div class="mfooter">
-      <button class="mbtn" onclick="closeLayoutModal()">Cancel</button>
-      <button class="mbtn pri" onclick="applyLayoutDecor()">Apply to Presentation</button>
+  <div class="modal" style="max-width:700px;width:96vw;max-height:88vh;display:flex;flex-direction:column;padding-bottom:0;overflow:hidden">
+    <h3 data-i18n="modalLayout">🖼 Декоратор макета</h3>
+    <p style="font-size:11px;color:var(--text2);margin-bottom:12px" data-i18n="layoutDesc">Декоративный стиль для всех слайдов. Использует цвета текущей темы.</p>
+    <div id="layout-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;overflow-y:auto;flex:1;padding-bottom:8px"></div>
+    <div class="mfooter" style="justify-content:center;border-top:1px solid var(--border);padding:12px 0;margin:0;flex-shrink:0">
+      <button class="mbtn" onclick="closeLayoutModal()"><span data-i18n="btnCancel">Отмена</span></button>
+      <button class="mbtn pri" onclick="applyLayoutDecor()"><span data-i18n="btnApplyPresentation">Применить к презентации</span></button>
     </div>
   </div>
 </div>
 <div class="modal-ov" id="theme-modal">
-  <div class="modal" style="max-width:520px">
-    <h3>🎨 Apply Theme</h3>
-    <div class="theme-grid" id="theme-grid"></div>
-    <div class="mfooter">
-      <button class="mbtn" onclick="closeThemeModal()">Cancel</button>
-      <button class="mbtn pri" onclick="applyTheme()">Apply to All</button>
+  <div class="modal" style="max-width:700px;width:96vw;max-height:88vh;display:flex;flex-direction:column;padding-bottom:0;overflow:hidden">
+    <h3 data-i18n="modalTheme">🎨 Применить тему</h3>
+    <div id="theme-grid" style="overflow-y:auto;flex:1;padding-bottom:8px"></div>
+    <div class="mfooter" style="justify-content:center;border-top:1px solid var(--border);padding:12px 0;margin:0;flex-shrink:0">
+      <button class="mbtn" onclick="closeThemeModal()"><span data-i18n="btnCancel">Отмена</span></button>
+      <button class="mbtn pri" onclick="applyTheme()"><span data-i18n="btnApplyAll">Применить ко всем</span></button>
     </div>
   </div>
 </div>
@@ -728,24 +888,24 @@
 <!-- ICON MODAL -->
 <div class="modal-ov" id="icon-modal">
   <div class="modal" style="max-width:720px;width:96vw">
-    <h3>⬟ Значки</h3>
+    <h3 data-i18n="modalIcon">🔍 Значки</h3>
     <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap">
-      <input type="text" id="icon-search" placeholder="Поиск иконок..." oninput="filterIcons(this.value)"
+      <input type="text" id="icon-search" id="icon-search-input" data-i18n-placeholder="iconSearch" placeholder="Поиск значков…" oninput="filterIcons(this.value)"
         style="flex:1;min-width:140px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:12px;font-family:inherit">
       <div style="display:flex;align-items:center;gap:5px">
-        <label style="font-size:10px;color:var(--text2)">Стиль</label>
+        <label style="font-size:10px;color:var(--text2)" data-i18n="iconStyle">Стиль</label>
         <select id="ic-style" onchange="refreshIconGrid()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 6px;font-size:11px;font-family:inherit">
-          <option value="stroke">Контур</option>
-          <option value="fill">Заливка</option>
-          <option value="duotone">Дуотон</option>
+          <option value="stroke" data-i18n="iconStyleStroke">Контур</option>
+          <option value="fill" data-i18n="iconStyleFill">Заливка</option>
+          <option value="duotone" data-i18n="iconStyleDuotone">Дуотон</option>
         </select>
       </div>
       <div style="display:flex;align-items:center;gap:5px">
-        <label style="font-size:10px;color:var(--text2)">Цвет</label>
+        <label style="font-size:10px;color:var(--text2)" data-i18n="iconColor">Цвет</label>
         <input type="color" id="ic-color" value="#3b82f6" oninput="refreshIconGrid()" style="width:32px;height:28px;cursor:pointer;border:none;background:none">
       </div>
       <div style="display:flex;align-items:center;gap:5px">
-        <label style="font-size:10px;color:var(--text2)">Толщина</label>
+        <label style="font-size:10px;color:var(--text2)" data-i18n="iconStrokeW">Толщина</label>
         <input type="number" id="ic-sw" value="1.8" min="0.5" max="5" step="0.2" oninput="refreshIconGrid()"
           style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 6px;font-size:11px;width:56px">
       </div>
@@ -757,46 +917,47 @@
       <span id="icon-sel-name" style="font-size:11px;color:var(--accent4);font-weight:600"></span>
     </div>
     <div class="mfooter">
-      <button class="mbtn" onclick="document.getElementById('icon-modal').classList.remove('open')">Отмена</button>
-      <button class="mbtn pri" onclick="insertIconSelected()">Вставить</button>
+      <button class="mbtn" onclick="document.getElementById('icon-modal').classList.remove('open')"><span data-i18n="btnCancel">Отмена</span></button>
+      <button class="mbtn pri" onclick="insertIconSelected()"><span data-i18n="btnInsert">Вставить</span></button>
     </div>
   </div>
 </div>
 <!-- SHAPE MODAL -->
+<div class="modal-ov" id="shape-modal">
   <div class="modal" style="max-width:480px">
-    <h3>⬡ Insert Shape</h3>
+    <h3 data-i18n="modalShape">⬡ Вставить фигуру</h3>
     <div class="shape-gallery" id="shape-gallery"></div>
     <div style="display:flex;gap:10px;margin-bottom:10px">
-      <div class="pr" style="flex:1;margin:0"><label>Fill</label><input type="color" id="sm-fill" value="#3b82f6"></div>
-      <div class="pr" style="flex:1;margin:0"><label>Stroke</label><input type="color" id="sm-stroke" value="#1d4ed8"></div>
-      <div class="pr" style="flex:1;margin:0"><label>Stroke W</label><input type="number" id="sm-sw" value="2" min="0" max="20" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 8px;font-size:11px;font-family:inherit;width:100%"></div>
+      <div class="pr" style="flex:1;margin:0"><label data-i18n="shapeFill">Заливка</label><input type="color" id="sm-fill" value="#3b82f6"></div>
+      <div class="pr" style="flex:1;margin:0"><label data-i18n="shapeStroke">Обводка</label><input type="color" id="sm-stroke" value="#1d4ed8"></div>
+      <div class="pr" style="flex:1;margin:0"><label data-i18n="shapeStrokeW">Толщина</label><input type="number" id="sm-sw" value="2" min="0" max="20" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 8px;font-size:11px;font-family:inherit;width:100%"></div>
     </div>
     <div class="mfooter">
-      <button class="mbtn" onclick="document.getElementById('shape-modal').classList.remove('open')">Cancel</button>
-      <button class="mbtn pri" onclick="insertShapeSelected()">Insert</button>
+      <button class="mbtn" onclick="document.getElementById('shape-modal').classList.remove('open')"><span data-i18n="btnCancel">Отмена</span></button>
+      <button class="mbtn pri" onclick="insertShapeSelected()"><span data-i18n="btnInsert">Вставить</span></button>
     </div>
   </div>
 </div>
 <!-- SVG MODAL -->
 <div class="modal-ov" id="svg-modal">
   <div class="modal" style="max-width:520px">
-    <h3>⬡ Insert SVG</h3>
-    <p style="font-size:11px;color:var(--text2);margin-bottom:10px">Paste SVG code or upload an SVG file</p>
+    <h3 data-i18n="modalSvg">⬡ Вставить SVG</h3>
+    <p style="font-size:11px;color:var(--text2);margin-bottom:10px" data-i18n="modalSvgPaste">Вставьте SVG-код или загрузите SVG-файл</p>
     <div class="pr"><label>SVG Code</label><textarea id="svg-code" rows="8" style="font-family:monospace;font-size:10px;resize:vertical" placeholder="<svg viewBox=&quot;0 0 100 100&quot;>...</svg>"></textarea></div>
-    <div style="margin-bottom:8px"><input type="file" id="svg-file" accept=".svg,image/svg+xml" style="display:none" onchange="loadSVGFile(event)"><button class="mbtn-sm" onclick="document.getElementById('svg-file').click()">Upload SVG File</button></div>
+    <div style="margin-bottom:8px"><input type="file" id="svg-file" accept=".svg,image/svg+xml" style="display:none" onchange="loadSVGFile(event)"><button class="mbtn-sm" onclick="document.getElementById('svg-file').click()" data-i18n="modalUploadSvg">Загрузить SVG-файл</button></div>
     <div class="mfooter">
-      <button class="mbtn" onclick="document.getElementById('svg-modal').classList.remove('open')">Cancel</button>
-      <button class="mbtn pri" onclick="insertSVG()">Insert</button>
+      <button class="mbtn" onclick="document.getElementById('svg-modal').classList.remove('open')"><span data-i18n="btnCancel">Отмена</span></button>
+      <button class="mbtn pri" onclick="insertSVG()"><span data-i18n="btnInsert">Вставить</span></button>
     </div>
   </div>
 </div>
 <!-- APPLET MODAL -->
 <div class="modal-ov" id="applet-modal">
   <div class="modal" style="max-width:520px">
-    <h3>🔧 Insert Applet</h3>
+    <h3 data-i18n="modalApplet">🔧 Вставить аплет</h3>
     <div class="applet-gallery" id="applet-gallery"></div>
     <div class="mfooter">
-      <button class="mbtn" onclick="document.getElementById('applet-modal').classList.remove('open')">Cancel</button>
+      <button class="mbtn" onclick="document.getElementById('applet-modal').classList.remove('open')"><span data-i18n="btnCancel">Отмена</span></button>
     </div>
   </div>
 </div>
@@ -818,9 +979,9 @@
       <select id="lm-target"><option value="_blank">New tab</option><option value="_self">Same tab</option></select>
     </div>
     <div class="mfooter">
-      <button class="mbtn" onclick="closeLinkModal()">Cancel</button>
-      <button class="mbtn dan" onclick="removeLink()">Remove</button>
-      <button class="mbtn pri" onclick="applyLink()">Apply</button>
+      <button class="mbtn" onclick="closeLinkModal()"><span data-i18n="btnCancel">Отмена</span></button>
+      <button class="mbtn dan" onclick="removeLink()" data-i18n="btnRemove">Удалить</button>
+      <button class="mbtn pri" onclick="applyLink()" data-i18n="btnApply">Применить</button>
     </div>
   </div>
 </div>
@@ -834,22 +995,40 @@
 <!-- SETTINGS MODAL -->
 <div id="settings-modal">
   <div id="settings-box">
-    <h2>⚙ Settings</h2>
+    <h2 data-i18n="settingsTitle">⚙ Параметры</h2>
     <div class="srow">
-      <div><div class="srow-label">Theme</div><div class="srow-sub">Interface color scheme</div></div>
+      <div><div class="srow-label"><span data-i18n="settingsTheme">Тема интерфейса</span></div><div class="srow-sub"><span data-i18n="settingsThemeSub">Цветовая схема интерфейса</span></div></div>
       <div class="theme-toggle">
-        <button class="theme-btn" id="theme-dark" onclick="setTheme('dark')">🌙 Dark</button>
-        <button class="theme-btn" id="theme-light" onclick="setTheme('light')">☀ Light</button>
+        <button class="theme-btn" id="theme-dark" onclick="setTheme('dark')"><span data-i18n="settingsThemeDark">🌙 Тёмная</span></button>
+        <button class="theme-btn" id="theme-light" onclick="setTheme('light')"><span data-i18n="settingsThemeLight">☀ Светлая</span></button>
       </div>
     </div>
     <div class="srow">
-      <div><div class="srow-label">Snap to grid</div><div class="srow-sub">Align elements to 10px grid</div></div>
+      <div><div class="srow-label"><span data-i18n="settingsSnap">Привязка к сетке</span></div><div class="srow-sub"><span data-i18n="settingsSnapSub">Выравнивание элементов по сетке 10px</span></div></div>
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;color:var(--text2)"><input type="checkbox" id="settings-snap" style="accent-color:var(--accent)" onchange="document.getElementById('snap-chk').checked=this.checked"></label>
     </div>
-    <button class="sclose" onclick="closeSettings()">Done</button>
+    <div class="srow">
+      <div><div class="srow-label"><span data-i18n="settingsLanguage">Язык</span></div><div class="srow-sub"><span data-i18n="settingsLanguageSub">Язык интерфейса</span></div></div>
+      <div class="theme-toggle">
+        <button class="theme-btn" id="lang-ru" onclick="setLang('ru')">Русский</button>
+        <button class="theme-btn" id="lang-en" onclick="setLang('en')">English</button>
+      </div>
+    </div>
+    <div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px;display:flex;flex-direction:column;gap:4px;">
+      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3)">
+        <span data-i18n="settingsVersion">Версия</span>
+        <span id="settings-version" style="color:var(--text2);font-weight:600"></span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3)">
+        <span data-i18n="settingsAuthor">Автор</span>
+        <span id="settings-author" style="color:var(--text2)"></span>
+      </div>
+    </div>
+    <button class="sclose" onclick="closeSettings()"><span data-i18n="settingsDone">Готово</span></button>
   </div>
 </div>
 <!-- RUBBER-BAND SELECTION -->
+<script src="js/00-i18n.js"></script>
 <script src="js/01-state.js"></script>
 <script src="js/02-applets.js"></script>
 <script src="js/02b-icons.js"></script>
@@ -877,9 +1056,12 @@
 <script src="js/25-links.js"></script>
 <script src="js/26-export.js"></script>
 <script src="js/27-persist.js"></script>
+<script src="js/31-table.js"></script>
 <script src="js/28-multisel.js"></script>
 <script src="js/29-icons.js"></script>
 <script src="js/30-rich-text.js"></script>
 
+<script src="js/32-scrubber.js"></script>
+<script src="js/33-pagenum.js"></script>
 </body>
 </html>

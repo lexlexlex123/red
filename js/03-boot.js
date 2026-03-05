@@ -1,5 +1,13 @@
 // ══════════════ BOOT ══════════════
 function boot(){
+  // Init i18n first
+  applyI18n();
+  syncLangButtons();
+  const vEl=document.getElementById('settings-version');
+  const aEl=document.getElementById('settings-author');
+  if(vEl)vEl.textContent=APP_VERSION;
+  if(aEl)aEl.textContent=APP_AUTHOR;
+
   buildSwatches('bgswatches');buildSwatches('bgswatches2');
   buildThemeGrid();buildShapeGallery();buildAppletGallery();
   buildPalette('cp-text-palette','text');
@@ -9,11 +17,31 @@ function boot(){
   document.getElementById('canvas').addEventListener('mousedown',e=>{
     if(e.target.id==='canvas'||e.target.id==='cvbg'){if(pipetteMode){cancelPipetteMode();return;}desel();}
   });
-  // Global: clicking anywhere outside an element exits text editing
+  // Global: clicking anywhere outside an element exits text/table editing
   document.addEventListener('mousedown',e=>{
-    if(!sel||sel.dataset.editing!=='true')return;
+    if(!sel)return;
     // If click is inside the currently editing element, allow it
     if(sel.contains(e.target))return;
+    // If clicking slide panel — let pickSlide handle it; just exit editing silently
+    const inSlidePanel=e.target.closest('#slide-list')||e.target.closest('#sidebar');
+    // Exit table cell editing
+    if(sel.dataset.type==='table'){
+      sel.querySelectorAll('td[contenteditable="true"],th[contenteditable="true"]').forEach(cell=>{
+        cell.contentEditable='false';
+        const r=+cell.dataset.r,c2=+cell.dataset.c;
+        const d=slides[cur]&&slides[cur].els.find(x=>x.id===sel.dataset.id);
+        if(d&&d.cells){const i=r*d.cols+c2;if(d.cells[i])d.cells[i].html=cell.innerHTML;}
+      });
+      delete sel.dataset.editing;
+      if(typeof tblClearSel==='function') tblClearSel();
+      if(typeof _tblSaveToDataset==='function'){const d=slides[cur]&&slides[cur].els.find(x=>x.id===sel.dataset.id);if(d)_tblSaveToDataset(sel,d);}
+      // Don't drawThumbs here if clicking slide panel — pickSlide will handle it
+      if(inSlidePanel){save();saveState();return;}
+      save();drawThumbs();saveState();
+      return;
+    }
+    // Exit text element editing
+    if(sel.dataset.editing!=='true')return;
     const c=sel.querySelector('.tel');
     if(c){c.contentEditable='false';c.blur();}
     delete sel.dataset.editing;sel.style.cursor='';
@@ -22,9 +50,15 @@ function boot(){
   window.addEventListener('resize',drawGrid);
   document.addEventListener('keydown',onKey);
   loadState();
+  if(typeof refreshDecorColors==='function'){
+    const [_a1,_a2]=(typeof _decorAccents==='function')?_decorAccents():['#6366f1','#818cf8'];
+    refreshDecorColors(_a1,_a2,true);
+  }
   if(!slides.length)addSlide();
   renderAll();
-  toast('SlideForge Pro v4 · Ctrl+Z undo · F5 present','ok');
+  // Restore page numbering UI after everything is rendered
+  if(typeof pnSyncUI==='function') pnSyncUI();
+  toast(APP_NAME+' v'+APP_VERSION+' · Ctrl+Z · F5','ok');
 }
 
 function buildSwatches(id){
@@ -37,14 +71,67 @@ function buildSwatches(id){
 }
 function buildThemeGrid(){
   const g=document.getElementById('theme-grid');if(!g)return;g.innerHTML='';
-  THEMES.forEach((t,i)=>{
-    const card=document.createElement('div');card.className='theme-card'+(selTheme===i?' active':'');
-    const bg=document.createElement('div');bg.className='tc-bg';bg.style.background=t.bg;
-    const lbl=document.createElement('div');lbl.className='tc-label';
-    lbl.style.cssText='color:'+t.tc+';text-shadow:0 1px 3px rgba(0,0,0,.8);background:rgba(0,0,0,.4);backdrop-filter:blur(4px);';
-    lbl.textContent=t.name;card.append(bg,lbl);
-    card.onclick=()=>{selTheme=i;buildThemeGrid();buildPalette('cp-text-palette','text');buildPalette('cp-fill-palette','fill');};g.appendChild(card);
-  });
+
+  function makeSection(label,themes){
+    const sec=document.createElement('div');
+    const hdr=document.createElement('div');
+    hdr.style.cssText='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text2);margin:10px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:5px;';
+    hdr.textContent=label;
+    sec.appendChild(hdr);
+    const grid=document.createElement('div');
+    grid.className='theme-grid';
+    themes.forEach(([i,t])=>{
+      const card=document.createElement('div');
+      card.className='theme-card'+(selTheme===i?' active':'');
+
+      // Background fill
+      const bg=document.createElement('div');
+      bg.style.cssText='position:absolute;inset:0;background:'+t.bg+';';
+
+      // Mini slide content mockup
+      const mock=document.createElement('div');
+      mock.style.cssText='position:absolute;inset:0;padding:15% 10% 22%;display:flex;flex-direction:column;gap:9%;pointer-events:none;';
+      // Heading bar
+      const mh=document.createElement('div');
+      mh.style.cssText='height:15%;border-radius:2px;width:62%;background:'+t.headingColor+';opacity:.95;';
+      // Body lines
+      const mb1=document.createElement('div');
+      mb1.style.cssText='height:9%;border-radius:1px;width:78%;background:'+t.bodyColor+';opacity:.45;';
+      const mb2=document.createElement('div');
+      mb2.style.cssText='height:9%;border-radius:1px;width:52%;background:'+t.bodyColor+';opacity:.3;';
+      // Mini shape block
+      const mshape=document.createElement('div');
+      mshape.style.cssText='margin-top:4%;height:18%;width:22%;border-radius:3px;background:'+t.shapeFill+';opacity:.85;';
+      mock.append(mh,mb1,mb2,mshape);
+
+      // Color swatches top-right: heading accent + shape fill
+      const swatches=document.createElement('div');
+      swatches.style.cssText='position:absolute;top:5px;right:5px;display:flex;gap:3px;align-items:center;';
+      const sw1=document.createElement('div');
+      sw1.title='Heading: '+t.headingColor;
+      sw1.style.cssText='width:9px;height:9px;border-radius:2px;background:'+t.headingColor+';box-shadow:0 0 0 1px rgba(0,0,0,.4),0 0 0 1.5px rgba(255,255,255,.2);';
+      const sw2=document.createElement('div');
+      sw2.title='Accent/Shapes: '+t.shapeFill;
+      sw2.style.cssText='width:9px;height:9px;border-radius:2px;background:'+t.shapeFill+';box-shadow:0 0 0 1px rgba(0,0,0,.4),0 0 0 1.5px rgba(255,255,255,.2);';
+      swatches.append(sw1,sw2);
+
+      // Label
+      const lbl=document.createElement('div');
+      lbl.className='tc-label';
+      lbl.textContent=t.name;
+
+      card.append(bg,mock,swatches,lbl);
+      card.onclick=()=>{selTheme=i;buildThemeGrid();buildPalette('cp-text-palette','text');buildPalette('cp-fill-palette','fill');};
+      grid.appendChild(card);
+    });
+    sec.appendChild(grid);
+    g.appendChild(sec);
+  }
+
+  const dark=THEMES.map((t,i)=>[i,t]).filter(([,t])=>t.dark!==false);
+  const light=THEMES.map((t,i)=>[i,t]).filter(([,t])=>t.dark===false);
+  if(dark.length) makeSection(t('darkThemes'),dark);
+  if(light.length) makeSection(t('lightThemes'),light);
 }
 function buildShapeGallery(){
   const g=document.getElementById('shape-gallery');if(!g)return;g.innerHTML='';

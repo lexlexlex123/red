@@ -51,7 +51,7 @@ function buildShapeSVG(d,w,h){
     const sc=d.shadowColor||'#000000';const sb=d.shadowBlur||8;
     filterDef=`<defs><filter id="sh_${d.id}" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="3" dy="3" stdDeviation="${sb}" flood-color="${sc}" flood-opacity="0.6"/></filter></defs>`;
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${filterDef}${shapeDef}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="overflow:visible">${filterDef}${shapeDef}</svg>`;
 }
 function renderShapeEl(el,d){
   const w=parseInt(el.style.width),h=parseInt(el.style.height);

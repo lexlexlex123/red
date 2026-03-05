@@ -2,7 +2,16 @@
 function setGlobalTrans(t,btn){
   globalTrans=t;document.querySelectorAll('.tbtn2[data-t]').forEach(b=>b.classList.toggle('active',b===btn));saveState();
 }
-function setSlideTrans(t){slides[cur].trans=t;saveState();}
+function setSlideTrans(t){
+  // Treat empty string (legacy 'Global') as 'none'
+  if(t===''||t==null) t='none';
+  slides[cur].trans=t;
+  // Highlight matching button in slide props grid
+  document.querySelectorAll('#slide-trans-grid .tbtn2[data-st]').forEach(b=>
+    b.classList.toggle('active', b.dataset.st===t)
+  );
+  saveState();
+}
 function setSlideAuto(v){slides[cur].auto=v||0;drawThumbs();saveState();}
 function applyTransToAll(){pushUndo();slides.forEach(s=>s.trans=globalTrans);saveState();drawThumbs();toast('Transition applied to all','ok');}
 function applyAutoToAll(){

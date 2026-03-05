@@ -1,17 +1,43 @@
 // ══════════════ PERSIST ══════════════
+// save()      — DOM → slides[cur].els  (fast, no I/O)
+// saveState() — slides[] → localStorage (I/O, call sparingly)
+// commitAll() — save() + saveState()   (full flush, use on mouseup / before F5)
+
 function saveState(){
-  try{localStorage.setItem('sf_v4',JSON.stringify({slides,cur,ar,canvasW,canvasH,globalTrans,transitionDur,autoDelay,ec,title:document.getElementById('pres-title').value}));}catch(e){}
+  const _pn=typeof pnGetSettings==='function'?pnGetSettings():null;
+  try{localStorage.setItem('sf_v4',JSON.stringify({
+    slides,cur,ar,canvasW,canvasH,globalTrans,transitionDur,autoDelay,ec,
+    appliedThemeIdx,
+    title:document.getElementById('pres-title').value,
+    pnSettings:_pn
+  }));}catch(e){}
 }
+
+// Full commit: flush DOM→data then data→localStorage
+function commitAll(){
+  save();
+  drawThumbs();
+  saveState();
+}
+
 function loadState(){
   try{
     const raw=localStorage.getItem('sf_v4');if(!raw)return;
-    const s=JSON.parse(raw);slides=s.slides||[];cur=s.cur||0;ar=s.ar||'16:9';
+    const s=JSON.parse(raw);
+    slides=s.slides||[];cur=s.cur||0;ar=s.ar||'16:9';
     canvasW=s.canvasW||1200;canvasH=s.canvasH||(ar==='4:3'?900:675);
-    globalTrans=s.globalTrans||'none';transitionDur=s.transitionDur||500;autoDelay=s.autoDelay||5;ec=s.ec||0;
-    document.getElementById('canvas').style.width=canvasW+'px';document.getElementById('canvas').style.height=canvasH+'px';
+    globalTrans=s.globalTrans||'none';transitionDur=s.transitionDur||500;
+    autoDelay=s.autoDelay||5;ec=s.ec||0;
+    document.getElementById('canvas').style.width=canvasW+'px';
+    document.getElementById('canvas').style.height=canvasH+'px';
     document.querySelectorAll('.ar-btn').forEach(b=>b.classList.toggle('active',b.textContent===ar));
     if(s.title)document.getElementById('pres-title').value=s.title;
-    if(slides.length)toast('Session restored');
+    if(s.appliedThemeIdx!=null)appliedThemeIdx=s.appliedThemeIdx;
+    if(typeof pnGetSettings==='function'&&s.pnSettings){
+      const defaults=pnGetSettings();
+      pnSettings=Object.assign({},defaults,s.pnSettings);
+    }
+    if(slides.length)toast(t('toastRestored'));
   }catch(e){slides=[];}
 }
 
@@ -29,6 +55,11 @@ function openSettings(){
   document.getElementById('theme-dark').classList.toggle('active',isDark);
   document.getElementById('theme-light').classList.toggle('active',!isDark);
   document.getElementById('settings-snap').checked=document.getElementById('snap-chk').checked;
+  syncLangButtons();
+  const vEl=document.getElementById('settings-version');
+  const aEl=document.getElementById('settings-author');
+  if(vEl)vEl.textContent=APP_VERSION;
+  if(aEl)aEl.textContent=APP_AUTHOR;
 }
 function closeSettings(){document.getElementById('settings-modal').classList.remove('open');}
 function setTheme(t){

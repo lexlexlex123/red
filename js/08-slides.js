@@ -7,22 +7,30 @@ function addSlide(tmpl){
   const inheritBgc=curSlide?curSlide.bgc:null;
   const s={title:'Slide '+(slides.length+1),bg:inheritBg,bgc:inheritBgc,ar,trans:'',auto:0,els:[]};
   if(tmpl){const t=JSON.parse(JSON.stringify(tmpl));s.bg=t.bg;s.bgc=t.bgc;s.els=t.els;s.trans=t.trans||'';}
-  slides.push(s);cur=slides.length-1;renderAll();saveState();
+  slides.push(s);
+  // Apply active layout decor to the new slide (content style, not title)
+  if(typeof makeDecorEl==='function'&&typeof selLayout!=='undefined'&&selLayout>=0){
+    const d=makeDecorEl(slides.length-1);
+    if(d)s.els.unshift(d);
+  }
+  cur=slides.length-1;renderAll();saveState();
 }
 function dupSlide(){if(slides.length)addSlide(slides[cur]);}
 function delSlide(){
-  if(slides.length<=1)return toast('Need at least one slide');
+  if(slides.length<=1)return toast(t('toastNeedSlide'));
   pushUndo();slides.splice(cur,1);cur=Math.min(cur,slides.length-1);renderAll();saveState();
 }
-function pickSlide(i){save();cur=i;load();drawThumbs();}
+function pickSlide(i){if(typeof tblClearSel==='function')tblClearSel();save();cur=i;load();drawThumbs();}
 function save(){
   if(!slides[cur])return;
   const canvas=document.getElementById('canvas');
   // Build lookup of existing decor flags before overwriting
   const decorMeta={};
   const oldEls=slides[cur].els||[]; // snapshot BEFORE overwriting
-  oldEls.forEach(d=>{if(d._isDecor)decorMeta[d.id]={_isDecor:true,_decorStyle:d._decorStyle};});
+  oldEls.forEach(d=>{if(d._isDecor)decorMeta[d.id]={_isDecor:true,_decorStyle:d._decorStyle,_layoutIdx:d._layoutIdx};});
   const oldElsById={}; oldEls.forEach(d=>oldElsById[d.id]=d);
+  // Snapshot table data keyed by id so the table branch below always finds fresh data
+  const tableSnap={}; oldEls.forEach(d=>{if(d.type==='table')tableSnap[d.id]=d;});
   slides[cur].els=Array.from(canvas.querySelectorAll('.el')).map(el=>{
     const d={id:el.dataset.id,type:el.dataset.type,
       x:parseInt(el.style.left),y:parseInt(el.style.top),
@@ -32,10 +40,17 @@ function save(){
       isTrigger:el.dataset.isTrigger==='true',
     };
     if(el.dataset.link)d.link=el.dataset.link;if(el.dataset.linkt)d.linkt=el.dataset.linkt;
-    if(d.type==='text'){const c=el.querySelector('.ec');d.html=c.innerHTML;
-      // Strip background from cs - it's stored separately in textBg/textBgOp
+    if(d.type==='text'){const c=el.querySelector('.ec');
+      // Strip valign wrapper — it's a DOM-only helper, not part of saved content
+      const vw=c.querySelector('.ec-valign-wrap');
+      d.html=vw?vw.innerHTML:c.innerHTML;
+      // Strip background and layout props from cs (stored separately or handled by CSS)
       let cs=c.getAttribute('style')||'';
-      cs=cs.replace(/\bbackground\s*:[^;]+;?/gi,'').replace(/\s{2,}/g,' ').trim();
+      cs=cs.replace(/\bbackground\s*:[^;]+;?/gi,'')
+           .replace(/\bdisplay\s*:[^;]+;?/gi,'')
+           .replace(/\bflex-direction\s*:[^;]+;?/gi,'')
+           .replace(/\bjustify-content\s*:[^;]+;?/gi,'')
+           .replace(/\s{2,}/g,' ').trim();
       d.cs=cs;
       if(el.dataset.valign)d.valign=el.dataset.valign;
       if(el.dataset.textBg)d.textBg=el.dataset.textBg;
@@ -49,6 +64,14 @@ function save(){
         d.rx_bl=+(el.dataset.rx_bl||0);d.rx_br=+(el.dataset.rx_br||0);
         d.rxUnit=el.dataset.rxUnit||'px';
       }
+    }
+    if(d.type==='table'){
+      // Primary: read from DOM dataset (written by renderTableEl every time table is drawn)
+      // Fallback: use tableSnap from slides[cur].els
+      let tdata=null;
+      if(el.dataset.tableData){try{tdata=JSON.parse(el.dataset.tableData);}catch(e){}}
+      const tsrc=tdata||tableSnap[d.id];
+      if(tsrc){Object.keys(tsrc).forEach(k=>{ d[k]=tsrc[k]; });}
     }
     if(el.dataset.hoverFx)d.hoverFx=JSON.parse(el.dataset.hoverFx);
     if(el.dataset.elOpacity!=null&&+el.dataset.elOpacity!==1)d.elOpacity=+el.dataset.elOpacity;
@@ -76,7 +99,32 @@ function save(){
     else if(d.type==='svg')d.svgContent=el.querySelector('.ec').innerHTML;
     else if(d.type==='code'){const dd=oldElsById[d.id];if(dd){d.codeLang=dd.codeLang;d.codeTheme=dd.codeTheme;d.codeRaw=dd.codeRaw;d.codeHtml=dd.codeHtml;d.codeFs=dd.codeFs;d.codeBg=dd.codeBg;}}
     else if(d.type==='markdown'){const dd=oldElsById[d.id];if(dd){d.mdRaw=dd.mdRaw;d.mdHtml=dd.mdHtml;d.mdFs=dd.mdFs;}}
-    else if(d.type==='applet'){d.appletId=el.dataset.appletId;d.appletHtml=el.dataset.appletHtml||'';}
+    else if(d.type==='icon'){
+      d.iconId=el.dataset.iconId||'';
+      d.iconColor=el.dataset.iconColor||'#3b82f6';
+      d.iconSw=el.dataset.iconSw!=null?+el.dataset.iconSw:1.8;
+      d.iconStyle=el.dataset.iconStyle||'stroke';
+      d.shadow=el.dataset.shadow==='true'||el.dataset.shadow===true;
+      d.shadowBlur=+(el.dataset.shadowBlur||8);
+      d.shadowColor=el.dataset.shadowColor||'#000000';
+      // Rebuild svgContent so it's always up to date
+      const _ic=typeof ICONS!=='undefined'?ICONS.find(function(x){return x.id===d.iconId;}):null;
+      if(_ic&&typeof _buildIconSVG==='function'){
+        d.svgContent=_buildIconSVG(_ic,d.iconColor,d.iconSw,d.iconStyle,d.shadow,d.shadowBlur,d.shadowColor);
+      }else{
+        d.svgContent=el.querySelector('.ec').innerHTML;
+      }
+    }
+    else if(d.type==='applet'){
+      d.appletId=el.dataset.appletId;
+      d.appletHtml=el.dataset.appletHtml||'';
+      if(el.dataset.appletAspect)d._appletAspect=+el.dataset.appletAspect;
+    }
+    else if(d.type==='pagenum'){
+      // page number element — data stored in slide data, no DOM reading needed
+      const dd=oldElsById[d.id];
+      if(dd){d.html=dd.html;d.pnStyle=dd.pnStyle;d.pnPos=dd.pnPos;d.pnColor=dd.pnColor;d.pnTextColor=dd.pnTextColor;d.pnFontSize=dd.pnFontSize;d.pnShowTotal=dd.pnShowTotal;}
+    }
     // Restore decor flags
     if(decorMeta[d.id])Object.assign(d,decorMeta[d.id]);
     return d;
@@ -87,7 +135,11 @@ function load(){
   const canvas=document.getElementById('canvas');canvas.querySelectorAll('.el').forEach(e=>e.remove());
   const s=slides[cur];loadBg(s);s.els.forEach(mkEl);
   document.getElementById('p-st').value=s.title;
-  document.getElementById('p-strans').value=s.trans||'';
+  // Highlight active transition button in slide props
+  const _st=s.trans||'';
+  document.querySelectorAll('#slide-trans-grid .tbtn2[data-st]').forEach(b=>
+    b.classList.toggle('active', b.dataset.st===_st)
+  );
   document.getElementById('p-auto').value=s.auto||0;
   const navChk=document.getElementById('slide-click-nav');
   if(navChk)navChk.checked=s.clickNav!==false; // default true

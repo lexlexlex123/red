@@ -1,3 +1,21 @@
+// ══════════════ STOP TEXT EDITING (called from anywhere) ══════════════
+function stopTextEditing() {
+  const editing = document.querySelector('.el[data-editing="true"]');
+  if (editing) {
+    const tel = editing.querySelector('.tel');
+    if (tel) { tel.contentEditable = 'false'; tel.blur(); }
+    delete editing.dataset.editing;
+    editing.style.cursor = '';
+    save(); drawThumbs(); saveState();
+  }
+  // Also stop any active rich-text contenteditable not tracked by dataset
+  const active = document.activeElement;
+  if (active && active.contentEditable === 'true' && active.classList.contains('tel')) {
+    active.contentEditable = 'false';
+    active.blur();
+  }
+}
+
 // ══════════════ IMAGE PROPS ══════════════
 function updateImgStyle(prop,val){
   if(!sel||sel.dataset.type!=='image')return;
@@ -62,7 +80,7 @@ function imgCoverSlide(){
     const firstNonDecor=slides[cur].els.findIndex(e=>!e._isDecor);
     slides[cur].els.splice(Math.max(0,firstNonDecor),0,d);}
   renderAll();save();drawThumbs();saveState();
-  toast('Image set as slide background','ok');
+  toast(t('toastImgBg'),'ok');
 }
 
 function syncImgProps(el,d){
@@ -93,13 +111,29 @@ function mkEl(d){
   const rot=d.rot||0;
   el.style.cssText='left:'+d.x+'px;top:'+d.y+'px;width:'+d.w+'px;height:'+d.h+'px;transform:rotate('+rot+'deg);';
   const c=document.createElement('div');c.className='ec';
+  if(d.type==='table'){
+    c.className='ec tbl-ec';
+    c.style.cssText='width:100%;height:100%;overflow:visible;position:relative;';
+    // table rendering happens after handles are added (at bottom of mkEl)
+  }
   if(d.type==='text'){
     c.classList.add('tel');c.contentEditable='false';
     c.setAttribute('style',d.cs||'font-size:48px;font-weight:700;color:#fff;');
-    c.innerHTML=d.html||'Double-click to edit';
-    c.addEventListener('dblclick',e=>{e.stopPropagation();c.contentEditable='true';c.focus();el.dataset.editing='true';el.style.cursor='text';});
-    c.addEventListener('blur',()=>{c.contentEditable='false';delete el.dataset.editing;el.style.cursor='';save();drawThumbs();saveState();});
-    c.addEventListener('input',save);
+    const rawHtml=d.html||'Double-click to edit';
+    c.innerHTML=typeof rtMigrateHtml==='function'?rtMigrateHtml(rawHtml):rawHtml;
+    c.addEventListener('dblclick',e=>{
+      e.stopPropagation();
+      c.contentEditable='true';
+      if(typeof _toEditMode==='function') _toEditMode(c);
+      c.focus();
+      el.dataset.editing='true';el.style.cursor='text';
+    });
+    c.addEventListener('blur',()=>{
+      if(typeof _toSaveMode==='function') _toSaveMode(c);
+      c.contentEditable='false';delete el.dataset.editing;el.style.cursor='';
+      save();drawThumbs();saveState();
+    });
+    c.addEventListener('input',()=>{ if(typeof _rtCommit==='function') _rtCommit(); else save(); });
     c.addEventListener('keydown',e=>{if(e.key==='Escape'){c.contentEditable='false';c.blur();}else e.stopPropagation();});
     if(typeof rtAttachSelectionTracking==='function')rtAttachSelectionTracking(el,c);
     // Restore vertical alignment
@@ -174,7 +208,7 @@ function mkEl(d){
     el.dataset.sw=d.sw!=null?d.sw:2;el.dataset.rx=d.rx||0;el.dataset.fillOp=d.fillOp!=null?d.fillOp:1;
     el.dataset.shadow=d.shadow||false;el.dataset.shadowBlur=d.shadowBlur||8;el.dataset.shadowColor=d.shadowColor||'#000000';
   }else if(d.type==='svg'){
-    c.style.cssText='width:100%;height:100%;overflow:hidden;';c.innerHTML=d.svgContent||'';
+    c.style.cssText='width:100%;height:100%;overflow:visible;';c.innerHTML=d.svgContent||'';
     const svgEl=c.querySelector('svg');
     if(svgEl){svgEl.style.width='100%';svgEl.style.height='100%';}
     // Decor elements: fully locked, not interactive
@@ -185,30 +219,46 @@ function mkEl(d){
       el.classList.add('decor-el');
     }
   }else if(d.type==='icon'){
-    c.style.cssText='width:100%;height:100%;overflow:hidden;display:flex;align-items:center;justify-content:center;';
-    c.innerHTML=d.svgContent||'';
+    c.style.cssText='width:100%;height:100%;overflow:visible;display:flex;align-items:center;justify-content:center;';
+    // Always rebuild SVG from params so shadow/color/style are always correct
+    const _mkIc=typeof ICONS!=='undefined'?ICONS.find(function(x){return x.id===d.iconId;}):null;
+    // Coerce shadow to boolean (may come as string "true"/"false" from dataset or JSON)
+    const _mkShadow=d.shadow===true||d.shadow==='true';
+    const _mkSvg=(_mkIc&&typeof _buildIconSVG==='function')
+      ?_buildIconSVG(_mkIc,d.iconColor||'#3b82f6',d.iconSw!=null?d.iconSw:1.8,d.iconStyle||'stroke',_mkShadow,d.shadowBlur,d.shadowColor)
+      :(d.svgContent||'');
+    c.innerHTML=_mkSvg;
     const svgEl2=c.querySelector('svg');
     if(svgEl2){svgEl2.style.width='100%';svgEl2.style.height='100%';}
     el.dataset.iconId=d.iconId||'';
     el.dataset.iconColor=d.iconColor||'#3b82f6';
     el.dataset.iconSw=d.iconSw!=null?d.iconSw:1.8;
     el.dataset.iconStyle=d.iconStyle||'stroke';
-    el.dataset.shadow=d.shadow||false;
+    el.dataset.shadow=_mkShadow;
     el.dataset.shadowBlur=d.shadowBlur||8;
     el.dataset.shadowColor=d.shadowColor||'#000000';
     }else if(d.type==='applet'){
     const wrap=document.createElement('div');wrap.className='applet-el';
     const iframe=document.createElement('iframe');iframe.srcdoc=d.appletHtml||'<p>Applet</p>';
-    iframe.style.cssText='width:100%;height:100%;border:none;';iframe.sandbox='allow-scripts allow-same-origin';
+    iframe.style.cssText='width:100%;height:100%;border:none;background:transparent;';
+    iframe.setAttribute('allowtransparency','true');
+    iframe.sandbox='allow-scripts allow-same-origin';
     const tog=document.createElement('button');tog.className='applet-toggle';tog.textContent='Interact';
     tog.onclick=(ev)=>{ev.stopPropagation();wrap.classList.toggle('interactive');tog.textContent=wrap.classList.contains('interactive')?'Done':'Interact';};
     wrap.append(iframe,tog);c.appendChild(wrap);
-    el.dataset.appletId=d.appletId||'';el.dataset.appletHtml=d.appletHtml||'';
+    el.dataset.appletId=d.appletId||'';
+    el.dataset.appletHtml=d.appletHtml||'';
+    if(d._appletAspect)el.dataset.appletAspect=d._appletAspect;
+  }else if(d.type==='pagenum'){
+    c.style.cssText='width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:visible;pointer-events:none;';
+    c.innerHTML=d.html||'';
+    if(d.elOpacity!=null&&+d.elOpacity!==1)el.style.opacity=d.elOpacity;
+    el.style.cursor='default';
   }
   const lb=document.createElement('div');lb.className='link-bar';
   const trigBadge=document.createElement('div');trigBadge.className='trigger-badge';trigBadge.textContent='🎯';
-  // Decor elements: no resize handles, no drag, no events
-  if(!d._isDecor){
+  // Decor and pagenum elements: no resize handles, no drag, no events
+  if(!d._isDecor && d.type!=='pagenum'){
     const rhs=[
       {cls:'rh br',dx:1, dy:1, ax:0,ay:0},
       {cls:'rh tr',dx:1, dy:-1,ax:0,ay:1},
@@ -229,9 +279,42 @@ function mkEl(d){
   el.append(c,lb,trigBadge);cv.appendChild(el);
   if(d.type==='code')renderCodeEl(el,d);
   if(d.type==='image')applyImgStyles(el,d);
+  if(d.type==='table'&&typeof renderTableEl==='function'){if(typeof _tblSaveToDataset==='function')_tblSaveToDataset(el,d);renderTableEl(el,d);if(typeof _tblAttachResizeObs==='function')_tblAttachResizeObs(el,d);}
   // Restore elOpacity for all element types
   if(d.elOpacity!=null&&+d.elOpacity!==1){el.dataset.elOpacity=d.elOpacity;el.style.opacity=d.elOpacity;}
   if(d._isDecor)return; // done — no drag/events for decor
+  if(d.type==='pagenum'){
+    // pagenum: draggable but not selectable/resizable — custom lightweight drag
+    let _ox,_oy,_ol,_ot,_on=false;
+    el.style.cursor='move';
+    el.addEventListener('mousedown',e=>{
+      if(e.button!==0)return;
+      e.preventDefault();e.stopPropagation();
+      _on=true;_ox=e.clientX;_oy=e.clientY;_ol=parseInt(el.style.left);_ot=parseInt(el.style.top);
+      el.style.outline='2px dashed rgba(255,255,255,.4)';
+      const mm=e2=>{
+        if(!_on)return;
+        el.style.left=(_ol+e2.clientX-_ox)+'px';
+        el.style.top=(_ot+e2.clientY-_oy)+'px';
+      };
+      const mu=()=>{
+        _on=false;
+        el.style.outline='';
+        document.removeEventListener('mousemove',mm);
+        document.removeEventListener('mouseup',mu);
+        const nx=parseInt(el.style.left), ny=parseInt(el.style.top);
+        // Update data on current slide
+        const d2=slides[cur]&&slides[cur].els.find(x=>x.id===el.dataset.id);
+        if(d2){d2.x=nx;d2.y=ny;}
+        // Propagate to all slides and save coords
+        if(typeof pnOnDragEnd==='function') pnOnDragEnd(nx,ny);
+        save(); drawThumbs(); saveState();
+      };
+      document.addEventListener('mousemove',mm);
+      document.addEventListener('mouseup',mu);
+    });
+    return;
+  }
   // Restore hover fx
   if(d.hoverFx){el.dataset.hoverFx=JSON.stringify(d.hoverFx);applyHoverFxEditor(el,d.hoverFx);}
   mkDrag(el,c);
@@ -259,6 +342,8 @@ function mkEl(d){
   }
 }
 function pick(el){
+  // Clear table cell selection when leaving a table
+  if(sel&&sel.dataset.type==='table'&&sel!==el&&typeof tblClearSel==='function') tblClearSel();
   // Exit text editing on previously selected element - force blur to trigger save
   if(sel&&sel.dataset.editing==='true'){
     const c=sel.querySelector('.tel');

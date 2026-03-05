@@ -63,6 +63,8 @@ function renderThumbCanvas(cnv,s,slideIdx){
     else if(d.type==='image')drawThumbImage(ctx,d,scaleX,scaleY);
     else if(d.type==='code')drawThumbCode(ctx,d,scaleX,scaleY);
     else if(d.type==='markdown')drawThumbMarkdown(ctx,d,scaleX,scaleY);
+    else if(d.type==='icon')drawThumbIcon(ctx,d,scaleX,scaleY);
+    else if(d.type==='table')drawThumbTable(ctx,d,scaleX,scaleY);
   });
 }
 
@@ -250,6 +252,97 @@ function drawThumbMarkdown(ctx,d,sx,sy){
     iy+=fs*1.5;
     if(isH1){ctx.fillStyle='rgba(255,255,255,.15)';ctx.fillRect(x+6*sx,iy,w*0.7,0.5);iy+=4;}
   });
+  ctx.restore();
+}
+
+// Icon SVG cache: svgContent string → HTMLImageElement (loaded)
+const _thumbIconCache={};
+
+function drawThumbIcon(ctx,d,sx,sy){
+  const x=d.x*sx,y=d.y*sy,w=d.w*sx,h=d.h*sy;
+  ctx.save();
+  if(d.rot){ctx.translate(x+w/2,y+h/2);ctx.rotate(d.rot*Math.PI/180);ctx.translate(-(x+w/2),-(y+h/2));}
+  if(d.svgContent){
+    const key=d.svgContent;
+    if(_thumbIconCache[key]){
+      // Already loaded — draw directly, no drawThumbs() call
+      ctx.drawImage(_thumbIconCache[key],x,y,w,h);
+    } else if(_thumbIconCache[key]!==null){
+      // Not yet loaded — start loading once, mark as pending with null
+      _thumbIconCache[key]=null;
+      const blob=new Blob([d.svgContent],{type:'image/svg+xml'});
+      const url=URL.createObjectURL(blob);
+      const img=new Image();
+      img.onload=()=>{
+        _thumbIconCache[key]=img;
+        URL.revokeObjectURL(url);
+        // Redraw only the specific thumb canvases that use this icon
+        document.querySelectorAll('#slide-list .sthumb canvas').forEach((cnv,i)=>{
+          const s=slides[i];
+          if(s&&s.els&&s.els.some(e=>e.type==='icon'&&e.svgContent===key)){
+            renderThumbCanvas(cnv,s,i);
+          }
+        });
+      };
+      img.onerror=()=>{URL.revokeObjectURL(url); delete _thumbIconCache[key];};
+      img.src=url;
+      // Draw fallback dot while loading
+      ctx.fillStyle=d.iconColor||'#3b82f6';
+      ctx.globalAlpha=0.6;
+      ctx.beginPath();ctx.arc(x+w/2,y+h/2,Math.min(w,h)*0.3,0,Math.PI*2);ctx.fill();
+    }
+  } else {
+    ctx.fillStyle=d.iconColor||'#3b82f6';
+    ctx.globalAlpha=0.6;
+    ctx.beginPath();ctx.arc(x+w/2,y+h/2,Math.min(w,h)*0.3,0,Math.PI*2);ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawThumbTable(ctx,d,sx,sy){
+  const x=d.x*sx,y=d.y*sy,w=d.w*sx,h=d.h*sy;
+  if(!d.rows||!d.cols)return;
+  ctx.save();
+  if(d.rot){ctx.translate(x+w/2,y+h/2);ctx.rotate(d.rot*Math.PI/180);ctx.translate(-(x+w/2),-(y+h/2));}
+  const headerBg=d.headerBg||'#3b82f6';
+  const cellBg=d.cellBg||'rgba(30,41,59,0.27)';
+  const borderColor=d.borderColor||'#3b82f680';
+  const bw=Math.max(0.5,(d.borderW||1)*Math.min(sx,sy));
+  // Row heights and col widths (fractional)
+  const rhs=(d.rowHeights||Array(d.rows).fill(1/d.rows)).map(f=>f*h);
+  const cws=(d.colWidths||Array(d.cols).fill(1/d.cols)).map(f=>f*w);
+  let cy=y;
+  for(let r=0;r<d.rows;r++){
+    const rh=rhs[r]||h/d.rows;
+    let cx=x;
+    for(let c=0;c<d.cols;c++){
+      const cw=cws[c]||w/d.cols;
+      const isH=d.headerRow&&r===0;
+      // Parse cell bg color (may have alpha hex)
+      const bgRaw=isH?headerBg:cellBg;
+      ctx.fillStyle=bgRaw.length>7?bgRaw.slice(0,7):bgRaw;
+      ctx.globalAlpha=isH?1:0.4;
+      ctx.fillRect(cx,cy,cw,rh);
+      cx+=cw;
+    }
+    cy+=rh;
+  }
+  // Draw grid lines
+  ctx.globalAlpha=0.7;
+  ctx.strokeStyle=borderColor.length>7?borderColor.slice(0,7):borderColor;
+  ctx.lineWidth=bw;
+  // Horizontal lines
+  let gy=y;
+  for(let r=0;r<=d.rows;r++){
+    ctx.beginPath();ctx.moveTo(x,gy);ctx.lineTo(x+w,gy);ctx.stroke();
+    if(r<d.rows)gy+=rhs[r]||h/d.rows;
+  }
+  // Vertical lines
+  let gx=x;
+  for(let c=0;c<=d.cols;c++){
+    ctx.beginPath();ctx.moveTo(gx,y);ctx.lineTo(gx,y+h);ctx.stroke();
+    if(c<d.cols)gx+=cws[c]||w/d.cols;
+  }
   ctx.restore();
 }
 
