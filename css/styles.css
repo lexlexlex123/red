@@ -236,11 +236,7 @@ input:-webkit-autofill,input:-webkit-autofill:focus{-webkit-box-shadow:0 0 0 100
 .cp-hex input[type=color]{width:28px;height:24px;padding:1px;border:1px solid var(--border2);border-radius:3px;cursor:pointer;caret-color:transparent;}
 .cp-hex input[type=text]{flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 6px;font-size:11px;font-family:'JetBrains Mono',monospace;}
 /* Text vertical alignment */
-.el[data-valign] .tel{display:flex;flex-direction:column;}
-.el[data-valign=top] .tel{justify-content:flex-start;}
-.el[data-valign=middle] .tel{justify-content:center;}
-.el[data-valign=bottom] .tel{justify-content:flex-end;}
-.el[data-valign] .tel>.ec-valign-wrap{width:100%;flex-shrink:0;}
+.el[data-valign] .tel{box-sizing:border-box;}
 /* Hover effects in editor (preview) */
 .has-hover-fx{transition:transform var(--hfx-dur,0.2s) ease,opacity var(--hfx-dur,0.2s) ease,box-shadow var(--hfx-dur,0.2s) ease,filter var(--hfx-dur,0.2s) ease;}
 /* Prevent cursor blinking on color-only inputs */

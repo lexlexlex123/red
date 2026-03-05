@@ -248,9 +248,15 @@ function _setTSWhole(prop, val) {
   debouncedPushUndo();
   const c = sel.querySelector('.ec'); if (!c) return;
   let cs = c.getAttribute('style') || '';
+  // Don't overwrite padding-top (managed by applyTextVAlign)
+  if (prop === 'padding-top') return;
   const re = new RegExp(prop + '\\s*:[^;]+;?', 'i');
   cs = re.test(cs) ? cs.replace(re, prop+':'+val+';') : cs+prop+':'+val+';';
   c.setAttribute('style', cs);
+  // Recalculate valign padding if font-size changed (text height changes)
+  if(prop==='font-size'&&sel.dataset.valign&&typeof applyTextVAlign==='function'){
+    requestAnimationFrame(()=>applyTextVAlign(sel,sel.dataset.valign));
+  }
   save(); drawThumbs(); syncProps();
 }
 

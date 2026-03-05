@@ -6,7 +6,7 @@ function stopTextEditing() {
     if (tel) { tel.contentEditable = 'false'; tel.blur(); }
     delete editing.dataset.editing;
     editing.style.cursor = '';
-    save(); drawThumbs(); saveState();
+    commitAll();
   }
   // Also stop any active rich-text contenteditable not tracked by dataset
   const active = document.activeElement;
@@ -26,7 +26,7 @@ function updateImgStyle(prop,val){
   const parsed=prop==='rx'||prop==='bw'?+val:prop==='shadow'?!!val:prop==='opacity'?+val:val;
   d[key]=parsed;
   sel.dataset[key]=parsed; // also store in DOM dataset for reliable save()
-  applyImgStyles(sel,d);save();drawThumbs();saveState();
+  applyImgStyles(sel,d);commitAll();
 }
 
 function updateImgPosition(){
@@ -36,7 +36,7 @@ function updateImgPosition(){
   const d=slides[cur].els.find(e=>e.id===sel.dataset.id);if(!d)return;
   d.imgPosX=px;d.imgPosY=py;
   sel.dataset.imgPosX=px;sel.dataset.imgPosY=py;
-  applyImgStyles(sel,d);save();drawThumbs();saveState();
+  applyImgStyles(sel,d);commitAll();
 }
 
 function applyImgStyles(el,d){
@@ -79,7 +79,7 @@ function imgCoverSlide(){
   if(idx2>0){slides[cur].els.splice(idx2,1);
     const firstNonDecor=slides[cur].els.findIndex(e=>!e._isDecor);
     slides[cur].els.splice(Math.max(0,firstNonDecor),0,d);}
-  renderAll();save();drawThumbs();saveState();
+  renderAll();commitAll();
   toast(t('toastImgBg'),'ok');
 }
 
@@ -131,13 +131,13 @@ function mkEl(d){
     c.addEventListener('blur',()=>{
       if(typeof _toSaveMode==='function') _toSaveMode(c);
       c.contentEditable='false';delete el.dataset.editing;el.style.cursor='';
-      save();drawThumbs();saveState();
+      commitAll();
     });
     c.addEventListener('input',()=>{ if(typeof _rtCommit==='function') _rtCommit(); else save(); });
     c.addEventListener('keydown',e=>{if(e.key==='Escape'){c.contentEditable='false';c.blur();}else e.stopPropagation();});
     if(typeof rtAttachSelectionTracking==='function')rtAttachSelectionTracking(el,c);
     // Restore vertical alignment
-    if(d.valign){el.dataset.valign=d.valign;applyTextVAlign(el,d.valign);}
+    if(d.valign){el.dataset.valign=d.valign;} // applied after cv.appendChild below
     // Restore background — apply directly to c since it may not be in el yet
     if(d.textBg){el.dataset.textBg=d.textBg;if(d.textBgOp!=null)el.dataset.textBgOp=d.textBgOp;
       const op=parseFloat(d.textBgOp!=null?d.textBgOp:1);
@@ -201,7 +201,7 @@ function mkEl(d){
     txt.setAttribute('style',d.shapeTextCss||'font-size:24px;font-weight:700;color:#ffffff;text-align:center;');
     txt.innerHTML=d.shapeHtml||'';
     txt.addEventListener('dblclick',()=>{txt.contentEditable='true';txt.style.pointerEvents='auto';txt.focus();});
-    txt.addEventListener('blur',()=>{txt.contentEditable='false';txt.style.pointerEvents='none';save();saveState();});
+    txt.addEventListener('blur',()=>{txt.contentEditable='false';txt.style.pointerEvents='none';commitAll();});
     txt.addEventListener('input',save);
     wrap.append(svgDiv,txt);c.appendChild(wrap);
     el.dataset.shape=d.shape;el.dataset.fill=d.fill||'#3b82f6';el.dataset.stroke=d.stroke||'#1d4ed8';
@@ -277,6 +277,7 @@ function mkEl(d){
     });
   }
   el.append(c,lb,trigBadge);cv.appendChild(el);
+  if(d.valign&&d.type==='text'&&typeof applyTextVAlign==='function')applyTextVAlign(el,d.valign);
   if(d.type==='code')renderCodeEl(el,d);
   if(d.type==='image')applyImgStyles(el,d);
   if(d.type==='table'&&typeof renderTableEl==='function'){if(typeof _tblSaveToDataset==='function')_tblSaveToDataset(el,d);renderTableEl(el,d);if(typeof _tblAttachResizeObs==='function')_tblAttachResizeObs(el,d);}
@@ -308,7 +309,7 @@ function mkEl(d){
         if(d2){d2.x=nx;d2.y=ny;}
         // Propagate to all slides and save coords
         if(typeof pnOnDragEnd==='function') pnOnDragEnd(nx,ny);
-        save(); drawThumbs(); saveState();
+        commitAll();
       };
       document.addEventListener('mousemove',mm);
       document.addEventListener('mouseup',mu);
@@ -349,7 +350,7 @@ function pick(el){
     const c=sel.querySelector('.tel');
     if(c){c.contentEditable='false';c.blur();}
     delete sel.dataset.editing;sel.style.cursor='';
-    save();drawThumbs();saveState();
+    commitAll();
   }
   if(sel)sel.classList.remove('sel');
   sel=el;

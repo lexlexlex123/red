@@ -44,12 +44,13 @@ function save(){
       // Strip valign wrapper — it's a DOM-only helper, not part of saved content
       const vw=c.querySelector('.ec-valign-wrap');
       d.html=vw?vw.innerHTML:c.innerHTML;
-      // Strip background and layout props from cs (stored separately or handled by CSS)
+      // Strip layout/background props from cs (stored separately or computed dynamically)
       let cs=c.getAttribute('style')||'';
       cs=cs.replace(/\bbackground\s*:[^;]+;?/gi,'')
            .replace(/\bdisplay\s*:[^;]+;?/gi,'')
            .replace(/\bflex-direction\s*:[^;]+;?/gi,'')
            .replace(/\bjustify-content\s*:[^;]+;?/gi,'')
+           .replace(/\bpadding-top\s*:[^;]+;?/gi,'')
            .replace(/\s{2,}/g,' ').trim();
       d.cs=cs;
       if(el.dataset.valign)d.valign=el.dataset.valign;

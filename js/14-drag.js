@@ -48,7 +48,7 @@ function mkDrag(el,c){
         el.style.left=nx+'px';el.style.top=ny+'px';showGuides(el);syncPos();
       }
     };
-    const mu=()=>{on=false;groupStart=null;clearGuides();document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);save();drawThumbs();saveState();};
+    const mu=()=>{on=false;groupStart=null;clearGuides();document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);commitAll();};
     document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
   });
 }
@@ -105,7 +105,11 @@ function mkResize(el,rh,cfg){
         const d=slides[cur]&&slides[cur].els.find(x=>x.id===el.dataset.id);
         if(d){d.imgFit='fill';el.dataset.imgFit='fill';el.querySelector('img').style.objectFit='fill';}
       }
-      save();drawThumbs();saveState();
+      // Recalculate valign padding after resize (text height may have changed)
+      if(el.dataset.type==='text'&&el.dataset.valign&&typeof applyTextVAlign==='function'){
+        applyTextVAlign(el,el.dataset.valign);
+      }
+      commitAll();
     };
     document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
   });

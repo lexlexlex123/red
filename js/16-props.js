@@ -148,7 +148,7 @@ function syncProps(){
 }
 function setES(prop,val,u){if(!sel)return;sel.style[prop]=val+u;save();drawThumbs();}
 function setElRotation(deg){
-  if(!sel)return;sel.style.transform='rotate('+deg+'deg)';sel.dataset.rot=deg;save();saveState();
+  if(!sel)return;sel.style.transform='rotate('+deg+'deg)';sel.dataset.rot=deg;commitAll();
 }
 // Debounced undo: pushes at most once per 800ms during continuous changes
 let _undoTimer=null;
@@ -178,39 +178,39 @@ function setTextVAlign(va){
   pushUndo();
   sel.dataset.valign=va;
   applyTextVAlign(sel,va);
-  save();saveState();syncProps();
+  commitAll();syncProps();
 }
 function applyTextVAlign(el,va){
   const ec=el.querySelector('.ec.tel');if(!ec)return;
-  // Remove old wrapper if present, restore content flat
+  // Remove any old wrapper div from previous implementation
   const oldWrap=ec.querySelector('.ec-valign-wrap');
   if(oldWrap){while(oldWrap.firstChild)ec.insertBefore(oldWrap.firstChild,oldWrap);oldWrap.remove();}
   el.dataset.valign=va||'top';
-  if(!va||va==='top'){delete el.dataset.valign;return;}
-  // Wrap all content in one div — so flex only has ONE child and text stays horizontal
-  const wrap=document.createElement('div');
-  wrap.className='ec-valign-wrap';
-  while(ec.firstChild)wrap.appendChild(ec.firstChild);
-  ec.appendChild(wrap);
+  if(!va||va==='top'){delete el.dataset.valign;ec.style.paddingTop='';return;}
+  // Use padding-top to push text down — no wrapper, no flex, no layout side-effects
+  const elH=parseInt(el.style.height)||0;
+  const textH=ec.scrollHeight;
+  if(va==='middle'){const pt=Math.max(0,Math.round((elH-textH)/2));ec.style.paddingTop=pt+'px';}
+  else if(va==='bottom'){const pt=Math.max(0,elH-textH-6);ec.style.paddingTop=pt+'px';}
 }
 function setTextBg(col){
   if(!sel||sel.dataset.type!=='text')return;
   sel.dataset.textBg=col;
   applyTextBg(sel);
-  save();drawThumbs();saveState();
+  commitAll();
 }
 function clearTextBg(){
   if(!sel||sel.dataset.type!=='text')return;
   delete sel.dataset.textBg;delete sel.dataset.textBgOp;
   const c=sel.querySelector('.ec');if(c)c.style.background='';
   try{document.getElementById('p-bg-hex').value='';document.getElementById('p-bg-col').value='#000000';}catch(e){}
-  save();drawThumbs();saveState();
+  commitAll();
 }
 function setTextBgOp(op){
   if(!sel||sel.dataset.type!=='text')return;
   sel.dataset.textBgOp=op;
   applyTextBg(sel);
-  save();drawThumbs();saveState();
+  commitAll();
 }
 function applyTextBg(el){
   const c=el.querySelector('.ec');if(!c)return;
@@ -247,7 +247,7 @@ function setTextRole(role){
     // Update bold button state
     try{document.getElementById('ft-b').classList.toggle('on',role==='heading');}catch(e){}
   }
-  save();drawThumbs();saveState();
+  commitAll();
 }
 
 function setTextPadding4(){
@@ -262,7 +262,7 @@ function setTextPadding4(){
   const padStr=(t===r&&r===b&&b===l)?t+'px':t+'px '+r+'px '+b+'px '+l+'px';
   cs=(cs.endsWith(';')?cs:cs+';')+'padding:'+padStr+';';
   c.setAttribute('style',cs);
-  save();drawThumbs();saveState();
+  commitAll();
 }
 // Keep backward compat
 function setTextPadding(v){
@@ -313,6 +313,6 @@ function resetTextFormatting() {
     ecEl.innerHTML = d.html;
   }
 
-  save(); drawThumbs(); saveState(); syncProps();
+  commitAll(); syncProps();
   toast((getLang()==='ru'?'Форматирование сброшено':'Formatting reset'),'ok');
 }
