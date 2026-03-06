@@ -53,6 +53,91 @@ function buildShapeSVG(d,w,h){
   }
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="overflow:visible">${filterDef}${shapeDef}</svg>`;
 }
+
+// Returns CSS clip-path string matching the shape, for use with backdrop-filter
+function _shapeClipPath(d, w, h) {
+  const sh = SHAPES.find(s => s.id === d.shape) || SHAPES[0];
+  const sw = d.sw === undefined ? 2 : +d.sw;
+  const m = sw > 0 ? sw : 0;
+  if (sh.special === 'rect')    return `inset(${m}px)`;
+  if (sh.special === 'rounded') return `inset(${m}px round ${d.rx || 15}px)`;
+  if (sh.special === 'ellipse') return `ellipse(${(w-m*2)/2}px ${(h-m*2)/2}px at 50% 50%)`;
+  // Polygon shapes — scale path points from 0-100 space to actual px
+  if (sh.path) {
+    const ew = Math.max(1, w - m * 2), eh = Math.max(1, h - m * 2);
+    const sx = ew / 90, sy = eh / 90;
+    // Extract polygon points from path (works for simple M/L/Z paths)
+    const pts = [];
+    const re = /[ML]\s*(-?[\d.]+)[,\s]+(-?[\d.]+)/g;
+    let match;
+    while ((match = re.exec(sh.path)) !== null) {
+      const px = Math.round((+match[1] - 5) * sx + m);
+      const py = Math.round((+match[2] - 5) * sy + m);
+      pts.push(`${px}px ${py}px`);
+    }
+    if (pts.length >= 3) return `polygon(${pts.join(', ')})`;
+  }
+  return 'none';
+}
+
+// Applies or removes backdrop-filter blur overlay matching shape clip-path
+function _applyShapeBlur(el) {
+  // Remove existing blur overlay
+  const old = el.querySelector('.shape-blur-overlay');
+  if (old) old.remove();
+  // Clear any direct backdrop-filter on el
+  el.style.backdropFilter = '';
+  el.style.webkitBackdropFilter = '';
+
+  const blur = parseFloat(el.dataset.shapeBlur || 0);
+  if (blur <= 0) return;
+
+  const d = sel && sel === el
+    ? (slides[cur] && slides[cur].els.find(x => x.id === el.dataset.id))
+    : (slides[cur] && slides[cur].els.find(x => x.id === el.dataset.id));
+  if (!d) return;
+
+  const w = parseInt(el.style.width) || d.w;
+  const h = parseInt(el.style.height) || d.h;
+  const cp = _shapeClipPath(d, w, h);
+
+  const overlay = document.createElement('div');
+  overlay.className = 'shape-blur-overlay';
+  overlay.style.cssText = (
+    'position:absolute;inset:0;pointer-events:none;z-index:0;' +
+    `backdrop-filter:blur(${blur}px);-webkit-backdrop-filter:blur(${blur}px);` +
+    (cp !== 'none' ? `clip-path:${cp};-webkit-clip-path:${cp};` : '')
+  );
+  el.style.position = 'relative';
+  el.insertBefore(overlay, el.firstChild);
+}
+
+// Apply hit-area overlay with clip-path so clicks outside shape pass through
+function _applyShapeClipPath(el, d) {
+  // Remove old hit overlay
+  const old = el.querySelector('.shape-hit-area');
+  if (old) old.remove();
+  // Clear any direct clip-path on el (visual content must not be clipped)
+  el.style.clipPath = '';
+  el.style.webkitClipPath = '';
+
+  const w = parseInt(el.style.width) || d.w;
+  const h = parseInt(el.style.height) || d.h;
+  const cp = _shapeClipPath(d, w, h);
+  if (cp === 'none') return;
+
+  // Transparent div covering el with clip-path — captures pointer events only within shape
+  const hit = document.createElement('div');
+  hit.className = 'shape-hit-area';
+  hit.style.cssText = (
+    'position:absolute;inset:0;z-index:10;pointer-events:auto;cursor:move;' +
+    'clip-path:' + cp + ';-webkit-clip-path:' + cp + ';' +
+    'background:transparent;'
+  );
+  el.appendChild(hit);
+  // Outside hit area — pass through to elements below
+  el.style.pointerEvents = 'none';
+}
 function renderShapeEl(el,d){
   const w=parseInt(el.style.width),h=parseInt(el.style.height);
   const c=el.querySelector('.sel-el');if(!c)return;
@@ -66,6 +151,13 @@ function renderShapeEl(el,d){
         p.style.pointerEvents='visibleFill';p.style.cursor='move';
       });
     }
+  }
+  // Re-apply blur overlay after re-render (size may change)
+  if(el.dataset.shapeBlur>0&&typeof _applyShapeBlur==='function')_applyShapeBlur(el);
+  // Re-apply hit area only when not selected (selected shapes use full pointer-events)
+  if(!el.classList.contains('sel')){
+    const _d=slides[cur]&&slides[cur].els.find(e=>e.id===el.dataset.id);
+    if(_d)_applyShapeClipPath(el,_d);
   }
 }
 function updateShapeStyle(prop,val){
@@ -82,6 +174,18 @@ function updateShapeStyle(prop,val){
   else if(prop==='shadowColor'){d.shadowColor=val;sel.dataset.shadowColor=val;}
   renderShapeEl(sel,d);save();drawThumbs();saveState();
 }
+function updateShapeStyleScheme(prop, val, schemeRef) {
+  if(sel && slides[cur]) {
+    const d = slides[cur].els.find(e=>e.id===sel.dataset.id);
+    if(d) {
+      if(prop==='fill') { d.fillScheme = schemeRef || null; d.fill = val; sel.dataset.fill = val; }
+      else if(prop==='stroke') { d.strokeScheme = schemeRef || null; d.stroke = val; sel.dataset.stroke = val; }
+      console.log('[DBG schemeRef] prop='+prop+' val='+val+' schemeRef='+JSON.stringify(schemeRef)+' d.fillScheme='+JSON.stringify(d.fillScheme));
+    }
+  }
+  updateShapeStyle(prop, val);
+}
+
 function startEditShapeText(){
   if(!sel||sel.dataset.type!=='shape')return;
   const txt=sel.querySelector('.shape-text');if(!txt)return;

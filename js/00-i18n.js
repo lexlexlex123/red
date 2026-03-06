@@ -78,8 +78,8 @@ const LANG_DATA = {
     btnApplet: 'Applet',
 
     // Design
-    btnTheme: 'Theme',
-    btnLayout: 'Layout',
+    btnTheme: 'Color Scheme',
+    btnLayout: 'Theme',
     btnAddAnim: 'Add Animation',
     btnApplyToAll: 'Apply to All',
 
@@ -139,9 +139,9 @@ const LANG_DATA = {
     // Modals
     modalCode: '{ } Code Block',
     modalMd: '# Markdown Block',
-    modalLayout: '🖼 Layout Decorator',
+    modalLayout: '🖼 Apply Theme',
     layoutDesc: 'Decorative style for all slides. Uses current theme colors.',
-    modalTheme: '🎨 Apply Theme',
+    modalTheme: '🎨 Color Scheme',
     modalIcon: '🔍 Icons',
     modalSvg: '⬡ Insert SVG',
     modalShape: '⬡ Insert Shape',
@@ -285,8 +285,8 @@ const LANG_DATA = {
     btnApplet: 'Аплет',
 
     // Design
-    btnTheme: 'Тема',
-    btnLayout: 'Макет',
+    btnTheme: 'Цветовая схема',
+    btnLayout: 'Тема',
     btnAddAnim: 'Добавить анимацию',
     btnApplyToAll: 'Применить ко всем',
 
@@ -346,9 +346,9 @@ const LANG_DATA = {
     // Modals
     modalCode: '{ } Блок кода',
     modalMd: '# Markdown блок',
-    modalLayout: '🖼 Декоратор макета',
+    modalLayout: '🖼 Применить тему',
     layoutDesc: 'Декоративный стиль для всех слайдов. Использует цвета текущей темы.',
-    modalTheme: '🎨 Применить тему',
+    modalTheme: '🎨 Цветовая схема',
     modalIcon: '🔍 Значки',
     modalSvg: '⬡ Вставить SVG',
     modalShape: '⬡ Вставить фигуру',

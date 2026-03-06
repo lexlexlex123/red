@@ -34,7 +34,7 @@ function onKey(e){
       clearMultiSel();
       document.getElementById('canvas').querySelectorAll('.el').forEach(el=>addToMultiSel(el));
       if(multiSel.size===1){const only=[...multiSel][0];clearMultiSel();pick(only);}
-      else if(multiSel.size>1){pick([...multiSel].slice(-1)[0]);toast(multiSel.size+(getLang()==='ru'?' элементов выбрано':' elements selected'),'ok');}
+      else if(multiSel.size>1){pick([...multiSel].slice(-1)[0]);if(typeof toast==="function")toast(multiSel.size+(getLang()==='ru'?' элементов выбрано':' elements selected'),'ok');}
       return;
     }
   }
@@ -45,7 +45,7 @@ function onKey(e){
     if(e.key==='ArrowLeft'||e.key==='ArrowRight'||e.key==='ArrowUp'||e.key==='ArrowDown'){
       if(allEls.length===0)return;
       e.preventDefault();
-      pushUndo();
+      if(typeof pushUndo==="function")pushUndo();
       allEls.forEach(el=>{
         if(e.key==='ArrowLeft')el.style.left=(parseInt(el.style.left)-step)+'px';
         else if(e.key==='ArrowRight')el.style.left=(parseInt(el.style.left)+step)+'px';
@@ -76,25 +76,25 @@ function copyEl(){
   if(!sel)return;
   const d=slides[cur].els.find(el=>el.id===sel.dataset.id);if(!d)return;
   elClipboard=JSON.parse(JSON.stringify(d));
-  toast(t('toastCopied'),'ok');
+  if(typeof toast==="function")toast(t('toastCopied'),'ok');
 }
 function pasteEl(){
-  if(!elClipboard)return toast(t('toastNothingPaste'));
-  pushUndo();
+  if(!elClipboard)return (typeof toast==="function")&&toast(t('toastNothingPaste'));
+  if(typeof pushUndo==="function")pushUndo();
   const nd=JSON.parse(JSON.stringify(elClipboard));
   nd.id='e'+(++ec); // no offset — paste at same position
   slides[cur].els.push(nd);mkEl(nd);
   // Select the pasted element
   const newEl=document.getElementById('canvas').querySelector('[data-id="'+nd.id+'"]');
   if(newEl)pick(newEl);
-  save();drawThumbs();saveState();
-  toast(t('toastPasted'),'ok');
+  save();if(typeof drawThumbs==="function")drawThumbs();if(typeof saveState==="function")saveState();
+  if(typeof toast==="function")toast(t('toastPasted'),'ok');
 }
 function dupEl(){
-  if(!sel)return;pushUndo();
+  if(!sel)return;if(typeof pushUndo==="function")pushUndo();
   const d=slides[cur].els.find(el=>el.id===sel.dataset.id);if(!d)return;
   const nd=JSON.parse(JSON.stringify(d));nd.id='e'+(++ec);nd.x+=20;nd.y+=20;
-  slides[cur].els.push(nd);mkEl(nd);save();drawThumbs();saveState();
+  slides[cur].els.push(nd);mkEl(nd);save();if(typeof drawThumbs==="function")drawThumbs();if(typeof saveState==="function")saveState();
 }
 
 
@@ -170,7 +170,7 @@ document.addEventListener('paste', async (e) => {
       if (!file) continue;
       const reader = new FileReader();
       reader.onload = ev => {
-        pushUndo();
+        if(typeof pushUndo==="function")pushUndo();
         const img = new Image();
         img.onload = () => {
           // Fit image to canvas keeping aspect ratio, max 60% of canvas
@@ -191,8 +191,8 @@ document.addEventListener('paste', async (e) => {
           slides[cur].els.push(d); mkEl(d);
           const el = document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
           if (el) pick(el);
-          save(); drawThumbs(); saveState();
-          toast((getLang()==='ru'?'Изображение вставлено':'Image pasted'),'ok');
+          save(); if(typeof drawThumbs==="function")drawThumbs(); if(typeof saveState==="function")saveState();
+          if(typeof toast==="function")toast((getLang()==='ru'?'Изображение вставлено':'Image pasted'),'ok');
         };
         img.src = ev.target.result;
       };
@@ -206,7 +206,7 @@ document.addEventListener('paste', async (e) => {
   if (!text || !text.trim()) return;
 
   e.preventDefault();
-  pushUndo();
+  if(typeof pushUndo==="function")pushUndo();
 
   // Strip HTML tags to get clean text, preserve line breaks
   let content = plain || '';
@@ -239,6 +239,6 @@ document.addEventListener('paste', async (e) => {
   slides[cur].els.push(d); mkEl(d);
   const el = document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
   if (el) pick(el);
-  save(); drawThumbs(); saveState();
-  toast((getLang()==='ru'?'Текст вставлен':'Text pasted'),'ok');
+  save(); if(typeof drawThumbs==="function")drawThumbs(); if(typeof saveState==="function")saveState();
+  if(typeof toast==="function")toast((getLang()==='ru'?'Текст вставлен':'Text pasted'),'ok');
 });

@@ -525,9 +525,9 @@ function refreshDecorColors(ac1, ac2, skipRender){
     });
   });
   if(!skipRender){
-    renderAll();
-    if(typeof saveState==='function')saveState();
-    if(typeof drawThumbs==='function')drawThumbs();
+    if(typeof renderAll==="function")renderAll();
+    if(typeof saveState==='function')if(typeof saveState==="function")saveState();
+    if(typeof drawThumbs==='function')if(typeof drawThumbs==="function")drawThumbs();
   }
 }
 
@@ -587,16 +587,16 @@ function applyLayout(idx,btn){
     s.els.unshift(d);
   });
 
-  renderAll();saveState();
-  if(typeof drawThumbs==='function')drawThumbs();
+  if(typeof renderAll==="function")renderAll();if(typeof saveState==="function")saveState();
+  if(typeof drawThumbs==='function')if(typeof drawThumbs==="function")drawThumbs();
 }
 
 function clearLayout(){
   selLayout=-1;
   document.querySelectorAll('.layout-item').forEach(b=>b.classList.remove('active'));
   slides.forEach(s=>{s.els=s.els.filter(d=>!d._isDecor);});
-  renderAll();saveState();
-  if(typeof drawThumbs==='function')drawThumbs();
+  if(typeof renderAll==="function")renderAll();if(typeof saveState==="function")saveState();
+  if(typeof drawThumbs==='function')if(typeof drawThumbs==="function")drawThumbs();
 }
 
 function openLayoutModal(){

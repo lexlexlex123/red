@@ -50,7 +50,7 @@ function addTable(rows, cols) {
 }
 
 
-const _TBL_FIELDS=['cells','colWidths','rowHeights','rows','cols','borderW','borderColor','headerRow','rx','fs','textColor','headerBg','cellBg','altBg'];
+const _TBL_FIELDS=['cells','colWidths','rowHeights','rows','cols','borderW','borderColor','headerRow','rx','fs','textColor','headerBg','cellBg','altBg','tableBgOp','tableBgBlur'];
 function _tblSaveToDataset(el, d){
   const data={};
   _TBL_FIELDS.forEach(k=>{ if(d[k]!==undefined) data[k]=d[k]; });
@@ -72,13 +72,25 @@ function renderTableEl(el, d) {
   if((!d.cells||!d.colWidths)&&el.dataset.tableData){
     try{const td=JSON.parse(el.dataset.tableData);Object.assign(d,td);}catch(e){}
   }
-  console.log('[TBL] renderTableEl id='+d.id+' rows='+d.rows+' cols='+d.cols+' cells='+(d.cells&&d.cells.length)+' W='+W+' H='+H);
   const bw=d.borderW||1, bc=d.borderColor||'#3b82f680';
   const rx=d.rx||0, fs=d.fs||15;
   const textColor=d.textColor||'#fff';
-  const headerBg=d.headerBg||'#3b82f6';
-  const cellBg=d.cellBg||'#1e293b44';
-  const altBg=d.altBg||'';
+  const _tblOp=d.tableBgOp!=null?+d.tableBgOp:1;
+  // Apply tableBgOp by converting hex colors to rgba — so opacity and backdrop-filter coexist
+  function _tblRgba(hex,extraOp){
+    if(!hex)return hex;
+    // Handle hex with alpha (#rrggbbaa) or 8-char hex
+    let r,g,b,a=1;
+    const h=hex.replace('#','');
+    if(h.length>=6){r=parseInt(h.slice(0,2),16);g=parseInt(h.slice(2,4),16);b=parseInt(h.slice(4,6),16);}
+    else return hex;
+    if(h.length===8)a=parseInt(h.slice(6,8),16)/255;
+    a=a*(extraOp!=null?extraOp:_tblOp);
+    return `rgba(${r},${g},${b},${a.toFixed(3)})`;
+  }
+  const headerBg=_tblRgba(d.headerBg||'#3b82f6');
+  const cellBg=_tblRgba(d.cellBg||'#1e293b');
+  const altBg=d.altBg?_tblRgba(d.altBg):'';
 
   // Guard: all essential fields must be valid numbers/arrays
   if(!d.rows||d.rows<1) d.rows=1;
@@ -105,7 +117,7 @@ function renderTableEl(el, d) {
       if(cell.hidden) continue;
       const isH=d.headerRow&&r===0;
       const isAlt=!isH&&altBg&&r%2===0;
-      const bg=cell.bg||(isH?headerBg:isAlt?altBg:cellBg);
+      const bg=cell.bg?_tblRgba(cell.bg):(isH?headerBg:isAlt?altBg:cellBg);
       const selected=sel&&sel.dataset.id===d.id&&_tblSel&&_tblSel.elId===d.id&&_tblSelSet.has(r+':'+c);
       const cs=cell.colspan||1,rs=cell.rowspan||1;
       const isLastC=(c+cs-1)>=d.cols-1, isLastR=(r+rs-1)>=d.rows-1;
@@ -116,12 +128,20 @@ function renderTableEl(el, d) {
       const span=(cell.colspan>1?` colspan="${cell.colspan}"`:'')+((cell.rowspan||1)>1?` rowspan="${cell.rowspan}"`:'');
       const tag=isH?'th':'td';
       const selStyle=selected?`outline:2px solid var(--selb);outline-offset:-1px;`:'';
-      t+=`<${tag} data-r="${r}" data-c="${c}"${span} style="background:${bg};${borders}text-align:${cell.align||'left'};vertical-align:${cell.valign||'middle'};padding:5px 9px;overflow:hidden;word-break:normal;overflow-wrap:break-word;font-weight:${isH?700:400};box-sizing:border-box;${cr}${selStyle}">${cell.html||''}</${tag}>`; 
+      const cellFs=cell.fs?(`;font-size:${cell.fs}px`):'';
+      t+=`<${tag} data-r="${r}" data-c="${c}"${span} style="background:${bg};${borders}text-align:${cell.align||'left'};vertical-align:${cell.valign||'middle'};padding:5px 9px;overflow:hidden;word-break:normal;overflow-wrap:break-word;font-weight:${isH?700:400};box-sizing:border-box;${cr}${selStyle}${cellFs}">${cell.html||''}</${tag}>`; 
     }
     t+='</tr>';
   }
   t+='</tbody></table>';
-  ecEl.innerHTML=`<div class="tbl-wrap" style="width:${W}px;height:${H}px;border-radius:${rx}px;overflow:hidden;position:relative;">${t}</div>`;
+  const _tblBlur=d.tableBgBlur||0;
+  el.style.backdropFilter='';
+  el.style.webkitBackdropFilter='';
+  // Blur layer: absolutely positioned div behind the table, outside overflow:hidden wrapper
+  const _blurLayer=_tblBlur>0
+    ?`<div style="position:absolute;inset:0;border-radius:${rx}px;backdrop-filter:blur(${_tblBlur}px);-webkit-backdrop-filter:blur(${_tblBlur}px);z-index:0;pointer-events:none;"></div>`
+    :'';
+  ecEl.innerHTML=`<div style="position:relative;width:${W}px;height:${H}px;">${_blurLayer}<div class="tbl-wrap" style="position:relative;width:${W}px;height:${H}px;border-radius:${rx}px;overflow:hidden;z-index:1;">${t}</div></div>`;
 
   // Persist full table data on DOM element so save() can always recover it
   _tblSaveToDataset(el, d);
@@ -289,6 +309,8 @@ function _tblDragBorder(el, d, ecEl){
     h.dataset.side = side;
     h.addEventListener('mousedown', ev=>{
       ev.preventDefault(); ev.stopPropagation();
+      // Clicking table border — clear cell selection
+      tblClearSel();
       if(sel!==el) pick(el);
       // Trigger drag directly — replicate mkDrag logic
       let ox=ev.clientX, oy=ev.clientY;
@@ -430,8 +452,17 @@ function tblAddRow(after=true){
 }
 function tblDelRow(){
   const d=tblData();if(!d||d.rows<=1)return;pushUndo();
-  const r=(_tblSel&&_tblSel.elId===d.id)?_tblSel.r:d.rows-1;
-  d.cells.splice(r*d.cols,d.cols);d.rows--;d.rowHeights=_tblEqRows(d.rows);
+  // Collect unique selected rows, sorted descending so splices don't shift indices
+  let rows;
+  if(_tblSel&&_tblSel.elId===d.id&&_tblSelSet.size>0){
+    rows=[...new Set([..._tblSelSet].map(k=>+k.split(':')[0]))].sort((a,b)=>b-a);
+  } else {
+    rows=[d.rows-1];
+  }
+  // Keep at least 1 row
+  rows=rows.slice(0,d.rows-1);
+  rows.forEach(r=>{d.cells.splice(r*d.cols,d.cols);d.rows--;});
+  d.rowHeights=_tblEqRows(d.rows);
   if(_tblSel)_tblSel.r=Math.min(_tblSel.r,d.rows-1);
   _tblSelSet=new Set();
   renderTableEl(sel,d);save();drawThumbs();saveState();syncProps();
@@ -446,12 +477,30 @@ function tblAddCol(after=true){
 }
 function tblDelCol(){
   const d=tblData();if(!d||d.cols<=1)return;pushUndo();
-  const c=(_tblSel&&_tblSel.elId===d.id)?_tblSel.c:d.cols-1;
-  for(let r=d.rows-1;r>=0;r--) d.cells.splice(r*d.cols+c,1);
-  d.cols--;d.colWidths=_tblEqCols(d.cols);
+  // Collect unique selected cols, sorted descending
+  let cols;
+  if(_tblSel&&_tblSel.elId===d.id&&_tblSelSet.size>0){
+    cols=[...new Set([..._tblSelSet].map(k=>+k.split(':')[1]))].sort((a,b)=>b-a);
+  } else {
+    cols=[d.cols-1];
+  }
+  // Keep at least 1 col
+  cols=cols.slice(0,d.cols-1);
+  cols.forEach(c=>{for(let r=d.rows-1;r>=0;r--) d.cells.splice(r*d.cols+c,1);d.cols--;});
+  d.colWidths=_tblEqCols(d.cols);
   if(_tblSel)_tblSel.c=Math.min(_tblSel.c,d.cols-1);
   _tblSelSet=new Set();
   renderTableEl(sel,d);save();drawThumbs();saveState();syncProps();
+}
+function tblSetBgOp(v){
+  const d=tblData();if(!d)return;
+  d.tableBgOp=+v;
+  renderTableEl(sel,d);save();drawThumbs();saveState();
+}
+function tblSetBgBlur(v){
+  const d=tblData();if(!d)return;
+  d.tableBgBlur=+v;
+  renderTableEl(sel,d);save();drawThumbs();saveState();
 }
 function tblMerge(){
   const d=tblData();if(!d||!_tblSel||_tblSel.elId!==d.id)return toast('Выберите ячейки');
@@ -516,8 +565,14 @@ function tblSetCellBg(v){
 }
 function tblSetCellFs(v){
   const d=tblData();if(!d)return;
-  // per-cell font size not in model yet — set global for now, or store per-cell
-  d.fs=+v; renderTableEl(sel,d);save();drawThumbs();saveState();
+  const cells=_tblSelectedCells(d);
+  if(cells.length){
+    cells.forEach(({r,c})=>{const i=r*d.cols+c;if(d.cells[i])d.cells[i].fs=+v;});
+  } else {
+    // No selection — set global fallback
+    d.fs=+v;
+  }
+  renderTableEl(sel,d);save();drawThumbs();saveState();
 }
 function tblSet(prop,val){
   const d=tblData();if(!d)return;
@@ -532,7 +587,12 @@ function syncTableProps(){
   const sc6=v=>typeof v==='string'&&v.length>7?v.slice(0,7):v;
   const sv=(id,v)=>{try{const e=document.getElementById(id);if(!e)return;e.value=e.type==='color'?sc6(v):v;}catch(e){}};
   const sc=(id,v)=>{try{document.getElementById(id).checked=v;}catch(e){}};
-  sv('tbl-fs',d.fs||15); sv('tbl-rx',d.rx||0); sv('tbl-bw',d.borderW||1);
+  // Show per-cell fs if a single cell is selected, else global
+  const _cellFsVal = (_tblSel&&_tblSel.elId===d.id&&_tblSelSet.size===1)
+    ? (()=>{const k=[..._tblSelSet][0].split(':');const ci=+k[0]*d.cols+ +k[1];return d.cells[ci]&&d.cells[ci].fs||d.fs||15;})()
+    : (d.fs||15);
+  sv('tbl-fs',_cellFsVal); sv('tbl-rx',d.rx||0); sv('tbl-bw',d.borderW||1);
+  try{document.getElementById('tbl-bg-op').value=d.tableBgOp!=null?d.tableBgOp:1;document.getElementById('tbl-bg-blur').value=d.tableBgBlur||0;}catch(e){}
   sv('tbl-bc',d.borderColor||'#3b82f6'); sv('tbl-bc-hex',d.borderColor||'#3b82f6');
   sv('tbl-tc',d.textColor||'#ffffff'); sv('tbl-tc-hex',d.textColor||'#ffffff');
   sv('tbl-hbg',d.headerBg||'#3b82f6'); sv('tbl-hbg-hex',d.headerBg||'#3b82f6');

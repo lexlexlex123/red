@@ -96,7 +96,7 @@ function pickMulti(el,shiftKey){
       const onlyEl=[...multiSel][0];clearMultiSel();pick(onlyEl);
     } else if(multiSel.size>1){
       pick([...multiSel].slice(-1)[0]);
-      toast(multiSel.size+(getLang()==='ru'?' эл. выбрано — Ctrl+C копировать':' elements — Ctrl+C copy, Del delete'),'ok');
+      if(typeof toast==="function")toast(multiSel.size+(getLang()==='ru'?' эл. выбрано — Ctrl+C копировать':' elements — Ctrl+C copy, Del delete'),'ok');
     }
   });
 
@@ -115,15 +115,15 @@ function copySelected(){
     const d=slides[cur]&&slides[cur].els.find(x=>x.id===sel.dataset.id);
     if(d)elsToCopy.push(JSON.parse(JSON.stringify(d)));
   }
-  if(!elsToCopy.length)return toast(t('toastNothingSelected'));
+  if(!elsToCopy.length)return (typeof toast==="function")&&toast(t('toastNothingSelected'));
   clipboard=elsToCopy;
-  toast((getLang()==='ru'?'Скопировано: ':'Copied: ')+elsToCopy.length+(getLang()==='ru'?' эл.':' el.'),'ok');
+  if(typeof toast==="function")toast((getLang()==='ru'?'Скопировано: ':'Copied: ')+elsToCopy.length+(getLang()==='ru'?' эл.':' el.'),'ok');
 }
 
 function pasteSelected(){
-  if(!clipboard.length)return toast(t('toastNothingToPaste'));
+  if(!clipboard.length)return (typeof toast==="function")&&toast(t('toastNothingToPaste'));
   if(!slides[cur])return;
-  pushUndo();
+  if(typeof pushUndo==="function")pushUndo();
   clearMultiSel();if(sel)sel.classList.remove('sel');sel=null;
   clipboard.forEach(d=>{
     const nd=JSON.parse(JSON.stringify(d)); // deep clone — preserves ALL settings
@@ -134,28 +134,28 @@ function pasteSelected(){
     const domEl=document.getElementById('canvas').querySelector('[data-id="'+nd.id+'"]');
     if(domEl)addToMultiSel(domEl);
   });
-  save();drawThumbs();saveState();
+  save();if(typeof drawThumbs==="function")drawThumbs();if(typeof saveState==="function")saveState();
   if(multiSel.size===1){const only=[...multiSel][0];clearMultiSel();pick(only);}
-  else if(multiSel.size>1){pick([...multiSel].slice(-1)[0]);toast((getLang()==='ru'?'Вставлено: ':'Pasted: ')+multiSel.size+(getLang()==='ru'?' эл.':' el.'),'ok');}
+  else if(multiSel.size>1){pick([...multiSel].slice(-1)[0]);if(typeof toast==="function")toast((getLang()==='ru'?'Вставлено: ':'Pasted: ')+multiSel.size+(getLang()==='ru'?' эл.':' el.'),'ok');}
 }
 
 function deleteSelected(){
   if(multiSel.size>1){
-    pushUndo();
+    if(typeof pushUndo==="function")pushUndo();
     multiSel.forEach(domEl=>{
       const s=slides[cur];if(!s)return;
       const idx2=s.els.findIndex(x=>x.id===domEl.dataset.id);
       if(idx2>=0)s.els.splice(idx2,1);
       domEl.remove();
     });
-    clearMultiSel();sel=null;save();drawThumbs();saveState();syncProps();
-    toast('Deleted elements','ok');
+    clearMultiSel();sel=null;save();if(typeof drawThumbs==="function")drawThumbs();if(typeof saveState==="function")saveState();syncProps();
+    if(typeof toast==="function")toast('Deleted elements','ok');
   } else if(sel){
     const s=slides[cur];if(!s)return;
-    pushUndo();
+    if(typeof pushUndo==="function")pushUndo();
     const idx2=s.els.findIndex(x=>x.id===sel.dataset.id);
     if(idx2>=0)s.els.splice(idx2,1);
-    sel.remove();sel=null;save();drawThumbs();saveState();syncProps();
+    sel.remove();sel=null;save();if(typeof drawThumbs==="function")drawThumbs();if(typeof saveState==="function")saveState();syncProps();
   }
 }
 

@@ -110,7 +110,7 @@ function refreshIconGrid(){
 }
 
 function insertIconSelected(){
-  if(!selIconId)return toast('Выберите иконку');
+  if(!selIconId)return (typeof toast==="function")&&toast('Выберите иконку');
   const ic=ICONS.find(x=>x.id===selIconId);
   if(!ic)return;
   const color=document.getElementById('ic-color').value||'#3b82f6';
@@ -118,14 +118,14 @@ function insertIconSelected(){
   const style=document.getElementById('ic-style').value||'stroke';
   const sz=snapV(180);
   const svgContent=_buildIconSVG(ic, color, sw, style);
-  pushUndo();
+  if(typeof pushUndo==="function")pushUndo();
   const d={
     id:'e'+(++ec), type:'icon',
     x:snapV(200), y:snapV(150), w:sz, h:sz,
     iconId:ic.id, iconPath:ic.p, iconColor:color, iconSw:sw, iconStyle:style,
     svgContent, rot:0, anims:[], shadow:false, shadowBlur:8, shadowColor:'#000000',
   };
-  slides[cur].els.push(d); mkEl(d); save(); drawThumbs(); saveState();
+  slides[cur].els.push(d); mkEl(d); save(); if(typeof drawThumbs==="function")drawThumbs(); if(typeof saveState==="function")saveState();
   document.getElementById('icon-modal').classList.remove('open');
 }
 
@@ -147,7 +147,7 @@ function insertIconSelected(){
 
 function updateIconStyle(prop,val){
   if(!sel||sel.dataset.type!=='icon')return;
-  pushUndo();
+  if(typeof pushUndo==="function")pushUndo();
   var d=slides[cur].els.find(function(e){return e.id===sel.dataset.id;});
   if(!d)return;
   if(prop==='color'){d.iconColor=val;sel.dataset.iconColor=val;}
@@ -165,5 +165,5 @@ function updateIconStyle(prop,val){
     var c=sel.querySelector('.ec');
     if(c){c.innerHTML=d.svgContent;var s=c.querySelector('svg');if(s){s.style.width='100%';s.style.height='100%';}}
   }
-  save();saveState();
+  save();if(typeof saveState==="function")saveState();
 }

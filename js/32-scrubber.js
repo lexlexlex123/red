@@ -52,6 +52,7 @@
     const inp = e.target;
     if (!inp || inp.tagName !== 'INPUT' || inp.type !== 'number') return;
 
+    e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
 
@@ -104,6 +105,13 @@
 
     document.addEventListener('mousemove', onMove, true);
     document.addEventListener('mouseup',   onUp,   true);
+  }, true);
+
+  // Prevent browser from treating scrub as element drag
+  document.addEventListener('dragstart', function (e) {
+    if (e.target && e.target.tagName === 'INPUT' && e.target.type === 'number') {
+      e.preventDefault();
+    }
   }, true);
 
   document.addEventListener('input', function (e) {

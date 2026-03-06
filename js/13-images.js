@@ -139,10 +139,14 @@ function mkEl(d){
     // Restore vertical alignment
     if(d.valign){el.dataset.valign=d.valign;} // applied after cv.appendChild below
     // Restore background — apply directly to c since it may not be in el yet
-    if(d.textBg){el.dataset.textBg=d.textBg;if(d.textBgOp!=null)el.dataset.textBgOp=d.textBgOp;
-      const op=parseFloat(d.textBgOp!=null?d.textBgOp:1);
-      const col=d.textBg;const r=parseInt(col.slice(1,3),16),g=parseInt(col.slice(3,5),16),b=parseInt(col.slice(5,7),16);
-      c.style.background=`rgba(${r},${g},${b},${op})`;}
+    if(d.textBg||d.textBgBlur){
+      if(d.textBg){el.dataset.textBg=d.textBg;if(d.textBgOp!=null)el.dataset.textBgOp=d.textBgOp;
+        const op=parseFloat(d.textBgOp!=null?d.textBgOp:1);
+        const col=d.textBg;const r=parseInt(col.slice(1,3),16),g=parseInt(col.slice(3,5),16),b=parseInt(col.slice(5,7),16);
+        el.style.background=`rgba(${r},${g},${b},${op})`;c.style.background='';}
+      if(d.textBgBlur>0){el.dataset.textBgBlur=d.textBgBlur;
+        el.style.backdropFilter=`blur(${d.textBgBlur}px)`;el.style.webkitBackdropFilter=`blur(${d.textBgBlur}px)`;}
+    }
     // Restore text role + uppercase for headings
     if(d.textRole){
       el.dataset.textRole=d.textRole;
@@ -184,9 +188,10 @@ function mkEl(d){
     c.innerHTML=d.mdHtml||markdownToHtml(d.mdRaw||'');
   }else if(d.type==='shape'){
     const wrap=document.createElement('div');wrap.className='sel-el';
+    wrap.style.cssText='position:absolute;inset:0;';
     const svgDiv=document.createElement('div');svgDiv.className='shape-svg';svgDiv.style.cssText='position:absolute;inset:0;';
     svgDiv.innerHTML=buildShapeSVG(d,d.w,d.h);
-    // Enable pixel-perfect clicks on SVG shape (not bounding box)
+    // Enable pixel-perfect clicks only on actual SVG fill pixels
     const svgEl=svgDiv.querySelector('svg');
     if(svgEl){
       svgEl.style.pointerEvents='none';
@@ -207,6 +212,8 @@ function mkEl(d){
     el.dataset.shape=d.shape;el.dataset.fill=d.fill||'#3b82f6';el.dataset.stroke=d.stroke||'#1d4ed8';
     el.dataset.sw=d.sw!=null?d.sw:2;el.dataset.rx=d.rx||0;el.dataset.fillOp=d.fillOp!=null?d.fillOp:1;
     el.dataset.shadow=d.shadow||false;el.dataset.shadowBlur=d.shadowBlur||8;el.dataset.shadowColor=d.shadowColor||'#000000';
+    // Apply clip-path so hit area matches shape, not bounding box
+    _applyShapeClipPath(el, d);
   }else if(d.type==='svg'){
     c.style.cssText='width:100%;height:100%;overflow:visible;';c.innerHTML=d.svgContent||'';
     const svgEl=c.querySelector('svg');
@@ -278,11 +285,21 @@ function mkEl(d){
   }
   el.append(c,lb,trigBadge);cv.appendChild(el);
   if(d.valign&&d.type==='text'&&typeof applyTextVAlign==='function')applyTextVAlign(el,d.valign);
+  if(d.type==='table'&&d.tableBgBlur>0){
+    el.style.backdropFilter=`blur(${d.tableBgBlur}px)`;el.style.webkitBackdropFilter=`blur(${d.tableBgBlur}px)`;}
   if(d.type==='code')renderCodeEl(el,d);
   if(d.type==='image')applyImgStyles(el,d);
   if(d.type==='table'&&typeof renderTableEl==='function'){if(typeof _tblSaveToDataset==='function')_tblSaveToDataset(el,d);renderTableEl(el,d);if(typeof _tblAttachResizeObs==='function')_tblAttachResizeObs(el,d);}
   // Restore elOpacity for all element types
   if(d.elOpacity!=null&&+d.elOpacity!==1){el.dataset.elOpacity=d.elOpacity;el.style.opacity=d.elOpacity;}
+  // Restore shapeBlur via overlay
+  if(d.type==='shape'&&d.shapeBlur>0){el.dataset.shapeBlur=d.shapeBlur;if(typeof _applyShapeBlur==='function')_applyShapeBlur(el);}
+  // For shapes: apply elOpacity to inner svg so backdrop-filter coexists
+  if(d.type==='shape'&&d.elOpacity!=null&&+d.elOpacity!==1){
+    const _svg=el.querySelector('svg');if(_svg)_svg.style.opacity=d.elOpacity;
+    const _st=el.querySelector('.shape-text');if(_st)_st.style.opacity=d.elOpacity;
+    el.style.opacity=''; // don't set on el itself
+  }
   if(d._isDecor)return; // done — no drag/events for decor
   if(d.type==='pagenum'){
     // pagenum: draggable but not selectable/resizable — custom lightweight drag
@@ -318,6 +335,7 @@ function mkEl(d){
   }
   // Restore hover fx
   if(d.hoverFx){el.dataset.hoverFx=JSON.stringify(d.hoverFx);applyHoverFxEditor(el,d.hoverFx);}
+  if(d.objHidden){el.style.opacity='0';el.style.pointerEvents='none';el.dataset.objHidden='1';}
   mkDrag(el,c);
   el.addEventListener('mousedown',ev=>{
     if(el.dataset.editing==='true')return; // let text editing handle it
@@ -354,7 +372,19 @@ function pick(el){
   }
   if(sel)sel.classList.remove('sel');
   sel=el;
-  if(el)el.classList.add('sel');
+  if(el){
+    el.classList.add('sel');
+    // When selected: restore full pointer-events so resize handles work
+    if(el.dataset.type==='shape'){
+      el.style.pointerEvents='auto';
+      const _hit=el.querySelector('.shape-hit-area');if(_hit)_hit.remove();
+    }
+  }
+  // When deselected: re-apply hit area with clip-path
+  if(sel!==el&&sel&&sel.dataset.type==='shape'&&typeof _applyShapeClipPath==='function'){
+    const _dd=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+    if(_dd)_applyShapeClipPath(sel,_dd);
+  }
   syncProps();
   if(document.getElementById('anim-panel').classList.contains('open'))renderAnimPanel();
 }

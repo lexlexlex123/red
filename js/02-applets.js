@@ -158,7 +158,7 @@ function getAppletHtml(appletId, palette){
 
 // Insert applet onto current slide
 function insertApplet(a){
-  pushUndo();
+  if(typeof pushUndo==="function")pushUndo();
   const aspect=a.aspectRatio||null;
   const w=300, h=aspect?Math.round(w/aspect):320;
   const x=Math.round((canvasW-w)/2);
@@ -175,7 +175,7 @@ function insertApplet(a){
   };
   slides[cur].els.push(d);
   mkEl(d);
-  save(); drawThumbs(); saveState();
+  if(typeof save==="function")save(); if(typeof drawThumbs==="function")drawThumbs(); if(typeof saveState==="function")saveState();
 }
 
 // Refresh all theme-aware applets after theme change
@@ -203,5 +203,5 @@ function refreshAppletThemes(){
       }
     });
   });
-  saveState();
+  if(typeof saveState==="function")saveState();
 }

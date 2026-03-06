@@ -60,7 +60,7 @@ function insertMarkdownBlock(){
   const raw=document.getElementById('md-source').value;
   const html=markdownToHtml(raw);
   document.getElementById('md-modal').classList.remove('open');
-  pushUndo();
+  if(typeof pushUndo==="function")pushUndo();
   if(_mdEditId){
     const d=slides[cur].els.find(e=>e.id===_mdEditId);
     if(d){d.mdRaw=raw;d.mdHtml=html;
@@ -70,7 +70,7 @@ function insertMarkdownBlock(){
     const d={id:'e'+(++ec),type:'markdown',x:snapV(60),y:snapV(60),w:snapV(550),h:snapV(400),mdRaw:raw,mdHtml:html,mdFs:16,rot:0,anims:[]};
     slides[cur].els.push(d);mkEl(d);
   }
-  save();drawThumbs();saveState();
+  if(typeof save==="function")save();if(typeof drawThumbs==="function")drawThumbs();if(typeof saveState==="function")saveState();
 }
 
 function updateMdFontSize(v){
@@ -78,5 +78,5 @@ function updateMdFontSize(v){
   const d=slides[cur].els.find(e=>e.id===sel.dataset.id);if(!d)return;
   d.mdFs=+v;
   const c=sel.querySelector('.ec');if(c)c.style.fontSize=v+'px';
-  save();
+  if(typeof save==="function")save();
 }

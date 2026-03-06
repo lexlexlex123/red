@@ -1,6 +1,7 @@
 // ══════════════ RICH TEXT ENGINE v3 ══════════════
 
 let _rtEl        = null;
+let _rtColorPickInProgress = false;
 let _rtElId      = null;
 let _savedSelIdx = null;
 
@@ -34,6 +35,13 @@ function _toCharObjs(html) {
     if (tag==='u')                 m.textDecoration='underline';
     if (tag==='sup')               m.verticalAlign='super';
     if (tag==='sub')               m.verticalAlign='sub';
+    // Restore per-char schemeRef from data-scheme attribute
+    if(node.dataset && node.dataset.scheme){
+      try{ m._schemeRef=JSON.parse(node.dataset.scheme); }catch(e){}
+    } else {
+      // Don't inherit schemeRef from parent — each span owns its own
+      delete m._schemeRef;
+    }
     for (const child of node.childNodes) walk(child, m);
   }
   for (const child of tmp.childNodes) walk(child, {});
@@ -43,12 +51,14 @@ function _toCharObjs(html) {
 function _charObjsToHtml(chars) {
   return chars.map(({ ch, style }) => {
     if (ch === '\n') return '<br>';
+    const schemeRef = style._schemeRef;
     const css = Object.entries(style)
-      .filter(([k]) => k !== 'display')
+      .filter(([k]) => k !== 'display' && k !== '_schemeRef')
       .map(([k, v]) => k.replace(/([A-Z])/g, '-$1').toLowerCase() + ':' + v)
       .join(';');
     const esc = ch.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    return `<span data-ch style="display:inline${css?';'+css:''}">${esc}</span>`;
+    const schemeAttr = schemeRef ? ` data-scheme='${JSON.stringify(schemeRef)}'` : '';
+    return `<span data-ch${schemeAttr} style="display:inline${css?';'+css:''}">${esc}</span>`;
   }).join('');
 }
 
@@ -63,12 +73,14 @@ function _groupedHtml(chars) {
   }
   return groups.map(g => {
     if (g.br) return '<br>';
+    const schemeRef = g.style._schemeRef;
     const css = Object.entries(g.style)
-      .filter(([k]) => k !== 'display')
+      .filter(([k]) => k !== 'display' && k !== '_schemeRef')
       .map(([k, v]) => k.replace(/([A-Z])/g, '-$1').toLowerCase() + ':' + v)
       .join(';');
     const esc = g.text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    return css ? `<span style="display:inline;${css}">${esc}</span>` : esc;
+    const schemeAttr = schemeRef ? ` data-scheme='${JSON.stringify(schemeRef)}'` : '';
+    return css ? `<span${schemeAttr} style="display:inline;${css}">${esc}</span>` : esc;
   }).join('');
 }
 
@@ -171,8 +183,8 @@ function rtAttachSelectionTracking(wrapEl, telEl) {
 
   telEl.addEventListener('blur', () => {
     _toSaveMode(telEl);
-    _rtCommit();
-    _savedSelIdx = null; // clear saved selection so whole-element color works after editing
+    // Skip commit if color is being picked — rtColor will commit after applying
+    if (!_rtColorPickInProgress) _rtCommit();
   });
 
   telEl.addEventListener('mouseup', rtUpdateToolbarState);
@@ -184,26 +196,29 @@ document.addEventListener('selectionchange', () => {
   if (!s || s.rangeCount === 0) return;
   const anc = s.getRangeAt(0).commonAncestorContainer;
   const el2 = anc.nodeType === 3 ? anc.parentElement : anc;
-  const editable = el2 && el2.closest('[contenteditable="true"]');
-  if (editable && editable.classList.contains('tel')) {
-    _rtEl = editable;
-    const p = editable.closest('.el');
+  // Track selection inside .tel regardless of contentEditable state
+  const telEl = el2 && el2.closest('.tel');
+  if (telEl) {
+    _rtEl = telEl;
+    const p = telEl.closest('.el');
     if (p) _rtElId = p.dataset.id;
-    const idx = _readSelFromDOM(editable);
+    const idx = _readSelFromDOM(telEl);
     if (idx) _savedSelIdx = idx;
-    rtUpdateToolbarState();
+    if (typeof rtUpdateToolbarState === 'function') rtUpdateToolbarState();
   }
 });
 
 // ─── Commit ───────────────────────────────────────────────────────
 function _rtCommit() {
   if (!_rtEl || !_rtElId) return;
-  const d = slides[cur].els.find(e => e.id === _rtElId);
+  const d = slides[cur] && slides[cur].els.find(e => e.id === _rtElId);
   if (d) {
-    // _rtEl is .ec.tel — strip valign wrapper if present
     const vw = _rtEl.querySelector('.ec-valign-wrap');
     d.html = vw ? vw.innerHTML : _rtEl.innerHTML;
-    commitAll();
+    // Save directly to localStorage — do NOT call save() which re-reads
+    // DOM innerHTML and would overwrite d.html we just set
+    if (typeof drawThumbs === 'function') drawThumbs();
+    if (typeof saveState === 'function') saveState();
   }
 }
 
@@ -232,18 +247,29 @@ function _applyToSelection(prop, val) {
     const allUnder = selected.every(c => (c.style.textDecoration||'').includes('underline'));
     selected.forEach(c => { c.style.textDecoration = allUnder ? 'none' : 'underline'; });
   } else {
-    selected.forEach(c => { c.style[camel] = val; });
+    selected.forEach(c => {
+      c.style[camel] = val;
+    });
+    // Store schemeRef on color chars so applyTheme can remap them
+    if (camel === 'color') {
+      const sr = _applyToSelection._schemeRef;
+      selected.forEach(c => {
+        if (sr) c.style._schemeRef = sr;
+        else delete c.style._schemeRef;
+      });
+    }
   }
 
   const inEditMode = !root.querySelector('span[data-ch]');
-  root.innerHTML = inEditMode ? _groupedHtml(chars) : _charObjsToHtml(chars);
+  const newHtml = inEditMode ? _groupedHtml(chars) : _charObjsToHtml(chars);
+  root.innerHTML = newHtml;
   _restoreSelToDOM(idx, root);
   _savedSelIdx = idx;
   return true;
 }
 
 // ─── Whole-element style ──────────────────────────────────────────
-function _setTSWhole(prop, val) {
+function _setTSWhole(prop, val, skipHtmlSync) {
   if (!sel || sel.dataset.type !== 'text') return;
   debouncedPushUndo();
   const c = sel.querySelector('.ec'); if (!c) return;
@@ -257,7 +283,59 @@ function _setTSWhole(prop, val) {
   if(prop==='font-size'&&sel.dataset.valign&&typeof applyTextVAlign==='function'){
     requestAnimationFrame(()=>applyTextVAlign(sel,sel.dataset.valign));
   }
-  save(); drawThumbs(); syncProps();
+  // Sync prop into d.html char-objects so the value survives preview round-trip.
+  // Skip when called after a partial selection apply (rtColor with selection)
+  // to avoid overwriting per-character colors.
+  if (!skipHtmlSync) {
+    if (prop === 'color') {
+      // When setting color on the whole block, strip per-char colors so
+      // container color takes effect uniformly (no stale per-char overrides).
+      _clearCharColors();
+    } else {
+      _syncPropToHtml(prop, val);
+    }
+  }
+  save(); saveState(); drawThumbs(); syncProps();
+}
+
+// Strip explicit color from every char-span so the container .ec color takes over.
+function _clearCharColors() {
+  if (!sel || sel.dataset.type !== 'text') return;
+  const d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (!d) return;
+  const c = sel.querySelector('.ec'); if (!c) return;
+  const chars = _toCharObjs(c.innerHTML);
+  if (!chars.length) return;
+  chars.forEach(ch => { delete ch.style.color; });
+  const newHtml = _charObjsToHtml(chars);
+  c.innerHTML = newHtml;
+  d.html = newHtml;
+}
+
+
+// Update a CSS property on every char in d.html AND in the DOM.
+// Must update DOM BEFORE save() is called, so save() reads correct innerHTML.
+function _syncPropToHtml(prop, val) {
+  if (!sel || sel.dataset.type !== 'text') return;
+  const d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (!d) return;
+  const c = sel.querySelector('.ec'); if (!c) return;
+  const camel = prop.replace(/-([a-z])/g, (_, ch) => ch.toUpperCase());
+
+  const sourceHtml = c.innerHTML;
+
+  const chars = _toCharObjs(sourceHtml);
+
+  if (!chars.length) return;
+  // Never overwrite per-char colors via _syncPropToHtml —
+  // partial selections would be wiped out.
+  if (camel === 'color') return;
+  chars.forEach(ch => { ch.style[camel] = val; });
+  const newHtml = _charObjsToHtml(chars);
+
+  c.innerHTML = newHtml;
+  d.html = newHtml;
+
 }
 
 // ─── Public functions ─────────────────────────────────────────────
@@ -317,19 +395,25 @@ function rtSubscript() {
   rtUpdateToolbarState();
 }
 
-function rtColor(color) {
-  // Only apply to selection if actively editing this element
-  const inEditMode = _rtEl && _rtEl.contentEditable === 'true';
-  if (inEditMode && _applyToSelection('color', color)) {
+function rtColor(color, schemeRef) {
+  // hasSelection: live selection OR saved selection from before color picker click
+  const wSel = window.getSelection();
+  const hasLive = wSel && !wSel.isCollapsed && wSel.toString().length > 0;
+  const hasSaved = !!_savedSelIdx;
+  const hasSelection = hasLive || hasSaved;
+
+  if (hasSelection && _rtEl) {
+    _applyToSelection._schemeRef = schemeRef;
+    const applied = _applyToSelection('color', color);
+    _applyToSelection._schemeRef = undefined;
+    if (!applied) { if (!sel || sel.dataset.type !== 'text') return; _setTSWhole('color', color); return; }
     _rtCommit();
-    // Also update base element color in .cs so syncProps picker shows correct value
-    // and so color is correct after preview reload
-    if (sel && sel.dataset.type === 'text') _setTSWhole('color', color);
+    saveState();
   } else {
     if (!sel || sel.dataset.type !== 'text') return;
     _setTSWhole('color', color);
   }
-  try { document.getElementById('p-col').value=color; document.getElementById('p-hex').value=color; } catch(e) {}
+  try { const _sw=document.getElementById('p-col-preview');if(_sw)_sw.style.background=color; document.getElementById('p-hex').value=color; } catch(e) {}
 }
 
 function rtFontSize(size) {
@@ -373,14 +457,14 @@ function setTS(prop, val) {
   } else _setTSWhole(prop,val);
 }
 
-function onColorPick(v, mode) {
-  if (mode==='text') rtColor(v);
-  else if (mode==='fill') applyFillColor(v);
+function onColorPick(v, mode, schemeRef) {
+  if (mode==='text') { if(typeof applyTextColor==='function') applyTextColor(v, schemeRef); else rtColor(v); }
+  else if (mode==='fill') applyFillColor(v, schemeRef);
 }
 
 function onColorHex(v, mode) {
   if (!/^#[0-9a-fA-F]{6}$/.test(v)) return;
-  if (mode==='text') { rtColor(v); try{document.getElementById('p-col').value=v;}catch(e){} }
+  if (mode==='text') { rtColor(v); try{const _sw=document.getElementById('p-col-preview');if(_sw)_sw.style.background=v;}catch(e){} }
   else if (mode==='fill') applyFillColor(v);
 }
 

@@ -26,6 +26,8 @@ function boot(){
     const inSlidePanel=e.target.closest('#slide-list')||e.target.closest('#sidebar');
     // Exit table cell editing
     if(sel.dataset.type==='table'){
+      // If click is inside #props panel — keep cell selection, just save editing state
+      const inProps=e.target.closest('#props');
       sel.querySelectorAll('td[contenteditable="true"],th[contenteditable="true"]').forEach(cell=>{
         cell.contentEditable='false';
         const r=+cell.dataset.r,c2=+cell.dataset.c;
@@ -33,7 +35,7 @@ function boot(){
         if(d&&d.cells){const i=r*d.cols+c2;if(d.cells[i])d.cells[i].html=cell.innerHTML;}
       });
       delete sel.dataset.editing;
-      if(typeof tblClearSel==='function') tblClearSel();
+      if(!inProps && typeof tblClearSel==='function') tblClearSel();
       if(typeof _tblSaveToDataset==='function'){const d=slides[cur]&&slides[cur].els.find(x=>x.id===sel.dataset.id);if(d)_tblSaveToDataset(sel,d);}
       // Don't drawThumbs here if clicking slide panel — pickSlide will handle it
       if(inSlidePanel){save();saveState();return;}
@@ -54,11 +56,67 @@ function boot(){
     const [_a1,_a2]=(typeof _decorAccents==='function')?_decorAccents():['#6366f1','#818cf8'];
     refreshDecorColors(_a1,_a2,true);
   }
-  if(!slides.length)addSlide();
+  if(!slides.length){
+    addSlide();
+    // First launch — apply first theme automatically
+    _applyThemeByIdx(0);
+  }
   renderAll();
   // Restore page numbering UI after everything is rendered
   if(typeof pnSyncUI==='function') pnSyncUI();
+  if(typeof pnApplyAll==='function') pnApplyAll();
   toast(APP_NAME+' v'+APP_VERSION+' · Ctrl+Z · F5','ok');
+}
+
+function newPresentation(){
+  if(!confirm(t('confirmNewPresentation')||'Создать новую презентацию? Текущая будет потеряна.'))return;
+  // Clear state
+  slides=[];cur=0;
+  document.getElementById('pres-title').value='';
+  addSlide();
+  // Apply first theme
+  _applyThemeByIdx(0);
+  renderAll();
+  drawThumbs();
+  saveState();
+  toast(t('toastNewPresentation')||'Новая презентация создана','ok');
+}
+
+// Apply theme by index without UI (no modal, no selTheme dependency)
+function _applyThemeByIdx(idx){
+  if(!THEMES||idx<0||idx>=THEMES.length)return;
+  const theme=THEMES[idx];
+  appliedThemeIdx=idx;
+  slides.forEach(s=>{
+    s.bg='custom';s.bgc=theme.bg;
+    s.els.forEach(el=>{
+      if(el.type==='text'){
+        const isHeading=el.textRole==='heading';
+        let newColor;
+        if(el.textColorScheme!==null&&el.textColorScheme!==undefined){
+          const resolved=typeof _resolveSchemeColor==='function'?_resolveSchemeColor(el.textColorScheme,theme):null;
+          newColor=resolved||(isHeading?(theme.headingColor||theme.tc):(theme.bodyColor||theme.tc));
+        } else if(el.textColorScheme===undefined){
+          newColor=isHeading?(theme.headingColor||theme.tc):(theme.bodyColor||theme.tc);
+        } else {
+          newColor=null;
+        }
+        if(!el.cs)el.cs='font-size:36px;';
+        if(newColor) el.cs=/color\s*:/.test(el.cs)?el.cs.replace(/\bcolor\s*:\s*[^;]+;?/g,'color:'+newColor+';'):(el.cs.endsWith(';')?el.cs:el.cs+';')+'color:'+newColor+';';
+        delete el.textBg;delete el.textBgOp;
+      }
+      if(el.type==='shape'){
+        if(el.fillScheme!==null&&el.fillScheme!==undefined){const r=typeof _resolveSchemeColor==='function'?_resolveSchemeColor(el.fillScheme,theme):null;if(r)el.fill=r;}
+        else if(el.fillScheme===undefined&&theme.shapeFill)el.fill=theme.shapeFill;
+        if(el.strokeScheme!==null&&el.strokeScheme!==undefined){const r=typeof _resolveSchemeColor==='function'?_resolveSchemeColor(el.strokeScheme,theme):null;if(r)el.stroke=r;}
+        else if(el.strokeScheme===undefined&&theme.shapeStroke)el.stroke=theme.shapeStroke;
+      }
+      if(el.type==='icon'){const newColor=theme.shapeFill||theme.tc||'#3b82f6';el.iconColor=newColor;}
+    });
+  });
+  if(typeof refreshDecorColors==='function')refreshDecorColors(theme.ac1||'#6366f1',theme.ac2||'#818cf8',true);
+  if(typeof refreshAppletThemes==='function')refreshAppletThemes();
+  if(typeof refreshAllCodeBlocks==='function')refreshAllCodeBlocks();
 }
 
 function buildSwatches(id){
@@ -104,16 +162,17 @@ function buildThemeGrid(){
       mshape.style.cssText='margin-top:4%;height:18%;width:22%;border-radius:3px;background:'+t.shapeFill+';opacity:.85;';
       mock.append(mh,mb1,mb2,mshape);
 
-      // Color swatches top-right: heading accent + shape fill
+      // 7 colour strips — vertical rectangles side by side, bottom-right corner
       const swatches=document.createElement('div');
-      swatches.style.cssText='position:absolute;top:5px;right:5px;display:flex;gap:3px;align-items:center;';
-      const sw1=document.createElement('div');
-      sw1.title='Heading: '+t.headingColor;
-      sw1.style.cssText='width:9px;height:9px;border-radius:2px;background:'+t.headingColor+';box-shadow:0 0 0 1px rgba(0,0,0,.4),0 0 0 1.5px rgba(255,255,255,.2);';
-      const sw2=document.createElement('div');
-      sw2.title='Accent/Shapes: '+t.shapeFill;
-      sw2.style.cssText='width:9px;height:9px;border-radius:2px;background:'+t.shapeFill+';box-shadow:0 0 0 1px rgba(0,0,0,.4),0 0 0 1.5px rgba(255,255,255,.2);';
-      swatches.append(sw1,sw2);
+      swatches.style.cssText='position:absolute;bottom:20px;right:5px;display:flex;flex-direction:row;gap:2px;align-items:flex-end;';
+      const base7=(typeof _themeColors==='function'?_themeColors(t):Object.values(t)).slice(0,7);
+      base7.forEach(col=>{
+        const sw=document.createElement('div');
+        const hex=_solidColor(col);
+        sw.title=hex;
+        sw.style.cssText='width:5px;height:18px;border-radius:2px;background:'+hex+';';
+        swatches.appendChild(sw);
+      });
 
       // Label
       const lbl=document.createElement('div');
@@ -170,53 +229,143 @@ function buildAppletGallery(){
     g.appendChild(card);
   });
 }
-function buildPalette(targetId,mode){
-  const c=document.getElementById(targetId);if(!c)return;c.innerHTML='';
-  // Theme accent row at top if theme selected
-  if(selTheme>=0){
-    const t=THEMES[selTheme];
-    const themeColors=[t.ac1,t.ac2,t.ac3,t.tc,t.headingColor||t.tc,t.bodyColor||t.tc,t.shapeFill,t.shapeStroke].filter(Boolean);
-    const tr=document.createElement('div');tr.className='cp-row';
-    // Label
-    const lbl=document.createElement('div');lbl.style.cssText='font-size:8px;color:var(--text3);width:100%;margin-bottom:2px;';lbl.textContent='Theme: '+t.name;c.appendChild(lbl);
-    themeColors.forEach(col=>{
-      const s=document.createElement('div');s.className='cp-swatch';s.style.background=col;s.title=col+' (theme)';
-      s.style.border='1px solid rgba(59,130,246,0.4)';
-      s.onclick=()=>{addRecentColor(col);if(mode==='text')applyTextColor(col);else if(mode==='fill')applyFillColor(col);};
-      tr.appendChild(s);
-    });
-    c.appendChild(tr);
+// ── Inline colour panel (expands inside props panel) ────────────
+// Trigger: openColorPanel(panelId, mode, onPick)
+// panelId = id of the <div class="color-panel-slot"> in props HTML
+// The slot div expands/collapses inline — no popup.
+
+let _cpActivePanelId = null;
+
+function openColorPanel(panelId, mode, onPick) {
+  // If same panel already open — close it
+  if (_cpActivePanelId === panelId) {
+    closeColorPanel(panelId);
+    return;
   }
-  PALETTE.forEach(row=>{
-    const r=document.createElement('div');r.className='cp-row';
-    row.forEach(col=>{
-      const s=document.createElement('div');s.className='cp-swatch';s.style.background=col;s.title=col;
-      s.onclick=()=>{addRecentColor(col);if(mode==='text')applyTextColor(col);else if(mode==='fill')applyFillColor(col);};
-      r.appendChild(s);
+  // Close previously open panel
+  if (_cpActivePanelId) closeColorPanel(_cpActivePanelId);
+  _cpActivePanelId = panelId;
+
+  const slot = document.getElementById(panelId);
+  if (!slot) return;
+  slot.innerHTML = '';
+  slot.style.display = 'block';
+  // Prevent any click inside the panel from stealing focus from the text element
+  slot.onmousedown = e => e.preventDefault();
+
+  const schemeIdx = (typeof appliedThemeIdx !== 'undefined' && appliedThemeIdx >= 0)
+    ? appliedThemeIdx
+    : ((typeof selTheme !== 'undefined' && selTheme >= 0) ? selTheme : -1);
+
+  // ── Scheme grid: 8 cols × 6 tint rows ────────────────────────
+  if (schemeIdx >= 0 && THEMES[schemeIdx]) {
+    const t = THEMES[schemeIdx];
+    const base8 = _themeColors(t);
+
+    const hdr = document.createElement('div');
+    hdr.style.cssText = 'font-size:9px;color:var(--text3);margin-bottom:5px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;';
+    hdr.textContent = t.name;
+    slot.appendChild(hdr);
+
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:repeat(8,1fr);gap:2px;margin-bottom:8px;';
+
+    // 5 rows: row 0 = base, rows 1-4 = progressively lighter
+    // For the black column (#000000), row 4 is forced to pure white (#ffffff)
+    const tintLevels = [0, 0.22, 0.44, 0.66, 0.88];
+    tintLevels.forEach((tint, rowIdx) => {
+      base8.forEach((baseHex, colIdx) => {
+        const hex = _solidColor(baseHex);
+        const isBlack = hex === '#000000';
+        const isLastRow = rowIdx === tintLevels.length - 1;
+        let color;
+        if (isBlack && isLastRow) {
+          color = '#ffffff';
+        } else {
+          color = tint === 0 ? hex : _blendToWhite(hex, tint);
+        }
+        const s = document.createElement('div');
+        s.style.cssText = 'aspect-ratio:1;border-radius:2px;cursor:pointer;background:'+color+';min-height:14px;';
+        s.title = color;
+        s.onmouseover = () => s.style.outline = '2px solid var(--accent)';
+        s.onmouseout  = () => s.style.outline = '';
+        s.onmousedown = e => { e.preventDefault(); e.stopPropagation();
+          onPick(color, {col: colIdx, row: rowIdx}); closeColorPanel(panelId); };
+        grid.appendChild(s);
+      });
     });
-    c.appendChild(r);
-  });
+    slot.appendChild(grid);
+  }
+
+  // ── Custom color row ──────────────────────────────────────────
+  const sep = document.createElement('div');
+  sep.style.cssText = 'height:1px;background:var(--border);margin:2px 0 7px;';
+  slot.appendChild(sep);
+
+  const customRow = document.createElement('div');
+  customRow.style.cssText = 'display:flex;align-items:center;gap:7px;';
+  const customLbl = document.createElement('span');
+  customLbl.style.cssText = 'font-size:10px;color:var(--text2);flex:1;';
+  customLbl.textContent = 'Выбрать свой цвет';
+  const customInput = document.createElement('input');
+  customInput.type = 'color';
+  customInput.value = '#3b82f6';
+  customInput.style.cssText = 'width:30px;height:24px;border:1px solid var(--border2);border-radius:3px;cursor:pointer;padding:1px;background:none;';
+  customInput.onmousedown = e => e.stopPropagation();
+  customInput.oninput = e => { onPick(e.target.value, null); closeColorPanel(panelId); };
+  customRow.appendChild(customLbl);
+  customRow.appendChild(customInput);
+  slot.appendChild(customRow);
 }
+
+function closeColorPanel(panelId) {
+  const slot = document.getElementById(panelId || _cpActivePanelId);
+  if (slot) { slot.innerHTML = ''; slot.style.display = 'none'; }
+  if (!panelId || panelId === _cpActivePanelId) _cpActivePanelId = null;
+}
+
+function _blendToWhite(hex, amt) {
+  let r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+  r=Math.round(r+(255-r)*amt); g=Math.round(g+(255-g)*amt); b=Math.round(b+(255-b)*amt);
+  return '#'+[r,g,b].map(x=>x.toString(16).padStart(2,'0')).join('');
+}
+function _solidColor(bg) {
+  if (!bg) return '#888888';
+  if (bg.startsWith('#')) return bg;
+  const m = bg.match(/#[0-9a-fA-F]{6}/);
+  return m ? m[0] : '#888888';
+}
+
+// buildPalette — builds the 8 base-color swatch strip shown always in props
+// (the full grid appears in the color-panel-slot when user clicks a swatch)
+function buildPalette(targetId, mode) {
+  const c = document.getElementById(targetId); if (!c) return;
+  c.innerHTML = '';
+  c.style.display = 'none'; // legacy strip hidden — slots handle it now
+}
+
+
 function addRecentColor(c){
   recentColors=recentColors.filter(x=>x!==c);recentColors.unshift(c);recentColors=recentColors.slice(0,10);
 }
-function applyTextColor(c){
+function applyTextColor(c, schemeRef){
   if(!sel||sel.dataset.type!=='text')return;
-  const ec2=sel.querySelector('.ec');
-  // Remove color from any inner spans so container color wins
-  ec2.querySelectorAll('[style]').forEach(el=>{
-    let st=el.getAttribute('style');
-    st=st.replace(/color\s*:[^;]+;?/gi,'').trim();
-    if(st)el.setAttribute('style',st);else el.removeAttribute('style');
-  });
-  setTS('color',c);
-  try{document.getElementById('p-col').value=c;document.getElementById('p-hex').value=c;}catch(e){}
+  // Store scheme ref on data element
+  const d = slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+  if(d) d.textColorScheme = schemeRef || null;
+  // Pass schemeRef directly to rtColor so per-char spans get data-scheme
+  if(typeof rtColor==='function'){
+    if(typeof _rtColorPickInProgress!=='undefined') _rtColorPickInProgress=true;
+    rtColor(c, schemeRef || null);
+    if(typeof _rtColorPickInProgress!=='undefined') _rtColorPickInProgress=false;
+  } else setTS('color',c);
+  try{const _sw=document.getElementById('p-col-preview');if(_sw)_sw.style.background=c;document.getElementById('p-hex').value=c;}catch(e){}
 }
-function applyFillColor(c){
+function applyFillColor(c, schemeRef){
   if(!sel)return;
   const d=slides[cur].els.find(e=>e.id===sel.dataset.id);
   if(!d||d.type!=='shape')return;
-  d.fill=c;sel.dataset.fill=c;
-  try{document.getElementById('sh-fill').value=c;document.getElementById('sh-fill-hex').value=c;}catch(e){}
+  d.fill=c; d.fillScheme = schemeRef || null; sel.dataset.fill=c;
+  try{const _fsw=document.getElementById('sh-fill-preview');if(_fsw)_fsw.style.background=c;document.getElementById('sh-fill-hex').value=c;}catch(e){}
   renderShapeEl(sel,d);save();saveState();
 }

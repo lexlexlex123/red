@@ -34,7 +34,9 @@ function renderThumbCanvas(cnv,s,slideIdx){
   const scaleX=TW/canvasW,scaleY=TH/canvasH;
 
   // Background
-  const bg=s.bg==='custom'?(s.bgc||'#1a1a2e'):((BGS.find(b=>b.id===s.bg)||BGS[0]).s);
+  const _themeForBg=(typeof appliedThemeIdx!=='undefined'&&appliedThemeIdx>=0)?THEMES[appliedThemeIdx]:null;
+  const _themeBg=_themeForBg?_themeForBg.bg:'#1a1a2e';
+  const bg=(s.bg==='custom'||s.bg==='theme')?(s.bgc||_themeBg):((BGS.find(b=>b.id===s.bg)||BGS[0]).s);
   if(bg.startsWith('linear-gradient')||bg.startsWith('radial-gradient')){
     // Parse gradient for canvas
     const stops=parseGradientStops(bg);

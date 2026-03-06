@@ -13,6 +13,17 @@ function switchTab(name,btn){
   document.querySelectorAll('.rtab').forEach(t=>t.classList.remove('active'));btn.classList.add('active');
   document.querySelectorAll('[data-tab]').forEach(g=>g.style.display=g.dataset.tab===name?'flex':'none');
   if(name==='anim'){openAnimPanel();}else{closeAnimPanel();}
+  // Show/hide objects panel in props
+  const objSec=document.getElementById('objects-panel-section');
+  const slidePr=document.getElementById('slide-props');
+  const elPr=document.getElementById('el-props');
+  if(objSec){
+    const isObj=name==='objects';
+    objSec.style.display=isObj?'block':'none';
+    if(slidePr)slidePr.style.display=isObj?'none':'';
+    if(elPr)elPr.style.display=isObj?'none':'';
+    if(isObj&&typeof renderObjectsPanel==='function')renderObjectsPanel();
+  }
 }
 
 // ══════════════ SNAP / GUIDES ══════════════

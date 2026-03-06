@@ -89,13 +89,13 @@ function pnApplyAll() {
     });
   });
 
-  renderAll(); drawThumbs(); saveState();
+  if(typeof renderAll==="function")renderAll(); if(typeof drawThumbs==="function")drawThumbs(); if(typeof saveState==="function")saveState();
 }
 
 function pnRemoveAll() {
-  pushUndo();
+  if(typeof pushUndo==="function")pushUndo();
   slides.forEach(slide => { slide.els = slide.els.filter(e => e.type !== 'pagenum'); });
-  renderAll(); drawThumbs(); saveState();
+  if(typeof renderAll==="function")renderAll(); if(typeof drawThumbs==="function")drawThumbs(); if(typeof saveState==="function")saveState();
 }
 
 // Called from UI controls — reads all settings from DOM except .enabled
@@ -149,7 +149,7 @@ function pnOnDragEnd(x, y) {
       pn.html = _pnBuildHtml(si, s.style, s.showTotal, color, s.textColor, s.fontSize); }
   });
 
-  drawThumbs(); saveState();
+  if(typeof drawThumbs==="function")drawThumbs(); if(typeof saveState==="function")saveState();
 }
 
 // Lock/unlock PN changes during preview

@@ -11,13 +11,16 @@ function mkDrag(el,c){
     // Table cells handle their own events; tbl-drag-border has its own drag handler
     if(e.target.closest&&e.target.closest('.tbl-drag-border'))return;
     if(el.dataset.type==='table'&&(e.target.tagName==='TD'||e.target.tagName==='TH'))return;
+    // Clicking on table border/frame (not a cell) — clear cell selection
+    if(el.dataset.type==='table'&&typeof tblClearSel==='function') tblClearSel();
     if(e.target.closest&&e.target.closest('.interactive'))return;
-    // For shapes: only start drag if clicking on actual SVG fill, not empty bounding box
+    // For shapes: allow drag on SVG fill, shape-text, or the transparent hit-area overlay
     if(el.dataset.type==='shape'){
       const isSvgPart=e.target.tagName==='path'||e.target.tagName==='rect'||
         e.target.tagName==='ellipse'||e.target.tagName==='circle'||
         e.target.tagName==='polygon'||e.target.tagName==='polyline';
-      if(!isSvgPart&&!e.target.closest('.shape-text'))return;
+      const isHitArea=e.target.classList&&e.target.classList.contains('shape-hit-area');
+      if(!isSvgPart&&!e.target.closest('.shape-text')&&!isHitArea)return;
     }
     // Select element immediately if not already selected, then start drag in same mousedown
     // But don't reset multi-selection if element is already part of it

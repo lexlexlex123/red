@@ -14,6 +14,7 @@
       <span id="app-name-span" data-i18n="appName">Слайды</span>
     </div>
     <input id="pres-title" type="text" value="" data-i18n-placeholder="newPresentation" placeholder="Новая презентация" spellcheck="false">
+    <button id="new-pres-btn" onclick="newPresentation()" title="Новая презентация" style="background:transparent;border:1px solid var(--border2);color:var(--text2);width:24px;height:24px;border-radius:4px;cursor:pointer;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:.15s;margin-left:2px;" onmouseover="this.style.background='var(--surface3)';this.style.color='var(--text)'" onmouseout="this.style.background='transparent';this.style.color='var(--text2)'">+</button>
     <div class="spacer"></div>
     <div class="ar-group">
       <button class="ar-btn active" onclick="setAR('16:9',this)">16:9</button>
@@ -24,6 +25,7 @@
     <button class="rtab" onclick="openSettings()" data-i18n-title="settingsTitle" style="padding:5px 10px;font-size:14px;">⚙</button>
     <button class="rtab active" onclick="switchTab('home',this)"><span data-i18n="tabHome">Главная</span></button>
     <button class="rtab" onclick="switchTab('insert',this)"><span data-i18n="tabInsert">Вставка</span></button>
+    <button class="rtab" id="objects-tab-btn" onclick="switchTab('objects',this);renderObjectsPanel()"><span>Объекты</span></button>
     <button class="rtab" onclick="switchTab('design',this)"><span data-i18n="tabDesign">Дизайн</span></button>
     <button class="rtab" onclick="switchTab('anim',this)"><span data-i18n="tabAnim">Анимации</span></button>
     <button class="rtab" onclick="switchTab('transitions',this)"><span data-i18n="tabTransitions">Переходы</span></button>
@@ -83,40 +85,41 @@
     </div>
     <!-- ANIMATIONS -->
     <div class="rg" data-tab="anim" style="display:none">
-      <div style="display:flex;flex-direction:column;gap:4px;justify-content:center">
+      <div style="display:flex;flex-direction:column;gap:3px;justify-content:center">
         <span style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px" data-i18n="btnAddAnim">Добавить анимацию</span>
-        <div style="display:flex;gap:3px;flex-wrap:wrap;max-width:280px">
+        <div style="display:flex;gap:3px;align-items:center;position:relative">
           <button class="tbtn2" style="color:#22c55e" onclick="addAnim('fadeIn','entrance')" data-i18n="animFadeIn">Появление</button>
           <button class="tbtn2" style="color:#22c55e" onclick="addAnim('slideUp','entrance')" data-i18n="animSlideUp">Подъём</button>
           <button class="tbtn2" style="color:#22c55e" onclick="addAnim('zoomIn','entrance')" data-i18n="animZoomIn">Масштаб</button>
-          <button class="tbtn2" style="color:#22c55e" onclick="addAnim('bounceIn','entrance')" data-i18n="animBounce">Отскок</button>
-          <button class="tbtn2" style="color:#22c55e" onclick="addAnim('spinIn','entrance')" data-i18n="animSpin">Вращение</button>
           <button class="tbtn2" style="color:#ec4899" onclick="addAnim('fadeOut','exit')" data-i18n="animFadeOut">Исчезновение</button>
           <button class="tbtn2" style="color:#ec4899" onclick="addAnim('slideOut','exit')" data-i18n="animSlideOut">Выезд</button>
-          <button class="tbtn2" style="color:#ec4899" onclick="addAnim('zoomOut','exit')" data-i18n="animZoomOut">Уменьшение</button>
           <button class="tbtn2" style="color:#f59e0b" onclick="addAnim('pulse','emphasis')" data-i18n="animPulse">Пульс</button>
-          <button class="tbtn2" style="color:#f59e0b" onclick="addAnim('shake','emphasis')" data-i18n="animShake">Дрожание</button>
-          <button class="tbtn2" style="color:#f59e0b" onclick="addAnim('flash','emphasis')" data-i18n="animFlash">Мигание</button>
+          <button class="tbtn2" title="Ещё эффекты" onclick="(function(btn){var m=document.getElementById('anim-more-menu');if(m.style.display==='block'){m.style.display='none';}else{var r=btn.getBoundingClientRect();m.style.left=r.left+'px';m.style.top=r.bottom+'px';m.style.display='block';}})(this)" style="padding:2px 5px;font-size:10px">▾</button>
+          <div id="anim-more-menu" style="display:none;position:fixed;z-index:9999;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:5px;box-shadow:0 6px 20px rgba(0,0,0,.4);flex-direction:column;gap:3px;min-width:130px">
+            <button class="tbtn2" style="color:#22c55e;width:100%;text-align:left" onclick="addAnim('bounceIn','entrance');document.getElementById('anim-more-menu').style.display='none'" data-i18n="animBounce">Отскок</button>
+            <button class="tbtn2" style="color:#22c55e;width:100%;text-align:left" onclick="addAnim('spinIn','entrance');document.getElementById('anim-more-menu').style.display='none'" data-i18n="animSpin">Вращение</button>
+            <button class="tbtn2" style="color:#ec4899;width:100%;text-align:left" onclick="addAnim('zoomOut','exit');document.getElementById('anim-more-menu').style.display='none'" data-i18n="animZoomOut">Уменьшение</button>
+            <button class="tbtn2" style="color:#f59e0b;width:100%;text-align:left" onclick="addAnim('shake','emphasis');document.getElementById('anim-more-menu').style.display='none'" data-i18n="animShake">Дрожание</button>
+            <button class="tbtn2" style="color:#f59e0b;width:100%;text-align:left" onclick="addAnim('flash','emphasis');document.getElementById('anim-more-menu').style.display='none'" data-i18n="animFlash">Мигание</button>
+          </div>
         </div>
       </div>
       <div class="rglbl"><span data-i18n="grpAnimations">Анимации</span></div>
     </div>
     <div class="rg" data-tab="anim" style="display:none">
-      <div style="display:flex;flex-direction:column;gap:4px;justify-content:center">
-        <span style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Timing</span>
-        <div style="display:flex;gap:6px;flex-direction:column">
-          <div style="display:flex;gap:5px;align-items:center">
-            <label style="font-size:10px;color:var(--text2);width:48px">Delay</label>
-            <input type="number" id="anim-delay" value="0" min="0" max="10" step="0.1" style="width:52px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:2px 5px;font-size:10px;font-family:inherit" oninput="updateAnimTiming()">
-            <span style="font-size:10px;color:var(--text2)">s</span>
+      <div style="display:flex;flex-direction:column;gap:3px;justify-content:center">
+        <span style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px" data-i18n="grpTiming">Тайминг</span>
+        <div style="display:flex;gap:8px;align-items:flex-end">
+          <div class="pr" style="margin:0">
+            <label data-i18n="animDelay">Задержка, с</label>
+            <input type="number" id="anim-delay" value="0" min="0" max="10" step="0.1" oninput="updateAnimTiming()">
           </div>
-          <div style="display:flex;gap:5px;align-items:center">
-            <label style="font-size:10px;color:var(--text2);width:48px">Duration</label>
-            <input type="number" id="anim-dur" value="0.5" min="0.1" max="5" step="0.1" style="width:52px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:2px 5px;font-size:10px;font-family:inherit" oninput="updateAnimTiming()">
-            <span style="font-size:10px;color:var(--text2)">s</span>
+          <div class="pr" style="margin:0">
+            <label data-i18n="animDuration">Длительность, с</label>
+            <input type="number" id="anim-dur" value="0.5" min="0.1" max="5" step="0.1" oninput="updateAnimTiming()">
           </div>
-          <label style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text2)">
-            <input type="checkbox" id="anim-click" style="accent-color:var(--accent)"> On click
+          <label style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text2);padding-bottom:4px">
+            <input type="checkbox" id="anim-click" style="accent-color:var(--accent)"> <span data-i18n="animOnClick">По клику</span>
           </label>
         </div>
       </div>
@@ -124,31 +127,28 @@
     </div>
     <!-- TRANSITIONS -->
     <div class="rg" data-tab="transitions" style="display:none">
-      <div style="display:flex;flex-direction:column;gap:5px">
-        <div id="trans-btn-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:3px">
-          <button class="tbtn2 active" data-t="none"     onclick="setGlobalTrans('none',this)"    >—&nbsp;None</button>
-          <button class="tbtn2"        data-t="fade"     onclick="setGlobalTrans('fade',this)"    >⬛ Fade</button>
-          <button class="tbtn2"        data-t="slide"    onclick="setGlobalTrans('slide',this)"   >→ Slide</button>
-          <button class="tbtn2"        data-t="slideUp"  onclick="setGlobalTrans('slideUp',this)" >↑ Slide Up</button>
-          <button class="tbtn2"        data-t="zoom"     onclick="setGlobalTrans('zoom',this)"    >⊕ Zoom</button>
-          <button class="tbtn2"        data-t="zoomOut"  onclick="setGlobalTrans('zoomOut',this)" >⊖ Zoom Out</button>
-          <button class="tbtn2"        data-t="flip"     onclick="setGlobalTrans('flip',this)"    >↔ Flip</button>
-          <button class="tbtn2"        data-t="flipV"    onclick="setGlobalTrans('flipV',this)"   >↕ Flip V</button>
-          <button class="tbtn2"        data-t="cube"     onclick="setGlobalTrans('cube',this)"    >◻ Cube</button>
-          <button class="tbtn2"        data-t="dissolve" onclick="setGlobalTrans('dissolve',this)">▒ Dissolve</button>
-          <button class="tbtn2"        data-t="morph"    onclick="setGlobalTrans('morph',this)"   >✦ Morph</button>
-          <button class="tbtn2"        data-t="push"     onclick="setGlobalTrans('push',this)"    >⇒ Push</button>
-          <button class="tbtn2"        data-t="wipe"     onclick="setGlobalTrans('wipe',this)"    >▶ Wipe</button>
-          <button class="tbtn2"        data-t="split"    onclick="setGlobalTrans('split',this)"   >⧻ Split</button>
-          <button class="tbtn2"        data-t="reveal"   onclick="setGlobalTrans('reveal',this)"  >◐ Reveal</button>
-          <button class="tbtn2"        data-t="glitch"   onclick="setGlobalTrans('glitch',this)"  >⚡ Glitch</button>
-        </div>
-        <div style="display:flex;align-items:center;gap:5px;margin-top:2px">
-          <label style="font-size:9px;color:var(--text3)">Duration</label>
-          <select id="trans-dur" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 5px;font-size:10px;font-family:inherit" onchange="transitionDur=+this.value">
+      <div style="display:flex;flex-direction:column;gap:3px;justify-content:center">
+        <div id="trans-btn-grid" style="display:flex;gap:3px;overflow-x:auto;flex-wrap:nowrap;padding-bottom:1px">
+          <button class="tbtn2 active" style="flex-shrink:0" data-t="none"     onclick="setGlobalTrans('none',this)"    >— None</button>
+          <button class="tbtn2"        style="flex-shrink:0" data-t="fade"     onclick="setGlobalTrans('fade',this)"    >⬛ Fade</button>
+          <button class="tbtn2"        style="flex-shrink:0" data-t="slide"    onclick="setGlobalTrans('slide',this)"   >→ Slide</button>
+          <button class="tbtn2"        style="flex-shrink:0" data-t="slideUp"  onclick="setGlobalTrans('slideUp',this)" >↑ Slide Up</button>
+          <button class="tbtn2"        style="flex-shrink:0" data-t="zoom"     onclick="setGlobalTrans('zoom',this)"    >⊕ Zoom</button>
+          <button class="tbtn2"        style="flex-shrink:0" data-t="zoomOut"  onclick="setGlobalTrans('zoomOut',this)" >⊖ Zoom Out</button>
+          <button class="tbtn2"        style="flex-shrink:0" data-t="flip"     onclick="setGlobalTrans('flip',this)"    >↔ Flip</button>
+          <button class="tbtn2"        style="flex-shrink:0" data-t="flipV"    onclick="setGlobalTrans('flipV',this)"   >↕ Flip V</button>
+          <button class="tbtn2"        style="flex-shrink:0" data-t="cube"     onclick="setGlobalTrans('cube',this)"    >◻ Cube</button>
+          <button class="tbtn2"        style="flex-shrink:0" data-t="dissolve" onclick="setGlobalTrans('dissolve',this)">▒ Dissolve</button>
+          <button class="tbtn2"        style="flex-shrink:0" data-t="morph"    onclick="setGlobalTrans('morph',this)"   >✦ Morph</button>
+          <button class="tbtn2"        style="flex-shrink:0" data-t="push"     onclick="setGlobalTrans('push',this)"    >⇒ Push</button>
+          <button class="tbtn2"        style="flex-shrink:0" data-t="wipe"     onclick="setGlobalTrans('wipe',this)"    >▶ Wipe</button>
+          <button class="tbtn2"        style="flex-shrink:0" data-t="split"    onclick="setGlobalTrans('split',this)"   >⧻ Split</button>
+          <button class="tbtn2"        style="flex-shrink:0" data-t="reveal"   onclick="setGlobalTrans('reveal',this)"  >◐ Reveal</button>
+          <button class="tbtn2"        style="flex-shrink:0" data-t="glitch"   onclick="setGlobalTrans('glitch',this)"  >⚡ Glitch</button>
+          <select id="trans-dur" style="flex-shrink:0;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 5px;font-size:10px;font-family:inherit" onchange="transitionDur=+this.value">
             <option value="250">Fast</option><option value="500" selected>Normal</option><option value="800">Slow</option><option value="1200">Very Slow</option>
           </select>
-          <button class="tbtn2" onclick="applyTransToAll()" style="font-size:10px;white-space:nowrap"><span data-i18n="btnApplyAll">Apply all</span></button>
+          <button class="tbtn2" style="flex-shrink:0;font-size:10px;white-space:nowrap" onclick="applyTransToAll()"><span data-i18n="btnApplyAll">Apply all</span></button>
         </div>
       </div>
       <div class="rglbl"><span data-i18n="grpTransition">Переход</span></div>
@@ -160,24 +160,22 @@
       <div class="rglbl"><span data-i18n="grpPresent">Показ</span></div>
     </div>
     <div class="rg" data-tab="slideshow" style="display:none">
-      <div style="display:flex;flex-direction:column;gap:5px;justify-content:center">
+      <div style="display:flex;flex-direction:column;gap:3px;justify-content:center">
         <label style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Auto Advance</label>
-        <div style="display:flex;align-items:center;gap:5px">
+        <div style="display:flex;align-items:center;gap:6px">
           <input type="checkbox" id="auto-adv-chk" onchange="toggleAutoAdv(this.checked)" style="accent-color:var(--accent4)">
           <label for="auto-adv-chk" style="font-size:11px;color:var(--text2);cursor:pointer">Enabled</label>
-        </div>
-        <div style="display:flex;align-items:center;gap:4px">
           <label style="font-size:10px;color:var(--text2)">Delay:</label>
           <input type="number" id="auto-delay" value="5" min="1" max="60" style="width:48px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:2px 5px;font-size:10px;font-family:inherit" oninput="autoDelay=+this.value">
           <span style="font-size:10px;color:var(--text2)">sec</span>
+          <button class="tbtn2" onclick="applyAutoToAll()" style="font-size:10px;white-space:nowrap"><span data-i18n="btnApplyAll">Применить ко всем</span></button>
         </div>
-        <button class="tbtn2" onclick="applyAutoToAll()" style="font-size:10px"><span data-i18n="btnApplyAll">Применить ко всем</span></button>
       </div>
       <div class="rglbl"><span data-i18n="grpAutoAdvance">Авто-переход</span></div>
     </div>
     <!-- FILE -->
     <div class="rg" data-tab="slideshow" style="display:none">
-      <div style="display:flex;flex-direction:column;gap:5px;justify-content:center">
+      <div style="display:flex;gap:4px;align-items:center;justify-content:center">
         <button id="p-loop-btn" class="tbtn2" onclick="togglePresLoop()" style="min-width:72px">↺ Loop</button>
         <button id="p-shuffle-btn" class="tbtn2" onclick="togglePresShuffle()" style="min-width:72px">⇄ Shuffle</button>
       </div>
@@ -225,10 +223,10 @@
       </div>
       <div class="ctl-sep"></div>
       <div class="layer-group">
-        <button class="albtn" title="Bring to Front" onclick="layerEl('front')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="1.5"/><rect x="3" y="3" width="12" height="12" rx="1.5" fill="var(--surface2)"/><path d="M3 3h12v12H3z" stroke-opacity=".3"/><polyline points="17 7 20 4 23 7" transform="scale(0.6) translate(8,-2)"/></svg></button>
-        <button class="albtn" title="Bring Forward" onclick="layerEl('up')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
-        <button class="albtn" title="Send Backward" onclick="layerEl('down')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12l7 7 7-7"/></svg></button>
-        <button class="albtn" title="Send to Back" onclick="layerEl('back')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="12" height="12" rx="1.5"/><rect x="9" y="9" width="12" height="12" rx="1.5" fill="var(--surface2)" stroke-opacity=".3"/></svg></button>
+        <button class="albtn" title="Bring to Front" onmousedown="event.preventDefault()" onclick="layerEl('front')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="1.5"/><rect x="3" y="3" width="12" height="12" rx="1.5" fill="var(--surface2)"/><path d="M3 3h12v12H3z" stroke-opacity=".3"/><polyline points="17 7 20 4 23 7" transform="scale(0.6) translate(8,-2)"/></svg></button>
+        <button class="albtn" title="Bring Forward" onmousedown="event.preventDefault()" onclick="layerEl('up')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+        <button class="albtn" title="Send Backward" onmousedown="event.preventDefault()" onclick="layerEl('down')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12l7 7 7-7"/></svg></button>
+        <button class="albtn" title="Send to Back" onmousedown="event.preventDefault()" onclick="layerEl('back')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="12" height="12" rx="1.5"/><rect x="9" y="9" width="12" height="12" rx="1.5" fill="var(--surface2)" stroke-opacity=".3"/></svg></button>
       </div>
       <div class="ctl-sep"></div>
       <label class="sntog"><input type="checkbox" id="snap-chk" checked onchange=""><label for="snap-chk">Snap</label></label>
@@ -240,17 +238,22 @@
   </div>
   <div id="props">
     <div id="props-scroll">
+      <!-- OBJECTS PANEL -->
+      <div id="objects-panel-section" style="display:none">
+        <div class="ph">Объекты слайда</div>
+        <div id="obj-panel-list"></div>
+      </div>
       <div id="slide-props">
       <div class="ph">Slide</div>
       <div class="psec">
         <div class="pr"><label data-i18n="slideTitle">Заголовок</label><input type="text" id="p-st" data-i18n-placeholder="slideTitle" placeholder="Заголовок слайда…" oninput="onTitleInput(this.value)"></div>
-        <div class="pr"><label>Background</label>
+        <div class="pr"><label>Фон слайда</label>
           <div style="display:flex;flex-direction:column;gap:5px">
-            <div class="bgswatches" id="bgswatches2"></div>
-            <div style="display:flex;align-items:center;gap:6px">
-              <input type="color" id="bgcustom2" title="Custom color" onchange="setCustomBg(this.value)" style="width:32px;height:24px;border:none;border-radius:4px;cursor:pointer;background:none">
-              <span style="font-size:10px;color:var(--text3)">Custom color</span>
+            <div style="display:flex;gap:6px;align-items:center">
+              <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;background:repeating-conic-gradient(#aaa 0% 25%,#fff 0% 50%) 0 0/8px 8px;" onmousedown="openColorPanel('cp-slidebg-slot','slidebg',function(c,sr){setSlideBgFromPalette(c,sr);})" title="Цвет фона"><div id="slide-bg-preview" style="width:100%;height:100%;pointer-events:none;"></div></div>
+              <button onclick="resetSlideBgToTheme()" title="Сбросить к фону темы" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:2px 8px;cursor:pointer;font-size:10px;white-space:nowrap">↺ Тема</button>
             </div>
+            <div id="cp-slidebg-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
           </div>
         </div>
         <div class="pr"><label data-i18n="slideTransition">Переход слайда</label></div>
@@ -403,22 +406,26 @@
             </div>
           </div>
             <div class="pr"><label data-i18n="propSize">Size</label><input type="number" id="p-fs" min="0" max="400" value="48" onmousedown="_rtOnPanelMousedown(event)" oninput="rtFontSize(+this.value)"></div>
-          <div class="pr"><label data-i18n="propTextColor">Text Color <span id="sel-hint" style="font-size:9px;color:var(--accent4);display:none">· выделение</span></label>
+          <div class="pr"><label data-i18n="propTextColor">Цвет текста <span id="sel-hint" style="font-size:9px;color:var(--accent4);display:none">· выделение</span></label>
             <div style="display:flex;flex-direction:column;gap:5px">
               <div style="display:flex;gap:4px;align-items:center">
-                <div class="cp-hex" style="flex:1"><input type="color" id="p-col" onmousedown="_rtOnPanelMousedown(event)" oninput="onColorPick(this.value,'text')"><input type="text" id="p-hex" placeholder="#ffffff" onmousedown="_rtOnPanelMousedown(event)" oninput="onColorHex(this.value,'text')"></div>
-                <button onclick="togglePipetteMode()" id="eye-text" class="pipette-btn" title="Pipette: click another element to inherit its style" style="background:var(--surface2);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:3px 6px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;width:26px;height:26px"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M20.71 5.63l-2.34-2.34a1 1 0 0 0-1.41 0l-3.12 3.12-1.41-1.42-1.42 1.42 1.41 1.41-6.6 6.6A2 2 0 0 0 5 16v3h3a2 2 0 0 0 1.42-.59l6.6-6.6 1.41 1.42 1.42-1.42-1.42-1.41 3.12-3.12a1 1 0 0 0 0-1.65z"/></svg></button>
+                <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;" onmousedown="event.preventDefault();_rtOnPanelMousedown(event);openColorPanel('cp-text-slot','text',function(c,sr){onColorPick(c,'text',sr);})" title="Цвет текста"><div id="p-col-preview" style="width:100%;height:100%;background:#ffffff;pointer-events:none;"></div></div>
+                <input type="text" id="p-hex" placeholder="#ffffff" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;" onmousedown="_rtOnPanelMousedown(event)" oninput="onColorHex(this.value,'text')">
+                <button onclick="togglePipetteMode()" id="eye-text" class="pipette-btn" title="Пипетка" style="background:var(--surface2);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:3px 6px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;width:26px;height:26px"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M20.71 5.63l-2.34-2.34a1 1 0 0 0-1.41 0l-3.12 3.12-1.41-1.42-1.42 1.42 1.41 1.41-6.6 6.6A2 2 0 0 0 5 16v3h3a2 2 0 0 0 1.42-.59l6.6-6.6 1.41 1.42 1.42-1.42-1.42-1.41 3.12-3.12a1 1 0 0 0 0-1.65z"/></svg></button>
               </div>
-              <div id="cp-text-palette" class="cpicker"></div>
+              <div id="cp-text-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
             </div>
           </div>
-          <div class="pr"><label data-i18n="propBgColor">Background Color</label>
+          <div class="pr"><label data-i18n="propBgColor">Цвет фона блока</label>
             <div style="display:flex;flex-direction:column;gap:4px">
               <div style="display:flex;gap:6px;align-items:center">
-                <div class="cp-hex" style="flex:1"><input type="color" id="p-bg-col" oninput="setTextBg(this.value)"><input type="text" id="p-bg-hex" placeholder="transparent" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('p-bg-col').value=this.value;setTextBg(this.value);}"></div>
-                <button onclick="clearTextBg()" title="Remove background" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:2px 6px;cursor:pointer;font-size:10px;white-space:nowrap">✕ None</button>
+                <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;background:repeating-conic-gradient(#aaa 0% 25%,#fff 0% 50%) 0 0/8px 8px;" onmousedown="openColorPanel('cp-bg-slot','bg',function(c,sr){document.getElementById('p-bg-hex').value=c;document.getElementById('p-bg-swatch-inner').style.background=c;setTextBg(c,sr);})" title="Цвет фона"><div id="p-bg-swatch-inner" style="width:100%;height:100%;"></div></div>
+                <input type="text" id="p-bg-hex" placeholder="transparent" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('p-bg-swatch-inner').style.background=this.value;setTextBg(this.value);}">
+                <button onclick="clearTextBg()" title="Убрать фон" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:2px 6px;cursor:pointer;font-size:10px;white-space:nowrap">✕</button>
               </div>
-              <div style="display:flex;align-items:center;gap:6px"><label style="font-size:10px;color:var(--text2);white-space:nowrap" data-i18n="propOpacity">Opacity:</label><input type="number" id="p-bg-op" min="0" max="1" step="0.05" value="1" oninput="setTextBgOp(+this.value)"></div>
+              <div id="cp-bg-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
+              <div style="display:flex;align-items:center;gap:6px"><label style="font-size:10px;color:var(--text2);white-space:nowrap">Прозрачность:</label><input type="number" id="p-bg-op" min="0" max="1" step="0.05" value="1" oninput="setTextBgOp(+this.value)"></div>
+              <div style="display:flex;align-items:center;gap:6px"><label style="font-size:10px;color:var(--text2);white-space:nowrap">Размытие фона:</label><input type="number" id="p-bg-blur" min="0" max="40" step="1" value="0" oninput="setTextBgBlur(+this.value)"></div>
             </div>
           </div>
           <div class="grid2">
@@ -475,7 +482,13 @@
           <!-- Text box border -->
           <div class="pr"><label data-i18n="propBorder">Border</label>
             <div style="display:flex;flex-direction:column;gap:4px">
-              <div class="cp-hex"><input type="color" id="p-border-col" value="#ffffff" oninput="setTextBorder('color',this.value)"><input type="text" id="p-border-hex" placeholder="#ffffff" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('p-border-col').value=this.value;setTextBorder('color',this.value);}"></div>
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <div style="display:flex;gap:4px;align-items:center">
+                  <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;overflow:hidden;" onmousedown="openColorPanel('cp-border-slot','border',function(c,sr){document.getElementById('p-border-hex').value=c;document.getElementById('p-border-preview').style.background=c;setTextBorder('color',c,sr);})"><div id="p-border-preview" style="width:100%;height:100%;background:#ffffff;"></div></div>
+                  <input type="text" id="p-border-hex" placeholder="#ffffff" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('p-border-preview').style.background=this.value;setTextBorder('color',this.value);}">
+                </div>
+                <div id="cp-border-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
+              </div>
               <div class="pr" style="margin-top:4px;margin-bottom:0"><label data-i18n="propStrokeWidth">Width</label><input type="number" id="p-border-w" min="0" max="20" step="0.5" value="0" oninput="setTextBorder('width',+this.value)"></div>
             </div>
           </div>
@@ -487,18 +500,26 @@
         <!-- SHAPE PROPS -->
         <div id="shprops" style="display:none">
           <div class="ph">Shape Style</div>
-          <div class="pr"><label>Fill Color</label>
+          <div class="pr"><label>Заливка</label>
             <div style="display:flex;flex-direction:column;gap:5px">
               <div style="display:flex;gap:4px;align-items:center">
-                <div class="cp-hex" style="flex:1"><input type="color" id="sh-fill" oninput="updateShapeStyle('fill',this.value)"><input type="text" id="sh-fill-hex" placeholder="#3b82f6" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('sh-fill').value=this.value;updateShapeStyle('fill',this.value);}"></div>
-                <button onclick="togglePipetteMode()" id="eye-fill" class="pipette-btn" title="Pipette: click another element to inherit its style" style="background:var(--surface2);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:3px 6px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;width:26px;height:26px"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M20.71 5.63l-2.34-2.34a1 1 0 0 0-1.41 0l-3.12 3.12-1.41-1.42-1.42 1.42 1.41 1.41-6.6 6.6A2 2 0 0 0 5 16v3h3a2 2 0 0 0 1.42-.59l6.6-6.6 1.41 1.42 1.42-1.42-1.42-1.41 3.12-3.12a1 1 0 0 0 0-1.65z"/></svg></button>
+                <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;" onmousedown="openColorPanel('cp-fill-slot','fill',function(c,sr){document.getElementById('sh-fill-hex').value=c;document.getElementById('sh-fill-preview').style.background=c;updateShapeStyleScheme('fill',c,sr);})" title="Цвет заливки"><div id="sh-fill-preview" style="width:100%;height:100%;background:#3b82f6;"></div></div>
+                <input type="text" id="sh-fill-hex" placeholder="#3b82f6" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('sh-fill-preview').style.background=this.value;updateShapeStyle('fill',this.value);}">
+                <button onclick="togglePipetteMode()" id="eye-fill" class="pipette-btn" title="Пипетка" style="background:var(--surface2);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:3px 6px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;width:26px;height:26px"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M20.71 5.63l-2.34-2.34a1 1 0 0 0-1.41 0l-3.12 3.12-1.41-1.42-1.42 1.42 1.41 1.41-6.6 6.6A2 2 0 0 0 5 16v3h3a2 2 0 0 0 1.42-.59l6.6-6.6 1.41 1.42 1.42-1.42-1.42-1.41 3.12-3.12a1 1 0 0 0 0-1.65z"/></svg></button>
               </div>
-              <div id="cp-fill-palette" class="cpicker"></div>
-              <div style="display:flex;align-items:center;gap:6px"><label style="font-size:10px;color:var(--text2)">Opacity:</label><input type="range" id="sh-fill-op" min="0" max="1" step="0.05" value="1" style="flex:1" oninput="document.getElementById('sh-fill-op-val').textContent=Math.round(this.value*100)+'%';updateShapeStyle('fillOp',this.value)"><span id="sh-fill-op-val" style="font-size:10px;color:var(--text2);width:32px">100%</span></div>
+              <div id="cp-fill-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
+              <div class="pr" style="margin:0"><label>Прозрачность</label><input type="number" id="sh-fill-op" min="0" max="1" step="0.05" value="1" oninput="updateShapeStyle('fillOp',this.value)"></div>
             </div>
           </div>
-          <div class="pr" style="margin-top:4px"><label>Stroke Color</label>
-            <div class="cp-hex"><input type="color" id="sh-stroke" oninput="updateShapeStyle('stroke',this.value)"><input type="text" id="sh-stroke-hex" placeholder="#ffffff" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('sh-stroke').value=this.value;updateShapeStyle('stroke',this.value);}"></div>
+          <div class="pr"><label>Размытие фона</label><input type="number" id="sh-el-blur" min="0" max="40" step="1" value="0" oninput="setShapeElBlur(+this.value)"></div>
+          <div class="pr" style="margin-top:4px"><label>Обводка</label>
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <div style="display:flex;gap:4px;align-items:center">
+                <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;overflow:hidden;" onmousedown="openColorPanel('cp-stroke-slot','stroke',function(c){document.getElementById('sh-stroke-hex').value=c;document.getElementById('sh-stroke-preview').style.background=c;updateShapeStyle('stroke',c);})"><div id="sh-stroke-preview" style="width:100%;height:100%;background:#1d4ed8;"></div></div>
+                <input type="text" id="sh-stroke-hex" placeholder="#ffffff" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('sh-stroke-preview').style.background=this.value;updateShapeStyle('stroke',this.value);}">
+              </div>
+              <div id="cp-stroke-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
+            </div>
           </div>
           <div class="grid2">
             <div class="pr"><label>Stroke Width</label>
@@ -654,19 +675,19 @@
           <div class="pr" style="display:flex;flex-direction:column;gap:5px">
             <label>Строки</label>
             <div style="display:flex;gap:4px">
-              <button class="tbtn2" onclick="tblAddRow(false)" title="Строку выше" style="flex:1">▲ До</button>
-              <button class="tbtn2" onclick="tblAddRow(true)"  title="Строку ниже" style="flex:1">▼ После</button>
-              <button class="tbtn2 warn" onclick="tblDelRow()" title="Удалить строку" style="flex:1;color:#f87171">✕ Стр.</button>
+              <button class="tbtn2" onmousedown="event.preventDefault()" onclick="tblAddRow(false)" title="Строку выше" style="flex:1">▲ До</button>
+              <button class="tbtn2" onmousedown="event.preventDefault()" onclick="tblAddRow(true)"  title="Строку ниже" style="flex:1">▼ После</button>
+              <button class="tbtn2 warn" onmousedown="event.preventDefault()" onclick="tblDelRow()" title="Удалить строку" style="flex:1;color:#f87171">✕ Стр.</button>
             </div>
             <label style="margin-top:4px">Столбцы</label>
             <div style="display:flex;gap:4px">
-              <button class="tbtn2" onclick="tblAddCol(false)" title="Столбец левее" style="flex:1">◀ До</button>
-              <button class="tbtn2" onclick="tblAddCol(true)"  title="Столбец правее" style="flex:1">▶ После</button>
-              <button class="tbtn2 warn" onclick="tblDelCol()" title="Удалить столбец" style="flex:1;color:#f87171">✕ Ст.</button>
+              <button class="tbtn2" onmousedown="event.preventDefault()" onclick="tblAddCol(false)" title="Столбец левее" style="flex:1">◀ До</button>
+              <button class="tbtn2" onmousedown="event.preventDefault()" onclick="tblAddCol(true)"  title="Столбец правее" style="flex:1">▶ После</button>
+              <button class="tbtn2 warn" onmousedown="event.preventDefault()" onclick="tblDelCol()" title="Удалить столбец" style="flex:1;color:#f87171">✕ Ст.</button>
             </div>
             <div style="display:flex;gap:4px;margin-top:4px">
-              <button class="tbtn2" onclick="tblMerge()" style="flex:1">⊞ Объединить</button>
-              <button class="tbtn2" onclick="tblSplit()"  style="flex:1">⊟ Разделить</button>
+              <button class="tbtn2" onmousedown="event.preventDefault()" onclick="tblMerge()" style="flex:1">⊞ Объединить</button>
+              <button class="tbtn2" onmousedown="event.preventDefault()" onclick="tblSplit()"  style="flex:1">⊟ Разделить</button>
             </div>
           </div>
 
@@ -675,26 +696,32 @@
             <div style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px" id="tbl-cell-lbl">Ячейка</div>
             <div style="display:flex;gap:3px;align-items:center">
               <span style="font-size:10px;color:var(--text3);width:20px">H:</span>
-              <button id="tbl-ca-left"   class="ftbtn active" onclick="tblSetCellAlign('left')"   title="Лево"><svg width="13" height="11" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="5" x2="9" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="9" x2="12" y2="9" stroke="currentColor" stroke-width="1.5"/></svg></button>
-              <button id="tbl-ca-center" class="ftbtn"        onclick="tblSetCellAlign('center')" title="Центр"><svg width="13" height="11" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="2.5" y1="5" x2="11.5" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="1" y1="9" x2="13" y2="9" stroke="currentColor" stroke-width="1.5"/></svg></button>
-              <button id="tbl-ca-right"  class="ftbtn"        onclick="tblSetCellAlign('right')"  title="Право"><svg width="13" height="11" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="5" y1="5" x2="14" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="2" y1="9" x2="14" y2="9" stroke="currentColor" stroke-width="1.5"/></svg></button>
-              <span style="font-size:10px;color:var(--text3);margin-left:4px;width:20px">V:</span>
-              <button id="tbl-va-top"    class="ftbtn"        onclick="tblSetCellVAlign('top')"    title="Верх"><svg width="12" height="13" viewBox="0 0 12 14"><line x1="0" y1="0" x2="12" y2="0" stroke="currentColor" stroke-width="1.5"/><path d="M6 2v9" stroke="currentColor" stroke-width="1.5"/><path d="M3 5l3-4 3 4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button>
-              <button id="tbl-va-middle" class="ftbtn active" onclick="tblSetCellVAlign('middle')" title="Середина"><svg width="12" height="13" viewBox="0 0 12 14"><line x1="0" y1="7" x2="12" y2="7" stroke="currentColor" stroke-width="1.5"/><path d="M6 3v3M6 8v3" stroke="currentColor" stroke-width="1.5"/></svg></button>
-              <button id="tbl-va-bottom" class="ftbtn"        onclick="tblSetCellVAlign('bottom')" title="Низ"><svg width="12" height="13" viewBox="0 0 12 14"><line x1="0" y1="14" x2="12" y2="14" stroke="currentColor" stroke-width="1.5"/><path d="M6 5v7" stroke="currentColor" stroke-width="1.5"/><path d="M3 9l3 4 3-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button>
+              <button id="tbl-ca-left"   class="ftbtn active" onmousedown="event.preventDefault()" onclick="tblSetCellAlign('left')"   title="Лево"><svg width="13" height="11" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="5" x2="9" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="9" x2="12" y2="9" stroke="currentColor" stroke-width="1.5"/></svg></button>
+              <button id="tbl-ca-center" class="ftbtn"        onmousedown="event.preventDefault()" onclick="tblSetCellAlign('center')" title="Центр"><svg width="13" height="11" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="2.5" y1="5" x2="11.5" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="1" y1="9" x2="13" y2="9" stroke="currentColor" stroke-width="1.5"/></svg></button>
+              <button id="tbl-ca-right"  class="ftbtn"        onmousedown="event.preventDefault()" onclick="tblSetCellAlign('right')"  title="Право"><svg width="13" height="11" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="5" y1="5" x2="14" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="2" y1="9" x2="14" y2="9" stroke="currentColor" stroke-width="1.5"/></svg></button>
+            </div>
+            <div style="display:flex;gap:3px;align-items:center;margin-top:3px">
+              <span style="font-size:10px;color:var(--text3);width:20px">V:</span>
+              <button id="tbl-va-top"    class="ftbtn"        onmousedown="event.preventDefault()" onclick="tblSetCellVAlign('top')"    title="Верх"><svg width="12" height="13" viewBox="0 0 12 14"><line x1="0" y1="0" x2="12" y2="0" stroke="currentColor" stroke-width="1.5"/><path d="M6 2v9" stroke="currentColor" stroke-width="1.5"/><path d="M3 5l3-4 3 4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button>
+              <button id="tbl-va-middle" class="ftbtn active" onmousedown="event.preventDefault()" onclick="tblSetCellVAlign('middle')" title="Середина"><svg width="12" height="13" viewBox="0 0 12 14"><line x1="0" y1="7" x2="12" y2="7" stroke="currentColor" stroke-width="1.5"/><path d="M6 3v3M6 8v3" stroke="currentColor" stroke-width="1.5"/></svg></button>
+              <button id="tbl-va-bottom" class="ftbtn"        onmousedown="event.preventDefault()" onclick="tblSetCellVAlign('bottom')" title="Низ"><svg width="12" height="13" viewBox="0 0 12 14"><line x1="0" y1="14" x2="12" y2="14" stroke="currentColor" stroke-width="1.5"/><path d="M6 5v7" stroke="currentColor" stroke-width="1.5"/><path d="M3 9l3 4 3-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button>
             </div>
             <div style="display:flex;align-items:center;gap:6px;margin-top:2px">
               <span style="font-size:10px;color:var(--text3)">Цвет ячейки:</span>
               <input type="color" id="tbl-own-bg" value="#3b82f6" oninput="tblSetCellBg(this.value);document.getElementById('tbl-own-bg-hex').value=this.value" style="width:24px;height:22px;padding:1px;border-radius:3px;border:1px solid var(--border);cursor:pointer">
               <input type="text" id="tbl-own-bg-hex" value="" placeholder="hex" style="width:60px;background:var(--surface3);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:2px 5px;font-size:10px;font-family:monospace" oninput="if(this.value.match(/^#[0-9a-fA-F]{6}$/)){tblSetCellBg(this.value);document.getElementById('tbl-own-bg').value=this.value}">
-              <button class="tbtn2" style="font-size:10px;padding:2px 6px" onclick="tblSetCellBg('')">✕</button>
+              <button class="tbtn2" style="font-size:10px;padding:2px 6px" onmousedown="event.preventDefault()" onclick="tblSetCellBg('')">✕</button>
             </div>
+            <div class="pr" style="margin-top:6px"><label>Размер шрифта</label><input type="number" id="tbl-fs" value="15" min="8" max="72" oninput="tblSetCellFs(+this.value)"></div>
           </div>
 
           <!-- Appearance -->
           <div class="grid2">
-            <div class="pr"><label>Размер шрифта</label><input type="number" id="tbl-fs" value="15" min="8" max="72" oninput="tblSet('fs',+this.value)"></div>
             <div class="pr"><label>Скругление</label><input type="number" id="tbl-rx" value="8" min="0" max="60" oninput="tblSet('rx',+this.value)"></div>
+          </div>
+          <div class="grid2">
+            <div class="pr"><label>Прозрачность фона</label><input type="number" id="tbl-bg-op" min="0" max="1" step="0.05" value="1" oninput="tblSetBgOp(+this.value)"></div>
+            <div class="pr"><label>Размытие фона</label><input type="number" id="tbl-bg-blur" min="0" max="40" step="1" value="0" oninput="tblSetBgBlur(+this.value)"></div>
           </div>
           <div class="grid2">
             <div class="pr"><label>Толщина линий</label><input type="number" id="tbl-bw" value="1" min="0" max="10" step="0.5" oninput="tblSet('borderW',+this.value)"></div>
@@ -794,13 +821,23 @@
   </div>
 </div>
 <!-- ANIMATION PANEL (slides in over props when Animations tab active) -->
-<div id="anim-panel">
+<div id="anim-panel" onmousedown="if(event.target.tagName!=='INPUT'&&event.target.tagName!=='SELECT')event.preventDefault()">
   <div id="anim-panel-hdr">
-    <span>🎬 Animation Timeline</span>
+    <span>🎬 Анимации</span>
     <button id="anim-panel-close" onclick="closeAnimPanel()">✕</button>
   </div>
-  <div id="anim-slide-list">
-    <div style="font-size:10px;color:var(--text3);text-align:center;margin-top:20px" id="anim-empty">Select a slide to see its animations.<br>Add elements and assign animations<br>from the Animations ribbon tab.</div>
+  <div id="anim-panel-body">
+    <!-- LEFT: add button + assigned anims -->
+    <div id="anim-panel-left">
+      <button id="anim-add-btn" disabled onmousedown="event.preventDefault()" onclick="doAddSelectedAnim()">Выберите эффект</button>
+      <div id="anim-assigned-list">
+        <div id="anim-empty" style="font-size:10px;color:var(--text3);text-align:center;padding:16px 8px">Выберите объект<br>для назначения анимации</div>
+      </div>
+    </div>
+    <!-- RIGHT: category picker -->
+    <div id="anim-panel-right">
+      <div id="anim-slide-list"></div>
+    </div>
   </div>
 </div>
 
@@ -1062,6 +1099,7 @@
 <script src="js/30-rich-text.js"></script>
 
 <script src="js/32-scrubber.js"></script>
+  <script src="js/33-objects.js"></script>
 <script src="js/33-pagenum.js"></script>
 </body>
 </html>

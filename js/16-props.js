@@ -55,7 +55,7 @@ function syncProps(){
     const m=(re,fb)=>{const x=cs.match(re);return x?x[1]:fb;};
     document.getElementById('p-fs').value=parseFloat(m(/font-size:([\d.]+)px/,'48'));
     const col=m(/(?:^|;|\s)color:(#[0-9a-fA-F]{3,8})/,'#ffffff');
-    try{document.getElementById('p-col').value=col;document.getElementById('p-hex').value=col;}catch(e){}
+    try{const _sw=document.getElementById('p-col-preview');if(_sw)_sw.style.background=col;document.getElementById('p-hex').value=col;}catch(e){}
     document.getElementById('p-lh').value=parseFloat(m(/line-height:([\d.]+)/,'1.2'));
     document.getElementById('p-ls').value=parseFloat(m(/letter-spacing:([-\d.]+)px/,'0'));
     document.getElementById('ft-b').classList.toggle('on',/font-weight:(700|800|900)/.test(cs));
@@ -70,15 +70,17 @@ function syncProps(){
     const bgCol=sel.dataset.textBg||'';
     const bgOp=parseFloat(sel.dataset.textBgOp!=null?sel.dataset.textBgOp:1);
     try{
-      document.getElementById('p-bg-col').value=bgCol||'#000000';
+      const _bgsw=document.getElementById('p-bg-swatch-inner');if(_bgsw)_bgsw.style.background=bgCol||'';
       document.getElementById('p-bg-hex').value=bgCol||'';
       document.getElementById('p-bg-op').value=bgOp;
+      const bgBlur=parseFloat(sel.dataset.textBgBlur!=null?sel.dataset.textBgBlur:0);
+      document.getElementById('p-bg-blur').value=bgBlur;
     }catch(e){}
     // Text role
     const role=sel.dataset.textRole||'body';
     try{document.getElementById('role-body').classList.toggle('active',role==='body');document.getElementById('role-heading').classList.toggle('active',role==='heading');}catch(e){}
     // Border
-    try{document.getElementById('p-border-col').value=sel.dataset.textBorderColor||'#ffffff';document.getElementById('p-border-hex').value=sel.dataset.textBorderColor||'';document.getElementById('p-border-w').value=sel.dataset.textBorderW||0;}catch(e){}
+    try{const _brd=document.getElementById('p-border-preview');if(_brd)_brd.style.background=sel.dataset.textBorderColor||'#ffffff';document.getElementById('p-border-hex').value=sel.dataset.textBorderColor||'';document.getElementById('p-border-w').value=sel.dataset.textBorderW||0;}catch(e){}
     // Opacity
     try{const op=parseFloat(sel.dataset.elOpacity!=null?sel.dataset.elOpacity:1);document.getElementById('p-el-op').value=op;}catch(e){}
     // Padding - parse 4-sided
@@ -100,17 +102,17 @@ function syncProps(){
     }catch(e){}
   } // end if(t==='text')
   if(sel.dataset.type==='shape'){
-    try{document.getElementById('sh-fill').value=sel.dataset.fill||'#3b82f6';document.getElementById('sh-fill-hex').value=sel.dataset.fill||'#3b82f6';}catch(e){}
-    try{document.getElementById('sh-stroke').value=sel.dataset.stroke||'#1d4ed8';document.getElementById('sh-stroke-hex').value=sel.dataset.stroke||'#1d4ed8';}catch(e){}
+    try{const _fsw=document.getElementById('sh-fill-preview');if(_fsw)_fsw.style.background=sel.dataset.fill||'#3b82f6';document.getElementById('sh-fill-hex').value=sel.dataset.fill||'#3b82f6';}catch(e){}
+    try{const _strk=document.getElementById('sh-stroke-preview');if(_strk)_strk.style.background=sel.dataset.stroke||'#1d4ed8';document.getElementById('sh-stroke-hex').value=sel.dataset.stroke||'#1d4ed8';}catch(e){}
     document.getElementById('sh-sw').value=sel.dataset.sw!=null?sel.dataset.sw:2;
     const sw0=+(sel.dataset.sw!=null?sel.dataset.sw:2)===0;
     const nsEl=document.getElementById('sh-no-stroke');if(nsEl)nsEl.checked=sw0;
     document.getElementById('sh-rx').value=sel.dataset.rx||0;
     document.getElementById('sh-fill-op').value=sel.dataset.fillOp||1;
-    document.getElementById('sh-fill-op-val').textContent=Math.round((sel.dataset.fillOp||1)*100)+'%';
     document.getElementById('sh-shadow').checked=sel.dataset.shadow==='true';
     document.getElementById('sh-sb').value=sel.dataset.shadowBlur||8;
     try{document.getElementById('sh-sc').value=sel.dataset.shadowColor||'#000000';}catch(e){}
+    try{document.getElementById('sh-el-blur').value=parseFloat(sel.dataset.shapeBlur||0);}catch(e){}
     const st=sel.querySelector('.shape-text');
     if(st){
       const cs=st.getAttribute('style')||'';
@@ -182,28 +184,46 @@ function setTextVAlign(va){
 }
 function applyTextVAlign(el,va){
   const ec=el.querySelector('.ec.tel');if(!ec)return;
-  // Remove any old wrapper div from previous implementation
+  // Remove legacy padding-top approach
+  ec.style.paddingTop='';
+  // Remove any old wrapper from previous implementations
   const oldWrap=ec.querySelector('.ec-valign-wrap');
   if(oldWrap){while(oldWrap.firstChild)ec.insertBefore(oldWrap.firstChild,oldWrap);oldWrap.remove();}
   el.dataset.valign=va||'top';
-  if(!va||va==='top'){delete el.dataset.valign;ec.style.paddingTop='';return;}
-  // Use padding-top to push text down — no wrapper, no flex, no layout side-effects
-  const elH=parseInt(el.style.height)||0;
-  const textH=ec.scrollHeight;
-  if(va==='middle'){const pt=Math.max(0,Math.round((elH-textH)/2));ec.style.paddingTop=pt+'px';}
-  else if(va==='bottom'){const pt=Math.max(0,elH-textH-6);ec.style.paddingTop=pt+'px';}
+  // Flex on the .el container — .ec.tel becomes the flex child
+  // This is pure CSS math, no scrollHeight hacks needed
+  if(!va||va==='top'){
+    delete el.dataset.valign;
+    el.style.display='';
+    el.style.flexDirection='';
+    el.style.alignItems='';
+    el.style.justifyContent='';
+    ec.style.flex='';
+    ec.style.width='';
+    return;
+  }
+  el.style.display='flex';
+  el.style.flexDirection='column';
+  el.style.alignItems='stretch'; // ec stretches to full width always
+  if(va==='middle') el.style.justifyContent='center';
+  else if(va==='bottom') el.style.justifyContent='flex-end';
+  // ec is a flex child — no fixed height, sized by content
+  ec.style.flex='none';
+  ec.style.width='100%';
 }
-function setTextBg(col){
+function setTextBg(col, schemeRef){
   if(!sel||sel.dataset.type!=='text')return;
   sel.dataset.textBg=col;
+  const d=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+  if(d) d.textBgScheme = (schemeRef !== undefined ? (schemeRef || null) : d.textBgScheme);
   applyTextBg(sel);
   commitAll();
 }
 function clearTextBg(){
   if(!sel||sel.dataset.type!=='text')return;
-  delete sel.dataset.textBg;delete sel.dataset.textBgOp;
+  delete sel.dataset.textBg;delete sel.dataset.textBgOp;delete sel.dataset.textBgBlur;
   const c=sel.querySelector('.ec');if(c)c.style.background='';
-  try{document.getElementById('p-bg-hex').value='';document.getElementById('p-bg-col').value='#000000';}catch(e){}
+  try{document.getElementById('p-bg-hex').value='';const _bgsw=document.getElementById('p-bg-swatch-inner');if(_bgsw)_bgsw.style.background='';}catch(e){}
   commitAll();
 }
 function setTextBgOp(op){
@@ -212,13 +232,32 @@ function setTextBgOp(op){
   applyTextBg(sel);
   commitAll();
 }
+function setTextBgBlur(v){
+  if(!sel||sel.dataset.type!=='text')return;
+  sel.dataset.textBgBlur=v;
+  applyTextBg(sel);
+  commitAll();
+}
 function applyTextBg(el){
   const c=el.querySelector('.ec');if(!c)return;
   const col=el.dataset.textBg;
-  if(!col){c.style.background='';return;}
-  const op=parseFloat(el.dataset.textBgOp!=null?el.dataset.textBgOp:1);
-  const r=parseInt(col.slice(1,3),16),g=parseInt(col.slice(3,5),16),b=parseInt(col.slice(5,7),16);
-  c.style.background=`rgba(${r},${g},${b},${op})`;
+  const blur=parseFloat(el.dataset.textBgBlur!=null?el.dataset.textBgBlur:0);
+  if(!col && !blur){el.style.background='';el.style.backdropFilter='';el.style.webkitBackdropFilter='';c.style.background='';return;}
+  if(col){
+    const op=parseFloat(el.dataset.textBgOp!=null?el.dataset.textBgOp:1);
+    const r=parseInt(col.slice(1,3),16),g=parseInt(col.slice(3,5),16),b=parseInt(col.slice(5,7),16);
+    el.style.background=`rgba(${r},${g},${b},${op})`;
+  } else {
+    el.style.background='';
+  }
+  c.style.background='';
+  if(blur>0){
+    el.style.backdropFilter=`blur(${blur}px)`;
+    el.style.webkitBackdropFilter=`blur(${blur}px)`;
+  } else {
+    el.style.backdropFilter='';
+    el.style.webkitBackdropFilter='';
+  }
 }
 // ══════════════ TEXT ROLE ══════════════
 function setTextRole(role){
@@ -302,8 +341,9 @@ function resetTextFormatting() {
   d.cs = 'font-size:' + fs + ';font-weight:400;color:#ffffff;text-align:left;line-height:1.3;';
 
   // 3. Clear text background
-  delete d.textBg; delete d.textBgOp;
-  sel.dataset.textBg = ''; sel.dataset.textBgOp = '';
+  delete d.textBg; delete d.textBgOp; delete d.textBgBlur;
+  sel.dataset.textBg = ''; sel.dataset.textBgOp = ''; sel.dataset.textBgBlur = '';
+  sel.style.backdropFilter=''; sel.style.webkitBackdropFilter='';
   const ec2 = sel.querySelector('.ec'); if (ec2) ec2.style.background = '';
 
   // 4. Re-render element

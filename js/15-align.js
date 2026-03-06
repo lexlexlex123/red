@@ -1,15 +1,17 @@
 // ══════════════ ALIGN ══════════════
 function layerEl(dir){
-  if(!sel)return toast('Select an element first');
+  if(!sel){toast('Select an element first');return;}
   const cv=document.getElementById('canvas');
-  const els=Array.from(cv.querySelectorAll('.el'));
-  const i=els.indexOf(sel);if(i<0)return;
+  const els=Array.from(cv.querySelectorAll(':scope > .el'));
+  const i=els.indexOf(sel);
+  console.log('[layer] dir='+dir+' sel='+!!sel+' i='+i+' total='+els.length+' type='+(sel&&sel.dataset.type));
+  if(i<0){console.warn('[layer] sel not found in canvas children');return;}
   pushUndo();
   if(dir==='front')cv.appendChild(sel);
   else if(dir==='back')cv.insertBefore(sel,els[0]);
   else if(dir==='up'&&i<els.length-1)cv.insertBefore(els[i+1],sel);
   else if(dir==='down'&&i>0)cv.insertBefore(sel,els[i-1]);
-  save();saveState();
+  save();drawThumbs();saveState();
 }
 function setAlignScope(s){
   _alignScope=s;

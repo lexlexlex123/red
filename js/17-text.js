@@ -1,7 +1,13 @@
 // ══════════════ TEXT BORDER & OPACITY ══════════════
-function setTextBorder(prop,val){
+function setTextBorder(prop,val,schemeRef){
   if(!sel||sel.dataset.type!=='text')return;
-  if(prop==='color'){sel.dataset.textBorderColor=val;try{document.getElementById('p-border-hex').value=val;}catch(e){}}
+  if(prop==='color'){
+    sel.dataset.textBorderColor=val;
+    // Store scheme ref on data
+    const d=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+    if(d) d.borderScheme = (schemeRef !== undefined ? (schemeRef || null) : d.borderScheme);
+    try{document.getElementById('p-border-hex').value=val;}catch(e){}
+  }
   if(prop==='width'){sel.dataset.textBorderW=val;}
   applyTextBorderStyle(sel);
   save();drawThumbs();saveState();
@@ -16,6 +22,23 @@ function setTextElOpacity(op){
   if(!sel||sel.dataset.type!=='text')return;
   sel.dataset.elOpacity=op;
   sel.style.opacity=op;
+  save();saveState();
+}
+function setShapeElOpacity(op){
+  if(!sel||sel.dataset.type!=='shape')return;
+  sel.dataset.elOpacity=op;
+  // Apply opacity to inner SVG/content so backdrop-filter on el still works
+  const _svg=sel.querySelector('svg');if(_svg)_svg.style.opacity=op;
+  const _st=sel.querySelector('.shape-text');if(_st)_st.style.opacity=op;
+  save();saveState();
+}
+function setShapeElBlur(v){
+  if(!sel||sel.dataset.type!=='shape')return;
+  sel.dataset.shapeBlur=v;
+  // Write directly to d so saveState() always has the value
+  const _d=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+  if(_d)_d.shapeBlur=+v;
+  _applyShapeBlur(sel);
   save();saveState();
 }
 // ══════════════ HOVER PRESETS ══════════════
