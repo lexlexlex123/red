@@ -138,6 +138,11 @@ function buildThemeGrid(){
     sec.appendChild(hdr);
     const grid=document.createElement('div');
     grid.className='theme-grid';
+
+    // "No theme" card — only in first section
+    if(label===t('darkThemes')||(!THEMES.some(x=>x.dark!==false))){
+    }
+
     themes.forEach(([i,t])=>{
       const card=document.createElement('div');
       card.className='theme-card'+(selTheme===i?' active':'');

@@ -3,7 +3,7 @@
 // Автор / Author: Некрасов Александр
 
 const APP_NAME = 'Слайды';
-const APP_VERSION = '4.7';
+const APP_VERSION = '5.0';
 const APP_AUTHOR = 'Некрасов Александр';
 
 const LANG_DATA = {
@@ -348,7 +348,7 @@ const LANG_DATA = {
     modalMd: '# Markdown блок',
     modalLayout: '🖼 Применить тему',
     layoutDesc: 'Декоративный стиль для всех слайдов. Использует цвета текущей темы.',
-    modalTheme: '🎨 Цветовая схема',
+    modalTheme: 'Цветовая схема',
     modalIcon: '🔍 Значки',
     modalSvg: '⬡ Вставить SVG',
     modalShape: '⬡ Вставить фигуру',

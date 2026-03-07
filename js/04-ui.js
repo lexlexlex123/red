@@ -13,6 +13,7 @@ function switchTab(name,btn){
   document.querySelectorAll('.rtab').forEach(t=>t.classList.remove('active'));btn.classList.add('active');
   document.querySelectorAll('[data-tab]').forEach(g=>g.style.display=g.dataset.tab===name?'flex':'none');
   if(name==='anim'){openAnimPanel();}else{closeAnimPanel();}
+  try{localStorage.setItem('sf_active_tab',name);}catch(e){}
   // Show/hide objects panel in props
   const objSec=document.getElementById('objects-panel-section');
   const slidePr=document.getElementById('slide-props');
@@ -25,6 +26,27 @@ function switchTab(name,btn){
     if(isObj&&typeof renderObjectsPanel==='function')renderObjectsPanel();
   }
 }
+
+// Move anim-panel-body into #props when anim tab is active
+window._animInProps = false;
+window.openAnimPanel = function(){
+  const body = document.getElementById('anim-panel-body');
+  const wrap = document.getElementById('props-anim-wrap');
+  const scroll = document.getElementById('props-scroll');
+  if(!body||!wrap||!scroll) return;
+  if(!window._animInProps){
+    wrap.appendChild(body);
+    window._animInProps = true;
+  }
+  wrap.style.display='flex';
+  scroll.style.display='none';
+};
+window.closeAnimPanel = function(){
+  const wrap = document.getElementById('props-anim-wrap');
+  const scroll = document.getElementById('props-scroll');
+  if(wrap) wrap.style.display='none';
+  if(scroll) scroll.style.display='';
+};
 
 // ══════════════ SNAP / GUIDES ══════════════
 function snapV(v){return document.getElementById('snap-chk').checked?Math.round(v/SNAP)*SNAP:v;}

@@ -49,7 +49,9 @@ function buildShapeSVG(d,w,h){
   let filterDef='';
   if(d.shadow){
     const sc=d.shadowColor||'#000000';const sb=d.shadowBlur||8;
-    filterDef=`<defs><filter id="sh_${d.id}" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="3" dy="3" stdDeviation="${sb}" flood-color="${sc}" flood-opacity="0.6"/></filter></defs>`;
+    // Expand filter region proportionally to blur so shadow isn't clipped
+    const pad=Math.max(30, Math.ceil(sb*3));
+    filterDef=`<defs><filter id="sh_${d.id}" x="-${pad}%" y="-${pad}%" width="${100+pad*2}%" height="${100+pad*2}%"><feDropShadow dx="3" dy="3" stdDeviation="${sb}" flood-color="${sc}" flood-opacity="0.6"/></filter></defs>`;
   }
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="overflow:visible">${filterDef}${shapeDef}</svg>`;
 }
@@ -154,11 +156,10 @@ function renderShapeEl(el,d){
   }
   // Re-apply blur overlay after re-render (size may change)
   if(el.dataset.shapeBlur>0&&typeof _applyShapeBlur==='function')_applyShapeBlur(el);
-  // Re-apply hit area only when not selected (selected shapes use full pointer-events)
-  if(!el.classList.contains('sel')){
-    const _d=slides[cur]&&slides[cur].els.find(e=>e.id===el.dataset.id);
-    if(_d)_applyShapeClipPath(el,_d);
-  }
+  // Always apply hit-area clip-path so transparent areas pass clicks through
+  // But skip if element is currently selected — pick() manages pointer-events there
+  const _d=slides[cur]&&slides[cur].els.find(e=>e.id===el.dataset.id);
+  if(_d && !el.classList.contains('sel'))_applyShapeClipPath(el,_d);
 }
 function updateShapeStyle(prop,val){
   if(!sel||sel.dataset.type!=='shape')return;

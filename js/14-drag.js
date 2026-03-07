@@ -45,10 +45,12 @@ function mkDrag(el,c){
           if(document.getElementById('snap-chk').checked){nx=snapV(nx);ny=snapV(ny);}
           mEl.style.left=nx+'px';mEl.style.top=ny+'px';
         });
+        if(typeof renderMotionOverlay==='function') renderMotionOverlay();
       } else {
         let nx=ol+dx,ny=ot+dy;
         if(document.getElementById('snap-chk').checked){nx=snapV(nx);ny=snapV(ny);}
         el.style.left=nx+'px';el.style.top=ny+'px';showGuides(el);syncPos();
+        if(typeof renderMotionOverlay==='function') renderMotionOverlay();
       }
     };
     const mu=()=>{on=false;groupStart=null;clearGuides();document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);commitAll();};

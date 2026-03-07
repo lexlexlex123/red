@@ -538,6 +538,22 @@ function buildLayoutGrid(){
   grid.innerHTML='';
   const [a1,a2]=_decorAccents();
   const PW=320,PH=180;
+
+  // "No layout" card
+  const none=document.createElement('div');
+  none.className='layout-item'+(selLayout===-1?' active':'');
+  none.title='Без декора';
+  none.style.cssText='display:flex;flex-direction:column;align-items:center;justify-content:center;background:repeating-linear-gradient(-45deg,transparent,transparent 4px,rgba(255,255,255,.04) 4px,rgba(255,255,255,.04) 5px);';
+  const noneLbl=document.createElement('div');
+  noneLbl.className='li-label';
+  noneLbl.textContent='Без декора';
+  none.appendChild(noneLbl);
+  none.onclick=()=>{
+    selLayout=-1;
+    grid.querySelectorAll('.layout-item').forEach(b=>b.classList.remove('active'));
+    none.classList.add('active');
+  };
+  grid.appendChild(none);
   LAYOUTS.forEach((L,i)=>{
     const isRu=typeof lang!=='undefined'&&lang==='ru';
     const btn=document.createElement('div');

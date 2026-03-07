@@ -149,6 +149,8 @@ function deleteSelected(){
       domEl.remove();
     });
     clearMultiSel();sel=null;save();if(typeof drawThumbs==="function")drawThumbs();if(typeof saveState==="function")saveState();syncProps();
+    if(typeof renderAnimPanel==="function")renderAnimPanel();
+    if(typeof renderMotionOverlay==="function")renderMotionOverlay();
     if(typeof toast==="function")toast('Deleted elements','ok');
   } else if(sel){
     const s=slides[cur];if(!s)return;
@@ -156,6 +158,8 @@ function deleteSelected(){
     const idx2=s.els.findIndex(x=>x.id===sel.dataset.id);
     if(idx2>=0)s.els.splice(idx2,1);
     sel.remove();sel=null;save();if(typeof drawThumbs==="function")drawThumbs();if(typeof saveState==="function")saveState();syncProps();
+    if(typeof renderAnimPanel==="function")renderAnimPanel();
+    if(typeof renderMotionOverlay==="function")renderMotionOverlay();
   }
 }
 

@@ -16,6 +16,12 @@ function _resolveSchemeColor(schemeRef, theme) {
 function openThemeModal(){selTheme=-1;buildThemeGrid();document.getElementById('theme-modal').classList.add('open');}
 function closeThemeModal(){document.getElementById('theme-modal').classList.remove('open');}
 function applyTheme(){
+  if(selTheme===-2){
+    appliedThemeIdx=-1;
+    closeThemeModal();
+    save();drawThumbs();saveState();
+    return;
+  }
   if(selTheme<0)return toast(t('toastSelectTheme'));
   const theme=THEMES[selTheme];pushUndo();
   // Save current slide DOM state FIRST before modifying data

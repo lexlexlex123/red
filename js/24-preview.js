@@ -253,6 +253,67 @@ function buildPSlide(container,idx){
   // We group by: all 'click' anims on elements that are NOT triggers, in order of their delay
   const globalClickSteps=[]; // [{el,anim}, ...] per step
 
+  // --- Global anim classification ---
+  // Pass 1: flatten all anims across all elements with their effective trigger
+  // Rule: if any anim in the global sequence is 'click', all following auto/withPrev
+  // anims (on any element) are also treated as click until a new explicit non-withPrev auto appears
+  const globalAnimList = []; // {d, a, i (anim index)}
+  s.els.forEach(d => {
+    if(hiddenSet.has(d.id)) return;
+    (d.anims||[]).forEach((a, i) => globalAnimList.push({d, a, i}));
+  });
+
+  // Compute effective trigger for each anim globally
+  // Rule: 'withPrev' inherits trigger from previous anim
+  // 'auto'/'afterPrev' after a click (same or different element) = autoAfter (fires after click group ends)
+  // New explicit 'click' resets; new 'auto' on a NEW element that has no prior click = plain auto
+  let lastEffTrig = 'auto';
+  let lastEffEl = null;
+  const globalEffTrig = globalAnimList.map(({a, d}) => {
+    const t = a.trigger||'auto';
+    if(t === 'click') { lastEffTrig = 'click'; lastEffEl = d.id; return 'click'; }
+    if(t === 'withPrev') { return lastEffTrig; }
+    // auto / afterPrev
+    if(lastEffTrig === 'click') {
+      // Still in the wake of a click — this auto is autoAfter regardless of element
+      // but only update lastEffEl to current, keep lastEffTrig as 'click' so chain continues
+      lastEffEl = d.id;
+      return 'autoAfter';
+    }
+    lastEffTrig = 'auto'; lastEffEl = null;
+    return 'auto';
+  });
+
+  // Build per-element maps: autoMap and clickMap
+  const globalAutoMap = new Map();  // elId -> [{anim, absDelay}]
+  const globalClickMap = new Map(); // elId -> [{anim, autoAfter?}]
+  {
+    let gPrevStart = 0, gPrevDur = 0;
+    globalAnimList.forEach(({d, a}, gi) => {
+      const eff = globalEffTrig[gi];
+      if(eff === 'auto' || eff === 'withPrev') {
+        const relDelay = a.delay||0;
+        let absDelay;
+        if(gPrevStart===0 && gPrevDur===0){
+          absDelay = relDelay;
+        } else if((a.trigger||'auto')==='withPrev'){
+          absDelay = gPrevStart + relDelay;
+        } else {
+          absDelay = gPrevStart + gPrevDur + relDelay;
+        }
+        gPrevStart = absDelay;
+        gPrevDur = a.duration||600;
+        const arr = globalAutoMap.get(d.id) || [];
+        arr.push({anim:a, absDelay});
+        globalAutoMap.set(d.id, arr);
+      } else if(eff === 'click' || eff === 'autoAfter') {
+        const arr = globalClickMap.get(d.id) || [];
+        arr.push({anim:a, autoAfter: eff==='autoAfter'});
+        globalClickMap.set(d.id, arr);
+      }
+    });
+  }
+
   s.els.forEach(d=>{
     if(hiddenSet.has(d.id))return;
     const el=document.createElement('div');el.className='psel';
@@ -393,18 +454,15 @@ function buildPSlide(container,idx){
     const anims=d.anims||[];
     const isTrigger=d.isTrigger||anims.some(a=>a.trigger==='nav');
 
-    // Auto-play animations (auto / withPrev / afterPrev)
-    const autoAnims=anims.filter(a=>{const t=a.trigger||'auto';return t==='auto'||t==='afterPrev'||t==='withPrev';});
-    if(autoAnims.length>0){
-      const timed=typeof computeAbsDelays==='function'
-        ? computeAbsDelays(autoAnims)
-        : autoAnims.map(a=>({anim:a,absDelay:a.delay||0}));
-      // Group by absDelay — same time plays together (combined CSS), different times use setTimeout
+    // Auto anims — from global map (already classified)
+    const autoTimed = globalAutoMap.get(d.id) || [];
+    if(autoTimed.length>0){
+      const cssAnims  = autoTimed.filter(({anim:a})=>a.name!=='moveTo');
+      const moveAnims = autoTimed.filter(({anim:a})=>a.name==='moveTo');
       const groups={};
-      timed.forEach(({anim:a,absDelay})=>{
-        const key=absDelay;
-        if(!groups[key]) groups[key]=[];
-        groups[key].push(a);
+      cssAnims.forEach(({anim:a,absDelay})=>{
+        if(!groups[absDelay]) groups[absDelay]=[];
+        groups[absDelay].push(a);
       });
       Object.entries(groups).forEach(([delayStr,grp])=>{
         const absDelay=+delayStr;
@@ -418,25 +476,38 @@ function buildPSlide(container,idx){
           }).join(',');
         }, absDelay);
       });
+      moveAnims.forEach(({anim:a,absDelay})=>fireAnim(el,d,a,idx,absDelay));
     }
 
-    // Click trigger animations — split into trigger-object vs global-click
-    const clickAnims=anims.filter(a=>a.trigger==='click'||a.trigger==='nav');
-    if(clickAnims.length>0){
-      if(isTrigger){
+    // Click anims — from global click map + nav triggers
+    const clickAnimsGlobal = globalClickMap.get(d.id) || [];
+    const navAnims = anims.filter(a=>a.trigger==='nav');
+    const allClickEntries = [...clickAnimsGlobal, ...navAnims.filter(a=>!clickAnimsGlobal.find(x=>x.anim===a)).map(a=>({anim:a,autoAfter:false}))];
+    const clickAnims = allClickEntries.filter(x=>!x.autoAfter).map(x=>x.anim);
+    const autoAfterAnims = allClickEntries.filter(x=>x.autoAfter).map(x=>x.anim);
+    if(clickAnims.length>0||autoAfterAnims.length>0){
+      const firstIsEntrance = clickAnims.length>0 && clickAnims[0].cat==='entrance';
+      if(firstIsEntrance) el.style.visibility='hidden';
+      if(isTrigger && clickAnims.length>0){
         el.style.cursor='pointer';
         el.addEventListener('click',(e)=>{
           e.stopPropagation();
           const timed=typeof computeAbsDelays==='function'?computeAbsDelays(clickAnims):clickAnims.map(a=>({anim:a,absDelay:a.delay||0}));
           timed.forEach(({anim:a,absDelay})=>setTimeout(()=>fireAnim(el,d,a,idx),absDelay));
+          // fire autoAfter anims after click group
+          let autoDelay = Math.max(...timed.map(({anim:a,absDelay})=>(absDelay||0)+(a.duration||600)));
+          autoAfterAnims.forEach(a=>{
+            const t=autoDelay; autoDelay+=a.duration||600;
+            setTimeout(()=>fireAnim(el,d,a,idx,0), t);
+          });
         });
-      }else{
-        const firstIsEntrance=clickAnims.length>0&&clickAnims[0].cat==='entrance';
-        if(firstIsEntrance)el.style.visibility='hidden';
-        // Group consecutive click anims that are withPrev together as one step
+      } else {
         const timed=typeof computeAbsDelays==='function'?computeAbsDelays(clickAnims):clickAnims.map(a=>({anim:a,absDelay:a.delay||0}));
         timed.forEach(({anim:a,absDelay})=>{
-          globalClickSteps.push({el,d,a,absDelay,wasHidden:firstIsEntrance});
+          globalClickSteps.push({el,d,a,absDelay,wasHidden:firstIsEntrance,autoAfter:false});
+        });
+        autoAfterAnims.forEach(a=>{
+          globalClickSteps.push({el,d,a,absDelay:0,wasHidden:false,autoAfter:true});
         });
       }
     }
@@ -466,19 +537,56 @@ function buildPSlide(container,idx){
   // Sort global click steps by absDelay
   globalClickSteps.sort((a,b)=>(a.absDelay||0)-(b.absDelay||0));
 
-  let stepIdx=0;
+  // Group into click-steps: each explicit 'click' starts a new group,
+  // 'withPrev' joins the current group, autoAfter fires automatically after the group
+  const clickGroups = [];
+  globalClickSteps.forEach(step => {
+    const origTrigger = step.a.trigger||'auto';
+    if(step.autoAfter) {
+      if(clickGroups.length > 0) clickGroups[clickGroups.length-1].autoAfter.push(step);
+    } else if(origTrigger === 'click') {
+      clickGroups.push({items:[step], autoAfter:[]});
+    } else if(origTrigger === 'withPrev' && clickGroups.length > 0) {
+      clickGroups[clickGroups.length-1].items.push(step);
+    } else {
+      clickGroups.push({items:[step], autoAfter:[]});
+    }
+  });
+
+  let groupIdx=0;
   container._fireNextStep=function(){
-    if(stepIdx>=globalClickSteps.length)return false;
-    const {el,d,a,absDelay,wasHidden}=globalClickSteps[stepIdx];
-    if(wasHidden)el.style.visibility='visible';
-    fireAnim(el,d,a,idx,absDelay||0);
-    stepIdx++;
+    if(groupIdx>=clickGroups.length)return false;
+    const group=clickGroups[groupIdx];
+    group.items.forEach(({el,d,a,wasHidden})=>{
+      if(wasHidden)el.style.visibility='visible';
+      fireAnim(el,d,a,idx,a.delay||0);
+    });
+    // auto-fire autoAfter items after click group ends
+    let autoDelay = 0;
+    group.items.forEach(({a})=>{ autoDelay = Math.max(autoDelay, (a.delay||0)+(a.duration||600)); });
+    group.autoAfter.forEach(({el,d,a,wasHidden})=>{
+      const t=autoDelay; autoDelay+=a.duration||600;
+      setTimeout(()=>{ if(wasHidden)el.style.visibility='visible'; fireAnim(el,d,a,idx,0); }, t);
+    });
+    groupIdx++;
     return true;
   };
-  container._hasSteps=()=>stepIdx<globalClickSteps.length;
+  container._hasSteps=()=>groupIdx<clickGroups.length;
 }
 
 function fireAnim(el,d,a,idx,overrideDelay){
+  if(a.name==='moveTo'){
+    const dur=(a.duration||600);
+    const delay=typeof overrideDelay==='number' ? overrideDelay : (a.delay||0);
+    const tx=a.tx||0, ty=a.ty||0;
+    setTimeout(()=>{
+      requestAnimationFrame(()=>{
+        el.style.transition=`transform ${dur}ms cubic-bezier(0.4,0,0.2,1)`;
+        el.style.transform=`translate(${tx}px,${ty}px)`;
+      });
+    }, delay);
+    return;
+  }
   const cssName=ANIM_CSS[a.name]||'el-fadein';
   const dur=(a.duration||600)/1000;
   const delay=typeof overrideDelay==='number' ? overrideDelay/1000 : (a.delay||0)/1000;

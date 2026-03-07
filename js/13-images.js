@@ -370,6 +370,7 @@ function pick(el){
     delete sel.dataset.editing;sel.style.cursor='';
     commitAll();
   }
+  const prevSel=sel;
   if(sel)sel.classList.remove('sel');
   sel=el;
   if(el){
@@ -380,10 +381,10 @@ function pick(el){
       const _hit=el.querySelector('.shape-hit-area');if(_hit)_hit.remove();
     }
   }
-  // When deselected: re-apply hit area with clip-path
-  if(sel!==el&&sel&&sel.dataset.type==='shape'&&typeof _applyShapeClipPath==='function'){
-    const _dd=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
-    if(_dd)_applyShapeClipPath(sel,_dd);
+  // When deselected: re-apply hit area with clip-path on the PREVIOUSLY selected shape
+  if(prevSel&&prevSel!==el&&prevSel.dataset.type==='shape'&&typeof _applyShapeClipPath==='function'){
+    const _dd=slides[cur]&&slides[cur].els.find(e=>e.id===prevSel.dataset.id);
+    if(_dd)_applyShapeClipPath(prevSel,_dd);
   }
   syncProps();
   if(document.getElementById('anim-panel').classList.contains('open'))renderAnimPanel();

@@ -38,6 +38,19 @@ function loadState(){
       pnSettings=Object.assign({},defaults,s.pnSettings);
     }
     if(slides.length)toast(t('toastRestored'));
+    // Restore active tab after render completes
+    try{
+      const savedTab=localStorage.getItem('sf_active_tab')||'home';
+      if(savedTab&&savedTab!=='home'){
+        setTimeout(()=>{
+          const tabBtn=[...document.querySelectorAll('.rtab')].find(b=>{
+            const m=(b.getAttribute('onclick')||'').match(/switchTab\('(\w+)'/);
+            return m&&m[1]===savedTab;
+          });
+          if(tabBtn) tabBtn.click();
+        }, 200);
+      }
+    }catch(e){}
   }catch(e){slides=[];}
 }
 

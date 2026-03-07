@@ -1,15 +1,14 @@
 // ══════════════ TRANSITIONS ══════════════
-// Независимый модуль. Зависимости только через guard.*
 (function(){
   const _save       = ()=> typeof save       === 'function' && save();
   const _saveState  = ()=> typeof saveState  === 'function' && saveState();
   const _drawThumbs = ()=> typeof drawThumbs === 'function' && drawThumbs();
   const _pushUndo   = ()=> typeof pushUndo   === 'function' && pushUndo();
-  const _toast      = (m,t)=> typeof toast  === 'function' && toast(m,t);
+  const _toast      = (m,t)=> typeof toast   === 'function' && toast(m,t);
 
   window.setGlobalTrans = function(t, btn){
     try{
-      if(typeof globalTrans !== 'undefined') window.globalTrans = t;
+      globalTrans = t || 'none';
       document.querySelectorAll('.tbtn2[data-t]').forEach(b=>b.classList.toggle('active', b===btn));
       _saveState();
       Bus && Bus.emit(Bus.EVENTS.TRANS_CHANGED, {global: t});
@@ -37,19 +36,25 @@
   window.applyTransToAll = function(){
     try{
       _pushUndo();
+      const t   = (typeof globalTrans !== 'undefined' && globalTrans) ? globalTrans : 'none';
+      const dur = (typeof transitionDur !== 'undefined') ? transitionDur : 500;
       if(typeof slides !== 'undefined')
-        slides.forEach(s=>s.trans = (typeof globalTrans !== 'undefined' ? globalTrans : 'none'));
+        slides.forEach(s=>{ s.trans = t; s.transDur = dur; });
+      // Синхронизируем кнопки панели свойств текущего слайда
+      document.querySelectorAll('#slide-trans-grid .tbtn2[data-st]').forEach(b=>
+        b.classList.toggle('active', b.dataset.st === t)
+      );
       _saveState(); _drawThumbs();
-      _toast('Transition applied to all', 'ok');
+      _toast('Переход «' + t + '» применён ко всем слайдам', 'ok');
     }catch(e){ console.warn('[07-transitions] applyTransToAll:', e.message); }
   };
 
   window.applyAutoToAll = function(){
     try{
-      const el = document.getElementById('auto-delay');
+      const el  = document.getElementById('auto-delay');
       const chk = document.getElementById('auto-adv-chk');
-      const v = el ? +el.value||5 : 5;
-      const on = chk ? chk.checked : false;
+      const v   = el ? +el.value||5 : 5;
+      const on  = chk ? chk.checked : false;
       _pushUndo();
       if(typeof slides !== 'undefined') slides.forEach(s=>s.auto = on ? v : 0);
       _saveState(); _drawThumbs();

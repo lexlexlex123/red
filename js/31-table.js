@@ -129,7 +129,8 @@ function renderTableEl(el, d) {
       const tag=isH?'th':'td';
       const selStyle=selected?`outline:2px solid var(--selb);outline-offset:-1px;`:'';
       const cellFs=cell.fs?(`;font-size:${cell.fs}px`):'';
-      t+=`<${tag} data-r="${r}" data-c="${c}"${span} style="background:${bg};${borders}text-align:${cell.align||'left'};vertical-align:${cell.valign||'middle'};padding:5px 9px;overflow:hidden;word-break:normal;overflow-wrap:break-word;font-weight:${isH?700:400};box-sizing:border-box;${cr}${selStyle}${cellFs}">${cell.html||''}</${tag}>`; 
+      const cellTc=cell.tc?(`;color:${cell.tc}`):'';
+      t+=`<${tag} data-r="${r}" data-c="${c}"${span} style="background:${bg};${borders}text-align:${cell.align||'left'};vertical-align:${cell.valign||'middle'};padding:5px 9px;overflow:hidden;word-break:normal;overflow-wrap:break-word;font-weight:${isH?700:400};box-sizing:border-box;${cr}${selStyle}${cellFs}${cellTc}">${cell.html||''}</${tag}>`; 
     }
     t+='</tr>';
   }
@@ -563,6 +564,11 @@ function tblSetCellBg(v){
   _tblSelectedCells(d).forEach(({i})=>{if(d.cells[i])d.cells[i].bg=v;});
   renderTableEl(sel,d);save();drawThumbs();saveState();
 }
+function tblSetCellTextColor(v){
+  const d=tblData();if(!d)return;
+  _tblSelectedCells(d).forEach(({i})=>{if(d.cells[i])d.cells[i].tc=v||'';});
+  renderTableEl(sel,d);save();drawThumbs();saveState();
+}
 function tblSetCellFs(v){
   const d=tblData();if(!d)return;
   const cells=_tblSelectedCells(d);
@@ -585,7 +591,8 @@ function syncTableProps(){
   if(!sel||sel.dataset.type!=='table')return;
   const d=tblData();if(!d)return;
   const sc6=v=>typeof v==='string'&&v.length>7?v.slice(0,7):v;
-  const sv=(id,v)=>{try{const e=document.getElementById(id);if(!e)return;e.value=e.type==='color'?sc6(v):v;}catch(e){}};
+  const sv=(id,v)=>{try{const e=document.getElementById(id);if(!e)return;e.value=v;}catch(e){}};
+  const sw=(id,v)=>{try{const e=document.getElementById(id);if(!e)return;e.style.background=v;}catch(e){}};
   const sc=(id,v)=>{try{document.getElementById(id).checked=v;}catch(e){}};
   // Show per-cell fs if a single cell is selected, else global
   const _cellFsVal = (_tblSel&&_tblSel.elId===d.id&&_tblSelSet.size===1)
@@ -593,10 +600,10 @@ function syncTableProps(){
     : (d.fs||15);
   sv('tbl-fs',_cellFsVal); sv('tbl-rx',d.rx||0); sv('tbl-bw',d.borderW||1);
   try{document.getElementById('tbl-bg-op').value=d.tableBgOp!=null?d.tableBgOp:1;document.getElementById('tbl-bg-blur').value=d.tableBgBlur||0;}catch(e){}
-  sv('tbl-bc',d.borderColor||'#3b82f6'); sv('tbl-bc-hex',d.borderColor||'#3b82f6');
-  sv('tbl-tc',d.textColor||'#ffffff'); sv('tbl-tc-hex',d.textColor||'#ffffff');
-  sv('tbl-hbg',d.headerBg||'#3b82f6'); sv('tbl-hbg-hex',d.headerBg||'#3b82f6');
-  sv('tbl-cbg',d.cellBg||'#1e293b'); sv('tbl-cbg-hex',d.cellBg||'#1e293b');
+  sw('tbl-bc-swatch',d.borderColor||'#3b82f6'); sv('tbl-bc-hex',d.borderColor||'#3b82f6');
+  sw('tbl-tc-swatch',d.textColor||'#ffffff');   sv('tbl-tc-hex',d.textColor||'#ffffff');
+  sw('tbl-hbg-swatch',d.headerBg||'#3b82f6');  sv('tbl-hbg-hex',d.headerBg||'#3b82f6');
+  sw('tbl-cbg-swatch',d.cellBg||'#1e293b');     sv('tbl-cbg-hex',d.cellBg||'#1e293b');
   sc('tbl-hrow',d.headerRow!==false); sc('tbl-alt',!!d.altBg);
 
   const hasSel=_tblSel&&_tblSel.elId===d.id&&_tblSelSet.size>0;
@@ -606,13 +613,14 @@ function syncTableProps(){
     const cnt=_tblSelSet.size;
     const lbl=document.getElementById('tbl-cell-lbl');
     if(lbl) lbl.textContent=cnt>1?`${cnt} ячеек`:`Ячейка ${_tblSel.r+1}:${_tblSel.c+1}`;
-    // Show props of anchor cell
     const anch=d.cells[_tblSel.r*d.cols+_tblSel.c];
     if(anch){
       ['left','center','right'].forEach(a=>{const b=document.getElementById('tbl-ca-'+a);if(b)b.classList.toggle('active',(anch.align||'left')===a);});
       ['top','middle','bottom'].forEach(a=>{const b=document.getElementById('tbl-va-'+a);if(b)b.classList.toggle('active',(anch.valign||'middle')===a);});
-      sv('tbl-own-bg',anch.bg||d.cellBg||'#1e293b');
+      sw('tbl-own-bg-swatch',anch.bg||d.cellBg||'#1e293b');
       sv('tbl-own-bg-hex',anch.bg||'');
+      sw('tbl-cell-tc-swatch',anch.tc||'');
+      sv('tbl-cell-tc-hex',anch.tc||'');
     }
   }
 }
