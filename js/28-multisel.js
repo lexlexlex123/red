@@ -48,26 +48,55 @@ function pickMulti(el,shiftKey){
 // Patch canvas mousedown for rubber-band
 (function(){
   const cv=document.getElementById('canvas');
+  const cc=document.getElementById('canvas-container');
+  const cwrap=document.getElementById('cwrap');
 
-  cv.addEventListener('mousedown',e=>{
-    // Only on canvas background (not element)
-    if(e.target!==cv)return;
-    if(e.button!==0)return;
-    // Stop any active text editing first
-    if(typeof stopTextEditing==='function')stopTextEditing();
-    clearMultiSel();if(sel){sel.classList.remove('sel');sel=null;syncProps();}
+  // Helper: mouse event → canvas-space coords (accounts for zoom)
+  function toCanvasCoords(e){
+    const z=typeof _canvasZoom==='number'?_canvasZoom:1;
     const rect=cv.getBoundingClientRect();
-    rbStart={x:e.clientX-rect.left,y:e.clientY-rect.top};
+    // getBoundingClientRect already gives scaled rect, divide by zoom to get canvas-space
+    return {
+      x:(e.clientX-rect.left)/z,
+      y:(e.clientY-rect.top)/z
+    };
+  }
+
+  // Start rubber-band on canvas background OR on cwrap (outside canvas)
+  function onDown(e){
+    if(e.button!==0)return;
+    // If clicked on an element — skip
+    if(e.target.closest('.el'))return;
+    // Must be inside cwrap area
+    if(!e.target.closest('#cwrap'))return;
+    if(typeof stopTextEditing==='function')stopTextEditing();
+    const wasMulti = multiSel.size > 1;
+    _justClearedMulti = wasMulti;
+    clearMultiSel();
+    if(sel){sel.classList.remove('sel');sel=null;}
+    // If clicking outside canvas (on cwrap bg) always show slide props regardless
+    const onCanvas = e.target.closest('#canvas') || e.target.closest('#canvas-bg-rect');
+    if(!wasMulti || !onCanvas) _justClearedMulti = false;
+    syncProps();
+    _justClearedMulti = false;
+    const pt=toCanvasCoords(e);
+    rbStart={x:pt.x,y:pt.y};
     const rb=document.getElementById('rubberband');
-    rb.style.cssText=`display:block;left:${rbStart.x}px;top:${rbStart.y}px;width:0;height:0;`;
+    rb.style.cssText=`display:block;left:${pt.x}px;top:${pt.y}px;width:0;height:0;`;
     e.preventDefault();
-  });
+  }
+
+  // Remove old canvas-only listener, attach to document for cwrap-wide start
+  cc.addEventListener('mousedown',onDown);
+  cwrap.addEventListener('mousedown',onDown);
 
   document.addEventListener('mousemove',e=>{
     if(!rbStart)return;
-    const cv2=document.getElementById('canvas');
-    const rect=cv2.getBoundingClientRect();
-    const mx=e.clientX-rect.left,my=e.clientY-rect.top;
+    const z=typeof _canvasZoom==='number'?_canvasZoom:1;
+    const rect=cv.getBoundingClientRect();
+    // Clamp to canvas bounds in canvas-space
+    const mx=(e.clientX-rect.left)/z;
+    const my=(e.clientY-rect.top)/z;
     const x=Math.min(mx,rbStart.x),y=Math.min(my,rbStart.y);
     const w=Math.abs(mx-rbStart.x),h=Math.abs(my-rbStart.y);
     const rb=document.getElementById('rubberband');
@@ -76,16 +105,16 @@ function pickMulti(el,shiftKey){
 
   document.addEventListener('mouseup',e=>{
     if(!rbStart)return;
-    const cv2=document.getElementById('canvas');
-    const rect=cv2.getBoundingClientRect();
-    const mx=e.clientX-rect.left,my=e.clientY-rect.top;
+    const z=typeof _canvasZoom==='number'?_canvasZoom:1;
+    const rect=cv.getBoundingClientRect();
+    const mx=(e.clientX-rect.left)/z;
+    const my=(e.clientY-rect.top)/z;
     const rx=Math.min(mx,rbStart.x),ry=Math.min(my,rbStart.y);
     const rw=Math.abs(mx-rbStart.x),rh=Math.abs(my-rbStart.y);
     rbStart=null;
     document.getElementById('rubberband').style.display='none';
-    if(rw<4&&rh<4)return; // too small - just a click
-    // Find all elements intersecting the rubber-band rect
-    cv2.querySelectorAll('.el').forEach(el=>{
+    if(rw<4&&rh<4)return;
+    cv.querySelectorAll('.el').forEach(el=>{
       const ex=parseInt(el.style.left),ey=parseInt(el.style.top);
       const ew=parseInt(el.style.width),eh=parseInt(el.style.height);
       if(ex<rx+rw&&ex+ew>rx&&ey<ry+rh&&ey+eh>ry){
@@ -163,4 +192,3 @@ function deleteSelected(){
   }
 }
 
-boot();

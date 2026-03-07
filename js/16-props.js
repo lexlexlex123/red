@@ -20,11 +20,18 @@ function syncProps(){
   const mdp=document.getElementById('mdprops');
   const icp=document.getElementById('iconprops');
   const tblp=document.getElementById('tableprops');
-  if(!sel){
-    ep.style.display='none';ns.style.display='block';
+  if(!sel || multiSel.size > 1){
+    ep.style.display='none';
+    if(hp)hp.style.display='none';
+    if(multiSel.size > 1 || (typeof _justClearedMulti!=='undefined' && _justClearedMulti)){
+      ns.style.display='none';
+      if(sp)sp.style.display='none';
+      if(spn)spn.style.display='none';
+      return;
+    }
+    ns.style.display='block';
     if(sp)sp.style.display='block';
     if(spn)spn.style.display='block';
-    if(hp)hp.style.display='none';
     return;
   }
   if(sp)sp.style.display='none';
@@ -177,13 +184,7 @@ function setTS(prop,val){
   cs=re.test(cs)?cs.replace(re,prop+':'+val+';'):cs+prop+':'+val+';';
   c.setAttribute('style',cs);save();drawThumbs();syncProps();
 }
-function toggleFmt(fmt){
-  if(!sel||sel.dataset.type!=='text')return;
-  const c=sel.querySelector('.tel')||sel.querySelector('.ec');const cs=c.getAttribute('style')||'';
-  if(fmt==='bold')setTS('font-weight',/font-weight:(700|800|900)/.test(cs)?'400':'700');
-  else if(fmt==='italic')setTS('font-style',cs.includes('font-style:italic')?'normal':'italic');
-  else if(fmt==='underline')setTS('text-decoration',cs.includes('text-decoration:underline')?'none':'underline');
-}
+function toggleFmt_props_noop(){} // handled by 30-rich-text.js toggleFmt
 function setTextVAlign(va){
   if(!sel||sel.dataset.type!=='text')return;
   pushUndo();

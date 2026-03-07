@@ -37,6 +37,9 @@
   }
 
   function _animOpen(){
+    const wrap = document.getElementById('props-anim-wrap');
+    if(wrap && wrap.style.display !== 'none' && wrap.style.display !== '') return true;
+    // fallback: old overlay
     const p = document.getElementById('anim-panel');
     return p && p.classList.contains('open');
   }
@@ -57,6 +60,7 @@
   }
 
   function _canvasScale(){
+    if(typeof _canvasZoom === 'number') return _canvasZoom;
     const canvas = document.getElementById('canvas');
     if(!canvas) return 1;
     const t = canvas.style.transform || '';

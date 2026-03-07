@@ -19,6 +19,8 @@ function dupSlide(){if(slides.length)addSlide(slides[cur]);}
 function delSlide(){
   if(slides.length<=1)return toast(t('toastNeedSlide'));
   pushUndo();slides.splice(cur,1);cur=Math.min(cur,slides.length-1);renderAll();saveState();
+  if(typeof renderAnimPanel==='function')renderAnimPanel();
+  if(typeof renderMotionOverlay==='function')renderMotionOverlay();
 }
 function pickSlide(i){if(typeof tblClearSel==='function')tblClearSel();save();cur=i;load();drawThumbs();}
 function save(){
@@ -170,7 +172,7 @@ function load(){
   const activeTrans=globalTrans||'none';
   document.querySelectorAll('.tbtn2[data-t]').forEach(b=>b.classList.toggle('active',b.dataset.t===activeTrans));
   syncProps();
-  if(document.getElementById('anim-panel').classList.contains('open'))renderAnimPanel();
+  if(document.getElementById('props-anim-wrap')?.style.display==='flex'){renderAnimPanel();if(typeof renderMotionOverlay==='function')renderMotionOverlay();}
   const _objSec=document.getElementById('objects-panel-section');
   if(_objSec&&_objSec.style.display!=='none'&&typeof renderObjectsPanel==='function')renderObjectsPanel();
 }

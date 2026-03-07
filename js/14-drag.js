@@ -38,7 +38,8 @@ function mkDrag(el,c){
     }
     const mm=e2=>{
       if(!on)return;
-      let dx=e2.clientX-ox,dy=e2.clientY-oy;
+      const _z=typeof _canvasZoom==='number'?_canvasZoom:1;
+      let dx=(e2.clientX-ox)/_z,dy=(e2.clientY-oy)/_z;
       if(groupStart){
         groupStart.forEach((pos,mEl)=>{
           let nx=pos.x+dx,ny=pos.y+dy;
@@ -71,23 +72,23 @@ function mkResize(el,rh,cfg){
     const _appletD=el.dataset.type==='applet'&&slides[cur]?slides[cur].els.find(x=>x.id===el.dataset.id):null;
     const appletAspect=_appletD&&_appletD._appletAspect||null;
     const mm=e2=>{
+      const _z=typeof _canvasZoom==='number'?_canvasZoom:1;
       let nw,nh;
       if(isImgCorner){
-        // Proportional: drive from X axis (or Y if moving more vertically)
-        const rawDx=cfg.dx*(e2.clientX-sx);
-        const rawDy=cfg.dy*(e2.clientY-sy);
+        const rawDx=cfg.dx*(e2.clientX-sx)/_z;
+        const rawDy=cfg.dy*(e2.clientY-sy)/_z;
         const delta=Math.abs(rawDx)>=Math.abs(rawDy)?rawDx:rawDy*aspect;
         nw=Math.max(40,sw+delta);
         nh=Math.max(20,nw/aspect);
       } else if(appletAspect&&isCorner){
-        const rawDx=cfg.dx*(e2.clientX-sx);
-        const rawDy=cfg.dy*(e2.clientY-sy);
+        const rawDx=cfg.dx*(e2.clientX-sx)/_z;
+        const rawDy=cfg.dy*(e2.clientY-sy)/_z;
         const delta=Math.abs(rawDx)>=Math.abs(rawDy)?rawDx:rawDy*appletAspect;
         nw=Math.max(120,sw+delta);
         nh=Math.max(80,nw/appletAspect);
       } else {
-        nw=cfg.dx!==0?Math.max(40,sw+cfg.dx*(e2.clientX-sx)):sw;
-        nh=cfg.dy!==0?Math.max(20,sh+cfg.dy*(e2.clientY-sy)):sh;
+        nw=cfg.dx!==0?Math.max(40,sw+cfg.dx*(e2.clientX-sx)/_z):sw;
+        nh=cfg.dy!==0?Math.max(20,sh+cfg.dy*(e2.clientY-sy)/_z):sh;
       }
       if(document.getElementById('snap-chk').checked){nw=snapV(nw);nh=snapV(nh);}
       el.style.width=nw+'px';el.style.height=nh+'px';

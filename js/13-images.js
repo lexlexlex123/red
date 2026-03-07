@@ -312,8 +312,9 @@ function mkEl(d){
       el.style.outline='2px dashed rgba(255,255,255,.4)';
       const mm=e2=>{
         if(!_on)return;
-        el.style.left=(_ol+e2.clientX-_ox)+'px';
-        el.style.top=(_ot+e2.clientY-_oy)+'px';
+        const _z=typeof _canvasZoom==='number'?_canvasZoom:1;
+        el.style.left=(_ol+(e2.clientX-_ox)/_z)+'px';
+        el.style.top=(_ot+(e2.clientY-_oy)/_z)+'px';
       };
       const mu=()=>{
         _on=false;
@@ -387,6 +388,7 @@ function pick(el){
     if(_dd)_applyShapeClipPath(prevSel,_dd);
   }
   syncProps();
+  if(typeof _updateHandlesOverlay==='function') _updateHandlesOverlay();
   if(document.getElementById('anim-panel').classList.contains('open'))renderAnimPanel();
 }
 function desel(){clearGuides();pick(null);}

@@ -3,6 +3,7 @@
 const SNAP=10;
 let slides=[],cur=0,sel=null,ec=0,ar='16:9',canvasW=1200,canvasH=675;
 let multiSel=new Set(),rbStart=null,clipboard=[];
+let _justClearedMulti=false;
 let globalTrans='none',transitionDur=500,autoDelay=5;
 let undoStack=[],redoStack=[];
 let selTheme=-1,selShape='rect',selApplet=null,appliedThemeIdx=-1,_alignScope='sel';
@@ -32,7 +33,7 @@ function _themeColors(t){
   const c5 = t.shapeStroke || c1;
   const c6 = t.headingColor || c1;
   const c7 = t.bodyColor || (t.dark ? '#e2e8f0' : '#1e293b');
-  return [c1, c2, c3, c4, c5, c6, c7, '#000000'];
+  return [c1, c2, c3, c4, c5, c6, c7, t.dark ? '#000000' : '#ffffff'];
 }
 
 const THEMES=[

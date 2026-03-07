@@ -79,6 +79,8 @@ function newPresentation(){
   renderAll();
   drawThumbs();
   saveState();
+  if(typeof renderAnimPanel==='function')renderAnimPanel();
+  if(typeof renderMotionOverlay==='function')renderMotionOverlay();
   toast(t('toastNewPresentation')||'Новая презентация создана','ok');
 }
 
@@ -265,7 +267,10 @@ function openColorPanel(panelId, mode, onPick) {
   // ── Scheme grid: 8 cols × 6 tint rows ────────────────────────
   if (schemeIdx >= 0 && THEMES[schemeIdx]) {
     const t = THEMES[schemeIdx];
+    const isLightTheme = !t.dark;
     const base8 = _themeColors(t);
+    // Last column: light themes use white→black, dark themes use black→white
+    if (isLightTheme) base8[base8.length - 1] = '#ffffff';
 
     const hdr = document.createElement('div');
     hdr.style.cssText = 'font-size:9px;color:var(--text3);margin-bottom:5px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;';
@@ -275,18 +280,23 @@ function openColorPanel(panelId, mode, onPick) {
     const grid = document.createElement('div');
     grid.style.cssText = 'display:grid;grid-template-columns:repeat(8,1fr);gap:2px;margin-bottom:8px;';
 
-    // 5 rows: row 0 = base, rows 1-4 = progressively lighter
-    // For the black column (#000000), row 4 is forced to pure white (#ffffff)
+    // Last column: dark themes = black→white, light themes = white→black
     const tintLevels = [0, 0.22, 0.44, 0.66, 0.88];
     tintLevels.forEach((tint, rowIdx) => {
       base8.forEach((baseHex, colIdx) => {
-        const hex = _solidColor(baseHex);
-        const isBlack = hex === '#000000';
-        const isLastRow = rowIdx === tintLevels.length - 1;
+        const isLastCol = colIdx === base8.length - 1;
         let color;
-        if (isBlack && isLastRow) {
-          color = '#ffffff';
+        if (isLastCol) {
+          // Dark theme: #000 blended to white (row 0=black, row 4=white)
+          // Light theme: #fff blended to black (row 0=white, row 4=black)
+          if (isLightTheme) {
+            color = tint === 0 ? '#ffffff' : _blendToBlack('#ffffff', tint);
+          } else {
+            const isLastRow = rowIdx === tintLevels.length - 1;
+            color = isLastRow ? '#ffffff' : (tint === 0 ? '#000000' : _blendToWhite('#000000', tint));
+          }
         } else {
+          const hex = _solidColor(baseHex);
           color = tint === 0 ? hex : _blendToWhite(hex, tint);
         }
         const s = document.createElement('div');
@@ -332,6 +342,11 @@ function closeColorPanel(panelId) {
 function _blendToWhite(hex, amt) {
   let r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
   r=Math.round(r+(255-r)*amt); g=Math.round(g+(255-g)*amt); b=Math.round(b+(255-b)*amt);
+  return '#'+[r,g,b].map(x=>x.toString(16).padStart(2,'0')).join('');
+}
+function _blendToBlack(hex, amt) {
+  let r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+  r=Math.round(r*(1-amt)); g=Math.round(g*(1-amt)); b=Math.round(b*(1-amt));
   return '#'+[r,g,b].map(x=>x.toString(16).padStart(2,'0')).join('');
 }
 function _solidColor(bg) {

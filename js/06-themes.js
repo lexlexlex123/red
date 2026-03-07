@@ -4,12 +4,20 @@
 function _resolveSchemeColor(schemeRef, theme) {
   if (!schemeRef) return null;
   const base8 = _themeColors(theme);
-  const hex = _solidColor(base8[schemeRef.col] || '#888888');
+  const isLastCol = schemeRef.col === base8.length - 1;
+  const isLightTheme = !theme.dark;
   const tintLevels = [0, 0.22, 0.44, 0.66, 0.88];
   const tint = tintLevels[schemeRef.row] || 0;
-  const isBlack = hex === '#000000';
-  const isLastRow = schemeRef.row === tintLevels.length - 1;
-  if (isBlack && isLastRow) return '#ffffff';
+  if (isLastCol) {
+    if (isLightTheme) {
+      return tint === 0 ? '#ffffff' : _blendToBlack('#ffffff', tint);
+    } else {
+      const isLastRow = schemeRef.row === tintLevels.length - 1;
+      if (isLastRow) return '#ffffff';
+      return tint === 0 ? '#000000' : _blendToWhite('#000000', tint);
+    }
+  }
+  const hex = _solidColor(base8[schemeRef.col] || '#888888');
   return tint === 0 ? hex : _blendToWhite(hex, tint);
 }
 // ══════════════ THEMES ══════════════
@@ -24,6 +32,16 @@ function applyTheme(){
   }
   if(selTheme<0)return toast(t('toastSelectTheme'));
   const theme=THEMES[selTheme];pushUndo();
+  // Commit any active text editor BEFORE modifying data.
+  // Must call _toSaveMode first (converts edit-mode groupedHtml → data-ch format),
+  // then _rtCommit (writes innerHTML to d.html), then clear refs so the blur
+  // triggered by load() removing DOM elements doesn't overwrite d.html again.
+  if(typeof _rtEl!=='undefined'&&_rtEl){
+    if(typeof _toSaveMode==='function') _toSaveMode(_rtEl);
+    if(typeof _rtCommit==='function') _rtCommit();
+    _rtEl.contentEditable='false';
+    _rtEl=null;_rtElId=null;_savedSelIdx=null;
+  }
   // Save current slide DOM state FIRST before modifying data
   save();
 
@@ -59,7 +77,7 @@ function applyTheme(){
         // If color was pinned to a scheme swatch, remap to same position in new theme.
         // If custom color (textColorScheme===null/undefined), skip color change.
         // col=7 = #000000. dark→row 4 (#e0e0e0 light), light→row 1 (#383838 dark)
-        const _defScheme = {col:7, row: theme.dark ? 4 : 1};
+        const _defScheme = {col:7, row:4}; // row 4: dark theme=#e0e0e0, light theme=#1f1f1f
         const _defColor = _resolveSchemeColor(_defScheme, theme);
 
         let newColor;
@@ -76,47 +94,28 @@ function applyTheme(){
         // Ensure cs exists
         if(!el.cs)el.cs='font-size:36px;';
 
-        // Check if html has per-char scheme colors (user colored a selection from palette)
-        const hasPerCharColors = /data-scheme=/i.test(el.html||'');
-
-        if(hasPerCharColors){
-          // Mixed coloring: some chars have explicit scheme colors, others inherit from .cs
-          if(typeof _toCharObjs==='function'){
-            const chars=_toCharObjs(el.html||'');
-            chars.forEach(ch=>{
-              if(ch.style && ch.style.color){
-                if(ch.style._schemeRef){
-                  // Scheme-pinned char — remap to same position in new theme
-                  const resolved=_resolveSchemeColor(ch.style._schemeRef, theme);
-                  if(resolved) ch.style.color=resolved;
-                }
-                // else: custom color (null schemeRef) — leave as-is
-              } else if(newColor){
-                // Char has no explicit color — was inheriting from .cs
-                // Give it the new theme color explicitly so it doesn't inherit stale color
-                ch.style.color = newColor;
-              }
-            });
-            el.html=_charObjsToHtml(chars);
-          }
-          // Also update .cs so the container color is correct for future uncolored chars
-          if(newColor){
-            if(/color\s*:/.test(el.cs)){
-              el.cs=el.cs.replace(/\bcolor\s*:\s*[^;]+;?/g,'color:'+newColor+';');
-            } else {
-              el.cs=(el.cs.endsWith(';')?el.cs:el.cs+';')+'color:'+newColor+';';
+        // Update per-char colors: remap scheme-pinned, leave custom, leave uncolored
+        if(typeof _toCharObjs==='function' && el.html){
+          const chars=_toCharObjs(el.html);
+          let changed=false;
+          chars.forEach(ch=>{
+            if(ch.style._schemeRef){
+              // Scheme-pinned: remap to same position in new theme
+              const resolved=_resolveSchemeColor(ch.style._schemeRef, theme);
+              if(resolved){ ch.style.color=resolved; changed=true; }
             }
+            // No color → inherits from .cs (correct)
+            // Custom color (no _schemeRef) → leave as-is
+          });
+          if(changed) el.html=_charObjsToHtml(chars);
+        }
+        // Update .cs so chars without explicit color inherit the new default
+        if(newColor){
+          if(/color\s*:/.test(el.cs)){
+            el.cs=el.cs.replace(/\bcolor\s*:\s*[^;]+;?/g,'color:'+newColor+';');
+          } else {
+            el.cs=(el.cs.endsWith(';')?el.cs:el.cs+';')+'color:'+newColor+';';
           }
-        } else {
-          // Whole-block color — update .cs and strip any stale inline colors
-          if(newColor){
-            if(/color\s*:/.test(el.cs)){
-              el.cs=el.cs.replace(/\bcolor\s*:\s*[^;]+;?/g,'color:'+newColor+';');
-            } else {
-              el.cs=(el.cs.endsWith(';')?el.cs:el.cs+';')+'color:'+newColor+';';
-            }
-          }
-          el.html=stripInlineColors(el.html||'');
         }
         // Bold: headings stay bold, body text gets weight:400
         if(isHeading){

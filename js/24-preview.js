@@ -557,13 +557,16 @@ function buildPSlide(container,idx){
   container._fireNextStep=function(){
     if(groupIdx>=clickGroups.length)return false;
     const group=clickGroups[groupIdx];
-    group.items.forEach(({el,d,a,wasHidden})=>{
+    // Find base delay of group (first item's absDelay)
+    const baseDelay = group.items.length>0 ? (group.items[0].absDelay||0) : 0;
+    group.items.forEach(({el,d,a,absDelay,wasHidden})=>{
       if(wasHidden)el.style.visibility='visible';
-      fireAnim(el,d,a,idx,a.delay||0);
+      // absDelay is relative to group start (subtract base so group fires from t=0)
+      fireAnim(el,d,a,idx,(absDelay||0)-baseDelay);
     });
     // auto-fire autoAfter items after click group ends
     let autoDelay = 0;
-    group.items.forEach(({a})=>{ autoDelay = Math.max(autoDelay, (a.delay||0)+(a.duration||600)); });
+    group.items.forEach(({a,absDelay})=>{ autoDelay = Math.max(autoDelay, ((absDelay||0)-baseDelay)+(a.duration||600)); });
     group.autoAfter.forEach(({el,d,a,wasHidden})=>{
       const t=autoDelay; autoDelay+=a.duration||600;
       setTimeout(()=>{ if(wasHidden)el.style.visibility='visible'; fireAnim(el,d,a,idx,0); }, t);
@@ -646,59 +649,59 @@ function animTrans(a,b,trans,fwd,dur,cb){
       // Phase 3: set transitions and final state
       if(trans==='fade'){
         a.style.transition='opacity '+d+' ease';b.style.transition='opacity '+d+' ease';
-        a.style.opacity='0';b.style.opacity='1';setTimeout(cb,dur+60);
+        a.style.opacity='0';b.style.opacity='1';setTimeout(cb,dur+16);
       } else if(trans==='slide'){
         a.style.transition='transform '+d+' cubic-bezier(.4,0,.2,1)';b.style.transition='transform '+d+' cubic-bezier(.4,0,.2,1)';
         a.style.transform='scale('+sc+') translateX('+(-dir*100)+'%)';b.style.transform='scale('+sc+') translateX(0)';
-        setTimeout(cb,dur+60);
+        setTimeout(cb,dur+16);
       } else if(trans==='slideUp'){
         a.style.transition='transform '+d+' cubic-bezier(.4,0,.2,1)';b.style.transition='transform '+d+' cubic-bezier(.4,0,.2,1)';
         a.style.transform='scale('+sc+') translateY('+(-dir*100)+'%)';b.style.transform='scale('+sc+') translateY(0)';
-        setTimeout(cb,dur+60);
+        setTimeout(cb,dur+16);
       } else if(trans==='zoom'){
         a.style.transition='opacity '+d+' ease,transform '+d+' ease';b.style.transition='opacity '+d+' ease,transform '+d+' ease';
         a.style.opacity='0';a.style.transform='scale('+(sc*1.1)+')';b.style.opacity='1';b.style.transform='scale('+sc+')';
-        setTimeout(cb,dur+60);
+        setTimeout(cb,dur+16);
       } else if(trans==='zoomOut'){
         a.style.transition='opacity '+d+' ease,transform '+d+' ease';b.style.transition='opacity '+d+' ease,transform '+d+' ease';
         a.style.opacity='0';a.style.transform='scale('+(sc*.85)+')';b.style.opacity='1';b.style.transform='scale('+sc+')';
-        setTimeout(cb,dur+60);
+        setTimeout(cb,dur+16);
       } else if(trans==='flip'){
         a.style.transition='transform '+d+' ease,opacity '+(dur/2)+'ms ease';
         b.style.transition='transform '+d+' ease,opacity '+(dur/2)+'ms '+(dur/2)+'ms ease';
         a.style.transform='scale('+sc+') rotateY('+(-dir*90)+'deg)';a.style.opacity='0';b.style.opacity='1';b.style.transform='scale('+sc+') rotateY(0)';
-        setTimeout(()=>{document.getElementById('preview-stage').style.perspective='';cb();},dur+60);
+        setTimeout(()=>{document.getElementById('preview-stage').style.perspective='';cb();},dur+16);
       } else if(trans==='flipV'){
         a.style.transition='transform '+d+' ease,opacity '+(dur/2)+'ms ease';
         b.style.transition='transform '+d+' ease,opacity '+(dur/2)+'ms '+(dur/2)+'ms ease';
         a.style.transform='scale('+sc+') rotateX('+(dir*90)+'deg)';a.style.opacity='0';b.style.opacity='1';b.style.transform='scale('+sc+') rotateX(0)';
-        setTimeout(()=>{document.getElementById('preview-stage').style.perspective='';cb();},dur+60);
+        setTimeout(()=>{document.getElementById('preview-stage').style.perspective='';cb();},dur+16);
       } else if(trans==='cube'){
         a.style.transition='transform '+d+' ease';b.style.transition='transform '+d+' ease';
         a.style.transform='scale('+sc+') rotateY('+(dir*90)+'deg)';b.style.transform='scale('+sc+') rotateY(0)';
-        setTimeout(()=>{document.getElementById('preview-stage').style.perspective='';cb();},dur+60);
+        setTimeout(()=>{document.getElementById('preview-stage').style.perspective='';cb();},dur+16);
       } else if(trans==='dissolve'){
         a.style.transition='opacity '+d+' steps(12,end)';b.style.transition='opacity '+d+' steps(12,start)';
-        a.style.opacity='0';b.style.opacity='1';setTimeout(cb,dur+60);
+        a.style.opacity='0';b.style.opacity='1';setTimeout(cb,dur+16);
       } else if(trans==='push'){
         a.style.transition='transform '+d+' cubic-bezier(.25,.46,.45,.94)';
         b.style.transition='transform '+d+' cubic-bezier(.25,.46,.45,.94)';
         a.style.transform='scale('+sc+') translateX('+(-dir*40)+'%)';b.style.transform='scale('+sc+') translateX(0)';
-        setTimeout(cb,dur+60);
+        setTimeout(cb,dur+16);
       } else if(trans==='wipe'){
         b.style.transition='clip-path '+d+' cubic-bezier(.4,0,.2,1)';
         b.style.clipPath='inset(0 0% 0 0%)';
         a.style.transition='opacity '+(dur*.3)+'ms '+(dur*.7)+'ms ease';a.style.opacity='0';
-        setTimeout(cb,dur+60);
+        setTimeout(cb,dur+16);
       } else if(trans==='split'){
         b.style.transition='clip-path '+d+' cubic-bezier(.4,0,.2,1)';
         b.style.clipPath='inset(0% 0)';
         a.style.transition='opacity '+(dur*.4)+'ms '+(dur*.6)+'ms ease';a.style.opacity='0';
-        setTimeout(cb,dur+60);
+        setTimeout(cb,dur+16);
       } else if(trans==='reveal'){
         a.style.transition='transform '+d+' cubic-bezier(.4,0,.2,1)';
         a.style.transform='scale('+sc+') translateX('+(dir*100)+'%)';
-        setTimeout(cb,dur+60);
+        setTimeout(cb,dur+16);
       } else if(trans==='glitch'){
         b.style.opacity='1';
         const steps=6,stepDur=dur/steps;

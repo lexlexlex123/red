@@ -318,7 +318,8 @@ function _tblDragBorder(el, d, ecEl){
       let ol=parseInt(el.style.left), ot=parseInt(el.style.top);
       pushUndo();
       const mm=e2=>{
-        let nx=ol+(e2.clientX-ox), ny=ot+(e2.clientY-oy);
+        const _z=typeof _canvasZoom==='number'?_canvasZoom:1;
+        let nx=ol+(e2.clientX-ox)/_z, ny=ot+(e2.clientY-oy)/_z;
         if(document.getElementById('snap-chk')&&document.getElementById('snap-chk').checked){nx=snapV(nx);ny=snapV(ny);}
         el.style.left=nx+'px'; el.style.top=ny+'px';
         if(typeof showGuides==='function') showGuides(el);
@@ -360,7 +361,8 @@ function _tblColHandles(el, d, ecEl){
       const prevSel=document.body.style.userSelect;
       document.body.style.userSelect='none';
       const mm=e2=>{ e2.preventDefault();
-        const dx=(e2.clientX-sx)/d.w;
+        const _z=typeof _canvasZoom==='number'?_canvasZoom:1;
+        const dx=(e2.clientX-sx)/(_z*d.w);
         d.colWidths[c]=Math.max(minF,Math.min(sw0+sw1-minF,sw0+dx));
         d.colWidths[c+1]=sw0+sw1-d.colWidths[c];
         renderTableEl(el,d); save();
@@ -389,7 +391,8 @@ function _tblRowHandles(el, d, ecEl){
       const prevSel=document.body.style.userSelect;
       document.body.style.userSelect='none';
       const mm=e2=>{ e2.preventDefault();
-        const dy=(e2.clientY-sy)/d.h;
+        const _z=typeof _canvasZoom==='number'?_canvasZoom:1;
+        const dy=(e2.clientY-sy)/(_z*d.h);
         d.rowHeights[r]=Math.max(minF,Math.min(sh0+sh1-minF,sh0+dy));
         d.rowHeights[r+1]=sh0+sh1-d.rowHeights[r];
         renderTableEl(el,d); save();

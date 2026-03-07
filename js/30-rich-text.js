@@ -346,11 +346,6 @@ function rtBold() {
     _setTSWhole('font-weight', /font-weight:(700|800|900)/.test(cs)?'400':'700');
   } else {
     _rtCommit();
-    // Keep .cs in sync so toolbar state and reload are correct
-    if (sel&&sel.dataset.type==='text') {
-      const cs=sel.querySelector('.ec').getAttribute('style')||'';
-      _setTSWhole('font-weight', /font-weight:(700|800|900)/.test(cs)?'700':'400');
-    }
   }
   rtUpdateToolbarState();
 }
@@ -362,10 +357,6 @@ function rtItalic() {
     _setTSWhole('font-style', cs.includes('font-style:italic')?'normal':'italic');
   } else {
     _rtCommit();
-    if (sel&&sel.dataset.type==='text') {
-      const cs=sel.querySelector('.ec').getAttribute('style')||'';
-      _setTSWhole('font-style', cs.includes('font-style:italic')?'italic':'normal');
-    }
   }
   rtUpdateToolbarState();
 }
@@ -377,10 +368,6 @@ function rtUnderline() {
     _setTSWhole('text-decoration', cs.includes('text-decoration:underline')?'none':'underline');
   } else {
     _rtCommit();
-    if (sel&&sel.dataset.type==='text') {
-      const cs=sel.querySelector('.ec').getAttribute('style')||'';
-      _setTSWhole('text-decoration', cs.includes('text-decoration:underline')?'underline':'none');
-    }
   }
   rtUpdateToolbarState();
 }
@@ -503,3 +490,9 @@ function _rgbToHex(rgb) {
   if (!m) return null;
   return '#'+[m[1],m[2],m[3]].map(n=>(+n).toString(16).padStart(2,'0')).join('');
 }
+
+// Attach panel mousedown to save selection before toolbar button click steals focus
+document.addEventListener('DOMContentLoaded', function(){
+  const props = document.getElementById('props');
+  if(props) props.addEventListener('mousedown', _rtOnPanelMousedown);
+});
