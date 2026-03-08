@@ -5,7 +5,7 @@
 **«Слайды»** — презентационный редактор, работающий в одном HTML-файле (или модульно).
 Не требует сервера, сборки или интернета. Открывается напрямую в браузере.
 
-- **Версия:** v5.0
+- **Версия:** v5.1
 - **Автор:** Некрасов Александр
 - **Стек:** Vanilla JS + HTML + CSS, без фреймворков
 - **Зависимости:** JSZip (офлайн), QRCode (офлайн), системные шрифты
@@ -23,7 +23,7 @@ project/
 │   ├── jszip.min.js        # Импорт PPTX
 │   └── qrcode.min.js       # QR-аплет
 └── js/
-    ├── 00-i18n.js          # Локализация RU/EN
+    ├── 00-i18n.js          # Локализация RU/EN, APP_VERSION, APP_NAME
     ├── 00-icons.js         # Базовые SVG-иконки
     ├── 01-state.js         # Глобальные переменные, THEMES[], SHAPES[], PALETTE[]
     ├── 02-applets.js       # Встроенные виджеты (APPLETS[])
@@ -36,27 +36,29 @@ project/
     ├── 08-slides.js        # CRUD слайдов, save(), load()
     ├── 09-shapes.js        # Фигуры и SVG, updateShapeStyleScheme()
     ├── 10-animations.js    # Анимации элементов
-    ├── 11-elements.js      # Создание/рендер элементов, code blocks, refreshAllCodeBlocks()
-    ├── 12-markdown.js      # Markdown-блоки на слайде
+    ├── 11-elements.js      # Создание/рендер элементов, addText(), code blocks
+    ├── 12-markdown.js      # Markdown-блоки: updateMdFontSize(), updateMdColor()
     ├── 13-images.js        # Изображения, mkEl(), stopTextEditing()
+    ├── 13b-imgcrop.js      # Кроп изображений, applyImgCrop(), _exitCropMode()
     ├── 14-drag.js          # Перетаскивание и ресайз
     ├── 15-align.js         # Выравнивание и распределение элементов
-    ├── 16-props.js         # Панель свойств, setTextBg(), setTextBgBlur(), applyTextBg()
+    ├── 16-props.js         # Панель свойств, syncProps(), setTextBg(), applyTextBg()
     ├── 17-text.js          # Редактирование текста, setTextBorder()
     ├── 19-hover.js         # Hover-эффекты
     ├── 20-thumbnails.js    # Миниатюры слайдов, renderAll()
     ├── 21-keyboard.js      # Горячие клавиши
     ├── 22-undo.js          # Undo/Redo (до 40 шагов)
-    ├── 23-layout.js        # Декоратор готовых макетов (кнопка «Тема»)
+    ├── 23-layout.js        # Декоратор готовых макетов, buildLayoutGrid()
     ├── 24-preview.js       # Режим показа, startPreview() / stopPreview()
     ├── 25-links.js         # Ссылки-навигация на элементах
     ├── 26-export.js        # Экспорт HTML, импорт PPTX
     ├── 27-persist.js       # save() / saveState() / commitAll() / loadState()
     ├── 28-multisel.js      # Множественное выделение
     ├── 29-icons.js         # buildIconSVG()
-    ├── 30-rich-text.js     # Rich text: rtColor(color, schemeRef), _charObjsToHtml(), data-scheme
-    ├── 31-table.js         # Таблицы, tblDelRow(), tblDelCol(), tblSetCellFs()
+    ├── 30-rich-text.js     # Rich text: rtColor(color, schemeRef), _charObjsToHtml()
+    ├── 31-table.js         # Таблицы
     ├── 32-scrubber.js      # Скруббер временной шкалы
+    ├── 33-objects.js       # Управление объектами
     └── 33-pagenum.js       # Нумерация страниц, pnSettings, pnApplyAll()
 ```
 
@@ -76,9 +78,9 @@ commitAll()  — save() + drawThumbs() + saveState()
 - Перед запуском показа (F5) всегда вызывать `commitAll()`
 
 > ⚠️ **Важно:** `save()` пересоздаёт объекты `d` в `slides[cur].els` с нуля из DOM.
-> Любые поля данных, которые не хранятся в `dataset` элемента, должны явно
-> копироваться из `oldElsById[d.id]` в начале `map()`. Сейчас так сохраняются:
-> `textColorScheme`, `textBgScheme`, `borderScheme`, `fillScheme`, `strokeScheme`.
+> Любые поля данных без `dataset` копируются из `oldElsById[d.id]`:
+> `textColorScheme`, `textBgScheme`, `borderScheme`, `fillScheme`, `strokeScheme`,
+> `mdRaw`, `mdHtml`, `mdFs`, `mdColor`, `mdColorScheme`.
 
 ---
 
@@ -96,20 +98,11 @@ let appliedThemeIdx = -1;   // индекс активной цветовой с
 
 ---
 
-## Терминология (v4.8+)
-
-| Кнопка в интерфейсе | Было (v4.7) | Стало (v4.8) |
-|---------------------|-------------|--------------|
-| Левая панель — кнопка палитры | «Theme» / «Тема» | «Color Scheme» / «Цветовая схема» |
-| Левая панель — кнопка макета | «Layout» / «Макет» | «Theme» / «Тема» |
-
----
-
 ## Цветовые схемы (`js/01-state.js`, `js/06-themes.js`)
 
 ### Структура THEMES[]
 
-38 схем — каждая содержит явный массив из 8 цветов:
+38 схем (22 тёмных, 16 светлых), каждая с явным массивом из 8 цветов:
 
 ```js
 {
@@ -120,242 +113,129 @@ let appliedThemeIdx = -1;   // индекс активной цветовой с
   shapeFill, shapeStroke,
   headingColor, bodyColor,
   colors: ['#818cf8','#c7d2fe','#34d399','#f472b6','#fbbf24','#67e8f9','#a78bfa','#000000']
-  //       ^—— 7 акцентных цветов под фон ——————————————————————————————^ ^— всегда чёрный
+  //       ^—— 7 акцентных цветов ——————————————————————————————————————^ ^— база нейтральной колонки
 }
 ```
 
-- `colors[0..6]` — подобраны под `bg` (контраст + гармония)
-- `colors[7]` — всегда `#000000`; тинты дают нейтральный диапазон вплоть до белого
-- 22 тёмных схемы, 16 светлых
+### Последняя колонка палитры (col=7) — нейтральный диапазон
+
+| Тема | row=0 | → | row=4 |
+|------|-------|---|-------|
+| Тёмная | `#ffffff` белый | → | `#000000` чёрный |
+| Светлая | `#000000` чёрный | → | `#ffffff` белый |
+
+### Дефолтный цвет новых элементов
+
+`{col:7, row:0}` — вычисляется через `_resolveSchemeColor`, не хардкодится:
+- Тёмная → `#ffffff`, Светлая → `#000000`
 
 ### Вспомогательные функции
 
 ```js
 _themeColors(theme)             // → массив из 8 цветов
-_resolveSchemeColor(ref, theme) // → hex по {col, row} в новой схеме
+_resolveSchemeColor(ref, theme) // → hex по {col, row} в данной схеме
 _solidColor(hexOrGradient)      // → первый hex из строки
 _blendToWhite(hex, amt)         // → осветлённый цвет (amt 0–1)
 _blendToBlack(hex, amt)         // → затемнённый цвет (amt 0–1)
 ```
 
-**Последняя колонка палитры (col=7) — нейтральный диапазон:**
-- Тёмная тема: `#000000` → белый (row0=`#000`, row1=`#383838`, row2=`#707070`, row3=`#a8a8a8`, row4=`#e0e0e0`)
-- Светлая тема: `#ffffff` → чёрный (row0=`#fff`, row1=`#c7c7c7`, row2=`#8f8f8f`, row3=`#575757`, row4=`#1f1f1f`)
-
-`_resolveSchemeColor` учитывает `theme.dark` для правильного блендинга последней колонки.
-
-### Карточка в гриде схем
-
-7 вертикальных прямоугольников (5×18px) в правом нижнем углу карточки, стоят рядом горизонтально. Цвета из `colors[0..6]`.
-
-### Дефолтный цвет новых надписей
-
-При создании надписи `addText()` цвет берётся из `col=7, row=4`:
-- Тёмная схема → `row=4` → `#e0e0e0` (светло-серый, через `_blendToWhite('#000000', 0.88)`)
-- Светлая схема → `row=4` → `#1f1f1f` (почти чёрный, через `_blendToBlack('#ffffff', 0.88)`)
-
-Каждый символ `html` создаётся с явным `color` + `_schemeRef` через `_charObjsToHtml` — это гарантирует корректный ремап при любой смене схемы.
-
-При смене схемы легаси-надписи (`textColorScheme === undefined`) получают тот же дефолт `{col:7, row:4}` и `textColorScheme` фиксируется.
-
 ---
 
 ## Встроенная цветовая палитра (`js/03-boot.js`)
 
-### API
-
 ```js
 openColorPanel(slotId, mode, onPick)
-// slotId  — id div-слота ('cp-text-slot', 'cp-fill-slot', ...)
-// mode    — 'text' | 'fill' | 'stroke' | 'bg' | 'border' | 'slidebg'
-// onPick(color, schemeRef)
+// onPick(color, schemeRef)  — schemeRef={col,row} или null (кастомный)
 
 closeColorPanel(panelId)
 ```
 
-### Содержимое панели
-
-- Сетка **8 колонок × 5 строк**
-- Колонки 0–6: базовый цвет в row0, тинты к белому в row1–4
-- Колонка 7 (нейтральная): тёмная тема — `#000` → белый; светлая тема — `#fff` → чёрный
-- «Выбрать свой цвет» + `<input type="color">`
-
 ### Слоты в HTML
 
-| Слот | Режим | Применяется к |
-|------|-------|---------------|
-| `cp-text-slot` | `text` | Цвет текста / выделения |
-| `cp-bg-slot` | `bg` | Заливка фона текстового блока |
-| `cp-fill-slot` | `fill` | Заливка фигуры |
-| `cp-stroke-slot` | `stroke` | Обводка фигуры |
-| `cp-border-slot` | `border` | Граница текстового блока |
-| `cp-slidebg-slot` | `slidebg` | Фон слайда |
+| Слот | Применяется к |
+|------|---------------|
+| `cp-text-slot` | Цвет текста / выделения |
+| `cp-bg-slot` | Заливка фона текстового блока |
+| `cp-fill-slot` | Заливка фигуры |
+| `cp-stroke-slot` | Обводка фигуры |
+| `cp-border-slot` | Граница текстового блока |
+| `cp-slidebg-slot` | Фон слайда |
+| `cp-md-color-slot` | Цвет текста markdown-блока |
 
 ---
 
 ## Система схемных ссылок (schemeRef)
 
-### Поля на объекте элемента (`d`)
+| Поле | Значение | При смене схемы |
+|------|----------|----------------|
+| `{col, row}` | Позиция в палитре | Пересчитывается |
+| `null` | Кастомный цвет | Не трогается |
+| `undefined` | Легаси | Применяется дефолт |
 
-| Поле | Тип | Смысл |
-|------|-----|-------|
-| `d.textColorScheme` | `{col,row}` / `null` / `undefined` | Цвет текста блока |
-| `d.textBgScheme` | `{col,row}` / `null` / `undefined` | Заливка фона текстового блока |
-| `d.borderScheme` | `{col,row}` / `null` / `undefined` | Граница текстового блока |
-| `d.fillScheme` | `{col,row}` / `null` / `undefined` | Заливка фигуры |
-| `d.strokeScheme` | `{col,row}` / `null` / `undefined` | Обводка фигуры |
-| `slides[i].bgScheme` | `{col,row}` / `null` / `undefined` | Фон слайда |
-
-| Значение | При смене схемы |
-|----------|----------------|
-| `{col, row}` | Пересчитывается в новой схеме |
-| `null` | Не трогается (кастомный) |
-| `undefined` | Легаси — применяется дефолт |
+Поля: `textColorScheme`, `textBgScheme`, `borderScheme`, `fillScheme`, `strokeScheme`, `mdColorScheme`, `slides[i].bgScheme`.
 
 ---
 
-## Rich-text цвет (`js/30-rich-text.js`)
-
-### Per-char schemeRef
-
-Каждый char-спан может хранить `data-scheme='{"col":1,"row":0}'` — позицию в палитре схемы. При смене схемы `applyTheme` читает этот атрибут и пересчитывает цвет символа.
-
-```js
-rtColor(color, schemeRef)
-// schemeRef передаётся напрямую как параметр (не через глобальную переменную)
-// При выделении → _applyToSelection сохраняет schemeRef в style._schemeRef каждого char
-// _charObjsToHtml и _groupedHtml записывают _schemeRef обратно в data-scheme атрибут
-// _toCharObjs читает data-scheme обратно в style._schemeRef при парсинге HTML
-```
-
-### Форматирование выделенного текста
-
-`rtBold()`, `rtItalic()`, `rtUnderline()` — при наличии выделения применяют стиль **только к выделенным символам** через `_applyToSelection`. При отсутствии выделения — ко всему блоку через `_setTSWhole`.
-
-> ⚠️ После успешного `_applyToSelection` **не вызывать** `_setTSWhole` — это перезапишет per-char форматирование через `_syncPropToHtml`.
-
-### Логика applyTheme для текста
-
-Простая модель без `hasPerCharColors`:
-- Пройтись по всем char-объектам `el.html`
-- Если у символа есть `_schemeRef` → ремапить цвет в новую схему
-- Если нет `color` → оставить (наследует из `.cs`)
-- Если кастомный `color` без `_schemeRef` → оставить как есть
-- Обновить `.cs` на `newColor` чтобы символы без explicit color унаследовали правильный цвет
-
-### Новые элементы с правильным цветом
-
-`addText()` создаёт `html` как `_charObjsToHtml` с `_schemeRef` на каждом символе — это гарантирует корректный ремап при первой смене схемы.
-
-### Защита от перезаписи d.html при смене схемы
-
-В начале `applyTheme` явно вызывается:
-```js
-if (_rtEl) {
-  _toSaveMode(_rtEl);   // edit-mode groupedHtml → data-ch формат с цветами
-  _rtCommit();          // записывает правильный d.html
-  _rtEl.contentEditable = 'false';
-  _rtEl = null; _rtElId = null; _savedSelIdx = null;
-}
-```
-Это предотвращает ситуацию когда `load()` удаляет DOM-элементы → срабатывает `blur` → `_rtCommit` перезаписывает `d.html` edit-mode HTML без цветов.
-
----
-
-## Фон текстового блока (`js/16-props.js`)
+## Markdown-блоки (`js/12-markdown.js`)
 
 ### Поля данных
 
-| Поле | dataset | Смысл |
-|------|---------|-------|
-| `d.textBg` | `el.dataset.textBg` | hex цвет фона |
-| `d.textBgOp` | `el.dataset.textBgOp` | прозрачность 0–1 |
-| `d.textBgBlur` | `el.dataset.textBgBlur` | размытие фона (px), `backdrop-filter` |
+| Поле | Смысл |
+|------|-------|
+| `d.mdRaw` | Исходный markdown |
+| `d.mdHtml` | Скомпилированный HTML |
+| `d.mdFs` | Размер шрифта (px) |
+| `d.mdColor` | Цвет текста (hex) |
+| `d.mdColorScheme` | `{col,row}` позиция в палитре, `null` — кастомный |
+
+### CSS-переменная `--md-c`
+
+Инлайн на `.ec`: `--md-c: #ffffff`. Все дочерние стили используют `color-mix(in srgb, var(--md-c) X%, transparent)`.
 
 ```js
-applyTextBg(el)
-// Применяет background rgba + backdrop-filter blur к .el
-// Работает независимо: можно только blur без цвета (полупрозрачное стекло)
-
-setTextBgOp(op)    // устанавливает прозрачность, вызывает applyTextBg
-setTextBgBlur(v)   // устанавливает размытие, вызывает applyTextBg
-clearTextBg()      // очищает textBg + textBgOp + textBgBlur
+updateMdFontSize(v)           // mdFs + DOM
+updateMdColor(v, schemeRef)   // mdColor + mdColorScheme + CSS var --md-c
+openMdEditor()                // открыть модальный редактор
 ```
 
-`backdrop-filter` сохраняется через `dataset.textBgBlur` → `d.textBgBlur` в `save()` → восстанавливается в `mkEl()` и после `stopPreview()`.
+Двойной клик по markdown-блоку → `openMdEditor()`.
+Двойной клик по code-блоку → `openCodeEditor()`.
 
 ---
 
-## Фон слайда (`js/05-backgrounds.js`)
+## Кроп изображений (`js/13b-imgcrop.js`)
 
 ```js
-setSlideBgFromPalette(color, schemeRef)
-resetSlideBgToTheme()   // удаляет bgScheme, берёт THEMES[appliedThemeIdx].bg
-syncSlideBgPreview()    // обновляет превью в панели
+// Поля данных:
+d.imgCropL, d.imgCropT, d.imgCropR, d.imgCropB  // px обрезанных с каждой стороны
+
+// Committed: .el = видимая область, .iel = overflow:hidden, img смещён на (-L,-T)
+// Crop mode: .el расширен до оригинала, оверлеи + 8 ручек на рёбрах видимой области
 ```
+
+**Важно:** `overflow:hidden` только на `.iel`, не `.el` — иначе ручки `.rh` обрезаются.
+`mkEl` всегда пишет crop-поля в `dataset` даже как нули — иначе `save()` теряет значения.
 
 ---
 
-## Code blocks (`js/11-elements.js`)
+## Модальные окна тем и макетов
 
-### Синхронизация темы с презентацией
+**Цветовая схема:** клик по карточке — применяет без закрытия; «Применить ко всем» — применяет + закрывает.
 
-```js
-getCodeThemeForPresTheme()   // → 'dark' | 'light' по THEMES[appliedThemeIdx].dark
-refreshAllCodeBlocks()       // обновляет codeTheme + codeBg + codeHtml на всех слайдах
-```
-
-`refreshAllCodeBlocks` вызывается из `applyTheme` после установки `appliedThemeIdx` — тёмная схема презентации даёт тёмную тему кода и наоборот.
-
-### Подсветка синтаксиса
-
-Комментарии (`//`, `#`, `/* */`) извлекаются в массив `_cmts[]` с маркерами `\x00CMTn\x00` **до** применения других замен. Восстанавливаются последними — это предотвращает вложенную подсветку внутри комментариев.
-
----
-
-## Таблицы (`js/31-table.js`)
-
-### Выделение ячеек
-
-```js
-_tblSel     // { elId, r, c } — якорная ячейка
-_tblSelSet  // Set<"r:c"> — все выделенные ячейки
-```
-
-При клике на панель свойств (`#props`) `_tblSel` **не сбрасывается** — проверка `e.target.closest('#props')` в глобальном `mousedown` обработчике.
-
-Все кнопки таблицы имеют `onmousedown="event.preventDefault()"` чтобы не уводить фокус.
-
-### Операции со строками/столбцами
-
-`tblDelRow()` и `tblDelCol()` удаляют **все выделенные** строки/столбцы (не только одну). Индексы сортируются по убыванию чтобы `splice` не сдвигал оставшиеся.
-
-### Размер шрифта ячейки
-
-`tblSetCellFs(v)` — записывает `cell.fs` на каждую выделенную ячейку. `renderTableEl` применяет `font-size` как inline-стиль на `<td>`, перекрывая глобальный `d.fs` таблицы. Поле находится в `tbl-cell-panel` после выравнивания.
+**Декор/макет:** карточка «Без декора» — крестик SVG. Грид `gap:10px`, `padding:4px 6px`, `overflow-x:hidden`, `z-index:2` при hover.
 
 ---
 
 ## Нумерация страниц (`js/33-pagenum.js`)
 
 ```js
-pnSettings = { enabled, style, position, customXY, color, textColor, fontSize, opacity, showTotal, customColor }
-pnApplyAll()   // рисует номера на текущем слайде
-pnSyncUI()     // синхронизирует чекбокс и все поля из pnSettings
-pnLock()       // блокирует изменения во время показа
-pnUnlock()     // снимает блокировку + pnSyncUI()
+pnSettings = { enabled, style, position, ... }
+pnApplyAll()  // рисует номера
+pnSyncUI()    // синхронизирует UI
 ```
 
-**Порядок вызовов при загрузке страницы** (`03-boot.js`):
-1. `loadState()` → восстанавливает `pnSettings` в память
-2. `renderAll()` → рисует слайд
-3. `pnSyncUI()` → обновляет UI
-4. `pnApplyAll()` → рисует номера на канвасе
-
-**После `stopPreview()`** (`24-preview.js`):
-1. `load()` → пересоздаёт DOM
-2. `pnUnlock()` → снимает блокировку + `pnSyncUI()`
-3. `requestAnimationFrame(() => pnApplyAll())` → рисует номера после завершения rAF
+Порядок при загрузке: `loadState()` → `renderAll()` → `pnSyncUI()` → `pnApplyAll()`
+После `stopPreview()`: `load()` → `pnUnlock()` → `rAF(pnApplyAll)`
 
 ---
 
@@ -365,15 +245,27 @@ pnUnlock()     // снимает блокировку + pnSyncUI()
 |---------|----------|
 | `Ctrl+Z` | Отменить |
 | `Ctrl+Y` / `Ctrl+Shift+Z` | Повторить |
-| `Ctrl+C` | Копировать элемент |
-| `Ctrl+V` | Вставить элемент |
-| `Ctrl+D` | Дублировать элемент |
-| `Ctrl+A` | Выделить всё на слайде |
+| `Ctrl+C/V/D` | Копировать / Вставить / Дублировать |
+| `Ctrl+A` | Выделить всё |
 | `Delete` | Удалить элемент |
 | `F5` | Начать/выйти из показа |
 | `Esc` | Выйти из показа |
-| `← →` | Предыдущий/следующий слайд (в показе) |
-| `↑ ↓ ← →` | Сдвинуть элемент на 1px (Shift — 10px) |
+| `← →` | Предыдущий/следующий слайд |
+| `↑↓←→` | Сдвинуть на 1px (Shift — 10px) |
+| Dblclick на markdown/code | Открыть редактор |
+
+---
+
+## Советы при разработке
+
+1. **Порядок загрузки JS важен** — файлы пронумерованы.
+2. **Не вызывать `saveState()` без `save()`** после изменений в DOM.
+3. **Новые поля на `d`** — явно копировать из `oldElsById` в `08-slides.js`.
+4. **Цвет через schemeRef** — использовать `_resolveSchemeColor`, не хардкодить блендинг.
+5. **Markdown цвет** — `updateMdColor(v, schemeRef)`, обновляет `--md-c` и `mdColorScheme`.
+6. **`event.preventDefault()`** на UI-элементах которые не должны уводить фокус.
+7. **`pnApplyAll()`** — вызывать после любого `load()` если нумерация включена.
+8. **Code blocks** — `refreshAllCodeBlocks()` при смене схемы.
 
 ---
 
@@ -381,22 +273,9 @@ pnUnlock()     // снимает блокировку + pnSyncUI()
 
 | Версия | Ключевые изменения |
 |--------|-------------------|
-| **v5.0** | Панель анимаций встроена в правую панель свойств (таб «Анимации»), сетка эффектов 2 колонки, глобальная классификация триггеров анимаций (click/withPrev/autoAfter), нумерация страниц только на панели слайда |
-| v4.9 | Per-char schemeRef (data-scheme на спанах); защита blur от преждевременного _rtCommit; нейтральная колонка палитры адаптируется к теме (тёмная: `#000→#fff`, светлая: `#fff→#000`); `_resolveSchemeColor` учитывает `theme.dark`; `addText` создаёт html с _schemeRef на каждом char; `applyTheme` принудительно вызывает `_toSaveMode`+`_rtCommit` перед рендером; `rtBold/rtItalic/rtUnderline` не вызывают `_setTSWhole` после `_applyToSelection`; размытие фона текста, синхронизация темы кода, удаление нескольких строк/столбцов таблицы, размер шрифта ячейки, нумерация страниц |
-| v4.8 | Цветовые схемы с 8 цветами (`colors[]`), встроенная палитра, система schemeRef, rich-text цвет (частичное выделение), фон слайда из палитры, 38 схем |
-| v4.7 | RU/EN интерфейс, 32 темы, нумерация страниц, офлайн-библиотеки |
+| **v5.1** | Нейтральная колонка палитры: тёмная row0=белый, светлая row0=чёрный. Дефолт надписей `{col:7,row:0}` через `_resolveSchemeColor`. Markdown: `mdColorScheme`, `--md-c`, палитра в панели. Dblclick открывает markdown/code редакторы. Модалка тем: применять без закрытия. «Без декора» — крестик. Отступы гридов 10px. |
+| v5.0 | Панель анимаций в правой панели (4 колонки), кроп изображений с persist через dataset, `clickNav=off`, markdown на светлой теме через CSS-переменные |
+| v4.9 | Per-char schemeRef, защита blur, размытие фона текста, синхронизация темы кода |
+| v4.8 | 8-цветные схемы, встроенная палитра, система schemeRef, rich-text |
+| v4.7 | RU/EN, 32 темы, нумерация страниц |
 | v4.0 | Первый релиз |
-
----
-
-## Советы при разработке
-
-1. **Порядок загрузки JS важен** — файлы пронумерованы и должны подключаться по порядку.
-2. **Не вызывать `saveState()` без `save()`** после изменений в DOM.
-3. **`save()` не сохраняет произвольные поля** — новые поля на `d` без `dataset` нужно явно копировать из `oldElsById` в `08-slides.js`.
-4. **schemeRef-поля** — устанавливать через специальные функции, не напрямую.
-5. **Цвет текста** — только `rtColor(color, schemeRef)` или `applyTextColor()`, не `_syncPropToHtml('color', ...)`.
-6. **Фон текста** — только `applyTextBg(el)` после записи в `dataset`. Не устанавливать `el.style.background` напрямую.
-7. **`event.preventDefault()`** на всех UI-элементах которые не должны уводить фокус из текстового поля или ячейки таблицы.
-8. **pnApplyAll()** — вызывать после любого `load()` если нумерация включена, иначе номера исчезнут.
-9. **Code blocks** — не вызывать `syntaxHighlight` напрямую с устаревшей темой; использовать `refreshAllCodeBlocks()` при смене схемы.

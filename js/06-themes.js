@@ -9,12 +9,13 @@ function _resolveSchemeColor(schemeRef, theme) {
   const tintLevels = [0, 0.22, 0.44, 0.66, 0.88];
   const tint = tintLevels[schemeRef.row] || 0;
   if (isLastCol) {
+    // Dark theme: row 0=white → row 4=black
+    // Light theme: row 0=black → row 4=white
     if (isLightTheme) {
-      return tint === 0 ? '#ffffff' : _blendToBlack('#ffffff', tint);
-    } else {
       const isLastRow = schemeRef.row === tintLevels.length - 1;
-      if (isLastRow) return '#ffffff';
-      return tint === 0 ? '#000000' : _blendToWhite('#000000', tint);
+      return isLastRow ? '#ffffff' : (tint === 0 ? '#000000' : _blendToWhite('#000000', tint));
+    } else {
+      return tint === 0 ? '#ffffff' : _blendToBlack('#ffffff', tint);
     }
   }
   const hex = _solidColor(base8[schemeRef.col] || '#888888');
@@ -26,7 +27,6 @@ function closeThemeModal(){document.getElementById('theme-modal').classList.remo
 function applyTheme(){
   if(selTheme===-2){
     appliedThemeIdx=-1;
-    closeThemeModal();
     save();drawThumbs();saveState();
     return;
   }
@@ -77,7 +77,7 @@ function applyTheme(){
         // If color was pinned to a scheme swatch, remap to same position in new theme.
         // If custom color (textColorScheme===null/undefined), skip color change.
         // col=7 = #000000. dark→row 4 (#e0e0e0 light), light→row 1 (#383838 dark)
-        const _defScheme = {col:7, row:4}; // row 4: dark theme=#e0e0e0, light theme=#1f1f1f
+        const _defScheme = {col:7, row:0}; // row 0: dark theme=#ffffff, light theme=#000000
         const _defColor = _resolveSchemeColor(_defScheme, theme);
 
         let newColor;
@@ -193,6 +193,13 @@ function applyTheme(){
         const ic=ICONS.find(function(x){return x.id===el.iconId;});
         if(ic)el.svgContent=_buildIconSVG(ic,newColor,el.iconSw!=null?el.iconSw:1.8,el.iconStyle||'stroke',el.shadow,el.shadowBlur,el.shadowColor);
       }
+      if(el.type==='markdown'){
+        const ref = el.mdColorScheme !== undefined ? el.mdColorScheme : {col:7,row:0};
+        if(ref){
+          const resolved = _resolveSchemeColor(ref, theme);
+          if(resolved) el.mdColor = resolved;
+        }
+      }
     });
   });
   // Set theme index FIRST so all refresh functions use correct colors
@@ -228,7 +235,7 @@ function applyTheme(){
     }
   });
   invalidateThumbCache();
-  saveState();closeThemeModal();
+  saveState();
   drawThumbs();
   toast(t('toastThemeApplied')+': '+theme.name,'ok');
 }

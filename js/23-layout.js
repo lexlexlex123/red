@@ -543,7 +543,8 @@ function buildLayoutGrid(){
   const none=document.createElement('div');
   none.className='layout-item'+(selLayout===-1?' active':'');
   none.title='Без декора';
-  none.style.cssText='display:flex;flex-direction:column;align-items:center;justify-content:center;background:repeating-linear-gradient(-45deg,transparent,transparent 4px,rgba(255,255,255,.04) 4px,rgba(255,255,255,.04) 5px);';
+  none.style.cssText='display:flex;flex-direction:column;align-items:center;justify-content:center;';
+  none.innerHTML=`<svg width="48" height="48" viewBox="0 0 48 48" fill="none" style="opacity:.35"><line x1="8" y1="8" x2="40" y2="40" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/><line x1="40" y1="8" x2="8" y2="40" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/></svg>`;
   const noneLbl=document.createElement('div');
   noneLbl.className='li-label';
   noneLbl.textContent='Без декора';

@@ -67,7 +67,8 @@ function insertMarkdownBlock(){
       const domEl=document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
       if(domEl){const c=domEl.querySelector('.ec');if(c)c.innerHTML=html;}}
   } else {
-    const d={id:'e'+(++ec),type:'markdown',x:snapV(60),y:snapV(60),w:snapV(550),h:snapV(400),mdRaw:raw,mdHtml:html,mdFs:16,rot:0,anims:[]};
+    const defMdColor=document.documentElement.classList.contains('light')?'#000000':'#ffffff';
+    const d={id:'e'+(++ec),type:'markdown',x:snapV(60),y:snapV(60),w:snapV(550),h:snapV(400),mdRaw:raw,mdHtml:html,mdFs:16,mdColor:defMdColor,mdColorScheme:{col:7,row:0},rot:0,anims:[]};
     slides[cur].els.push(d);mkEl(d);
   }
   if(typeof save==="function")save();if(typeof drawThumbs==="function")drawThumbs();if(typeof saveState==="function")saveState();
@@ -78,5 +79,16 @@ function updateMdFontSize(v){
   const d=slides[cur].els.find(e=>e.id===sel.dataset.id);if(!d)return;
   d.mdFs=+v;
   const c=sel.querySelector('.ec');if(c)c.style.fontSize=v+'px';
+  if(typeof save==="function")save();
+}
+
+function updateMdColor(v, schemeRef){
+  if(!sel||sel.dataset.type!=='markdown')return;
+  const d=slides[cur].els.find(e=>e.id===sel.dataset.id);if(!d)return;
+  d.mdColor=v;
+  d.mdColorScheme = schemeRef !== undefined ? schemeRef : null;
+  const c=sel.querySelector('.ec');
+  if(c){c.style.color=v;c.style.setProperty('--md-c',v);}
+  try{document.getElementById('md-color-hex').value=v;document.getElementById('md-color-preview').style.background=v;}catch(e){}
   if(typeof save==="function")save();
 }

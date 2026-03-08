@@ -196,21 +196,21 @@ const _thumbImgCache={};
 function drawThumbImage(ctx,d,sx,sy){
   if(!d.src)return;
   const x=d.x*sx,y=d.y*sy,w=d.w*sx,h=d.h*sy;
-  if(_thumbImgCache[d.src]){
-    ctx.save();if(d.rot){ctx.translate(x+w/2,y+h/2);ctx.rotate(d.rot*Math.PI/180);ctx.translate(-(x+w/2),-(y+h/2));}
-    ctx.drawImage(_thumbImgCache[d.src],x,y,w,h);ctx.restore();
-    return;
-  }
-  const img=new Image();
-  img.onload=()=>{
-    _thumbImgCache[d.src]=img;
-    // Redraw thumb after image loads - find the canvas
-    drawThumbs();
+  const cL=d.imgCropL||0,cT=d.imgCropT||0,cR=d.imgCropR||0,cB=d.imgCropB||0;
+  const hasCrop=cL||cT||cR||cB;
+  const drawIt=(img)=>{
+    ctx.save();
+    if(d.rot){ctx.translate(x+w/2,y+h/2);ctx.rotate(d.rot*Math.PI/180);ctx.translate(-(x+w/2),-(y+h/2));}
+    if(hasCrop){const fW=(d.w+cL+cR)*sx,fH=(d.h+cT+cB)*sy;ctx.save();ctx.beginPath();ctx.rect(x,y,w,h);ctx.clip();ctx.drawImage(img,x-cL*sx,y-cT*sy,fW,fH);ctx.restore();}
+    else{ctx.drawImage(img,x,y,w,h);}
+    ctx.restore();
   };
+  if(_thumbImgCache[d.src]){drawIt(_thumbImgCache[d.src]);return;}
+  const img=new Image();
+  img.onload=()=>{_thumbImgCache[d.src]=img;drawThumbs();};
   img.onerror=()=>{};
   img.src=d.src;
-  // Draw placeholder
-  ctx.save();ctx.fillStyle='rgba(255,255,255,0.1)';ctx.fillRect(x,y,w,h);ctx.restore();
+  ctx.save();ctx.fillStyle="rgba(255,255,255,0.1)";ctx.fillRect(x,y,w,h);ctx.restore();
 }
 
 function drawThumbCode(ctx,d,sx,sy){

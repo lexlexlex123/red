@@ -110,7 +110,6 @@ function _applyShapeBlur(el) {
     `backdrop-filter:blur(${blur}px);-webkit-backdrop-filter:blur(${blur}px);` +
     (cp !== 'none' ? `clip-path:${cp};-webkit-clip-path:${cp};` : '')
   );
-  el.style.position = 'relative';
   el.insertBefore(overlay, el.firstChild);
 }
 

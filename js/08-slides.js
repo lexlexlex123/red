@@ -105,6 +105,16 @@ function save(){
       d.imgOpacity=el.dataset.imgOpacity!=null?+el.dataset.imgOpacity:(dd&&dd.imgOpacity!=null?dd.imgOpacity:1);
       d.imgPosX=el.dataset.imgPosX||(dd&&dd.imgPosX)||'center';
       d.imgPosY=el.dataset.imgPosY||(dd&&dd.imgPosY)||'center';
+      // crop: read from dataset (written on exit crop mode), fallback to live d value
+      d.imgCropL = el.dataset.imgCropL != null ? +el.dataset.imgCropL : (d.imgCropL || 0);
+      d.imgCropT = el.dataset.imgCropT != null ? +el.dataset.imgCropT : (d.imgCropT || 0);
+      d.imgCropR = el.dataset.imgCropR != null ? +el.dataset.imgCropR : (d.imgCropR || 0);
+      d.imgCropB = el.dataset.imgCropB != null ? +el.dataset.imgCropB : (d.imgCropB || 0);
+      // preserve full-image coords so re-entering crop mode works correctly
+      if(dd&&dd._cropFullW)d._cropFullW=dd._cropFullW;
+      if(dd&&dd._cropFullH)d._cropFullH=dd._cropFullH;
+      if(dd&&dd._cropFullX!=null)d._cropFullX=dd._cropFullX;
+      if(dd&&dd._cropFullY!=null)d._cropFullY=dd._cropFullY;
     }
     else if(d.type==='shape'){
       d.shape=el.dataset.shape;d.fill=el.dataset.fill||'#3b82f6';d.stroke=el.dataset.stroke||'#1d4ed8';
@@ -123,7 +133,7 @@ function save(){
     }
     else if(d.type==='svg')d.svgContent=el.querySelector('.ec').innerHTML;
     else if(d.type==='code'){const dd=oldElsById[d.id];if(dd){d.codeLang=dd.codeLang;d.codeTheme=dd.codeTheme;d.codeRaw=dd.codeRaw;d.codeHtml=dd.codeHtml;d.codeFs=dd.codeFs;d.codeBg=dd.codeBg;}}
-    else if(d.type==='markdown'){const dd=oldElsById[d.id];if(dd){d.mdRaw=dd.mdRaw;d.mdHtml=dd.mdHtml;d.mdFs=dd.mdFs;}}
+    else if(d.type==='markdown'){const dd=oldElsById[d.id];if(dd){d.mdRaw=dd.mdRaw;d.mdHtml=dd.mdHtml;d.mdFs=dd.mdFs;d.mdColor=dd.mdColor||'#ffffff';d.mdColorScheme=dd.mdColorScheme!==undefined?dd.mdColorScheme:{col:7,row:0};}}
     else if(d.type==='icon'){
       d.iconId=el.dataset.iconId||'';
       d.iconColor=el.dataset.iconColor||'#3b82f6';

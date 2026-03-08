@@ -378,11 +378,11 @@
       <div id="elprops" style="display:none">
         <div class="ph">Element</div>
         <div class="psec">
-          <div class="grid2">
-            <div class="pr"><label>X</label><input type="number" id="p-x" oninput="setES('left',snapV(+this.value),'px')"></div>
-            <div class="pr"><label>Y</label><input type="number" id="p-y" oninput="setES('top',snapV(+this.value),'px')"></div>
-            <div class="pr"><label>W</label><input type="number" id="p-w" oninput="setES('width',Math.max(20,snapV(+this.value)),'px')"></div>
-            <div class="pr"><label>H</label><input type="number" id="p-h" oninput="setES('height',Math.max(10,snapV(+this.value)),'px')"></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4px;margin-bottom:6px">
+            <div class="pr" style="margin:0"><label>X</label><input type="number" id="p-x" oninput="setES('left',snapV(+this.value),'px')"></div>
+            <div class="pr" style="margin:0"><label>Y</label><input type="number" id="p-y" oninput="setES('top',snapV(+this.value),'px')"></div>
+            <div class="pr" style="margin:0"><label>W</label><input type="number" id="p-w" oninput="setES('width',Math.max(20,snapV(+this.value)),'px')"></div>
+            <div class="pr" style="margin:0"><label>H</label><input type="number" id="p-h" oninput="setES('height',Math.max(10,snapV(+this.value)),'px')"></div>
           </div>
           <div class="pr"><label data-i18n="propRotation">Rotation (deg)</label><input type="number" id="p-rot" value="0" oninput="setElRotation(+this.value)"></div>
         </div>
@@ -404,169 +404,142 @@
               <button class="ftbtn" id="ft-u" onclick="rtUnderline()" title="Underline (Ctrl+U)" onmousedown="event.preventDefault()"><u>U</u></button>
               <button class="ftbtn" id="ft-sup" onclick="rtSuperscript()" title="Superscript" style="font-size:9px;letter-spacing:-0.5px" onmousedown="event.preventDefault()">X<sup style="font-size:7px;line-height:1">²</sup></button>
               <button class="ftbtn" id="ft-sub" onclick="rtSubscript()" title="Subscript" style="font-size:9px;letter-spacing:-0.5px" onmousedown="event.preventDefault()">X<sub style="font-size:7px;line-height:1">₂</sub></button>
-              <button class="ftbtn" onclick="resetTextFormatting()" onmousedown="event.preventDefault()" data-i18n-title="resetFormat" title="Сбросить форматирование" style="color:var(--text3)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="1" y="12" font-family="serif" font-size="12" font-weight="700" fill="currentColor">A</text><line x1="10" y1="4" x2="15" y2="9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="15" y1="4" x2="10" y2="9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
-            </div>
-            <div class="fmt-row">
+              <span style="width:1px;background:var(--border2);margin:0 2px;align-self:stretch;flex-shrink:0"></span>
               <button class="ftbtn" id="ft-al" onclick="setTS('text-align','left')" title="Align Left" onmousedown="event.preventDefault()"><svg width="14" height="12" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="5" x2="9" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="9" x2="12" y2="9" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="13" x2="7" y2="13" stroke="currentColor" stroke-width="1.5"/></svg></button>
               <button class="ftbtn" id="ft-ac" onclick="setTS('text-align','center')" title="Center" onmousedown="event.preventDefault()"><svg width="14" height="12" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="2.5" y1="5" x2="11.5" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="1" y1="9" x2="13" y2="9" stroke="currentColor" stroke-width="1.5"/><line x1="3.5" y1="13" x2="10.5" y2="13" stroke="currentColor" stroke-width="1.5"/></svg></button>
               <button class="ftbtn" id="ft-ar" onclick="setTS('text-align','right')" title="Align Right" onmousedown="event.preventDefault()"><svg width="14" height="12" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="5" y1="5" x2="14" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="2" y1="9" x2="14" y2="9" stroke="currentColor" stroke-width="1.5"/><line x1="7" y1="13" x2="14" y2="13" stroke="currentColor" stroke-width="1.5"/></svg></button>
               <button class="ftbtn" id="ft-aj" onclick="setTS('text-align','justify')" title="Justify" onmousedown="event.preventDefault()"><svg width="14" height="12" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="5" x2="14" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="9" x2="14" y2="9" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="13" x2="10" y2="13" stroke="currentColor" stroke-width="1.5"/></svg></button>
-            </div>
-            <div class="fmt-row">
+              <span style="width:1px;background:var(--border2);margin:0 2px;align-self:stretch;flex-shrink:0"></span>
               <button class="ftbtn" id="ft-vt" onclick="setTextVAlign('top')" title="Top" onmousedown="event.preventDefault()"><svg width="12" height="14" viewBox="0 0 12 14"><line x1="0" y1="0" x2="12" y2="0" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="2" width="6" height="9" rx="1" fill="currentColor" opacity=".4"/><path d="M6 2 L6 11" stroke="currentColor" stroke-width="1.5"/></svg></button>
               <button class="ftbtn" id="ft-vm" onclick="setTextVAlign('middle')" title="Middle" onmousedown="event.preventDefault()"><svg width="12" height="14" viewBox="0 0 12 14"><line x1="0" y1="7" x2="12" y2="7" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="1" width="6" height="5" rx="1" fill="currentColor" opacity=".4"/><rect x="3" y="8" width="6" height="5" rx="1" fill="currentColor" opacity=".4"/></svg></button>
               <button class="ftbtn" id="ft-vb" onclick="setTextVAlign('bottom')" title="Bottom" onmousedown="event.preventDefault()"><svg width="12" height="14" viewBox="0 0 12 14"><line x1="0" y1="14" x2="12" y2="14" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="3" width="6" height="9" rx="1" fill="currentColor" opacity=".4"/><path d="M6 3 L6 12" stroke="currentColor" stroke-width="1.5"/></svg></button>
+              <span style="width:1px;background:var(--border2);margin:0 2px;align-self:stretch;flex-shrink:0"></span>
+              <button class="ftbtn" onclick="resetTextFormatting()" onmousedown="event.preventDefault()" data-i18n-title="resetFormat" title="Сбросить форматирование" style="color:var(--text3)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="1" y="12" font-family="serif" font-size="12" font-weight="700" fill="currentColor">A</text><line x1="10" y1="4" x2="15" y2="9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="15" y1="4" x2="10" y2="9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
             </div>
           </div>
-            <div class="pr"><label data-i18n="propSize">Size</label><input type="number" id="p-fs" min="0" max="400" value="48" onmousedown="_rtOnPanelMousedown(event)" oninput="rtFontSize(+this.value)"></div>
-          <div class="pr"><label data-i18n="propTextColor">Цвет текста <span id="sel-hint" style="font-size:9px;color:var(--accent4);display:none">· выделение</span></label>
-            <div style="display:flex;flex-direction:column;gap:5px">
+          <!-- Size + Color in one row -->
+          <div style="display:grid;grid-template-columns:80px 1fr;gap:8px;margin-bottom:7px;align-items:end">
+            <div class="pr" style="margin:0"><label data-i18n="propSize">Size</label><input type="number" id="p-fs" min="0" max="400" value="48" onmousedown="_rtOnPanelMousedown(event)" oninput="rtFontSize(+this.value)"></div>
+            <div class="pr" style="margin:0"><label data-i18n="propTextColor">Цвет <span id="sel-hint" style="font-size:9px;color:var(--accent4);display:none">· выделение</span></label>
               <div style="display:flex;gap:4px;align-items:center">
                 <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;" onmousedown="event.preventDefault();_rtOnPanelMousedown(event);openColorPanel('cp-text-slot','text',function(c,sr){onColorPick(c,'text',sr);})" title="Цвет текста"><div id="p-col-preview" style="width:100%;height:100%;background:#ffffff;pointer-events:none;"></div></div>
                 <input type="text" id="p-hex" placeholder="#ffffff" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;" onmousedown="_rtOnPanelMousedown(event)" oninput="onColorHex(this.value,'text')">
                 <button onclick="togglePipetteMode()" id="eye-text" class="pipette-btn" title="Пипетка" style="background:var(--surface2);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:3px 6px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;width:26px;height:26px"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M20.71 5.63l-2.34-2.34a1 1 0 0 0-1.41 0l-3.12 3.12-1.41-1.42-1.42 1.42 1.41 1.41-6.6 6.6A2 2 0 0 0 5 16v3h3a2 2 0 0 0 1.42-.59l6.6-6.6 1.41 1.42 1.42-1.42-1.42-1.41 3.12-3.12a1 1 0 0 0 0-1.65z"/></svg></button>
               </div>
-              <div id="cp-text-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
             </div>
           </div>
-          <div class="pr"><label data-i18n="propBgColor">Цвет фона блока</label>
+          <div id="cp-text-slot" class="cp-slot" style="display:none;margin-bottom:6px" onmousedown="event.preventDefault()"></div>
+          <!-- Line Height + Spacing + Opacity in one row -->
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:7px">
+            <div class="pr" style="margin:0"><label data-i18n="propLineH">Line H</label><input type="number" id="p-lh" min="0.5" max="5" step="0.1" value="1.2" oninput="setTS('line-height',this.value)"></div>
+            <div class="pr" style="margin:0"><label data-i18n="propSpacing">Spacing</label><input type="number" id="p-ls" min="-10" max="50" step="0.1" value="0" oninput="setTS('letter-spacing',this.value+'px')"></div>
+            <div class="pr" style="margin:0"><label data-i18n="propElOpacity">Opacity</label><input type="number" id="p-el-op" min="0" max="1" step="0.05" value="1" oninput="setTextElOpacity(+this.value)"></div>
+          </div>
+          <!-- Background color block -->
+          <div class="pr"><label data-i18n="propBgColor">Фон блока</label>
             <div style="display:flex;flex-direction:column;gap:4px">
-              <div style="display:flex;gap:6px;align-items:center">
+              <div style="display:flex;gap:4px;align-items:center">
                 <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;background:repeating-conic-gradient(#aaa 0% 25%,#fff 0% 50%) 0 0/8px 8px;" onmousedown="openColorPanel('cp-bg-slot','bg',function(c,sr){document.getElementById('p-bg-hex').value=c;document.getElementById('p-bg-swatch-inner').style.background=c;setTextBg(c,sr);})" title="Цвет фона"><div id="p-bg-swatch-inner" style="width:100%;height:100%;"></div></div>
                 <input type="text" id="p-bg-hex" placeholder="transparent" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('p-bg-swatch-inner').style.background=this.value;setTextBg(this.value);}">
                 <button onclick="clearTextBg()" title="Убрать фон" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:2px 6px;cursor:pointer;font-size:10px;white-space:nowrap">✕</button>
               </div>
               <div id="cp-bg-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
-              <div style="display:flex;align-items:center;gap:6px"><label style="font-size:10px;color:var(--text2);white-space:nowrap">Прозрачность:</label><input type="number" id="p-bg-op" min="0" max="1" step="0.05" value="1" oninput="setTextBgOp(+this.value)"></div>
-              <div style="display:flex;align-items:center;gap:6px"><label style="font-size:10px;color:var(--text2);white-space:nowrap">Размытие фона:</label><input type="number" id="p-bg-blur" min="0" max="40" step="1" value="0" oninput="setTextBgBlur(+this.value)"></div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                <div style="display:flex;align-items:center;gap:5px"><label style="font-size:10px;color:var(--text2);white-space:nowrap;min-width:60px">Прозрачность</label><input type="number" id="p-bg-op" min="0" max="1" step="0.05" value="1" oninput="setTextBgOp(+this.value)" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;box-sizing:border-box"></div>
+                <div style="display:flex;align-items:center;gap:5px"><label style="font-size:10px;color:var(--text2);white-space:nowrap;min-width:40px">Размытие</label><input type="number" id="p-bg-blur" min="0" max="40" step="1" value="0" oninput="setTextBgBlur(+this.value)" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;box-sizing:border-box"></div>
+              </div>
             </div>
           </div>
-          <div class="grid2">
-            <div class="pr"><label data-i18n="propLineH">Line H</label><input type="number" id="p-lh" min="0.5" max="5" step="0.1" value="1.2" oninput="setTS('line-height',this.value)"></div>
-            <div class="pr"><label data-i18n="propSpacing">Spacing</label><input type="number" id="p-ls" min="-10" max="50" step="0.1" value="0" oninput="setTS('letter-spacing',this.value+'px')"></div>
-          </div>
+          <!-- Corner Radius -->
           <div class="pr"><label data-i18n="propCornerRadius">Corner Radius</label>
-            <div style="display:flex;align-items:center;gap:4px;margin-bottom:3px">
-              <label style="font-size:9px;color:var(--text3)" data-i18n="propUnit">Unit:</label>
+            <div style="display:flex;align-items:center;gap:5px;margin-bottom:4px">
               <button id="rx-unit-px" class="tbtn2 active" onclick="setTextRxUnit('px')" style="padding:2px 6px;font-size:9px">px</button>
               <button id="rx-unit-pct" class="tbtn2" onclick="setTextRxUnit('%')" style="padding:2px 6px;font-size:9px">%</button>
-              <label style="display:flex;align-items:center;gap:3px;font-size:9px;color:var(--text3);cursor:pointer;margin-left:4px"><label class="tog"><input type="checkbox" id="rx-linked" checked data-i18n="propLock"><span class="tog-track"></span><span class="tog-thumb"></span></label> Lock</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:9px;color:var(--text3);cursor:pointer;margin-left:4px"><label class="tog"><input type="checkbox" id="rx-linked" checked><span class="tog-track"></span><span class="tog-thumb"></span></label> Lock</label>
             </div>
-            <div class="grid2" style="gap:3px">
-              <div style="display:flex;flex-direction:column;gap:1px;align-items:center">
-                <span style="font-size:8px;color:var(--text3)">↖ TL</span>
-                <input type="number" id="p-rx-tl" min="0" max="999" value="0" oninput="setTextRadius('tl',+this.value)">
-              </div>
-              <div style="display:flex;flex-direction:column;gap:1px;align-items:center">
-                <span style="font-size:8px;color:var(--text3)">↗ TR</span>
-                <input type="number" id="p-rx-tr" min="0" max="999" value="0" oninput="setTextRadius('tr',+this.value)">
-              </div>
-              <div style="display:flex;flex-direction:column;gap:1px;align-items:center">
-                <span style="font-size:8px;color:var(--text3)">↙ BL</span>
-                <input type="number" id="p-rx-bl" min="0" max="999" value="0" oninput="setTextRadius('bl',+this.value)">
-              </div>
-              <div style="display:flex;flex-direction:column;gap:1px;align-items:center">
-                <span style="font-size:8px;color:var(--text3)">↘ BR</span>
-                <input type="number" id="p-rx-br" min="0" max="999" value="0" oninput="setTextRadius('br',+this.value)">
-              </div>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px">
+              <div style="display:flex;flex-direction:column;gap:1px;align-items:center"><span style="font-size:8px;color:var(--text3)">↖ TL</span><input type="number" id="p-rx-tl" min="0" max="999" value="0" oninput="setTextRadius('tl',+this.value)"></div>
+              <div style="display:flex;flex-direction:column;gap:1px;align-items:center"><span style="font-size:8px;color:var(--text3)">↗ TR</span><input type="number" id="p-rx-tr" min="0" max="999" value="0" oninput="setTextRadius('tr',+this.value)"></div>
+              <div style="display:flex;flex-direction:column;gap:1px;align-items:center"><span style="font-size:8px;color:var(--text3)">↙ BL</span><input type="number" id="p-rx-bl" min="0" max="999" value="0" oninput="setTextRadius('bl',+this.value)"></div>
+              <div style="display:flex;flex-direction:column;gap:1px;align-items:center"><span style="font-size:8px;color:var(--text3)">↘ BR</span><input type="number" id="p-rx-br" min="0" max="999" value="0" oninput="setTextRadius('br',+this.value)"></div>
             </div>
           </div>
-          <!-- Text padding -->
-          <div class="pr"><label data-i18n="propPadding">Inner Padding (px)</label>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px">
-              <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
-                <span style="font-size:8px;color:var(--text3)">Top</span>
-                <input type="number" id="p-pad-t" min="0" max="200" value="6" oninput="setTextPadding4()">
-              </div>
-              <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
-                <span style="font-size:8px;color:var(--text3)">Right</span>
-                <input type="number" id="p-pad-r" min="0" max="200" value="8" oninput="setTextPadding4()">
-              </div>
-              <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
-                <span style="font-size:8px;color:var(--text3)">Bottom</span>
-                <input type="number" id="p-pad-b" min="0" max="200" value="6" oninput="setTextPadding4()">
-              </div>
-              <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
-                <span style="font-size:8px;color:var(--text3)">Left</span>
-                <input type="number" id="p-pad-l" min="0" max="200" value="8" oninput="setTextPadding4()">
-              </div>
+          <!-- Padding -->
+          <div class="pr"><label data-i18n="propPadding">Padding (px)</label>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px">
+              <div style="display:flex;flex-direction:column;align-items:center;gap:2px"><span style="font-size:8px;color:var(--text3)">Top</span><input type="number" id="p-pad-t" min="0" max="200" value="6" oninput="setTextPadding4()"></div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:2px"><span style="font-size:8px;color:var(--text3)">Right</span><input type="number" id="p-pad-r" min="0" max="200" value="8" oninput="setTextPadding4()"></div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:2px"><span style="font-size:8px;color:var(--text3)">Bottom</span><input type="number" id="p-pad-b" min="0" max="200" value="6" oninput="setTextPadding4()"></div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:2px"><span style="font-size:8px;color:var(--text3)">Left</span><input type="number" id="p-pad-l" min="0" max="200" value="8" oninput="setTextPadding4()"></div>
             </div>
           </div>
-          <!-- Text box border -->
+          <!-- Border -->
           <div class="pr"><label data-i18n="propBorder">Border</label>
-            <div style="display:flex;flex-direction:column;gap:4px">
-              <div style="display:flex;flex-direction:column;gap:4px">
-                <div style="display:flex;gap:4px;align-items:center">
-                  <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;overflow:hidden;" onmousedown="openColorPanel('cp-border-slot','border',function(c,sr){document.getElementById('p-border-hex').value=c;document.getElementById('p-border-preview').style.background=c;setTextBorder('color',c,sr);})"><div id="p-border-preview" style="width:100%;height:100%;background:#ffffff;"></div></div>
-                  <input type="text" id="p-border-hex" placeholder="#ffffff" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('p-border-preview').style.background=this.value;setTextBorder('color',this.value);}">
-                  <button title="Сбросить границу" onmousedown="event.preventDefault()" onclick="document.getElementById('p-border-w').value=0;setTextBorder('width',0);" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;line-height:1" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">✕</button>
-                </div>
-                <div id="cp-border-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
-              </div>
-              <div class="pr" style="margin-top:4px;margin-bottom:0"><label data-i18n="propStrokeWidth">Width</label><input type="number" id="p-border-w" min="0" max="20" step="0.5" value="0" oninput="setTextBorder('width',+this.value)"></div>
+            <div style="display:flex;gap:4px;align-items:center">
+              <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;overflow:hidden;flex-shrink:0" onmousedown="openColorPanel('cp-border-slot','border',function(c,sr){document.getElementById('p-border-hex').value=c;document.getElementById('p-border-preview').style.background=c;setTextBorder('color',c,sr);})"><div id="p-border-preview" style="width:100%;height:100%;background:#ffffff;"></div></div>
+              <input type="text" id="p-border-hex" placeholder="#ffffff" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('p-border-preview').style.background=this.value;setTextBorder('color',this.value);}">
+              <input type="number" id="p-border-w" min="0" max="20" step="0.5" value="0" placeholder="px" style="width:52px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;box-sizing:border-box" oninput="setTextBorder('width',+this.value)">
+              <button title="Сбросить" onmousedown="event.preventDefault()" onclick="document.getElementById('p-border-w').value=0;setTextBorder('width',0);" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;line-height:1" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">✕</button>
             </div>
-          </div>
-          <!-- Text opacity -->
-          <div class="pr"><label data-i18n="propElOpacity">Element Opacity</label>
-            <input type="number" id="p-el-op" min="0" max="1" step="0.05" value="1" oninput="setTextElOpacity(+this.value)">
+            <div id="cp-border-slot" class="cp-slot" style="display:none;margin-top:4px" onmousedown="event.preventDefault()"></div>
           </div>
         </div><!-- end tprops -->
         <!-- SHAPE PROPS -->
         <div id="shprops" style="display:none">
           <div class="ph">Shape Style</div>
+
+          <!-- Fill row: swatch + hex + opacity + blur -->
           <div class="pr"><label>Заливка</label>
-            <div style="display:flex;flex-direction:column;gap:5px">
-              <div style="display:flex;gap:4px;align-items:center">
-                <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;" onmousedown="openColorPanel('cp-fill-slot','fill',function(c,sr){document.getElementById('sh-fill-hex').value=c;document.getElementById('sh-fill-preview').style.background=c;updateShapeStyleScheme('fill',c,sr);})" title="Цвет заливки"><div id="sh-fill-preview" style="width:100%;height:100%;background:#3b82f6;"></div></div>
-                <input type="text" id="sh-fill-hex" placeholder="#3b82f6" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('sh-fill-preview').style.background=this.value;updateShapeStyle('fill',this.value);}">
-                <button onclick="togglePipetteMode()" id="eye-fill" class="pipette-btn" title="Пипетка" style="background:var(--surface2);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:3px 6px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;width:26px;height:26px"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M20.71 5.63l-2.34-2.34a1 1 0 0 0-1.41 0l-3.12 3.12-1.41-1.42-1.42 1.42 1.41 1.41-6.6 6.6A2 2 0 0 0 5 16v3h3a2 2 0 0 0 1.42-.59l6.6-6.6 1.41 1.42 1.42-1.42-1.42-1.41 3.12-3.12a1 1 0 0 0 0-1.65z"/></svg></button>
-              </div>
-              <div id="cp-fill-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
+            <div style="display:flex;gap:4px;align-items:center;margin-bottom:4px">
+              <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;" onmousedown="openColorPanel('cp-fill-slot','fill',function(c,sr){document.getElementById('sh-fill-hex').value=c;document.getElementById('sh-fill-preview').style.background=c;updateShapeStyleScheme('fill',c,sr);})" title="Цвет заливки"><div id="sh-fill-preview" style="width:100%;height:100%;background:#3b82f6;"></div></div>
+              <input type="text" id="sh-fill-hex" placeholder="#3b82f6" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('sh-fill-preview').style.background=this.value;updateShapeStyle('fill',this.value);}">
+              <button onclick="togglePipetteMode()" id="eye-fill" class="pipette-btn" title="Пипетка" style="background:var(--surface2);border:1px solid var(--border2);color:var(--text2);border-radius:3px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;width:26px;height:26px"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M20.71 5.63l-2.34-2.34a1 1 0 0 0-1.41 0l-3.12 3.12-1.41-1.42-1.42 1.42 1.41 1.41-6.6 6.6A2 2 0 0 0 5 16v3h3a2 2 0 0 0 1.42-.59l6.6-6.6 1.41 1.42 1.42-1.42-1.42-1.41 3.12-3.12a1 1 0 0 0 0-1.65z"/></svg></button>
+            </div>
+            <div id="cp-fill-slot" class="cp-slot" style="display:none;margin-bottom:4px" onmousedown="event.preventDefault()"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
               <div class="pr" style="margin:0"><label>Прозрачность</label><input type="number" id="sh-fill-op" min="0" max="1" step="0.05" value="1" oninput="updateShapeStyle('fillOp',this.value)"></div>
+              <div class="pr" style="margin:0"><label>Размытие фона</label><input type="number" id="sh-el-blur" min="0" max="40" step="1" value="0" oninput="setShapeElBlur(+this.value)"></div>
             </div>
           </div>
-          <div class="pr"><label>Размытие фона</label><input type="number" id="sh-el-blur" min="0" max="40" step="1" value="0" oninput="setShapeElBlur(+this.value)"></div>
-          <div class="pr" style="margin-top:4px"><label>Обводка</label>
-            <div style="display:flex;flex-direction:column;gap:4px">
-              <div style="display:flex;gap:4px;align-items:center">
-                <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;overflow:hidden;" onmousedown="openColorPanel('cp-stroke-slot','stroke',function(c){document.getElementById('sh-stroke-hex').value=c;document.getElementById('sh-stroke-preview').style.background=c;updateShapeStyle('stroke',c);})"><div id="sh-stroke-preview" style="width:100%;height:100%;background:#1d4ed8;"></div></div>
-                <input type="text" id="sh-stroke-hex" placeholder="#ffffff" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('sh-stroke-preview').style.background=this.value;updateShapeStyle('stroke',this.value);}">
-                <button title="Сбросить обводку" onmousedown="event.preventDefault()" onclick="document.getElementById('sh-sw').value=0;updateShapeStyle('sw',0);" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;line-height:1" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">✕</button>
-              </div>
-              <div id="cp-stroke-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
+
+          <!-- Stroke row: swatch + hex + width + rx -->
+          <div class="pr"><label>Обводка</label>
+            <div style="display:flex;gap:4px;align-items:center;margin-bottom:4px">
+              <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;overflow:hidden;flex-shrink:0" onmousedown="openColorPanel('cp-stroke-slot','stroke',function(c){document.getElementById('sh-stroke-hex').value=c;document.getElementById('sh-stroke-preview').style.background=c;updateShapeStyle('stroke',c);})"><div id="sh-stroke-preview" style="width:100%;height:100%;background:#1d4ed8;"></div></div>
+              <input type="text" id="sh-stroke-hex" placeholder="#ffffff" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('sh-stroke-preview').style.background=this.value;updateShapeStyle('stroke',this.value);}">
+              <button title="Сбросить" onmousedown="event.preventDefault()" onclick="document.getElementById('sh-sw').value=0;updateShapeStyle('sw',0);" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;line-height:1" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">✕</button>
+            </div>
+            <div id="cp-stroke-slot" class="cp-slot" style="display:none;margin-bottom:4px" onmousedown="event.preventDefault()"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+              <div class="pr" style="margin:0"><label>Stroke Width</label><input type="number" id="sh-sw" min="0" max="20" value="2" oninput="updateShapeStyle('sw',this.value)"></div>
+              <div class="pr" style="margin:0"><label>Corner Radius</label><input type="number" id="sh-rx" min="0" max="100" value="0" oninput="updateShapeStyle('rx',this.value)"></div>
             </div>
           </div>
-          <div class="grid2">
-            <div class="pr"><label>Stroke Width</label>
-              <input type="number" id="sh-sw" min="0" max="20" value="2" oninput="updateShapeStyle('sw',this.value)">
-            </div>
-            <div class="pr"><label>Corner Radius</label><input type="number" id="sh-rx" min="0" max="100" value="0" oninput="updateShapeStyle('rx',this.value)"></div>
-          </div>
+
+          <!-- Shadow: toggle + blur + color inline -->
           <div class="pr"><label>Тень</label>
-            <div style="display:flex;flex-direction:column;gap:4px">
+            <div style="display:flex;flex-direction:column;gap:5px">
               <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2)"><label class="tog"><input type="checkbox" id="sh-shadow" onchange="updateShapeStyle('shadow',this.checked)"><span class="tog-track"></span><span class="tog-thumb"></span></label>Включить тень</label>
-              <div style="display:flex;flex-direction:column;gap:4px" id="shadow-options">
-                <div class="pr" style="margin:0"><label>Размытие</label><input type="number" id="sh-sb" value="8" min="0" max="40" oninput="updateShapeStyle('shadowBlur',this.value)"></div>
-                <div class="pr" style="margin:0"><label>Цвет тени</label>
-                  <div style="display:flex;flex-direction:column;gap:3px">
-                    <div style="display:flex;gap:4px;align-items:center">
-                      <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;" onmousedown="openColorPanel('cp-sh-sc-slot','sh-sc',function(c,sr){document.getElementById('sh-sc-hex').value=c;document.getElementById('sh-sc-preview').style.background=c;updateShapeStyle('shadowColor',c);})"><div id="sh-sc-preview" style="width:100%;height:100%;background:#000000;"></div></div>
-                      <input type="text" id="sh-sc-hex" value="#000000" placeholder="#000000" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;font-family:monospace" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('sh-sc-preview').style.background=this.value;updateShapeStyle('shadowColor',this.value);}">
-                    </div>
-                    <div id="cp-sh-sc-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
-                  </div>
+              <div id="shadow-options" style="display:flex;flex-direction:column;gap:4px">
+                <div style="display:flex;gap:4px;align-items:center">
+                  <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;" onmousedown="openColorPanel('cp-sh-sc-slot','sh-sc',function(c,sr){document.getElementById('sh-sc-hex').value=c;document.getElementById('sh-sc-preview').style.background=c;updateShapeStyle('shadowColor',c);})"><div id="sh-sc-preview" style="width:100%;height:100%;background:#000000;"></div></div>
+                  <input type="text" id="sh-sc-hex" value="#000000" placeholder="#000000" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;font-family:monospace" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('sh-sc-preview').style.background=this.value;updateShapeStyle('shadowColor',this.value);}">
+                  <input type="number" id="sh-sb" value="8" min="0" max="40" placeholder="blur" style="width:52px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;box-sizing:border-box" oninput="updateShapeStyle('shadowBlur',this.value)">
                 </div>
+                <div id="cp-sh-sc-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
               </div>
             </div>
           </div>
+
+          <!-- Shape text -->
           <div class="ph" style="margin-top:4px">Текст фигуры</div>
           <button class="mbtn-sm" onclick="startEditShapeText()" style="margin-bottom:6px;width:100%">✏️ Редактировать (или двойной клик)</button>
           <div class="pr"><label>Цвет текста</label>
             <div class="cp-hex"><input type="color" id="sh-tc" value="#ffffff" oninput="updateShapeTextColor(this.value)"><input type="text" id="sh-tc-hex" placeholder="#ffffff"></div>
           </div>
-          <div class="grid2">
-            <div class="pr"><label>Размер шрифта</label><input type="number" id="sh-fs" value="24" min="8" max="200" oninput="updateShapeTextStyle('font-size',this.value+'px')"></div>
-            <div class="pr"><label>Насыщенность</label>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+            <div class="pr" style="margin:0"><label>Размер шрифта</label><input type="number" id="sh-fs" value="24" min="8" max="200" oninput="updateShapeTextStyle('font-size',this.value+'px')"></div>
+            <div class="pr" style="margin:0"><label>Насыщенность</label>
               <select id="sh-fw" onchange="updateShapeTextStyle('font-weight',this.value)">
                 <option value="400">Обычный</option><option value="700" selected>Жирный</option>
               </select>
@@ -577,38 +550,39 @@
         <div id="imgprops" style="display:none">
           <div class="ph">Image</div>
           <div class="psec" style="display:flex;flex-direction:column;gap:6px">
-            <div class="pr" style="margin:0"><label>Fit</label>
+            <button id="img-crop-btn" class="mbtn-sm" onclick="startImgCrop()" style="width:100%;margin-bottom:2px">✂️ Обрезка</button>
+            <div class="pr" style="margin:0"><label>Заполнение</label>
               <select id="img-fit" onchange="updateImgStyle('fit',this.value)">
-                <option value="contain">Contain</option>
-                <option value="cover">Cover</option>
-                <option value="fill">Stretch</option>
-                <option value="none" data-i18n="transNone">Нет</option>
+                <option value="contain">Вписать</option>
+                <option value="cover">Заполнить</option>
+                <option value="fill">Растянуть</option>
+                <option value="none">Оригинал</option>
               </select>
             </div>
-            <button class="mbtn-sm" onclick="imgCoverSlide()" style="width:100%">📐 Cover Entire Slide (back)</button>
-            <div class="pr" style="margin:0"><label>Corner Radius (px)</label>
-              <input type="number" id="img-rx" min="0" max="600" value="0" oninput="updateImgStyle('rx',this.value)">
-            </div>
-            <div class="pr" style="margin:0"><label>Border</label>
-              <div style="display:flex;gap:4px;align-items:center">
-                <input type="number" id="img-bw" min="0" max="20" value="0" placeholder="px" style="width:50px" oninput="updateImgStyle('bw',this.value)">
-                <input type="color" id="img-bc" value="#ffffff" oninput="updateImgStyle('bc',this.value)" style="width:32px;height:26px;border:none;cursor:pointer;border-radius:3px">
+            <button class="mbtn-sm" onclick="imgCoverSlide()" title="Покрыть весь слайд (фон)" style="width:100%">📐 На весь слайд (фон)</button>
+            <div class="pr" style="margin:0"><label>Обводка</label>
+              <div style="display:flex;gap:4px;align-items:center;margin-bottom:4px">
+                <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;overflow:hidden;flex-shrink:0" onmousedown="openColorPanel('cp-img-bc-slot','img-bc',function(c){document.getElementById('img-bc-hex').value=c;document.getElementById('img-bc-preview').style.background=c;updateImgStyle('bc',c);})"><div id="img-bc-preview" style="width:100%;height:100%;background:#ffffff;"></div></div>
+                <input type="text" id="img-bc-hex" placeholder="#ffffff" value="#ffffff" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('img-bc-preview').style.background=this.value;updateImgStyle('bc',this.value);}">
+                <button title="Сбросить" onmousedown="event.preventDefault()" onclick="document.getElementById('img-bw').value=0;updateImgStyle('bw',0);" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;line-height:1" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">✕</button>
+              </div>
+              <div id="cp-img-bc-slot" class="cp-slot" style="display:none;margin-bottom:4px" onmousedown="event.preventDefault()"></div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                <div class="pr" style="margin:0"><label>Stroke Width</label><input type="number" id="img-bw" min="0" max="20" value="0" oninput="updateImgStyle('bw',this.value)"></div>
+                <div class="pr" style="margin:0"><label>Corner Radius</label><input type="number" id="img-rx" min="0" max="600" value="0" oninput="updateImgStyle('rx',this.value)"></div>
               </div>
             </div>
             <div class="pr" style="margin:0"><label data-i18n="propShadow">Тень</label>
               <div style="display:flex;flex-direction:column;gap:4px">
                 <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2)"><label class="tog"><input type="checkbox" id="img-shadow" onchange="updateImgStyle('shadow',this.checked)"><span class="tog-track"></span><span class="tog-thumb"></span></label>Enable shadow</label>
-                <div class="grid2">
-                  <div class="pr" style="margin:0"><label data-i18n="propShadowBlur">Размытие</label><input type="number" id="img-sb" value="15" min="0" max="60" oninput="updateImgStyle('shadowBlur',this.value)"></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                  <div class="pr" style="margin:0"><label>Размытие</label><input type="number" id="img-sb" value="15" min="0" max="60" oninput="updateImgStyle('shadowBlur',this.value)"></div>
                   <div class="pr" style="margin:0"><label>Color</label><input type="color" id="img-sc" value="#000000" oninput="updateImgStyle('shadowColor',this.value)"></div>
                 </div>
               </div>
             </div>
-            <div class="pr" style="margin:0"><label>Opacity</label>
-              <div style="display:flex;align-items:center;gap:6px">
-                <input type="range" id="img-op" min="0" max="1" step="0.05" value="1" style="flex:1" oninput="document.getElementById('img-op-val').textContent=Math.round(this.value*100)+'%';updateImgStyle('opacity',this.value)">
-                <span id="img-op-val" style="font-size:10px;color:var(--text2);width:32px">100%</span>
-              </div>
+            <div class="pr" style="margin:0"><label>Прозрачность изображения</label>
+              <input type="number" id="img-op" min="0" max="1" step="0.05" value="1" oninput="updateImgStyle('opacity',this.value)">
             </div>
           </div>
         </div>
@@ -616,20 +590,22 @@
         <div id="codeprops" style="display:none">
           <div class="ph">Code Block</div>
           <div class="psec" style="display:flex;flex-direction:column;gap:6px">
-            <div class="pr" style="margin:0"><label>Language</label>
-              <select id="code-lang" onchange="updateCodeLang(this.value)">
-                <option value="js">JavaScript</option><option value="ts">TypeScript</option>
-                <option value="py">Python</option><option value="rust">Rust</option>
-                <option value="go">Go</option><option value="java">Java</option>
-                <option value="cpp">C++</option><option value="cs">C#</option>
-                <option value="html">HTML</option><option value="css">CSS</option>
-                <option value="sql">SQL</option><option value="bash">Bash</option>
-                <option value="json">JSON</option><option value="yaml">YAML</option>
-                <option value="plain">Plain text</option>
-              </select>
-            </div>
-            <div class="pr" style="margin:0"><label>Font Size</label>
-              <input type="number" id="code-fs" min="8" max="32" value="13" oninput="updateCodeFontSize(this.value)">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+              <div class="pr" style="margin:0"><label>Language</label>
+                <select id="code-lang" onchange="updateCodeLang(this.value)">
+                  <option value="js">JavaScript</option><option value="ts">TypeScript</option>
+                  <option value="py">Python</option><option value="rust">Rust</option>
+                  <option value="go">Go</option><option value="java">Java</option>
+                  <option value="cpp">C++</option><option value="cs">C#</option>
+                  <option value="html">HTML</option><option value="css">CSS</option>
+                  <option value="sql">SQL</option><option value="bash">Bash</option>
+                  <option value="json">JSON</option><option value="yaml">YAML</option>
+                  <option value="plain">Plain text</option>
+                </select>
+              </div>
+              <div class="pr" style="margin:0"><label>Font Size</label>
+                <input type="number" id="code-fs" min="8" max="32" value="13" oninput="updateCodeFontSize(this.value)">
+              </div>
             </div>
             <div class="pr" style="margin:0;font-size:10px;color:var(--text3)">Color theme matches presentation theme</div>
             <button class="mbtn-sm" onclick="openCodeEditor()" style="width:100%">✏️ Edit Code</button>
@@ -639,9 +615,18 @@
         <div id="mdprops" style="display:none">
           <div class="ph">Markdown</div>
           <div class="psec" style="display:flex;flex-direction:column;gap:6px">
-            <div class="pr" style="margin:0"><label>Font Size</label>
-              <input type="number" id="md-fs" min="8" max="32" value="16" oninput="updateMdFontSize(this.value)">
+            <div style="display:flex;gap:6px;align-items:center">
+              <div class="pr" style="margin:0;flex:1"><label>Размер</label>
+                <input type="number" id="md-fs" min="8" max="72" value="16" oninput="updateMdFontSize(this.value)">
+              </div>
+              <div class="pr" style="margin:0;flex:1"><label>Цвет текста</label>
+                <div style="display:flex;gap:4px;align-items:center">
+                  <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;" onmousedown="openColorPanel('cp-md-color-slot','md-color',function(c,sr){document.getElementById('md-color-hex').value=c;document.getElementById('md-color-preview').style.background=c;updateMdColor(c,sr);})" title="Цвет текста"><div id="md-color-preview" style="width:100%;height:100%;background:#ffffff;pointer-events:none;"></div></div>
+                  <input type="text" id="md-color-hex" value="#ffffff" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('md-color-preview').style.background=this.value;updateMdColor(this.value,null);}">
+                </div>
+              </div>
             </div>
+            <div id="cp-md-color-slot" class="cp-slot" style="display:none;margin-bottom:4px" onmousedown="event.preventDefault()"></div>
             <button class="mbtn-sm" onclick="openMdEditor()" style="width:100%">✏️ Edit Markdown</button>
           </div>
         </div>
@@ -649,39 +634,38 @@
         <div id="iconprops" style="display:none">
           <div class="ph">Значок</div>
           <div class="psec" style="display:flex;flex-direction:column;gap:6px">
-            <div class="pr" style="margin:0"><label>Стиль</label>
-              <select id="ic-p-style" onchange="updateIconStyle('style',this.value)" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 6px;font-size:11px;font-family:inherit;width:100%">
-                <option value="stroke">Контур</option>
-                <option value="fill">Заливка</option>
-                <option value="duotone">Дуотон</option>
-              </select>
-            </div>
-            <div class="pr" style="margin:0"><label>Цвет</label>
-              <div style="display:flex;flex-direction:column;gap:3px">
-                <div style="display:flex;gap:4px;align-items:center">
-                  <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;background:repeating-conic-gradient(#aaa 0% 25%,#fff 0% 50%) 0 0/8px 8px;" onmousedown="openColorPanel('cp-ic-color-slot','ic-color',function(c){document.getElementById('ic-p-color-hex').value=c;document.getElementById('ic-p-color-swatch').style.background=c;updateIconStyle('color',c);})" title="Цвет иконки"><div id="ic-p-color-swatch" style="width:100%;height:100%;background:#3b82f6;"></div></div>
-                  <input type="text" id="ic-p-color-hex" placeholder="#3b82f6" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('ic-p-color-swatch').style.background=this.value;updateIconStyle('color',this.value);}">
-                </div>
-                <div id="cp-ic-color-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+              <div class="pr" style="margin:0"><label>Стиль</label>
+                <select id="ic-p-style" onchange="updateIconStyle('style',this.value)" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 6px;font-size:11px;font-family:inherit;width:100%">
+                  <option value="stroke">Контур</option>
+                  <option value="fill">Заливка</option>
+                  <option value="duotone">Дуотон</option>
+                </select>
+              </div>
+              <div class="pr" style="margin:0"><label>Толщина обводки</label>
+                <input type="number" id="ic-p-sw" min="0.5" max="5" step="0.2" value="1.8" oninput="updateIconStyle('sw',this.value)">
               </div>
             </div>
-            <div class="pr" style="margin:0"><label>Толщина обводки</label>
-              <input type="number" id="ic-p-sw" min="0.5" max="5" step="0.2" value="1.8" oninput="updateIconStyle('sw',this.value)">
+            <div class="pr" style="margin:0"><label>Цвет</label>
+              <div style="display:flex;gap:4px;align-items:center">
+                <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;background:repeating-conic-gradient(#aaa 0% 25%,#fff 0% 50%) 0 0/8px 8px;" onmousedown="openColorPanel('cp-ic-color-slot','ic-color',function(c){document.getElementById('ic-p-color-hex').value=c;document.getElementById('ic-p-color-swatch').style.background=c;updateIconStyle('color',c);})" title="Цвет иконки"><div id="ic-p-color-swatch" style="width:100%;height:100%;background:#3b82f6;"></div></div>
+                <input type="text" id="ic-p-color-hex" placeholder="#3b82f6" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('ic-p-color-swatch').style.background=this.value;updateIconStyle('color',this.value);}">
+              </div>
+              <div id="cp-ic-color-slot" class="cp-slot" style="display:none;margin-top:4px" onmousedown="event.preventDefault()"></div>
             </div>
-            <div class="pr" style="margin:0">
-              <div style="display:flex;align-items:center;gap:6px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;align-items:end">
+              <div class="pr" style="margin:0">
                 <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2)">
                   <label class="tog"><input type="checkbox" id="ic-p-shadow" onchange="updateIconStyle('shadow',this.checked)"><span class="tog-track"></span><span class="tog-thumb"></span></label>Тень
                 </label>
+                <div id="ic-p-shadow-opts" style="display:none;gap:4px;margin-top:4px;flex-direction:column">
+                  <input type="number" id="ic-p-sb" value="8" min="0" max="40" oninput="updateIconStyle('shadowBlur',this.value)" placeholder="blur">
+                  <input type="color" id="ic-p-sc" value="#000000" oninput="updateIconStyle('shadowColor',this.value)">
+                </div>
               </div>
-              <div id="ic-p-shadow-opts" style="display:none;gap:6px;margin-top:4px">
-                <div class="pr" style="margin:0"><label>Размытие</label><input type="number" id="ic-p-sb" value="8" min="0" max="40" oninput="updateIconStyle('shadowBlur',this.value)"></div>
-                <div class="pr" style="margin:0"><label>Цвет</label><input type="color" id="ic-p-sc" value="#000000" oninput="updateIconStyle('shadowColor',this.value)"></div>
+              <div class="pr" style="margin:0"><label>Прозрачность</label>
+                <input type="number" id="ic-p-op" min="0" max="1" step="0.05" value="1" oninput="updateIconStyle('op',this.value)">
               </div>
-            </div>
-            <div class="pr" style="margin:0">
-              <label>Прозрачность</label>
-              <input type="number" id="ic-p-op" min="0" max="1" step="0.05" value="1" oninput="updateIconStyle('op',this.value)">
             </div>
           </div>
         </div>
@@ -689,23 +673,29 @@
         <div id="tableprops" style="display:none;flex-direction:column;gap:0">
           <div class="ph">Таблица</div>
 
-          <!-- Row/col actions -->
+          <!-- Row/col actions in 2-col grid -->
           <div class="pr" style="display:flex;flex-direction:column;gap:5px">
-            <label>Строки</label>
-            <div style="display:flex;gap:4px">
-              <button class="tbtn2" onmousedown="event.preventDefault()" onclick="tblAddRow(false)" title="Строку выше" style="flex:1">▲ До</button>
-              <button class="tbtn2" onmousedown="event.preventDefault()" onclick="tblAddRow(true)"  title="Строку ниже" style="flex:1">▼ После</button>
-              <button class="tbtn2 warn" onmousedown="event.preventDefault()" onclick="tblDelRow()" title="Удалить строку" style="flex:1;color:#f87171">✕ Стр.</button>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px">
+              <div style="display:flex;flex-direction:column;gap:3px">
+                <label style="font-size:10px;color:var(--text3)">Строки</label>
+                <div style="display:flex;gap:3px">
+                  <button class="tbtn2" onmousedown="event.preventDefault()" onclick="tblAddRow(false)" title="До" style="flex:1">▲</button>
+                  <button class="tbtn2" onmousedown="event.preventDefault()" onclick="tblAddRow(true)"  title="После" style="flex:1">▼</button>
+                  <button class="tbtn2" onmousedown="event.preventDefault()" onclick="tblDelRow()" title="Удалить" style="flex:1;color:#f87171">✕</button>
+                </div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:3px">
+                <label style="font-size:10px;color:var(--text3)">Столбцы</label>
+                <div style="display:flex;gap:3px">
+                  <button class="tbtn2" onmousedown="event.preventDefault()" onclick="tblAddCol(false)" title="До" style="flex:1">◀</button>
+                  <button class="tbtn2" onmousedown="event.preventDefault()" onclick="tblAddCol(true)"  title="После" style="flex:1">▶</button>
+                  <button class="tbtn2" onmousedown="event.preventDefault()" onclick="tblDelCol()" title="Удалить" style="flex:1;color:#f87171">✕</button>
+                </div>
+              </div>
             </div>
-            <label style="margin-top:4px">Столбцы</label>
-            <div style="display:flex;gap:4px">
-              <button class="tbtn2" onmousedown="event.preventDefault()" onclick="tblAddCol(false)" title="Столбец левее" style="flex:1">◀ До</button>
-              <button class="tbtn2" onmousedown="event.preventDefault()" onclick="tblAddCol(true)"  title="Столбец правее" style="flex:1">▶ После</button>
-              <button class="tbtn2 warn" onmousedown="event.preventDefault()" onclick="tblDelCol()" title="Удалить столбец" style="flex:1;color:#f87171">✕ Ст.</button>
-            </div>
-            <div style="display:flex;gap:4px;margin-top:4px">
-              <button class="tbtn2" onmousedown="event.preventDefault()" onclick="tblMerge()" style="flex:1">⊞ Объединить</button>
-              <button class="tbtn2" onmousedown="event.preventDefault()" onclick="tblSplit()"  style="flex:1">⊟ Разделить</button>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px">
+              <button class="tbtn2" onmousedown="event.preventDefault()" onclick="tblMerge()">⊞ Объединить</button>
+              <button class="tbtn2" onmousedown="event.preventDefault()" onclick="tblSplit()">⊟ Разделить</button>
             </div>
           </div>
 
@@ -713,109 +703,104 @@
           <div id="tbl-cell-panel" style="display:none;flex-direction:column;gap:0;border-top:1px solid var(--border);margin-top:4px;padding-top:8px">
             <div class="ph" id="tbl-cell-lbl">Ячейка</div>
 
-            <div class="pr" style="margin-bottom:4px"><label>Выравнивание по горизонтали</label>
-              <div style="display:flex;gap:3px;align-items:center">
-                <button id="tbl-ca-left"   class="ftbtn active" onmousedown="event.preventDefault()" onclick="tblSetCellAlign('left')"   title="Лево"><svg width="13" height="11" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="5" x2="9" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="9" x2="12" y2="9" stroke="currentColor" stroke-width="1.5"/></svg></button>
-                <button id="tbl-ca-center" class="ftbtn"        onmousedown="event.preventDefault()" onclick="tblSetCellAlign('center')" title="Центр"><svg width="13" height="11" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="2.5" y1="5" x2="11.5" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="1" y1="9" x2="13" y2="9" stroke="currentColor" stroke-width="1.5"/></svg></button>
-                <button id="tbl-ca-right"  class="ftbtn"        onmousedown="event.preventDefault()" onclick="tblSetCellAlign('right')"  title="Право"><svg width="13" height="11" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="5" y1="5" x2="14" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="2" y1="9" x2="14" y2="9" stroke="currentColor" stroke-width="1.5"/></svg></button>
+            <!-- Align buttons + font size in one row -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+              <div class="pr" style="margin:0">
+                <label style="font-size:10px;color:var(--text3)">По горизонтали</label>
+                <div style="display:flex;gap:3px;align-items:center;margin-top:2px">
+                  <button id="tbl-ca-left"   class="ftbtn active" onmousedown="event.preventDefault()" onclick="tblSetCellAlign('left')"   title="Лево"><svg width="13" height="11" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="5" x2="9" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="9" x2="12" y2="9" stroke="currentColor" stroke-width="1.5"/></svg></button>
+                  <button id="tbl-ca-center" class="ftbtn"        onmousedown="event.preventDefault()" onclick="tblSetCellAlign('center')" title="Центр"><svg width="13" height="11" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="2.5" y1="5" x2="11.5" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="1" y1="9" x2="13" y2="9" stroke="currentColor" stroke-width="1.5"/></svg></button>
+                  <button id="tbl-ca-right"  class="ftbtn"        onmousedown="event.preventDefault()" onclick="tblSetCellAlign('right')"  title="Право"><svg width="13" height="11" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="5" y1="5" x2="14" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="2" y1="9" x2="14" y2="9" stroke="currentColor" stroke-width="1.5"/></svg></button>
+                </div>
+              </div>
+              <div class="pr" style="margin:0">
+                <label style="font-size:10px;color:var(--text3)">По вертикали</label>
+                <div style="display:flex;gap:3px;align-items:center;margin-top:2px">
+                  <button id="tbl-va-top"    class="ftbtn"        onmousedown="event.preventDefault()" onclick="tblSetCellVAlign('top')"    title="Верх"><svg width="12" height="13" viewBox="0 0 12 14"><line x1="0" y1="0" x2="12" y2="0" stroke="currentColor" stroke-width="1.5"/><path d="M6 2v9" stroke="currentColor" stroke-width="1.5"/><path d="M3 5l3-4 3 4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button>
+                  <button id="tbl-va-middle" class="ftbtn active" onmousedown="event.preventDefault()" onclick="tblSetCellVAlign('middle')" title="Середина"><svg width="12" height="13" viewBox="0 0 12 14"><line x1="0" y1="7" x2="12" y2="7" stroke="currentColor" stroke-width="1.5"/><path d="M6 3v3M6 8v3" stroke="currentColor" stroke-width="1.5"/></svg></button>
+                  <button id="tbl-va-bottom" class="ftbtn"        onmousedown="event.preventDefault()" onclick="tblSetCellVAlign('bottom')" title="Низ"><svg width="12" height="13" viewBox="0 0 12 14"><line x1="0" y1="14" x2="12" y2="14" stroke="currentColor" stroke-width="1.5"/><path d="M6 5v7" stroke="currentColor" stroke-width="1.5"/><path d="M3 9l3 4 3-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button>
+                </div>
               </div>
             </div>
-
-            <div class="pr" style="margin-bottom:4px"><label>Выравнивание по вертикали</label>
-              <div style="display:flex;gap:3px;align-items:center">
-                <button id="tbl-va-top"    class="ftbtn"        onmousedown="event.preventDefault()" onclick="tblSetCellVAlign('top')"    title="Верх"><svg width="12" height="13" viewBox="0 0 12 14"><line x1="0" y1="0" x2="12" y2="0" stroke="currentColor" stroke-width="1.5"/><path d="M6 2v9" stroke="currentColor" stroke-width="1.5"/><path d="M3 5l3-4 3 4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button>
-                <button id="tbl-va-middle" class="ftbtn active" onmousedown="event.preventDefault()" onclick="tblSetCellVAlign('middle')" title="Середина"><svg width="12" height="13" viewBox="0 0 12 14"><line x1="0" y1="7" x2="12" y2="7" stroke="currentColor" stroke-width="1.5"/><path d="M6 3v3M6 8v3" stroke="currentColor" stroke-width="1.5"/></svg></button>
-                <button id="tbl-va-bottom" class="ftbtn"        onmousedown="event.preventDefault()" onclick="tblSetCellVAlign('bottom')" title="Низ"><svg width="12" height="13" viewBox="0 0 12 14"><line x1="0" y1="14" x2="12" y2="14" stroke="currentColor" stroke-width="1.5"/><path d="M6 5v7" stroke="currentColor" stroke-width="1.5"/><path d="M3 9l3 4 3-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button>
-              </div>
-            </div>
-
-            <div class="pr" style="margin-bottom:4px"><label>Размер шрифта</label>
+            <div class="pr" style="margin-bottom:6px"><label>Размер шрифта</label>
               <input type="number" id="tbl-fs" value="15" min="8" max="72" oninput="tblSetCellFs(+this.value)">
             </div>
 
-            <div class="pr" style="margin-bottom:4px"><label>Цвет текста ячейки</label>
-              <div style="display:flex;flex-direction:column;gap:3px">
-                <div style="display:flex;gap:4px;align-items:center">
-                  <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;background:repeating-conic-gradient(#aaa 0% 25%,#fff 0% 50%) 0 0/8px 8px;" onmousedown="openColorPanel('cp-tbl-cell-tc-slot','tbl-cell-tc',function(c){document.getElementById('tbl-cell-tc-hex').value=c;document.getElementById('tbl-cell-tc-swatch').style.background=c;tblSetCellTextColor(c);})"><div id="tbl-cell-tc-swatch" style="width:100%;height:100%;"></div></div>
-                  <input type="text" id="tbl-cell-tc-hex" value="" placeholder="#ffffff" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;font-family:monospace" oninput="if(this.value.match(/^#[0-9a-fA-F]{6}$/)){document.getElementById('tbl-cell-tc-swatch').style.background=this.value;tblSetCellTextColor(this.value);}">
-                  <button title="Сбросить" onmousedown="event.preventDefault()" onclick="tblSetCellTextColor('');document.getElementById('tbl-cell-tc-hex').value='';document.getElementById('tbl-cell-tc-swatch').style.background='transparent';" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;line-height:1" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">✕</button>
+            <!-- Cell text + cell bg colors side by side -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+              <div class="pr" style="margin:0"><label style="font-size:10px;color:var(--text3)">Цвет текста</label>
+                <div style="display:flex;gap:3px;align-items:center;margin-top:2px">
+                  <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;background:repeating-conic-gradient(#aaa 0% 25%,#fff 0% 50%) 0 0/8px 8px;" onmousedown="openColorPanel('cp-tbl-cell-tc-slot','tbl-cell-tc',function(c){document.getElementById('tbl-cell-tc-hex').value=c;document.getElementById('tbl-cell-tc-swatch').style.background=c;tblSetCellTextColor(c);})"><div id="tbl-cell-tc-swatch" style="width:100%;height:100%;"></div></div>
+                  <input type="text" id="tbl-cell-tc-hex" value="" placeholder="#ffffff" style="flex:1;min-width:0;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 4px;font-size:10px;font-family:monospace" oninput="if(this.value.match(/^#[0-9a-fA-F]{6}$/)){document.getElementById('tbl-cell-tc-swatch').style.background=this.value;tblSetCellTextColor(this.value);}">
+                  <button title="✕" onmousedown="event.preventDefault()" onclick="tblSetCellTextColor('');document.getElementById('tbl-cell-tc-hex').value='';document.getElementById('tbl-cell-tc-swatch').style.background='transparent';" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:11px;padding:1px 3px;line-height:1">✕</button>
                 </div>
                 <div id="cp-tbl-cell-tc-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
               </div>
-            </div>
-
-            <div class="pr" style="margin-bottom:4px"><label>Цвет фона ячейки</label>
-              <div style="display:flex;flex-direction:column;gap:3px">
-                <div style="display:flex;gap:4px;align-items:center">
-                  <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;background:repeating-conic-gradient(#aaa 0% 25%,#fff 0% 50%) 0 0/8px 8px;" onmousedown="openColorPanel('cp-tbl-own-bg-slot','tbl-own-bg',function(c){document.getElementById('tbl-own-bg-hex').value=c;document.getElementById('tbl-own-bg-swatch').style.background=c;tblSetCellBg(c);})"><div id="tbl-own-bg-swatch" style="width:100%;height:100%;"></div></div>
-                  <input type="text" id="tbl-own-bg-hex" value="" placeholder="#1e293b" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;font-family:monospace" oninput="if(this.value.match(/^#[0-9a-fA-F]{6}$/)){document.getElementById('tbl-own-bg-swatch').style.background=this.value;tblSetCellBg(this.value);}">
-                  <button title="Сбросить" onmousedown="event.preventDefault()" onclick="tblSetCellBg('');document.getElementById('tbl-own-bg-hex').value='';document.getElementById('tbl-own-bg-swatch').style.background='transparent';" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;line-height:1" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">✕</button>
+              <div class="pr" style="margin:0"><label style="font-size:10px;color:var(--text3)">Цвет фона</label>
+                <div style="display:flex;gap:3px;align-items:center;margin-top:2px">
+                  <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;background:repeating-conic-gradient(#aaa 0% 25%,#fff 0% 50%) 0 0/8px 8px;" onmousedown="openColorPanel('cp-tbl-own-bg-slot','tbl-own-bg',function(c){document.getElementById('tbl-own-bg-hex').value=c;document.getElementById('tbl-own-bg-swatch').style.background=c;tblSetCellBg(c);})"><div id="tbl-own-bg-swatch" style="width:100%;height:100%;"></div></div>
+                  <input type="text" id="tbl-own-bg-hex" value="" placeholder="#1e293b" style="flex:1;min-width:0;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 4px;font-size:10px;font-family:monospace" oninput="if(this.value.match(/^#[0-9a-fA-F]{6}$/)){document.getElementById('tbl-own-bg-swatch').style.background=this.value;tblSetCellBg(this.value);}">
+                  <button title="✕" onmousedown="event.preventDefault()" onclick="tblSetCellBg('');document.getElementById('tbl-own-bg-hex').value='';document.getElementById('tbl-own-bg-swatch').style.background='transparent';" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:11px;padding:1px 3px;line-height:1">✕</button>
                 </div>
                 <div id="cp-tbl-own-bg-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
               </div>
             </div>
           </div>
 
-          <div class="grid2">
-            <div class="pr"><label>Скругление</label><input type="number" id="tbl-rx" value="8" min="0" max="60" oninput="tblSet('rx',+this.value)"></div>
+          <!-- Table global settings -->
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px">
+            <div class="pr" style="margin:0"><label>Скругление</label><input type="number" id="tbl-rx" value="8" min="0" max="60" oninput="tblSet('rx',+this.value)"></div>
+            <div class="pr" style="margin:0"><label>Прозр. фона</label><input type="number" id="tbl-bg-op" min="0" max="1" step="0.05" value="1" oninput="tblSetBgOp(+this.value)"></div>
+            <div class="pr" style="margin:0"><label>Размытие</label><input type="number" id="tbl-bg-blur" min="0" max="40" step="1" value="0" oninput="tblSetBgBlur(+this.value)"></div>
           </div>
-          <div class="grid2">
-            <div class="pr"><label>Прозрачность фона</label><input type="number" id="tbl-bg-op" min="0" max="1" step="0.05" value="1" oninput="tblSetBgOp(+this.value)"></div>
-            <div class="pr"><label>Размытие фона</label><input type="number" id="tbl-bg-blur" min="0" max="40" step="1" value="0" oninput="tblSetBgBlur(+this.value)"></div>
-          </div>
-          <div class="pr"><label>Толщина линий</label><input type="number" id="tbl-bw" value="1" min="0" max="10" step="0.5" oninput="tblSet('borderW',+this.value)"></div>
 
-          <!-- Цвет линий -->
-          <div class="pr"><label>Цвет линий</label>
-            <div style="display:flex;flex-direction:column;gap:3px">
-              <div style="display:flex;gap:4px;align-items:center">
-                <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;" onmousedown="openColorPanel('cp-tbl-bc-slot','tbl-bc',function(c){document.getElementById('tbl-bc-hex').value=c;document.getElementById('tbl-bc-swatch').style.background=c;tblSet('borderColor',c);})"><div id="tbl-bc-swatch" style="width:100%;height:100%;background:#3b82f6;"></div></div>
-                <input type="text" id="tbl-bc-hex" value="#3b82f6" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;font-family:monospace" oninput="if(this.value.match(/^#[0-9a-fA-F]{6}/)){document.getElementById('tbl-bc-swatch').style.background=this.value;tblSet('borderColor',this.value);}">
-                <button title="Сбросить" onmousedown="event.preventDefault()" onclick="tblSet('borderW',0);document.getElementById('tbl-bw').value=0;" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;line-height:1" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">✕</button>
-              </div>
-              <div id="cp-tbl-bc-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
+          <!-- Border line: color + width -->
+          <div class="pr"><label>Линии таблицы</label>
+            <div style="display:flex;gap:4px;align-items:center">
+              <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;" onmousedown="openColorPanel('cp-tbl-bc-slot','tbl-bc',function(c){document.getElementById('tbl-bc-hex').value=c;document.getElementById('tbl-bc-swatch').style.background=c;tblSet('borderColor',c);})"><div id="tbl-bc-swatch" style="width:100%;height:100%;background:#3b82f6;"></div></div>
+              <input type="text" id="tbl-bc-hex" value="#3b82f6" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;font-family:monospace" oninput="if(this.value.match(/^#[0-9a-fA-F]{6}/)){document.getElementById('tbl-bc-swatch').style.background=this.value;tblSet('borderColor',this.value);}">
+              <input type="number" id="tbl-bw" value="1" min="0" max="10" step="0.5" placeholder="px" style="width:50px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;box-sizing:border-box" oninput="tblSet('borderW',+this.value)">
+              <button title="Сбросить" onmousedown="event.preventDefault()" onclick="tblSet('borderW',0);document.getElementById('tbl-bw').value=0;" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;line-height:1" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">✕</button>
             </div>
+            <div id="cp-tbl-bc-slot" class="cp-slot" style="display:none;margin-top:4px" onmousedown="event.preventDefault()"></div>
           </div>
 
-          <!-- Цвет текста -->
+          <!-- Global text color -->
           <div class="pr"><label>Цвет текста</label>
-            <div style="display:flex;flex-direction:column;gap:3px">
-              <div style="display:flex;gap:4px;align-items:center">
-                <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;" onmousedown="openColorPanel('cp-tbl-tc-slot','tbl-tc',function(c){document.getElementById('tbl-tc-hex').value=c;document.getElementById('tbl-tc-swatch').style.background=c;tblSet('textColor',c);})"><div id="tbl-tc-swatch" style="width:100%;height:100%;background:#ffffff;"></div></div>
-                <input type="text" id="tbl-tc-hex" value="#ffffff" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;font-family:monospace" oninput="if(this.value.match(/^#[0-9a-fA-F]{6}/)){document.getElementById('tbl-tc-swatch').style.background=this.value;tblSet('textColor',this.value);}">
-                <button title="Сбросить" onmousedown="event.preventDefault()" onclick="tblSet('textColor','');document.getElementById('tbl-tc-hex').value='';document.getElementById('tbl-tc-swatch').style.background='transparent';" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;line-height:1" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">✕</button>
-              </div>
-              <div id="cp-tbl-tc-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
+            <div style="display:flex;gap:4px;align-items:center">
+              <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;" onmousedown="openColorPanel('cp-tbl-tc-slot','tbl-tc',function(c){document.getElementById('tbl-tc-hex').value=c;document.getElementById('tbl-tc-swatch').style.background=c;tblSet('textColor',c);})"><div id="tbl-tc-swatch" style="width:100%;height:100%;background:#ffffff;"></div></div>
+              <input type="text" id="tbl-tc-hex" value="#ffffff" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;font-family:monospace" oninput="if(this.value.match(/^#[0-9a-fA-F]{6}/)){document.getElementById('tbl-tc-swatch').style.background=this.value;tblSet('textColor',this.value);}">
+              <button title="Сбросить" onmousedown="event.preventDefault()" onclick="tblSet('textColor','');document.getElementById('tbl-tc-hex').value='';document.getElementById('tbl-tc-swatch').style.background='transparent';" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;line-height:1" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">✕</button>
             </div>
+            <div id="cp-tbl-tc-slot" class="cp-slot" style="display:none;margin-top:4px" onmousedown="event.preventDefault()"></div>
           </div>
 
+          <!-- Header row: toggle + colors side by side -->
           <div class="pr"><label>Заголовок</label>
-            <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px">
-              <label class="tog"><input type="checkbox" id="tbl-hrow" checked onchange="tblSet('headerRow',this.checked)"><span class="tog-track"></span><span class="tog-thumb"></span></label> Первая строка
-            </label>
-          </div>
-
-          <!-- Цвет заголовка -->
-          <div class="pr"><label>Цвет заголовка</label>
-            <div style="display:flex;flex-direction:column;gap:3px">
-              <div style="display:flex;gap:4px;align-items:center">
-                <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;" onmousedown="openColorPanel('cp-tbl-hbg-slot','tbl-hbg',function(c){document.getElementById('tbl-hbg-hex').value=c;document.getElementById('tbl-hbg-swatch').style.background=c;tblSet('headerBg',c);})"><div id="tbl-hbg-swatch" style="width:100%;height:100%;background:#3b82f6;"></div></div>
-                <input type="text" id="tbl-hbg-hex" value="#3b82f6" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;font-family:monospace" oninput="if(this.value.match(/^#[0-9a-fA-F]{6}/)){document.getElementById('tbl-hbg-swatch').style.background=this.value;tblSet('headerBg',this.value);}">
-                <button title="Сбросить" onmousedown="event.preventDefault()" onclick="tblSet('headerBg','');document.getElementById('tbl-hbg-hex').value='';document.getElementById('tbl-hbg-swatch').style.background='transparent';" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;line-height:1" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">✕</button>
-              </div>
-              <div id="cp-tbl-hbg-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+              <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px">
+                <label class="tog"><input type="checkbox" id="tbl-hrow" checked onchange="tblSet('headerRow',this.checked)"><span class="tog-track"></span><span class="tog-thumb"></span></label> Первая строка
+              </label>
             </div>
-          </div>
-
-          <!-- Цвет ячеек -->
-          <div class="pr"><label>Цвет ячеек</label>
-            <div style="display:flex;flex-direction:column;gap:3px">
-              <div style="display:flex;gap:4px;align-items:center">
-                <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;" onmousedown="openColorPanel('cp-tbl-cbg-slot','tbl-cbg',function(c){document.getElementById('tbl-cbg-hex').value=c;document.getElementById('tbl-cbg-swatch').style.background=c;tblSet('cellBg',c);})"><div id="tbl-cbg-swatch" style="width:100%;height:100%;background:#1e293b;"></div></div>
-                <input type="text" id="tbl-cbg-hex" value="#1e293b" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;font-family:monospace" oninput="if(this.value.match(/^#[0-9a-fA-F]{6}/)){document.getElementById('tbl-cbg-swatch').style.background=this.value;tblSet('cellBg',this.value);}">
-                <button title="Сбросить" onmousedown="event.preventDefault()" onclick="tblSet('cellBg','');document.getElementById('tbl-cbg-hex').value='';document.getElementById('tbl-cbg-swatch').style.background='transparent';" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;line-height:1" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">✕</button>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+              <div>
+                <label style="font-size:10px;color:var(--text3)">Фон заголовка</label>
+                <div style="display:flex;gap:3px;align-items:center;margin-top:2px">
+                  <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;" onmousedown="openColorPanel('cp-tbl-hbg-slot','tbl-hbg',function(c){document.getElementById('tbl-hbg-hex').value=c;document.getElementById('tbl-hbg-swatch').style.background=c;tblSet('headerBg',c);})"><div id="tbl-hbg-swatch" style="width:100%;height:100%;background:#3b82f6;"></div></div>
+                  <input type="text" id="tbl-hbg-hex" value="#3b82f6" style="flex:1;min-width:0;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 4px;font-size:10px;font-family:monospace" oninput="if(this.value.match(/^#[0-9a-fA-F]{6}/)){document.getElementById('tbl-hbg-swatch').style.background=this.value;tblSet('headerBg',this.value);}">
+                  <button title="✕" onmousedown="event.preventDefault()" onclick="tblSet('headerBg','');document.getElementById('tbl-hbg-hex').value='';document.getElementById('tbl-hbg-swatch').style.background='transparent';" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:11px;padding:1px 3px;line-height:1">✕</button>
+                </div>
+                <div id="cp-tbl-hbg-slot" class="cp-slot" style="display:none;margin-top:3px" onmousedown="event.preventDefault()"></div>
               </div>
-              <div id="cp-tbl-cbg-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
+              <div>
+                <label style="font-size:10px;color:var(--text3)">Фон ячеек</label>
+                <div style="display:flex;gap:3px;align-items:center;margin-top:2px">
+                  <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;" onmousedown="openColorPanel('cp-tbl-cbg-slot','tbl-cbg',function(c){document.getElementById('tbl-cbg-hex').value=c;document.getElementById('tbl-cbg-swatch').style.background=c;tblSet('cellBg',c);})"><div id="tbl-cbg-swatch" style="width:100%;height:100%;background:#1e293b;"></div></div>
+                  <input type="text" id="tbl-cbg-hex" value="#1e293b" style="flex:1;min-width:0;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 4px;font-size:10px;font-family:monospace" oninput="if(this.value.match(/^#[0-9a-fA-F]{6}/)){document.getElementById('tbl-cbg-swatch').style.background=this.value;tblSet('cellBg',this.value);}">
+                  <button title="✕" onmousedown="event.preventDefault()" onclick="tblSet('cellBg','');document.getElementById('tbl-cbg-hex').value='';document.getElementById('tbl-cbg-swatch').style.background='transparent';" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:11px;padding:1px 3px;line-height:1">✕</button>
+                </div>
+                <div id="cp-tbl-cbg-slot" class="cp-slot" style="display:none;margin-top:3px" onmousedown="event.preventDefault()"></div>
+              </div>
             </div>
           </div>
 
@@ -876,11 +861,13 @@
         <!-- LINK PROPS -->
         <div class="ph" style="margin-top:8px">Link</div>
         <div>
-          <div class="pr"><label>URL or #slide-N</label><input type="text" id="p-link" placeholder="https:// or #slide-3" oninput="updateElLink(this.value)"></div>
-          <div class="pr"><label>Target</label>
-            <select id="p-linkt" onchange="updateElLinkTarget(this.value)">
-              <option value="_blank">New tab</option><option value="_self">Same tab</option>
-            </select>
+          <div style="display:grid;grid-template-columns:1fr auto;gap:6px;align-items:end;margin-bottom:7px">
+            <div class="pr" style="margin:0"><label>URL or #slide-N</label><input type="text" id="p-link" placeholder="https:// or #slide-3" oninput="updateElLink(this.value)"></div>
+            <div class="pr" style="margin:0"><label>Target</label>
+              <select id="p-linkt" onchange="updateElLinkTarget(this.value)">
+                <option value="_blank">New tab</option><option value="_self">Same tab</option>
+              </select>
+            </div>
           </div>
         </div>
       </div>
@@ -970,7 +957,7 @@
   <div class="modal" style="max-width:700px;width:96vw;max-height:88vh;display:flex;flex-direction:column;padding-bottom:0;overflow:hidden">
     <h3 data-i18n="modalLayout">Декоратор макета</h3>
     <p style="font-size:11px;color:var(--text2);margin-bottom:12px" data-i18n="layoutDesc">Декоративный стиль для всех слайдов. Использует цвета текущей темы.</p>
-    <div id="layout-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;overflow-y:auto;flex:1;padding-bottom:8px"></div>
+    <div id="layout-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;overflow-y:auto;overflow-x:hidden;flex:1;padding:4px 6px 12px"></div>
     <div class="mfooter" style="justify-content:center;border-top:1px solid var(--border);padding:12px 0;margin:0;flex-shrink:0">
       <button class="mbtn" onclick="closeLayoutModal()"><span data-i18n="btnCancel">Отмена</span></button>
       <button class="mbtn pri" onclick="applyLayoutDecor()"><span data-i18n="btnApplyPresentation">Применить к презентации</span></button>
@@ -980,10 +967,10 @@
 <div class="modal-ov" id="theme-modal">
   <div class="modal" style="max-width:700px;width:96vw;max-height:88vh;display:flex;flex-direction:column;padding-bottom:0;overflow:hidden">
     <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="16" height="16" style="flex-shrink:0"><circle cx="9" cy="9" r="2"/><circle cx="15" cy="7" r="1.5"/><circle cx="16" cy="14" r="1.5"/><circle cx="10" cy="16" r="1.5"/><path d="M12 3C7 3 3 7 3 12s4 9 9 9c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.4-.3-.4-.5-.8-.5-1.3 0-1.1.9-2 2-2h2.4c2.8 0 5-2.2 5-5C22 6.7 17.5 3 12 3z"/></svg> <span data-i18n="modalTheme">Применить тему</span></h3>
-    <div id="theme-grid" style="overflow-y:auto;flex:1;padding-bottom:8px"></div>
+    <div id="theme-grid" style="overflow-y:auto;overflow-x:hidden;flex:1;padding:4px 6px 12px"></div>
     <div class="mfooter" style="justify-content:center;border-top:1px solid var(--border);padding:12px 0;margin:0;flex-shrink:0">
       <button class="mbtn" onclick="closeThemeModal()"><span data-i18n="btnCancel">Отмена</span></button>
-      <button class="mbtn pri" onclick="applyTheme()"><span data-i18n="btnApplyAll">Применить ко всем</span></button>
+      <button class="mbtn pri" onclick="applyTheme();closeThemeModal()"><span data-i18n="btnApplyAll">Применить ко всем</span></button>
     </div>
   </div>
 </div>
@@ -1146,6 +1133,7 @@
 <script src="js/11-elements.js"></script>
 <script src="js/12-markdown.js"></script>
 <script src="js/13-images.js"></script>
+<script src="js/13b-imgcrop.js"></script>
 <script src="js/14-drag.js"></script>
 <script src="js/15-align.js"></script>
 <script src="js/16-props.js"></script>

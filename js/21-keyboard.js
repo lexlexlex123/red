@@ -16,7 +16,8 @@ function onKey(e){
     else if(['ArrowLeft','ArrowUp'].includes(e.key)){e.preventDefault();prevPreview();}
     return;
   }
-  if(e.key==='Escape'){if(pipetteMode){cancelPipetteMode();return;}clearMultiSel();desel();}
+  if(e.key==='Escape'){if(pipetteMode){cancelPipetteMode();return;}if(typeof exitCropModeIfActive==='function'&&typeof _cropEl!=='undefined'&&_cropEl){exitCropModeIfActive();return;}clearMultiSel();desel();}
+  if(e.key==='Enter'&&!editing&&!inInput){if(typeof exitCropModeIfActive==='function'&&typeof _cropEl!=='undefined'&&_cropEl){e.preventDefault();exitCropModeIfActive();return;}}
   if(e.ctrlKey||e.metaKey){
     if(lk==='z'&&!editing){e.preventDefault();doUndo();return;}
     if((lk==='y'||lk==='Z')&&!editing){e.preventDefault();doRedo();return;}
@@ -161,42 +162,63 @@ document.addEventListener('paste', async (e) => {
     }
   }
 
-  // 1. Check for image (skip if we also have text — that means it's Excel/app screenshot)
-  const hasText = plain.trim() || html.trim();
+  // Helper: add image from dataURL or external src to canvas
+  function _addImageToCanvas(src) {
+    if(typeof pushUndo==='function')pushUndo();
+    const img = new Image();
+    img.onload = () => {
+      const maxW = canvasW * 0.6, maxH = canvasH * 0.6;
+      let w = img.naturalWidth || 400, h = img.naturalHeight || 300;
+      const scale = Math.min(maxW / w, maxH / h, 1);
+      w = Math.round(w * scale); h = Math.round(h * scale);
+      const d = {
+        id:'e'+(++ec), type:'image',
+        x: Math.round((canvasW - w) / 2), y: Math.round((canvasH - h) / 2), w, h, src,
+        rot:0, anims:[], imgFit:'contain', imgRx:0,
+        imgBw:0, imgBc:'#ffffff', imgShadow:false,
+        imgShadowBlur:15, imgShadowColor:'#000000', imgOpacity:1
+      };
+      slides[cur].els.push(d); mkEl(d);
+      const el = document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
+      if(el) pick(el);
+      save(); if(typeof drawThumbs==='function')drawThumbs(); if(typeof saveState==='function')saveState();
+      if(typeof toast==='function')toast((getLang()==='ru'?'Изображение вставлено':'Image pasted'),'ok');
+    };
+    img.onerror = () => { if(typeof toast==='function')toast('Не удалось загрузить изображение','err'); };
+    img.src = src;
+  }
+
+  // 1. Check for image
+  // hasText guard: skip image if there's meaningful text (Excel/app screenshot has both image+text)
+  // But: copying an image from browser puts image/png + text/html with <img> tag — that should still paste as image
+  const hasRealText = plain.trim() !== '';
+  const htmlImgEl = html ? (() => {
+    const tmp = document.createElement('div'); tmp.innerHTML = html;
+    const text = (tmp.innerText || tmp.textContent || '').trim();
+    if (text !== '' && !tmp.querySelector('img')) return null;
+    return tmp.querySelector('img') || null;
+  })() : null;
+  const blockImage = hasRealText || (html.trim() && !htmlImgEl);
+
+  // 1a. image/* blob in clipboard (screenshot, paste from image editor)
   for (const item of items) {
-    if (item.type.startsWith('image/') && !hasText) {
+    if (item.type.startsWith('image/') && !blockImage) {
       e.preventDefault();
       const file = item.getAsFile();
       if (!file) continue;
       const reader = new FileReader();
-      reader.onload = ev => {
-        if(typeof pushUndo==="function")pushUndo();
-        const img = new Image();
-        img.onload = () => {
-          // Fit image to canvas keeping aspect ratio, max 60% of canvas
-          const maxW = canvasW * 0.6, maxH = canvasH * 0.6;
-          let w = img.naturalWidth || 400, h = img.naturalHeight || 300;
-          const scale = Math.min(maxW / w, maxH / h, 1);
-          w = Math.round(w * scale); h = Math.round(h * scale);
-          const x = Math.round((canvasW - w) / 2);
-          const y = Math.round((canvasH - h) / 2);
-          const d = {
-            id:'e'+(++ec), type:'image',
-            x, y, w, h,
-            src: ev.target.result,
-            rot:0, anims:[], imgFit:'contain', imgRx:0,
-            imgBw:0, imgBc:'#ffffff', imgShadow:false,
-            imgShadowBlur:15, imgShadowColor:'#000000', imgOpacity:1
-          };
-          slides[cur].els.push(d); mkEl(d);
-          const el = document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
-          if (el) pick(el);
-          save(); if(typeof drawThumbs==="function")drawThumbs(); if(typeof saveState==="function")saveState();
-          if(typeof toast==="function")toast((getLang()==='ru'?'Изображение вставлено':'Image pasted'),'ok');
-        };
-        img.src = ev.target.result;
-      };
+      reader.onload = ev => _addImageToCanvas(ev.target.result);
       reader.readAsDataURL(file);
+      return;
+    }
+  }
+
+  // 1b. No image/* blob but html contains <img src="..."> — browser "Copy Image" context menu
+  if (!hasRealText && htmlImgEl) {
+    const src = htmlImgEl.src || htmlImgEl.getAttribute('src');
+    if (src && (src.startsWith('http') || src.startsWith('data:'))) {
+      e.preventDefault();
+      _addImageToCanvas(src);
       return;
     }
   }
@@ -229,12 +251,19 @@ document.addEventListener('paste', async (e) => {
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/\n/g,'<br>');
 
+  const _kbThemeIdx = typeof appliedThemeIdx!=='undefined' ? appliedThemeIdx : -1;
+  const _kbTheme = _kbThemeIdx>=0 ? THEMES[_kbThemeIdx] : null;
+  const _kbScheme = {col:7, row:0};
+  const _kbDefColor = (typeof _resolveSchemeColor==='function'&&_kbTheme)
+    ? (_resolveSchemeColor(_kbScheme,_kbTheme)||'#ffffff')
+    : (_kbTheme&&!_kbTheme.dark?'#000000':'#ffffff');
   const d = {
     id:'e'+(++ec), type:'text',
     x, y, w, h,
     html: safeHtml,
-    cs: 'font-size:32px;font-weight:400;color:#ffffff;text-align:left;line-height:1.3;',
-    rot:0, anims:[], textRole:'body'
+    cs: 'font-size:32px;font-weight:400;color:'+_kbDefColor+';text-align:left;line-height:1.3;',
+    rot:0, anims:[], textRole:'body',
+    textColorScheme: _kbScheme
   };
   slides[cur].els.push(d); mkEl(d);
   const el = document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');

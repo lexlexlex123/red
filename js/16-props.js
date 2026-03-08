@@ -152,7 +152,14 @@ function syncProps(){
   // Markdown props sync
   if(t==='markdown'){
     const d=slides[cur].els.find(e=>e.id===sel.dataset.id);
-    if(d){try{document.getElementById('md-fs').value=d.mdFs||16;}catch(e){}}
+    if(d){
+      try{document.getElementById('md-fs').value=d.mdFs||16;}catch(e){}
+      try{
+        const col=d.mdColor||'#ffffff';
+        document.getElementById('md-color-hex').value=col;
+        document.getElementById('md-color-preview').style.background=col;
+      }catch(e){}
+    }
   }
   // Animations count badge
   if(ap){
@@ -348,7 +355,13 @@ function resetTextFormatting() {
   const prevCs = d.cs || '';
   const fsMatch = prevCs.match(/font-size:([\d.]+px)/);
   const fs = fsMatch ? fsMatch[1] : '32px';
-  d.cs = 'font-size:' + fs + ';font-weight:400;color:#ffffff;text-align:left;line-height:1.3;';
+  const _rstTheme = (typeof appliedThemeIdx!=='undefined'&&appliedThemeIdx>=0)?THEMES[appliedThemeIdx]:null;
+  const _rstScheme = {col:7, row:0};
+  const _rstColor = (typeof _resolveSchemeColor==='function'&&_rstTheme)
+    ? (_resolveSchemeColor(_rstScheme,_rstTheme)||'#ffffff')
+    : (_rstTheme&&!_rstTheme.dark?'#000000':'#ffffff');
+  d.cs = 'font-size:' + fs + ';font-weight:400;color:'+_rstColor+';text-align:left;line-height:1.3;';
+  d.textColorScheme = _rstScheme;
 
   // 3. Clear text background
   delete d.textBg; delete d.textBgOp; delete d.textBgBlur;

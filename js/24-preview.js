@@ -35,7 +35,12 @@ function startPreview(startIdx){
     if(psel&&psel._hasLink)return;
     if(psel&&psel._isTrigger)return;
     // Check per-slide clickNav (default true)
-    if(slides[pidx]&&slides[pidx].clickNav===false)return;
+    if(slides[pidx]&&slides[pidx].clickNav===false){
+      // Still fire click-triggered animations, just don't advance to next slide
+      const psa=document.getElementById('psa');
+      if(psa._fireNextStep)psa._fireNextStep();
+      return;
+    }
     nextPreview();
   };
   po2.addEventListener('click',po2._stageClick);
@@ -54,6 +59,8 @@ function stopPreview(){
   po.classList.remove('active');
   document.fullscreenElement&&document.exitFullscreen&&document.exitFullscreen();
   window.removeEventListener('resize',resizePStage);
+  // Remember selected id before load() clears sel
+  const _prevSelId = sel ? sel.dataset.id : null;
   // Re-render current slide from data so all styles (textBg etc.) are restored
   load();
   // Explicitly re-apply textBg/textBgOp to all text elements + re-render tables
@@ -90,7 +97,7 @@ function stopPreview(){
   // Restore page numbering UI state (pnUnlock also calls pnSyncUI)
   if(typeof pnUnlock==='function') pnUnlock();
   // Re-apply page numbers after rAF finishes rebuilding DOM
-  requestAnimationFrame(()=>{ if(typeof pnApplyAll==='function') pnApplyAll(); });
+  requestAnimationFrame(()=>{ if(typeof pnApplyAll==='function') pnApplyAll(); requestAnimationFrame(()=>{ if(_prevSelId){const _resel=document.querySelector(`.el[data-id="${_prevSelId}"]`);if(_resel&&typeof pick==='function')pick(_resel);} }); });
 }
 function resizePStage(){
   const stage=document.getElementById('preview-stage');const sc=pScale();
@@ -344,8 +351,16 @@ function buildPSlide(container,idx){
       if(d.textBorderW&&+d.textBorderW>0){el.style.border=(d.textBorderW||0)+'px solid '+(d.textBorderColor||'#ffffff');el.style.overflow='hidden';}
     }else if(d.type==='image'){
       const img=document.createElement('img');img.src=d.src;
-      img.style.cssText=`width:100%;height:100%;object-fit:${d.imgFit||'contain'};object-position:${d.imgPosX||'center'} ${d.imgPosY||'center'};display:block;opacity:${d.imgOpacity!=null?d.imgOpacity:1};`;
-      if(d.imgShadow){el.style.filter=`drop-shadow(0 4px ${d.imgShadowBlur||15}px ${d.imgShadowColor||'#000'})`;el.style.overflow='visible';}
+      const cL=d.imgCropL||0,cT=d.imgCropT||0,cR=d.imgCropR||0,cB=d.imgCropB||0;
+      const hasCrop=cL||cT||cR||cB;
+      if(hasCrop){
+        const fW=d.w+cL+cR, fH=d.h+cT+cB;
+        img.style.cssText=`position:absolute;left:${-cL}px;top:${-cT}px;width:${fW}px;height:${fH}px;object-fit:fill;display:block;opacity:${d.imgOpacity!=null?d.imgOpacity:1};`;
+        el.style.overflow='hidden';
+      } else {
+        img.style.cssText=`width:100%;height:100%;object-fit:${d.imgFit||'contain'};object-position:${d.imgPosX||'center'} ${d.imgPosY||'center'};display:block;opacity:${d.imgOpacity!=null?d.imgOpacity:1};`;
+      }
+      if(d.imgShadow){el.style.filter=`drop-shadow(0 4px ${d.imgShadowBlur||15}px ${d.imgShadowColor||'#000'})`;if(!hasCrop)el.style.overflow='visible';}
       else{el.style.filter='';}
       if(d.imgRx)el.style.borderRadius=d.imgRx+'px';
       if(d.imgBw&&+d.imgBw>0){el.style.border=`${d.imgBw}px solid ${d.imgBc||'#fff'}`;el.style.boxSizing='border-box';}
@@ -436,12 +451,14 @@ function buildPSlide(container,idx){
       el.appendChild(v);
     }else if(d.type==='markdown'){
       const c=document.createElement('div');
-      c.style.cssText=`width:100%;height:100%;overflow:auto;padding:14px 16px;box-sizing:border-box;line-height:1.65;font-size:${d.mdFs||16}px;color:#ffffff;`;
+      c.style.cssText=`width:100%;height:100%;overflow:auto;padding:14px 16px;box-sizing:border-box;line-height:1.65;font-size:${d.mdFs||16}px;color:${d.mdColor||'#ffffff'};`;
       // Inject scoped styles for markdown content
       const scope='md-pv-'+d.id;
       c.setAttribute('data-md',scope);
+      const col=d.mdColor||'#ffffff';
       const styleEl=document.createElement('style');
-      styleEl.textContent=`[data-md="${scope}"] h1{font-size:2em;font-weight:700;margin:0 0 .4em;border-bottom:1px solid rgba(255,255,255,.12);padding-bottom:.2em}[data-md="${scope}"] h2{font-size:1.5em;font-weight:600;margin:0 0 .35em}[data-md="${scope}"] h3{font-size:1.17em;font-weight:600;margin:0 0 .3em}[data-md="${scope}"] p{margin:0 0 .6em}[data-md="${scope}"] code{font-family:monospace;font-size:.85em;background:rgba(255,255,255,.08);padding:2px 5px;border-radius:3px}[data-md="${scope}"] pre{background:rgba(0,0,0,.3);border-radius:5px;padding:10px 12px;margin:0 0 .6em;overflow-x:auto}[data-md="${scope}"] pre code{background:none;padding:0}[data-md="${scope}"] ul,[data-md="${scope}"] ol{margin:0 0 .6em;padding-left:1.4em}[data-md="${scope}"] li{margin-bottom:.2em}[data-md="${scope}"] blockquote{border-left:3px solid rgba(255,255,255,.3);padding-left:.8em;color:rgba(255,255,255,.6);margin:.4em 0}[data-md="${scope}"] strong{font-weight:700}[data-md="${scope}"] em{font-style:italic}[data-md="${scope}"] hr{border:none;border-top:1px solid rgba(255,255,255,.12);margin:.6em 0}`;
+      const s=`[data-md="${scope}"]`;
+      styleEl.textContent=`${s} h1{font-size:2em;font-weight:700;margin:0 0 .4em;border-bottom:1px solid ${col}33;padding-bottom:.2em}${s} h2{font-size:1.5em;font-weight:600;margin:0 0 .35em}${s} h3{font-size:1.17em;font-weight:600;margin:0 0 .3em}${s} p{margin:0 0 .6em}${s} code{font-family:monospace;font-size:.85em;background:${col}18;padding:2px 5px;border-radius:3px}${s} pre{background:${col}18;border-radius:5px;padding:10px 12px;margin:0 0 .6em;overflow-x:auto}${s} pre code{background:none;padding:0}${s} ul,${s} ol{margin:0 0 .6em;padding-left:1.4em}${s} li{margin-bottom:.2em}${s} blockquote{border-left:3px solid ${col}88;padding-left:.8em;color:${col}99;margin:.4em 0}${s} strong{font-weight:700}${s} em{font-style:italic}${s} hr{border:none;border-top:1px solid ${col}33;margin:.6em 0}${s} a{color:${col};text-decoration:underline}`;
       document.head.appendChild(styleEl);
       c.innerHTML=d.mdHtml||'';el.appendChild(c);
     }else if(d.type==='pagenum'){

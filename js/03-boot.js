@@ -187,7 +187,7 @@ function buildThemeGrid(){
       lbl.textContent=t.name;
 
       card.append(bg,mock,swatches,lbl);
-      card.onclick=()=>{selTheme=i;buildThemeGrid();buildPalette('cp-text-palette','text');buildPalette('cp-fill-palette','fill');};
+      card.onclick=()=>{selTheme=i;applyTheme();buildThemeGrid();};
       grid.appendChild(card);
     });
     sec.appendChild(grid);
@@ -280,20 +280,20 @@ function openColorPanel(panelId, mode, onPick) {
     const grid = document.createElement('div');
     grid.style.cssText = 'display:grid;grid-template-columns:repeat(8,1fr);gap:2px;margin-bottom:8px;';
 
-    // Last column: dark themes = black→white, light themes = white→black
+    // Last column: dark themes = white→black, light themes = black→white
     const tintLevels = [0, 0.22, 0.44, 0.66, 0.88];
     tintLevels.forEach((tint, rowIdx) => {
       base8.forEach((baseHex, colIdx) => {
         const isLastCol = colIdx === base8.length - 1;
         let color;
         if (isLastCol) {
-          // Dark theme: #000 blended to white (row 0=black, row 4=white)
-          // Light theme: #fff blended to black (row 0=white, row 4=black)
+          // Dark theme: row 0=white, row 4=black
+          // Light theme: row 0=black, row 4=white
           if (isLightTheme) {
-            color = tint === 0 ? '#ffffff' : _blendToBlack('#ffffff', tint);
-          } else {
             const isLastRow = rowIdx === tintLevels.length - 1;
             color = isLastRow ? '#ffffff' : (tint === 0 ? '#000000' : _blendToWhite('#000000', tint));
+          } else {
+            color = tint === 0 ? '#ffffff' : _blendToBlack('#ffffff', tint);
           }
         } else {
           const hex = _solidColor(baseHex);

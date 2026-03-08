@@ -3,7 +3,7 @@
 // Автор / Author: Некрасов Александр
 
 const APP_NAME = 'Слайды';
-const APP_VERSION = '5.0';
+const APP_VERSION = '5.1';
 const APP_AUTHOR = 'Некрасов Александр';
 
 const LANG_DATA = {
@@ -336,7 +336,7 @@ const LANG_DATA = {
     propSameTab: 'Текущая вкладка',
     propClearAll: 'Очистить всё',
     propEditText: '✏️ Редактировать текст (или двойной клик)',
-    propCoverSlide: '📐 Покрыть весь слайд (фон)',
+    propCoverSlide: '📐 На весь слайд',
     propEditCode: '✏️ Редактировать код',
     propEditMd: '✏️ Редактировать Markdown',
     propLockAspect: 'Зафикс.',
