@@ -188,6 +188,13 @@ function mkEl(d){
     c.style.cssText=`width:100%;height:100%;overflow:auto;padding:14px 16px;box-sizing:border-box;line-height:1.65;font-size:${d.mdFs||16}px;color:${d.mdColor||'#ffffff'};--md-c:${d.mdColor||'#ffffff'};`;
     c.innerHTML=d.mdHtml||markdownToHtml(d.mdRaw||'');
     c.addEventListener('dblclick',e=>{e.stopPropagation();if(typeof openMdEditor==='function')openMdEditor();});
+    // Restore bg
+    if(d.textBg){el.dataset.textBg=d.textBg;el.dataset.textBgOp=d.textBgOp!=null?d.textBgOp:1;if(d.textBgBlur)el.dataset.textBgBlur=d.textBgBlur;if(typeof applyTextBg==='function')applyTextBg(el);}
+    else if(d.textBgBlur>0){el.dataset.textBgBlur=d.textBgBlur;if(typeof applyTextBg==='function')applyTextBg(el);}
+    // Restore border
+    if(d.textBorderW&&+d.textBorderW>0){el.dataset.textBorderW=d.textBorderW;el.dataset.textBorderColor=d.textBorderColor||'#ffffff';if(typeof _applyMdBorder==='function')_applyMdBorder(el);}
+    // Restore radius
+    if(d.rx_tl||d.rx_tr||d.rx_bl||d.rx_br){el.dataset.rx_tl=d.rx_tl||0;el.dataset.rx_tr=d.rx_tr||0;el.dataset.rx_bl=d.rx_bl||0;el.dataset.rx_br=d.rx_br||0;if(typeof _applyMdRadius==='function')_applyMdRadius(el);}
   }else if(d.type==='shape'){
     const wrap=document.createElement('div');wrap.className='sel-el';
     wrap.style.cssText='position:absolute;inset:0;';
@@ -248,16 +255,60 @@ function mkEl(d){
     el.dataset.shadowColor=d.shadowColor||'#000000';
     }else if(d.type==='applet'){
     const wrap=document.createElement('div');wrap.className='applet-el';
+    // Layer 1: clip div — clips iframe to border-radius
+    const clip=document.createElement('div');
+    clip.style.cssText='position:absolute;inset:0;overflow:hidden;border-radius:inherit;';
     const iframe=document.createElement('iframe');iframe.srcdoc=d.appletHtml||'<p>Applet</p>';
     iframe.style.cssText='width:100%;height:100%;border:none;background:transparent;';
     iframe.setAttribute('allowtransparency','true');
-    iframe.sandbox='allow-scripts allow-same-origin';
+    iframe.sandbox='allow-scripts';
+    clip.appendChild(iframe);
+    // Layer 2: border overlay div — sits ON TOP of clip, pointer-events:none, never clipped
+    const bord=document.createElement('div');bord.className='applet-border-overlay';
+    bord.style.cssText='position:absolute;inset:0;border-radius:inherit;pointer-events:none;box-sizing:border-box;';
     const tog=document.createElement('button');tog.className='applet-toggle';tog.textContent='Interact';
     tog.onclick=(ev)=>{ev.stopPropagation();wrap.classList.toggle('interactive');tog.textContent=wrap.classList.contains('interactive')?'Done':'Interact';};
-    wrap.append(iframe,tog);c.appendChild(wrap);
+    wrap.append(clip,bord,tog);c.appendChild(wrap);
     el.dataset.appletId=d.appletId||'';
     el.dataset.appletHtml=d.appletHtml||'';
     if(d._appletAspect)el.dataset.appletAspect=d._appletAspect;
+    // Write generator fields to dataset so save() can read them back
+    if(d.appletId==='generator'){
+      el.dataset.genMin         = d.genMin         !== undefined ? d.genMin         : 1;
+      el.dataset.genMax         = d.genMax         !== undefined ? d.genMax         : 100;
+      el.dataset.genStep        = d.genStep        !== undefined ? d.genStep        : 1;
+      el.dataset.genFontSize    = d.genFontSize    !== undefined ? d.genFontSize    : 64;
+      el.dataset.genColor       = d.genColor       || '';
+      el.dataset.genBg          = d.genBg          || '';
+      el.dataset.genBgBlur      = d.genBgBlur      !== undefined ? d.genBgBlur      : 0;
+      el.dataset.genBorderColor = d.genBorderColor || '';
+      el.dataset.genBorderWidth = d.genBorderWidth !== undefined ? d.genBorderWidth : 0;
+      el.dataset.genBgOp        = d.genBgOp        !== undefined ? d.genBgOp        : 1;
+      el.dataset.genShadowOn    = d.genShadowOn    !== undefined ? (d.genShadowOn ? 'true' : 'false') : 'true';
+      el.dataset.genShadowBlur  = d.genShadowBlur  !== undefined ? d.genShadowBlur  : 8;
+      el.dataset.genShadowColor = d.genShadowColor || '';
+      el.dataset.genBold        = d.genBold ? 'true' : 'false';
+      el.dataset.genAlign       = d.genAlign       || 'center';
+      el.dataset.genVAlign      = d.genVAlign      || 'middle';
+      el.dataset.genColorScheme  = d.genColorScheme  ? JSON.stringify(d.genColorScheme)  : '';
+      el.dataset.genBgScheme     = d.genBgScheme     ? JSON.stringify(d.genBgScheme)     : '';
+      el.dataset.genBorderScheme = d.genBorderScheme ? JSON.stringify(d.genBorderScheme) : '';
+    }
+    // Restore border-radius — apply to wrap (clip div inherits it), border stays visible
+    if(d.rx){
+      const r=d.rx+'px';
+      el.style.borderRadius=r;
+      wrap.style.borderRadius=r;
+    }
+    // Always store rx in dataset so save() can read it back (even when 0)
+    el.dataset.genRx = d.rx !== undefined ? d.rx : 0;
+    // Apply border on overlay div using refreshGeneratorEl (handles resolved color, postMessage, etc.)
+    // Schedule after DOM is inserted so domEl.querySelector works
+    if(d.appletId==='generator'){
+      requestAnimationFrame(function(){
+        if(typeof refreshGeneratorEl==='function') refreshGeneratorEl(d.id);
+      });
+    }
   }else if(d.type==='pagenum'){
     c.style.cssText='width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:visible;pointer-events:none;';
     c.innerHTML=d.html||'';

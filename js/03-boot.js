@@ -230,8 +230,10 @@ function openAppletModal(){
 function buildAppletGallery(){
   const g=document.getElementById('applet-gallery');if(!g)return;g.innerHTML='';
   APPLETS.forEach(a=>{
+    const isRu=typeof getLang==='function'&&getLang()==='ru';
     const card=document.createElement('div');card.className='applet-card';
-    card.innerHTML='<div style="font-size:24px;margin-bottom:4px">'+a.icon+'</div><div class="ac-name">'+a.name+'</div><div class="ac-desc">'+a.desc+'</div>';
+    card.innerHTML='<div class="ac-icon">'+a.icon+'</div><div class="ac-name">'+(isRu&&a.nameRu?a.nameRu:a.name)+'</div>';
+    card.title=isRu&&a.descRu?a.descRu:a.desc;
     card.onclick=()=>{insertApplet(a);document.getElementById('applet-modal').classList.remove('open');};
     g.appendChild(card);
   });

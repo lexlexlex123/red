@@ -200,6 +200,21 @@ function applyTheme(){
           if(resolved) el.mdColor = resolved;
         }
       }
+      if(el.type==='applet' && el.appletId==='generator'){
+        // Remap scheme-pinned colors; leave custom (null) unchanged
+        if(el.genColorScheme){
+          const r=_resolveSchemeColor(el.genColorScheme,theme);
+          if(r) el.genColor=r;
+        }
+        if(el.genBgScheme){
+          const r=_resolveSchemeColor(el.genBgScheme,theme);
+          if(r) el.genBg=r;
+        }
+        if(el.genBorderScheme){
+          const r=_resolveSchemeColor(el.genBorderScheme,theme);
+          if(r) el.genBorderColor=r;
+        }
+      }
     });
   });
   // Set theme index FIRST so all refresh functions use correct colors

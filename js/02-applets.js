@@ -40,8 +40,8 @@ function getCalcHTML(p){
   const clrClr  = '#ef4444';
 
   return `<style>
-*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,sans-serif;}
-html{width:100%;height:100%;background:transparent;overflow:hidden;}body{width:100%;height:100%;background:transparent;overflow:hidden;}
+*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,sans-serif;user-select:none;-webkit-user-select:none;}
+html{width:100%;height:100%;background:transparent;overflow:hidden;}body{width:100%;height:100%;background:transparent;overflow:hidden;cursor:default;}
 .calc{
   position:absolute;inset:0;
   background:${surface1};
@@ -65,6 +65,8 @@ html{width:100%;height:100%;background:transparent;overflow:hidden;}body{width:1
   border:1px solid ${p.ac1}22;
   flex-shrink:0;
   display:flex;align-items:center;justify-content:flex-end;
+  user-select:none;cursor:default;
+  text-shadow:0 1px 4px rgba(0,0,0,0.5);
 }
 .btns{
   display:grid;
@@ -137,6 +139,80 @@ function getNotesHTML(){return `<style>*{margin:0;padding:0;box-sizing:border-bo
 function getChartHTML(){return `<style>*{margin:0;padding:0;box-sizing:border-box;}body{background:#0d1117;font-family:system-ui,sans-serif;padding:12px;height:100vh;display:flex;flex-direction:column;gap:8px;}h4{color:#e2e8f0;font-size:11px;text-align:center;}#chart{flex:1;display:flex;align-items:flex-end;gap:4px;padding:0 4px 20px;position:relative;}#chart::before{content:'';position:absolute;bottom:20px;left:0;right:0;border-top:1px solid #252529;}#chart::after{content:'';position:absolute;top:0;left:0;right:0;bottom:20px;background:repeating-linear-gradient(to bottom,transparent,transparent calc(20%-1px),#ffffff08 calc(20%-1px),#ffffff08 20%);}#inputs{display:flex;gap:4px;flex-wrap:wrap;justify-content:center;}.col{display:flex;flex-direction:column;align-items:center;flex:1;gap:2px;}.bar{background:linear-gradient(to top,#3b82f6,#06b6d4);border-radius:3px 3px 0 0;transition:height .3s;width:100%;}.lbl{font-size:8px;color:#64748b;white-space:nowrap;}.inp{width:100%;background:#1e1e2e;border:1px solid #2a2a3e;color:#e0e0e0;padding:2px 3px;font-size:9px;border-radius:2px;text-align:center;}input:focus{outline:none;border-color:#3b82f6;}</style><h4>Bar Chart</h4><div id="chart"></div><div id="inputs"></div><script>const DATA=[['Q1',75],['Q2',60],['Q3',90],['Q4',45],['Q5',80]];function render(){const ch=document.getElementById('chart');const inp=document.getElementById('inputs');ch.innerHTML='';inp.innerHTML='';const mx=Math.max(...DATA.map(d=>d[1]));DATA.forEach((d,i)=>{const c=document.createElement('div');c.className='col';const b=document.createElement('div');b.className='bar';b.style.height=(d[1]/mx*100)+'%';const l=document.createElement('div');l.className='lbl';l.textContent=d[0];c.append(b,l);ch.appendChild(c);const iv=document.createElement('input');iv.className='inp';iv.value=d[1];iv.type='number';iv.min=0;iv.max=100;iv.oninput=()=>{DATA[i][1]=+iv.value||0;render();};inp.appendChild(iv);});}render();<\/script>`;}
 function getQRHTML(){return `<style>*{margin:0;padding:0;box-sizing:border-box;}body{background:#fff;font-family:system-ui,sans-serif;padding:8px;height:100vh;display:flex;flex-direction:column;gap:6px;align-items:center;}input{width:100%;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:4px;padding:5px 8px;font-size:11px;}canvas{width:120px;height:120px;border:1px solid #e2e8f0;border-radius:4px;}label{font-size:9px;color:#64748b;}</style><input id="t" type="text" value="https://anthropic.com" placeholder="Enter URL…" oninput="gen()"><canvas id="c" width="120" height="120"></canvas><label>Scan to open URL</label><script src="libs/qrcode.min.js"><\/script><script>let qr=null;function gen(){const v=document.getElementById('t').value||'https://example.com';const c=document.getElementById('c');const ctx=c.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,120,120);if(!window.QRCode){setTimeout(gen,500);return;}if(qr){try{document.getElementById('c').style.display='none';document.getElementById('c').style.display='block';}catch(e){}}const div=document.createElement('div');new QRCode(div,{text:v,width:120,height:120});const img=div.querySelector('img');if(img){img.onload=()=>{ctx.drawImage(img,0,0,120,120);};}else{const ci=div.querySelector('canvas');if(ci)ctx.drawImage(ci,0,0,120,120);}}setTimeout(gen,600);<\/script>`;}
 
+
+// ── RANDOM NUMBER GENERATOR ──
+function getGeneratorHTML(cfg){
+  cfg = cfg || {};
+  const min    = cfg.genMin      !== undefined ? +cfg.genMin      : 1;
+  const max    = cfg.genMax      !== undefined ? +cfg.genMax      : 100;
+  const step   = cfg.genStep     !== undefined ? +cfg.genStep     : 1;
+  const fs     = cfg.genFontSize !== undefined ? +cfg.genFontSize : 64;
+  const bold   = cfg.genBold     ? 900 : 800;
+  const align  = cfg.genAlign    || 'center';
+  const va     = cfg.genVAlign   || 'middle';
+  const bgBlur   = cfg.genBgBlur      !== undefined ? +cfg.genBgBlur      : 0;
+  const bgOp     = cfg.genBgOp        !== undefined ? +cfg.genBgOp        : 1;
+  const shOn     = cfg.genShadowOn !== undefined ? !!cfg.genShadowOn : true;
+  const shBlur   = cfg.genShadowBlur !== undefined ? +cfg.genShadowBlur : 8;
+  const shColorR = cfg.genShadowColor && cfg.genShadowColor!=='' ? cfg.genShadowColor : '#000000';
+  const p        = cfg.palette        || _appletTheme();
+
+  function hexRGB(h){h=(h||'#6366f1').replace('#','');if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];return[parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];}
+  function rgba(hex,a){try{const[r,g,b]=hexRGB(hex);return`rgba(${r},${g},${b},${a})`;}catch(e){return hex;}}
+
+  const numClr   = cfg.genColor && cfg.genColor!=='' ? cfg.genColor : (p.head || p.ac1);
+  const rawBg    = cfg.genBg && cfg.genBg!=='' ? cfg.genBg : rgba(p.ac1, 0.12);
+  const bgClr    = (bgOp < 1 && rawBg.startsWith('#')) ? rawBg + Math.round(bgOp*255).toString(16).padStart(2,'0') : rawBg;
+  const shStyle  = shOn && shBlur>0 ? `0 2px ${shBlur}px ${rgba(shColorR,0.75)},0 0 30px ${rgba(p.ac1,0.35)}` : `0 0 30px ${rgba(p.ac1,0.3)}`;
+  const brdColor = cfg.genBorderColor && cfg.genBorderColor!=='' ? cfg.genBorderColor : rgba(p.ac1, 0.22);
+  const brdWidth = cfg.genBorderWidth !== undefined ? +cfg.genBorderWidth : 0;
+  const brdStyle = brdWidth > 0 ? `${brdWidth}px solid ${brdColor}` : `1px solid ${rgba(p.ac1,0.22)}`;
+
+  const jc = va==='top' ? 'flex-start' : va==='bottom' ? 'flex-end' : 'center';
+  const ai = align==='left' ? 'flex-start' : align==='right' ? 'flex-end' : 'center';
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,sans-serif;user-select:none;-webkit-user-select:none;}
+html,body{width:100%;height:100%;background:transparent;overflow:hidden;}
+.wrap{position:relative;width:100%;height:100%;display:flex;flex-direction:column;align-items:${ai};justify-content:${jc};padding:clamp(8px,4%,20px);box-sizing:border-box;}
+.wrap-bg{position:absolute;inset:0;background:${bgClr};${bgBlur > 0 ? `backdrop-filter:blur(${bgBlur}px);-webkit-backdrop-filter:blur(${bgBlur}px);` : ''}z-index:0;}
+.num{position:relative;z-index:1;font-size:${fs}px;font-weight:${bold};color:${numClr};font-variant-numeric:tabular-nums;letter-spacing:-0.02em;line-height:1.1;text-align:${align};text-shadow:${shStyle};transition:font-size .15s,color .15s,transform .15s,opacity .15s;word-break:break-all;width:100%;}
+.num.pop{transform:scale(1.06);opacity:.6;}
+</style></head><body>
+<div class="wrap" id="wrap">
+  <div class="wrap-bg" id="wrapbg"></div>
+  <div class="num" id="num">?</div>
+</div>
+<script>
+var _min=${min},_max=${max},_step=${step};
+function gen(){
+  var steps=Math.round((_max-_min)/_step);
+  var val=_min+Math.round(Math.random()*steps)*_step;
+  val=Math.round(val*1e9)/1e9;
+  var el=document.getElementById('num');
+  el.classList.add('pop');
+  setTimeout(function(){el.classList.remove('pop');},150);
+  el.textContent=val;
+}
+gen();
+// Live style updates via postMessage (no iframe reload needed)
+window.addEventListener('message',function(e){
+  var d=e.data;if(!d||d.type!=='genUpdate')return;
+  var wrap=document.getElementById('wrap');
+  var num=document.getElementById('num');
+  if(d.fs   !==undefined){num.style.fontSize=d.fs+'px';}
+  if(d.bold !==undefined){num.style.fontWeight=d.bold?900:800;}
+  if(d.color!==undefined){num.style.color=d.color;}
+  if(d.align!==undefined){num.style.textAlign=d.align;wrap.style.alignItems=d.ai;}
+  if(d.jc   !==undefined){wrap.style.justifyContent=d.jc;}
+  if(d.bg   !==undefined){var wb2=document.getElementById('wrapbg');if(wb2)wb2.style.background=d.bg;}
+  if(d.blur  !==undefined){var wb=document.getElementById('wrapbg');if(wb){wb.style.backdropFilter=d.blur>0?'blur('+d.blur+'px)':'none';wb.style.webkitBackdropFilter=d.blur>0?'blur('+d.blur+'px)':'none';}}
+  if(d.shadow!==undefined){var nm2=document.getElementById('num');if(nm2)nm2.style.textShadow=d.shadow;}
+  if(d.min  !==undefined){_min=d.min;_max=d.max;_step=d.step;}
+});
+<\/script></body></html>`;
+}
+
 // ── APPLETS REGISTRY ──
 // Each applet can optionally have a htmlFn(palette) for theme-aware rendering
 const APPLETS=[
@@ -144,8 +220,8 @@ const APPLETS=[
   {id:'clock',      name:'Clock',      desc:'Live digital clock', icon:'🕐', html:getClockHTML(),  aspectRatio:null},
   {id:'timer',      name:'Timer',      desc:'Countdown timer',    icon:'⏱', html:getTimerHTML(),  aspectRatio:null},
   {id:'notes',      name:'Notes',      desc:'Sticky note',        icon:'📝', html:getNotesHTML(),  aspectRatio:null},
-  {id:'chart',      name:'Chart',      desc:'Simple bar chart',   icon:'📊', html:getChartHTML(),  aspectRatio:null},
   {id:'qr',         name:'QR Code',    desc:'Generate QR code',   icon:'▦', html:getQRHTML(),     aspectRatio:null},
+  {id:'generator',  name:'Generator',  desc:'Random number',      icon:'🎲', htmlFn:(p,cfg)=>getGeneratorHTML(cfg), aspectRatio:null, hasProps:true},
 ];
 
 // Get rendered HTML for an applet (theme-aware if htmlFn exists)
@@ -163,7 +239,9 @@ function insertApplet(a){
   const w=300, h=aspect?Math.round(w/aspect):320;
   const x=Math.round((canvasW-w)/2);
   const y=Math.round((canvasH-h)/2);
-  const html=typeof a.htmlFn==='function'?a.htmlFn(_appletTheme()):a.html||'';
+  // Generator defaults
+  const cfg = a.id==='generator' ? {genMin:1,genMax:100,genStep:1,palette:_appletTheme()} : null;
+  const html=typeof a.htmlFn==='function'?a.htmlFn(_appletTheme(),cfg):a.html||'';
   const d={
     id:'e'+(++ec),
     type:'applet',
@@ -171,12 +249,100 @@ function insertApplet(a){
     rot:0, anims:[], isTrigger:false,
     appletId:a.id,
     appletHtml:html,
-    _appletAspect:aspect,  // store for proportional resize
+    _appletAspect:aspect,
+    // Generator-specific data
+    ...(a.id==='generator' ? {genMin:1,genMax:100,genStep:1, genFontSize:64, genColor:'', genBg:'', genBgBlur:0, genBgOp:1, genBorderColor:'', genBorderWidth:0, genAlign:'center', genVAlign:'middle', genBold:false, genShadowBlur:8, genShadowY:2, genShadowColor:'#000000'} : {}),
   };
   slides[cur].els.push(d);
   mkEl(d);
   if(typeof save==="function")save(); if(typeof drawThumbs==="function")drawThumbs(); if(typeof saveState==="function")saveState();
 }
+
+
+// Rebuild generator iframe HTML from element data
+window.refreshGeneratorEl = function(elId){
+  const s = slides[cur];
+  if(!s) return;
+  const d = s.els.find(x=>x.id===elId);
+  if(!d||d.appletId!=='generator') return;
+  const p = _appletTheme();
+  function hexRGB(h){h=(h||'#6366f1').replace('#','');if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];return[parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];}
+  function rgba(hex,a){try{const[r,g,b]=hexRGB(hex);return`rgba(${r},${g},${b},${a})`;}catch(e){return hex;}}
+
+  const fs       = d.genFontSize    !== undefined ? +d.genFontSize    : 64;
+  const align    = d.genAlign    || 'center';
+  const va       = d.genVAlign   || 'middle';
+  const bgBlur   = d.genBgBlur   !== undefined ? +d.genBgBlur   : 0;
+  const bgOp     = d.genBgOp     !== undefined ? +d.genBgOp     : 1;
+  const numClr   = d.genColor    && d.genColor!==''    ? d.genColor    : (p.head || p.ac1);
+  const rawBg    = d.genBg && d.genBg!=='' ? d.genBg : rgba(p.ac1, 0.12);
+  const bgClr    = (bgOp < 1 && rawBg.startsWith('#')) ? rawBg + Math.round(bgOp*255).toString(16).padStart(2,'0') : rawBg;
+  const brdColor = d.genBorderColor && d.genBorderColor!=='' ? d.genBorderColor : rgba(p.ac1, 0.22);
+  const brdWidth = d.genBorderWidth !== undefined ? +d.genBorderWidth : 0;
+  const shOn     = d.genShadowOn !== undefined ? !!d.genShadowOn : true;
+  const shBlur   = d.genShadowBlur !== undefined ? +d.genShadowBlur : 8;
+  const shColor  = d.genShadowColor && d.genShadowColor!=='' ? d.genShadowColor : '#000000';
+  const shStyle  = shOn && shBlur>0 ? `0 2px ${shBlur}px ${rgba(shColor,0.75)},0 0 30px ${rgba(p.ac1,0.35)}` : `0 0 30px ${rgba(p.ac1,0.3)}`;
+  const jc       = va==='top' ? 'flex-start' : va==='bottom' ? 'flex-end' : 'center';
+  const ai       = align==='left' ? 'flex-start' : align==='right' ? 'flex-end' : 'center';
+
+  const domEl = document.getElementById('canvas').querySelector('[data-id="'+elId+'"]');
+  if(!domEl) return;
+
+  // Sync dataset
+  domEl.dataset.genMin         = d.genMin         !== undefined ? d.genMin         : 1;
+  domEl.dataset.genMax         = d.genMax         !== undefined ? d.genMax         : 100;
+  domEl.dataset.genStep        = d.genStep        !== undefined ? d.genStep        : 1;
+  domEl.dataset.genFontSize    = fs;
+  domEl.dataset.genColor       = d.genColor       || '';
+  domEl.dataset.genBg          = d.genBg          || '';
+  domEl.dataset.genBgBlur      = bgBlur;
+  domEl.dataset.genBorderColor = d.genBorderColor || '';
+  domEl.dataset.genBorderWidth = brdWidth;
+  domEl.dataset.genBgOp        = bgOp;
+  domEl.dataset.genShadowOn    = shOn ? 'true' : 'false';
+  domEl.dataset.genShadowBlur  = shBlur;
+  domEl.dataset.genShadowColor = d.genShadowColor || '';
+  domEl.dataset.genBold        = d.genBold ? 'true' : 'false';
+  domEl.dataset.genAlign       = align;
+  domEl.dataset.genVAlign      = va;
+  // Persist scheme refs as JSON so save() can restore them
+  domEl.dataset.genColorScheme  = d.genColorScheme  ? JSON.stringify(d.genColorScheme)  : '';
+  domEl.dataset.genBgScheme     = d.genBgScheme     ? JSON.stringify(d.genBgScheme)     : '';
+  domEl.dataset.genBorderScheme = d.genBorderScheme ? JSON.stringify(d.genBorderScheme) : '';
+
+  // Border on overlay div — sits on top of clip, not affected by overflow:hidden or backdrop-filter
+  const bordOverlay = domEl.querySelector('.applet-border-overlay');
+  if(bordOverlay){
+    bordOverlay.style.border = brdWidth > 0 ? brdWidth+'px solid '+brdColor : '';
+  }
+
+  // Send live update into iframe via postMessage — no reload, no flash
+  const iframe = domEl.querySelector('iframe');
+  if(iframe && iframe.contentWindow){
+    iframe.contentWindow.postMessage({
+      type:'genUpdate',
+      fs: fs, bold: d.genBold||false,
+      color: numClr, align: align, ai: ai, jc: jc,
+      bg: bgClr, blur: bgBlur, shadow: shStyle,
+      min: d.genMin!==undefined?+d.genMin:1,
+      max: d.genMax!==undefined?+d.genMax:100,
+      step: d.genStep!==undefined?+d.genStep:1,
+    }, '*');
+  }
+
+  // Update persisted HTML
+  const cfg2 = {
+    genMin:d.genMin,genMax:d.genMax,genStep:d.genStep,genFontSize:d.genFontSize,
+    genColor:d.genColor,genBg:d.genBg,genBgBlur:d.genBgBlur,
+    genBorderColor:d.genBorderColor,genBorderWidth:d.genBorderWidth,
+    genBold:d.genBold,genAlign:d.genAlign,genVAlign:d.genVAlign,
+    genBgOp:d.genBgOp,genShadowOn:d.genShadowOn,genShadowBlur:d.genShadowBlur,genShadowColor:d.genShadowColor,palette:p
+  };
+  d.appletHtml = getGeneratorHTML(cfg2);
+  domEl.dataset.appletHtml = d.appletHtml;
+  if(typeof saveState==='function') saveState();
+};
 
 // Refresh all theme-aware applets after theme change
 function refreshAppletThemes(){
@@ -184,10 +350,17 @@ function refreshAppletThemes(){
   slides.forEach(s=>{
     (s.els||[]).forEach(d=>{
       if(d.type!=='applet')return;
+      // Generator: use refreshGeneratorEl — it re-resolves colors from d (already remapped by theme) via postMessage
+      if(d.appletId==='generator'){
+        const domEl=document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
+        if(domEl && typeof refreshGeneratorEl==='function'){
+          requestAnimationFrame(()=>refreshGeneratorEl(d.id));
+        }
+        return;
+      }
       const a=APPLETS.find(x=>x.id===d.appletId);
       if(!a||typeof a.htmlFn!=='function')return;
       d.appletHtml=a.htmlFn(p);
-      // Update DOM iframe if on current slide
       const domEl=document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
       if(domEl){
         const oldIframe=domEl.querySelector('iframe');
@@ -196,7 +369,7 @@ function refreshAppletThemes(){
           newIframe.srcdoc=d.appletHtml;
           newIframe.style.cssText='width:100%;height:100%;border:none;background:transparent;';
           newIframe.setAttribute('allowtransparency','true');
-          newIframe.sandbox='allow-scripts allow-same-origin';
+          newIframe.sandbox='allow-scripts';
           oldIframe.parentNode.replaceChild(newIframe,oldIframe);
         }
         domEl.dataset.appletHtml=d.appletHtml;

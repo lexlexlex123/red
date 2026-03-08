@@ -1,5 +1,6 @@
 // ══════════════ LAYOUT DECOR ══════════════
 let selLayout=-1;
+let _layoutAnimated=true; // animation toggle for layouts that support it
 
 const LAYOUTS=[
 
@@ -452,7 +453,257 @@ const LAYOUTS=[
     })(),
   },
 
+
+  // ── COSMOS ── планета с орбитами и спутниками
+  {
+    name:'Космос', nameEn:'Cosmos',
+    desc:'Планета, орбиты, спутники — анимированный или статичный',
+    descEn:'Planet with orbiting satellites — animated or static',
+    animated: true,   // this layout supports animation toggle
+
+    // helper: build the orbit+satellite SVG structure
+    // animated=true → CSS keyframe animation, false → static snapshot
+    _build:(w,h,a1,a2,isTitleSlide,doAnimate)=>{
+      const cx = isTitleSlide ? w*0.72 : w*0.82;
+      const cy = isTitleSlide ? h*0.52 : h*0.50;
+      const pr = isTitleSlide ? h*0.13  : h*0.10;
+
+      // orbits: rx, ry — semi-axes of ellipse; rot — tilt deg; period — seconds; sat — satellite radius
+      const orbits = [
+        {rx:pr*2.2, ry:pr*0.65, rot:-22, period:8,  sat:pr*0.10, op:0.80, phase:0.00, color:a1},
+        {rx:pr*3.2, ry:pr*1.00, rot:-10, period:15, sat:pr*0.075,op:0.65, phase:0.35, color:a2},
+        {rx:pr*4.2, ry:pr*1.40, rot:  6, period:25, sat:pr*0.06, op:0.50, phase:0.65, color:a1},
+        {rx:pr*5.3, ry:pr*1.70, rot: 18, period:38, sat:pr*0.045,op:0.40, phase:0.15, color:a2},
+      ];
+
+      const uid = 'csm_' + (w|0) + '_' + (h|0) + '_' + (isTitleSlide?'t':'c');
+
+      // Stars (deterministic)
+      const rng=(s)=>{let x=Math.sin(s+1.7)*93741;return x-Math.floor(x);};
+      let stars='';
+      for(let i=0;i<65;i++){
+        const sx=(rng(i*3  )*w).toFixed(1);
+        const sy=(rng(i*3+1)*h).toFixed(1);
+        const sr=(rng(i*3+2)*1.4+0.3).toFixed(2);
+        const sop=(rng(i*3+0.5)*0.55+0.12).toFixed(2);
+        stars+=`<circle cx="${sx}" cy="${sy}" r="${sr}" fill="${a1}" opacity="${sop}"/>`;
+      }
+
+      // Orbit ellipse paths (dashed rings)
+      let orbitRings='';
+      orbits.forEach(o=>{
+        orbitRings+=`<ellipse cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}"
+          rx="${o.rx.toFixed(1)}" ry="${o.ry.toFixed(1)}"
+          fill="none" stroke="${o.color}" stroke-width="0.6" opacity="${(o.op*0.38).toFixed(2)}"
+          stroke-dasharray="3 5"
+          transform="rotate(${o.rot} ${cx.toFixed(1)} ${cy.toFixed(1)})"/>`;
+      });
+
+      // Planet glow + body
+      const glowR=(pr*3.0).toFixed(1);
+      const planet=`
+        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${glowR}" fill="${a1}" opacity="0.08" filter="url(#${uid}_bf)"/>
+        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${pr.toFixed(1)}" fill="url(#${uid}_pg)"/>
+        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${pr.toFixed(1)}" fill="none" stroke="${a1}" stroke-width="0.8" opacity="0.25"/>
+        <circle cx="${(cx-pr*0.28).toFixed(1)}" cy="${(cy-pr*0.28).toFixed(1)}" r="${(pr*0.32).toFixed(1)}" fill="${a1}" opacity="0.10"/>`;
+
+      // Satellites
+      let sats='';
+      orbits.forEach((o,i)=>{
+        const glowSr=(o.sat*2.2).toFixed(1);
+        const satR=o.sat.toFixed(1);
+        const color=o.color;
+        const opG=(o.op*0.3).toFixed(2);
+        const opS=o.op.toFixed(2);
+        const startDeg=(o.phase*360).toFixed(1);
+
+        if(doAnimate){
+          // Use SVG animateTransform: rotate the whole group around planet center
+          // Satellite sits at (cx+rx, cy) in pre-tilt space; we rotate orbit+tilt together
+          sats+=`
+          <g transform="rotate(${o.rot} ${cx.toFixed(1)} ${cy.toFixed(1)})">
+            <g>
+              <animateTransform attributeName="transform" type="rotate"
+                from="${startDeg} ${cx.toFixed(1)} ${cy.toFixed(1)}"
+                to="${(parseFloat(startDeg)+360).toFixed(1)} ${cx.toFixed(1)} ${cy.toFixed(1)}"
+                dur="${o.period}s" repeatCount="indefinite"/>
+              <!-- satellite at right side of ellipse, then scale Y to squash to orbit -->
+              <g transform="translate(${cx.toFixed(1)} ${cy.toFixed(1)}) scale(1 ${(o.ry/o.rx).toFixed(4)}) translate(-${cx.toFixed(1)} -${cy.toFixed(1)})">
+                <circle cx="${(cx+o.rx).toFixed(1)}" cy="${cy.toFixed(1)}" r="${glowSr}" fill="${color}" opacity="${opG}" filter="url(#${uid}_sbf)"/>
+                <circle cx="${(cx+o.rx).toFixed(1)}" cy="${cy.toFixed(1)}" r="${satR}" fill="${color}" opacity="${opS}"/>
+              </g>
+            </g>
+          </g>`;
+        } else {
+          // Static: position satellite at phase angle on ellipse
+          const ang=o.phase*Math.PI*2;
+          const ex=o.rx*Math.cos(ang), ey=o.ry*Math.sin(ang);
+          const rad=o.rot*Math.PI/180;
+          const sx=cx + ex*Math.cos(rad) - ey*Math.sin(rad);
+          const sy=cy + ex*Math.sin(rad) + ey*Math.cos(rad);
+          sats+=`<circle cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" r="${glowSr}" fill="${color}" opacity="${opG}" filter="url(#${uid}_sbf)"/>`;
+          sats+=`<circle cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" r="${satR}" fill="${color}" opacity="${opS}"/>`;
+        }
+      });
+
+      const defs=`<defs>
+        <radialGradient id="${uid}_pg" cx="38%" cy="32%" r="68%">
+          <stop offset="0%"   stop-color="${a1}" stop-opacity="0.95"/>
+          <stop offset="45%"  stop-color="${a2}" stop-opacity="0.65"/>
+          <stop offset="100%" stop-color="#050510" stop-opacity="0.92"/>
+        </radialGradient>
+        <filter id="${uid}_bf" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="20"/></filter>
+        <filter id="${uid}_sbf" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="2.5"/></filter>
+      </defs>`;
+
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+        ${defs}
+        ${stars}
+        ${orbitRings}
+        ${sats}
+        ${planet}
+      </svg>`;
+    },
+    titleSvg(w,h,a1,a2,doAnimate){
+      return this._build(w,h,a1,a2,true, doAnimate!==false);
+    },
+    contentSvg(w,h,a1,a2,doAnimate){
+      return this._build(w,h,a1,a2,false, doAnimate!==false);
+    },
+  },
+
+  // ── OCEAN ── волны и рыбки
+  {
+    name:'Океан', nameEn:'Ocean',
+    desc:'Волны и рыбки под водой', descEn:'Animated waves and swimming fish',
+
+    titleSvg(w, h, a1, a2, doAnimate) {
+      const uid = 'oc' + Math.random().toString(36).slice(2,7);
+      const anim = doAnimate !== false;
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden">
+  <defs>
+    <linearGradient id="${uid}wg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="${a1}" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="${a1}" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="${a2}" stop-opacity="0.38"/>
+    </linearGradient>
+    <linearGradient id="${uid}wg2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="${a1}" stop-opacity="0"/>
+      <stop offset="1" stop-color="${a1}" stop-opacity="0.22"/>
+    </linearGradient>
+    ${anim ? `
+    <style>
+      @keyframes ${uid}w1{0%,100%{d:path("M0,${h*.52} C${w*.15},${h*.46} ${w*.35},${h*.58} ${w*.5},${h*.52} C${w*.65},${h*.46} ${w*.85},${h*.58} ${w},${h*.52} L${w},${h} L0,${h} Z")} 50%{d:path("M0,${h*.55} C${w*.15},${h*.61} ${w*.35},${h*.49} ${w*.5},${h*.55} C${w*.65},${h*.61} ${w*.85},${h*.49} ${w},${h*.55} L${w},${h} L0,${h} Z")}}
+      @keyframes ${uid}w2{0%,100%{d:path("M0,${h*.62} C${w*.18},${h*.56} ${w*.38},${h*.68} ${w*.55},${h*.62} C${w*.72},${h*.56} ${w*.88},${h*.68} ${w},${h*.62} L${w},${h} L0,${h} Z")} 50%{d:path("M0,${h*.65} C${w*.18},${h*.71} ${w*.38},${h*.59} ${w*.55},${h*.65} C${w*.72},${h*.71} ${w*.88},${h*.59} ${w},${h*.65} L${w},${h} L0,${h} Z")}}
+      @keyframes ${uid}w3{0%,100%{d:path("M0,${h*.73} C${w*.2},${h*.67} ${w*.42},${h*.79} ${w*.6},${h*.73} C${w*.78},${h*.67} ${w*.9},${h*.79} ${w},${h*.73} L${w},${h} L0,${h} Z")} 50%{d:path("M0,${h*.76} C${w*.2},${h*.82} ${w*.42},${h*.70} ${w*.6},${h*.76} C${w*.78},${h*.82} ${w*.9},${h*.70} ${w},${h*.76} L${w},${h} L0,${h} Z")}}
+      .${uid}w1{animation:${uid}w1 5s ease-in-out infinite;}
+      .${uid}w2{animation:${uid}w2 6.5s ease-in-out infinite;}
+      .${uid}w3{animation:${uid}w3 4.8s ease-in-out infinite;}
+      @keyframes ${uid}f1{0%{transform:translate(${w*.05}px,${h*.64}px) scaleX(1);}45%{transform:translate(${w*.9}px,${h*.58}px) scaleX(1);}50%{transform:translate(${w*.9}px,${h*.58}px) scaleX(-1);}95%{transform:translate(${w*.05}px,${h*.64}px) scaleX(-1);}100%{transform:translate(${w*.05}px,${h*.64}px) scaleX(1);}}
+      @keyframes ${uid}f2{0%{transform:translate(${w*.8}px,${h*.76}px) scaleX(-1);}48%{transform:translate(${w*.08}px,${h*.71}px) scaleX(-1);}52%{transform:translate(${w*.08}px,${h*.71}px) scaleX(1);}98%{transform:translate(${w*.8}px,${h*.76}px) scaleX(1);}100%{transform:translate(${w*.8}px,${h*.76}px) scaleX(-1);}}
+      @keyframes ${uid}f3{0%{transform:translate(${w*.25}px,${h*.82}px) scaleX(1);}47%{transform:translate(${w*.75}px,${h*.87}px) scaleX(1);}53%{transform:translate(${w*.75}px,${h*.87}px) scaleX(-1);}97%{transform:translate(${w*.25}px,${h*.82}px) scaleX(-1);}100%{transform:translate(${w*.25}px,${h*.82}px) scaleX(1);}}
+      @keyframes ${uid}f4{0%{transform:translate(${w*.6}px,${h*.69}px) scaleX(-1);}44%{transform:translate(${w*.15}px,${h*.74}px) scaleX(-1);}56%{transform:translate(${w*.15}px,${h*.74}px) scaleX(1);}96%{transform:translate(${w*.6}px,${h*.69}px) scaleX(1);}100%{transform:translate(${w*.6}px,${h*.69}px) scaleX(-1);}}
+      .${uid}f1{animation:${uid}f1 9s ease-in-out infinite;}
+      .${uid}f2{animation:${uid}f2 12s ease-in-out infinite 2s;}
+      .${uid}f3{animation:${uid}f3 10s ease-in-out infinite 4s;}
+      .${uid}f4{animation:${uid}f4 8s ease-in-out infinite 1s;}
+      @keyframes ${uid}b{0%,100%{opacity:.4;transform:translateY(0) scale(1);}50%{opacity:.7;transform:translateY(-${h*.02}px) scale(1.15);}}
+      .${uid}b1{animation:${uid}b 3s ease-in-out infinite;}
+      .${uid}b2{animation:${uid}b 4s ease-in-out infinite 1s;}
+      .${uid}b3{animation:${uid}b 5s ease-in-out infinite 2s;}
+    </style>` : ''}
+  </defs>
+
+  <!-- Underwater fill -->
+  <rect x="0" y="${h*.5}" width="${w}" height="${h*.5}" fill="url(#${uid}wg)"/>
+
+  <!-- Bubbles -->
+  <circle class="${uid}b1" cx="${w*.18}" cy="${h*.72}" r="${w*.006}" fill="${a1}" opacity=".4"/>
+  <circle class="${uid}b2" cx="${w*.44}" cy="${h*.65}" r="${w*.004}" fill="${a2}" opacity=".35"/>
+  <circle class="${uid}b3" cx="${w*.71}" cy="${h*.78}" r="${w*.005}" fill="${a1}" opacity=".3"/>
+
+  <!-- Fish (tiny, schematic) -->
+  <g class="${uid}f1" opacity=".6">
+    <ellipse cx="0" cy="0" rx="${w*.022}" ry="${w*.009}" fill="${a1}" opacity=".7"/>
+    <polygon points="${w*.022},0 ${w*.034},${-w*.007} ${w*.034},${w*.007}" fill="${a1}" opacity=".5"/>
+    <circle cx="${-w*.008}" cy="${-w*.002}" r="${w*.002}" fill="${a2}"/>
+  </g>
+  <g class="${uid}f2" opacity=".5">
+    <ellipse cx="0" cy="0" rx="${w*.018}" ry="${w*.007}" fill="${a2}" opacity=".7"/>
+    <polygon points="${w*.018},0 ${w*.028},${-w*.005} ${w*.028},${w*.005}" fill="${a2}" opacity=".5"/>
+    <circle cx="${-w*.006}" cy="${-w*.002}" r="${w*.0015}" fill="${a1}"/>
+  </g>
+  <g class="${uid}f3" opacity=".55">
+    <ellipse cx="0" cy="0" rx="${w*.016}" ry="${w*.006}" fill="${a1}" opacity=".6"/>
+    <polygon points="${w*.016},0 ${w*.025},${-w*.005} ${w*.025},${w*.005}" fill="${a1}" opacity=".4"/>
+    <circle cx="${-w*.005}" cy="${-w*.0015}" r="${w*.0013}" fill="${a2}"/>
+  </g>
+  <g class="${uid}f4" opacity=".5">
+    <ellipse cx="0" cy="0" rx="${w*.02}" ry="${w*.008}" fill="${a2}" opacity=".65"/>
+    <polygon points="${w*.02},0 ${w*.031},${-w*.006} ${w*.031},${w*.006}" fill="${a2}" opacity=".45"/>
+    <circle cx="${-w*.007}" cy="${-w*.002}" r="${w*.0017}" fill="${a1}"/>
+  </g>
+
+  <!-- 3 waves top to bottom -->
+  <path class="${uid}w1" d="M0,${h*.52} C${w*.15},${h*.46} ${w*.35},${h*.58} ${w*.5},${h*.52} C${w*.65},${h*.46} ${w*.85},${h*.58} ${w},${h*.52} L${w},${h} L0,${h} Z" fill="${a1}" opacity=".13"/>
+  <path class="${uid}w2" d="M0,${h*.62} C${w*.18},${h*.56} ${w*.38},${h*.68} ${w*.55},${h*.62} C${w*.72},${h*.56} ${w*.88},${h*.68} ${w},${h*.62} L${w},${h} L0,${h} Z" fill="${a1}" opacity=".18"/>
+  <path class="${uid}w3" d="M0,${h*.73} C${w*.2},${h*.67} ${w*.42},${h*.79} ${w*.6},${h*.73} C${w*.78},${h*.67} ${w*.9},${h*.79} ${w},${h*.73} L${w},${h} L0,${h} Z" fill="url(#${uid}wg2)" opacity=".9"/>
+</svg>`;
+    },
+
+    contentSvg(w, h, a1, a2, doAnimate) {
+      const uid = 'ocs' + Math.random().toString(36).slice(2,7);
+      const anim = doAnimate !== false;
+      // Content slides: one wave at bottom + fish that jump out
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden">
+  <defs>
+    <linearGradient id="${uid}wg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="${a1}" stop-opacity="0"/>
+      <stop offset="1" stop-color="${a2}" stop-opacity="0.3"/>
+    </linearGradient>
+    ${anim ? `
+    <style>
+      @keyframes ${uid}w{0%,100%{d:path("M0,${h*.82} C${w*.18},${h*.76} ${w*.4},${h*.88} ${w*.6},${h*.82} C${w*.8},${h*.76} ${w*.9},${h*.88} ${w},${h*.82} L${w},${h} L0,${h} Z")} 50%{d:path("M0,${h*.86} C${w*.18},${h*.92} ${w*.4},${h*.80} ${w*.6},${h*.86} C${w*.8},${h*.92} ${w*.9},${h*.80} ${w},${h*.86} L${w},${h} L0,${h} Z")}}
+      .${uid}wv{animation:${uid}w 5s ease-in-out infinite;}
+
+      @keyframes ${uid}j1{0%,70%,100%{transform:translate(${w*.28}px,${h*.82}px) rotate(0deg) scaleX(1);opacity:0;}72%{opacity:.8;}75%{transform:translate(${w*.3}px,${h*.55}px) rotate(-30deg) scaleX(1);opacity:.8;}80%{transform:translate(${w*.32}px,${h*.48}px) rotate(-45deg) scaleX(1);opacity:.6;}88%{transform:translate(${w*.29}px,${h*.72}px) rotate(10deg) scaleX(1);opacity:.5;}92%{transform:translate(${w*.28}px,${h*.85}px) rotate(0deg) scaleX(1);opacity:0;}}
+      @keyframes ${uid}j2{0%,40%,100%{transform:translate(${w*.6}px,${h*.84}px) rotate(0deg) scaleX(-1);opacity:0;}42%{opacity:.7;}45%{transform:translate(${w*.58}px,${h*.58}px) rotate(25deg) scaleX(-1);opacity:.7;}50%{transform:translate(${w*.57}px,${h*.5}px) rotate(40deg) scaleX(-1);opacity:.5;}58%{transform:translate(${w*.59}px,${h*.75}px) rotate(-5deg) scaleX(-1);opacity:.4;}63%{transform:translate(${w*.6}px,${h*.86}px) rotate(0deg) scaleX(-1);opacity:0;}}
+      @keyframes ${uid}j3{0%,85%,100%{transform:translate(${w*.45}px,${h*.83}px) rotate(0deg) scaleX(1);opacity:0;}87%{opacity:.75;}90%{transform:translate(${w*.47}px,${h*.6}px) rotate(-20deg) scaleX(1);opacity:.75;}94%{transform:translate(${w*.48}px,${h*.54}px) rotate(-35deg) scaleX(1);opacity:.55;}98%{transform:translate(${w*.46}px,${h*.78}px) rotate(5deg) scaleX(1);opacity:.2;}}
+
+      .${uid}j1{animation:${uid}j1 8s ease-in-out infinite;}
+      .${uid}j2{animation:${uid}j2 11s ease-in-out infinite 3s;}
+      .${uid}j3{animation:${uid}j3 9s ease-in-out infinite 6s;}
+    </style>` : ''}
+  </defs>
+
+  <!-- Wave fill -->
+  <rect x="0" y="${h*.8}" width="${w}" height="${h*.2}" fill="url(#${uid}wg)"/>
+
+  <!-- Jumping fish -->
+  <g class="${uid}j1" opacity="0">
+    <ellipse cx="0" cy="0" rx="${w*.022}" ry="${w*.009}" fill="${a1}" opacity=".75"/>
+    <polygon points="${w*.022},0 ${w*.034},${-w*.007} ${w*.034},${w*.007}" fill="${a1}" opacity=".55"/>
+    <circle cx="${-w*.008}" cy="${-w*.002}" r="${w*.002}" fill="${a2}"/>
+  </g>
+  <g class="${uid}j2" opacity="0">
+    <ellipse cx="0" cy="0" rx="${w*.019}" ry="${w*.008}" fill="${a2}" opacity=".7"/>
+    <polygon points="${w*.019},0 ${w*.03},${-w*.006} ${w*.03},${w*.006}" fill="${a2}" opacity=".5"/>
+    <circle cx="${-w*.007}" cy="${-w*.002}" r="${w*.0017}" fill="${a1}"/>
+  </g>
+  <g class="${uid}j3" opacity="0">
+    <ellipse cx="0" cy="0" rx="${w*.017}" ry="${w*.007}" fill="${a1}" opacity=".65"/>
+    <polygon points="${w*.017},0 ${w*.026},${-w*.005} ${w*.026},${w*.005}" fill="${a1}" opacity=".45"/>
+    <circle cx="${-w*.006}" cy="${-w*.0015}" r="${w*.0014}" fill="${a2}"/>
+  </g>
+
+  <!-- Wave -->
+  <path class="${uid}wv" d="M0,${h*.82} C${w*.18},${h*.76} ${w*.4},${h*.88} ${w*.6},${h*.82} C${w*.8},${h*.76} ${w*.9},${h*.88} ${w},${h*.82} L${w},${h} L0,${h} Z" fill="url(#${uid}wg)" opacity=".9"/>
+</svg>`;
+    },
+  },
+
 ];
+
 // ══════════════ LAYOUT ENGINE ══════════════
 
 // Get current theme accent colours (fallback to CSS vars)
@@ -474,7 +725,8 @@ function _buildDecorSvg(layoutIdx, style){
   const [a1,a2]=_decorAccents();
   const fn=(style==='title')?L.titleSvg:L.contentSvg;
   if(typeof fn!=='function')return '';
-  let svg=fn(canvasW, canvasH, a1, a2)||'';;
+  const doAnimate = L.animated ? _layoutAnimated : false;
+  let svg=fn.call(L, canvasW, canvasH, a1, a2, doAnimate)||'';;
   // Make every defs id unique to avoid cross-slide collisions in the DOM
   const uid='u'+(++_svgUidCounter);
   svg=svg.replace(/\bid="([^"]+)"/g, (_,id)=>`id="${uid}_${id}"`);
@@ -515,7 +767,8 @@ function refreshDecorColors(ac1, ac2, skipRender){
       const fn=(d._decorStyle==='title')?L.titleSvg:L.contentSvg;
       if(typeof fn!=='function')return;
       // Generate SVG with explicit colors then apply uid scoping
-      let svg=fn(canvasW, canvasH, _oa1, _oa2)||'';;
+      const doAnim = L.animated ? _layoutAnimated : false;
+      let svg=fn.call(L, canvasW, canvasH, _oa1, _oa2, doAnim)||'';;
       const uid='u'+(++_svgUidCounter);
       svg=svg.replace(/\bid="([^"]+)"/g, (_,id)=>`id="${uid}_${id}"`);
       svg=svg.replace(/url\(#([^)]+)\)/g, (_,id)=>`url(#${uid}_${id})`);
@@ -556,24 +809,62 @@ function buildLayoutGrid(){
   };
   grid.appendChild(none);
   LAYOUTS.forEach((L,i)=>{
-    const isRu=typeof lang!=='undefined'&&lang==='ru';
+    const isRu=typeof getLang==='function'&&getLang()==='ru';
     const btn=document.createElement('div');
     btn.className='layout-item'+(selLayout===i?' active':'');
     btn.title=(isRu?L.desc:L.descEn)||'';
-    const svgStr=typeof L.titleSvg==='function'?L.titleSvg(PW,PH,a1,a2):'';
+    const doAnim = L.animated ? _layoutAnimated : false;
+    const svgStr=typeof L.titleSvg==='function'?L.titleSvg.call(L,PW,PH,a1,a2,doAnim):'';
     const lbl=document.createElement('div');
     lbl.className='li-label';
     lbl.textContent=isRu?L.name:L.nameEn;
+    if(L.animated){
+      const badge=document.createElement('span');
+      badge.className='li-anim-badge';
+      badge.textContent='✦';
+      badge.title=isRu?'Поддерживает анимацию':'Supports animation';
+      lbl.appendChild(badge);
+    }
     btn.innerHTML=svgStr;
     btn.appendChild(lbl);
     btn.onclick=()=>{
       selLayout=i;
       grid.querySelectorAll('.layout-item').forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
+      _updateAnimToggleVisibility();
     };
     grid.appendChild(btn);
   });
+  _updateAnimToggleVisibility();
 }
+
+function _updateAnimToggleVisibility(){
+  const wrap = document.getElementById('layout-anim-toggle-wrap');
+  if(!wrap) return;
+  const L = selLayout>=0 ? LAYOUTS[selLayout] : null;
+  const show = !!(L && L.animated);
+  wrap.style.display = show ? '' : 'none';
+  if(show) _syncAnimToggleBtns();
+}
+
+function _syncAnimToggleBtns(){
+  const on  = document.getElementById('layout-anim-btn-on');
+  const off = document.getElementById('layout-anim-btn-off');
+  if(!on||!off) return;
+  if(_layoutAnimated){
+    on.classList.add('pri');    off.classList.remove('pri');
+    on.style.opacity='1';       off.style.opacity='0.55';
+  } else {
+    off.classList.add('pri');   on.classList.remove('pri');
+    off.style.opacity='1';      on.style.opacity='0.55';
+  }
+}
+
+window.setLayoutAnimated = function(val){
+  _layoutAnimated = val;
+  _syncAnimToggleBtns();
+  buildLayoutGrid();
+};
 
 function applyLayout(idx,btn){
   selLayout=idx;
@@ -618,6 +909,7 @@ function clearLayout(){
 
 function openLayoutModal(){
   buildLayoutGrid();
+  _updateAnimToggleVisibility();
   document.getElementById('layout-modal').classList.add('open');
 }
 function closeLayoutModal(){

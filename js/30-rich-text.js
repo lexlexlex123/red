@@ -199,8 +199,11 @@ document.addEventListener('selectionchange', () => {
   // Track selection inside .tel regardless of contentEditable state
   const telEl = el2 && el2.closest('.tel');
   if (telEl) {
-    _rtEl = telEl;
     const p = telEl.closest('.el');
+    const newId = p ? p.dataset.id : null;
+    // Clear saved selection when switching to a different element
+    if (_rtElId && newId && _rtElId !== newId) _savedSelIdx = null;
+    _rtEl = telEl;
     if (p) _rtElId = p.dataset.id;
     const idx = _readSelFromDOM(telEl);
     if (idx) _savedSelIdx = idx;
@@ -404,9 +407,28 @@ function rtColor(color, schemeRef) {
 }
 
 function rtFontSize(size) {
-  if (!size||size<1) return;
-  if (_applyToSelection('font-size', size+'px')) { _rtCommit(); if(sel&&sel.dataset.type==='text') _setTSWhole('font-size',size+'px'); }
-  else _setTSWhole('font-size', size+'px');
+  if (!size || size < 1) return;
+  // Check live DOM selection only — never use _savedSelIdx for font size
+  // (clicking the input field clears the text selection)
+  const hasLiveSel = (function() {
+    if (!_rtEl) return false;
+    const root = _rtContent(_rtEl);
+    // Verify _rtEl belongs to the currently selected canvas element
+    const parentEl = _rtEl.closest('.el');
+    if (!parentEl || !sel || parentEl !== sel) return false;
+    const idx = _readSelFromDOM(root);
+    return !!(idx && idx.end > idx.start);
+  })();
+
+  if (hasLiveSel) {
+    // Apply only to selected characters
+    _applyToSelection('font-size', size + 'px');
+    _rtCommit();
+  } else {
+    // Apply to whole block
+    if (_rtEl) _rtCommit();
+    _setTSWhole('font-size', size + 'px');
+  }
 }
 
 function rtFontWeight(weight) {
@@ -423,7 +445,7 @@ function resetTextFormatting() {
   c.innerHTML = _charObjsToHtml([...text].map(ch=>({ch,style:{}})));
   d.html = c.innerHTML;
   commitAll(); syncProps();
-  toast((getLang()==='ru'?'Форматирование сброшено':'Formatting reset'),'ok');
+  toast((t('toastFormattingReset')),'ok');
 }
 
 function toggleFmt(fmt) {
@@ -478,10 +500,33 @@ function rtUpdateToolbarState() {
     if (hasSel) {
       const hex = _rgbToHex(cs.color);
       if (hex) try{document.getElementById('p-col').value=hex; document.getElementById('p-hex').value=hex;}catch(e){}
-      const fs = parseFloat(cs.fontSize);
-      if (fs) try{document.getElementById('p-fs').value=Math.round(fs);}catch(e){}
+      // Font size: show value only if all selected chars are same size, else blank
+      try {
+        const inp = document.getElementById('p-fs');
+        if (inp) {
+          const selChars = _getSelectionCharEls();
+          if (selChars && selChars.length > 0) {
+            const sizes = [...new Set(selChars.map(c => Math.round(parseFloat(window.getComputedStyle(c).fontSize)||0)))];
+            inp.value = sizes.length === 1 ? sizes[0] : '';
+            inp.placeholder = sizes.length === 1 ? '' : '—';
+          } else {
+            const fs = parseFloat(cs.fontSize);
+            if (fs) inp.value = Math.round(fs);
+          }
+        }
+      } catch(e){}
     }
   } catch(e) {}
+}
+
+// Returns array of char span elements currently selected (via browser selection in _rtEl)
+function _getSelectionCharEls() {
+  if (!_rtEl) return null;
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
+  const range = sel.getRangeAt(0);
+  const spans = Array.from(_rtEl.querySelectorAll('span[data-ch]'));
+  return spans.filter(sp => range.intersectsNode(sp));
 }
 
 function _rgbToHex(rgb) {

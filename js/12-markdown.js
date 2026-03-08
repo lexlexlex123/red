@@ -92,3 +92,72 @@ function updateMdColor(v, schemeRef){
   try{document.getElementById('md-color-hex').value=v;document.getElementById('md-color-preview').style.background=v;}catch(e){}
   if(typeof save==="function")save();
 }
+
+// ── Markdown background ──────────────────────────────────────────────────────
+function setMdBg(col, schemeRef){
+  if(!sel||sel.dataset.type!=='markdown')return;
+  sel.dataset.textBg=col;
+  const d=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+  if(d) d.textBgScheme = schemeRef!==undefined ? (schemeRef||null) : d.textBgScheme;
+  if(typeof applyTextBg==='function') applyTextBg(sel);
+  if(typeof commitAll==='function') commitAll();
+}
+function setMdBgOp(op){
+  if(!sel||sel.dataset.type!=='markdown')return;
+  sel.dataset.textBgOp=op;
+  if(typeof applyTextBg==='function') applyTextBg(sel);
+  if(typeof commitAll==='function') commitAll();
+}
+function setMdBgBlur(v){
+  if(!sel||sel.dataset.type!=='markdown')return;
+  sel.dataset.textBgBlur=v;
+  if(typeof applyTextBg==='function') applyTextBg(sel);
+  if(typeof commitAll==='function') commitAll();
+}
+function clearMdBg(){
+  if(!sel||sel.dataset.type!=='markdown')return;
+  delete sel.dataset.textBg; delete sel.dataset.textBgOp; delete sel.dataset.textBgBlur;
+  const ec=sel.querySelector('.ec'); if(ec) ec.style.background='';
+  sel.style.background=''; sel.style.backdropFilter=''; sel.style.webkitBackdropFilter='';
+  try{document.getElementById('md-bg-hex').value='';document.getElementById('md-bg-swatch-inner').style.background='';}catch(e){}
+  if(typeof commitAll==='function') commitAll();
+}
+
+// ── Markdown radius ───────────────────────────────────────────────────────────
+function setMdRadius(corner, val){
+  if(!sel||sel.dataset.type!=='markdown')return;
+  sel.dataset['rx_'+corner]=val;
+  _applyMdRadius(sel);
+  if(typeof save==='function') save();
+  if(typeof drawThumbs==='function') drawThumbs();
+  if(typeof saveState==='function') saveState();
+}
+function _applyMdRadius(el){
+  const tl=el.dataset.rx_tl||0, tr=el.dataset.rx_tr||0, bl=el.dataset.rx_bl||0, br=el.dataset.rx_br||0;
+  const rx=`${tl}px ${tr}px ${br}px ${bl}px`;
+  el.style.borderRadius=rx; el.style.overflow='hidden';
+  const ec=el.querySelector('.ec'); if(ec){ec.style.borderRadius=rx; ec.style.overflow='hidden';}
+}
+
+// ── Markdown border ───────────────────────────────────────────────────────────
+function setMdBorder(prop, val, schemeRef){
+  if(!sel||sel.dataset.type!=='markdown')return;
+  if(prop==='color'){
+    sel.dataset.textBorderColor=val;
+    const d=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+    if(d) d.borderScheme = schemeRef!==undefined ? (schemeRef||null) : d.borderScheme;
+    try{document.getElementById('md-border-hex').value=val;}catch(e){}
+  }
+  if(prop==='width') sel.dataset.textBorderW=val;
+  _applyMdBorder(sel);
+  if(typeof save==='function') save();
+  if(typeof drawThumbs==='function') drawThumbs();
+  if(typeof saveState==='function') saveState();
+}
+function _applyMdBorder(el){
+  const w=+(el.dataset.textBorderW||0);
+  const c=el.dataset.textBorderColor||'#ffffff';
+  if(w>0){ el.style.border=w+'px solid '+c; }
+  else { el.style.border=''; }
+}
+

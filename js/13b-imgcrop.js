@@ -31,15 +31,21 @@ function applyImgCrop(el, d) {
   if (hasCrop) {
     const visW = parseInt(el.style.width)  || d.w;
     const visH = parseInt(el.style.height) || d.h;
+    // Full image dimensions relative to visible area
     const fW   = L + visW + R;
     const fH   = T + visH + B;
+    // Express img size and offset as % of .el so it scales automatically on resize
+    const wPct  = (fW / visW * 100).toFixed(4) + '%';
+    const hPct  = (fH / visH * 100).toFixed(4) + '%';
+    const lPct  = (-L / visW * 100).toFixed(4) + '%';
+    const tPct  = (-T / visH * 100).toFixed(4) + '%';
+
     const rx   = (d.imgRx || 0) + 'px';
     const bw   = d.imgBw || 0;
     const border = bw > 0 ? `${bw}px solid ${d.imgBc||'#fff'}` : 'none';
 
     el.dataset.hasCrop = '1';
 
-    // .iel clips — preserve border and radius
     c.style.position    = 'absolute';
     c.style.inset       = '0';
     c.style.overflow    = 'hidden';
@@ -47,12 +53,11 @@ function applyImgCrop(el, d) {
     c.style.border      = border;
     c.style.boxSizing   = bw > 0 ? 'border-box' : '';
 
-    // img stretches to full original size, offset so correct region shows through .iel
     img.style.position  = 'absolute';
-    img.style.left      = -L + 'px';
-    img.style.top       = -T + 'px';
-    img.style.width     = fW + 'px';
-    img.style.height    = fH + 'px';
+    img.style.left      = lPct;
+    img.style.top       = tPct;
+    img.style.width     = wPct;
+    img.style.height    = hPct;
     img.style.objectFit = 'fill';
     img.style.display   = 'block';
     img.style.opacity   = d.imgOpacity != null ? d.imgOpacity : 1;
@@ -168,7 +173,7 @@ function _exitCropMode(doSave) {
 
     applyImgCrop(el, d);
     save(); saveState();
-    if (typeof toast === 'function') toast(getLang() === 'ru' ? 'Обрезка сохранена' : 'Crop applied', 'ok');
+    if (typeof toast === 'function') toast(t('toastCropApplied'), 'ok');
   } else if (d) {
     // Cancelled: restore previous committed state
     applyImgCrop(el, d);

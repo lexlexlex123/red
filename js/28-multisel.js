@@ -125,7 +125,7 @@ function pickMulti(el,shiftKey){
       const onlyEl=[...multiSel][0];clearMultiSel();pick(onlyEl);
     } else if(multiSel.size>1){
       pick([...multiSel].slice(-1)[0]);
-      if(typeof toast==="function")toast(multiSel.size+(getLang()==='ru'?' эл. выбрано — Ctrl+C копировать':' elements — Ctrl+C copy, Del delete'),'ok');
+      if(typeof toast==="function")toast(multiSel.size+t('toastMultiSel'),'ok');
     }
   });
 
@@ -146,7 +146,7 @@ function copySelected(){
   }
   if(!elsToCopy.length)return (typeof toast==="function")&&toast(t('toastNothingSelected'));
   clipboard=elsToCopy;
-  if(typeof toast==="function")toast((getLang()==='ru'?'Скопировано: ':'Copied: ')+elsToCopy.length+(getLang()==='ru'?' эл.':' el.'),'ok');
+  if(typeof toast==="function")toast(t('toastElementsCopied')+elsToCopy.length+t('toastElementsSuffix'),'ok');
 }
 
 function pasteSelected(){
@@ -165,7 +165,7 @@ function pasteSelected(){
   });
   save();if(typeof drawThumbs==="function")drawThumbs();if(typeof saveState==="function")saveState();
   if(multiSel.size===1){const only=[...multiSel][0];clearMultiSel();pick(only);}
-  else if(multiSel.size>1){pick([...multiSel].slice(-1)[0]);if(typeof toast==="function")toast((getLang()==='ru'?'Вставлено: ':'Pasted: ')+multiSel.size+(getLang()==='ru'?' эл.':' el.'),'ok');}
+  else if(multiSel.size>1){pick([...multiSel].slice(-1)[0]);if(typeof toast==="function")toast(t('toastElementsPasted')+multiSel.size+t('toastElementsSuffix'),'ok');}
 }
 
 function deleteSelected(){

@@ -219,15 +219,33 @@ let _animPreviewTimer = null;
       const d=s&&s.els.find(x=>x.id===el.dataset.id);
       if(d&&d.anims) d.anims.forEach(a=>assignedNames.add(a.name));
     }
+    if(!window._openAnimCat) window._openAnimCat = 'entrance';
+
     ANIM_CATS.forEach(group => {
       const section = document.createElement('div');
       section.className = 'anim-cat-section';
+
       const title = document.createElement('div');
       title.className = 'anim-cat-title ' + group.cat;
-      title.textContent = group.label;
+      title.style.cursor = 'pointer';
+      title.style.display = 'flex';
+      title.style.justifyContent = 'space-between';
+      title.style.alignItems = 'center';
+      const titleText = document.createElement('span');
+      titleText.textContent = group.label;
+      const chevron = document.createElement('span');
+      chevron.style.cssText = 'font-size:9px;transition:transform .2s;display:inline-block;opacity:.7';
+      chevron.textContent = '▼';
+      title.appendChild(titleText);
+      title.appendChild(chevron);
       section.appendChild(title);
+
       const grid = document.createElement('div');
       grid.className = 'anim-cat-grid';
+      const isOpen = window._openAnimCat === group.cat;
+      grid.style.display = isOpen ? '' : 'none';
+      chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(-90deg)';
+
       group.items.forEach(it => {
         const item = document.createElement('div');
         const isAssigned = assignedNames.has(it.name);
@@ -248,17 +266,24 @@ let _animPreviewTimer = null;
           e.preventDefault();
           window._selectedAnimName = it.name;
           window._selectedAnimCat  = group.cat;
-          // highlight selected
           container.querySelectorAll('.anim-item').forEach(i => i.classList.remove('selected'));
           item.classList.add('selected');
-          // update button text
           const addBtn = document.getElementById('anim-add-btn');
           if(addBtn){ addBtn.disabled=false; addBtn.textContent='Добавить «'+it.label+'»'; }
-          // play on canvas element
           playAnimOnEl(it.name);
         });
         grid.appendChild(item);
       });
+
+      title.addEventListener('click', () => {
+        if(window._openAnimCat === group.cat) return;
+        window._openAnimCat = group.cat;
+        container.querySelectorAll('.anim-cat-grid').forEach(g => { g.style.display = 'none'; });
+        container.querySelectorAll('.anim-cat-title span:last-child').forEach(c => { c.style.transform = 'rotate(-90deg)'; });
+        grid.style.display = '';
+        chevron.style.transform = 'rotate(0deg)';
+      });
+
       section.appendChild(grid);
       container.appendChild(section);
     });

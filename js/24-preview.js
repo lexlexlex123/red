@@ -354,8 +354,11 @@ function buildPSlide(container,idx){
       const cL=d.imgCropL||0,cT=d.imgCropT||0,cR=d.imgCropR||0,cB=d.imgCropB||0;
       const hasCrop=cL||cT||cR||cB;
       if(hasCrop){
-        const fW=d.w+cL+cR, fH=d.h+cT+cB;
-        img.style.cssText=`position:absolute;left:${-cL}px;top:${-cT}px;width:${fW}px;height:${fH}px;object-fit:fill;display:block;opacity:${d.imgOpacity!=null?d.imgOpacity:1};`;
+        const wPct=((d.w+cL+cR)/d.w*100).toFixed(4)+'%';
+        const hPct=((d.h+cT+cB)/d.h*100).toFixed(4)+'%';
+        const lPct=(-cL/d.w*100).toFixed(4)+'%';
+        const tPct=(-cT/d.h*100).toFixed(4)+'%';
+        img.style.cssText=`position:absolute;left:${lPct};top:${tPct};width:${wPct};height:${hPct};object-fit:fill;display:block;opacity:${d.imgOpacity!=null?d.imgOpacity:1};`;
         el.style.overflow='hidden';
       } else {
         img.style.cssText=`width:100%;height:100%;object-fit:${d.imgFit||'contain'};object-position:${d.imgPosX||'center'} ${d.imgPosY||'center'};display:block;opacity:${d.imgOpacity!=null?d.imgOpacity:1};`;
@@ -401,12 +404,34 @@ function buildPSlide(container,idx){
       el.innerHTML=_pvSvg;
       var svgI=el.querySelector('svg');if(svgI){svgI.style.width='100%';svgI.style.height='100%';}
         }else if(d.type==='applet'){
-      el.style.overflow='hidden';
-      el.style.borderRadius='18px';
-      const iframe=document.createElement('iframe');iframe.srcdoc=d.appletHtml||'';
-      iframe.style.cssText='width:100%;height:100%;border:none;background:transparent;';
+      var _aRx=(d.rx?d.rx+'px':'0px');
+      // el already has position:absolute — must keep it. Remove overflow:hidden so border overlay shows.
+      el.style.overflow='visible';
+      el.style.borderRadius=_aRx;
+      // Layer 1: clip div — clips iframe to border-radius
+      var _aClip=document.createElement('div');
+      _aClip.style.cssText='position:absolute;inset:0;overflow:hidden;border-radius:'+_aRx+';';
+      var iframe=document.createElement('iframe');iframe.srcdoc=d.appletHtml||'';
+      var _pvPE = (d.appletId==='generator') ? 'none' : 'auto';
+      iframe.style.cssText='width:100%;height:100%;border:none;background:transparent;pointer-events:'+_pvPE+';user-select:none;';
       iframe.setAttribute('allowtransparency','true');
-      iframe.sandbox='allow-scripts allow-same-origin';el.appendChild(iframe);
+      iframe.sandbox='allow-scripts';
+      _aClip.appendChild(iframe);
+      el.appendChild(_aClip);
+      // Layer 2: border overlay — after clip in DOM, not clipped by anything
+      if(d.appletId==='generator'){
+        var _bw=d.genBorderWidth!==undefined?+d.genBorderWidth:0;
+        var _bordDiv=document.createElement('div');
+        _bordDiv.className='applet-border-overlay';
+        var _bordCss='position:absolute;inset:0;border-radius:'+_aRx+';pointer-events:none;box-sizing:border-box;z-index:2;';
+        if(_bw>0){
+          var _pvP=typeof _appletTheme==='function'?_appletTheme():{ac1:'#6366f1'};
+          var _bc=d.genBorderColor&&d.genBorderColor!==''?d.genBorderColor:(_pvP.ac1+'33');
+          _bordCss+='border:'+_bw+'px solid '+_bc+';';
+        }
+        _bordDiv.style.cssText=_bordCss;
+        el.appendChild(_bordDiv);
+      }
     }else if(d.type==='code'){
       const T=CODE_THEMES[d.codeTheme||'dark']||CODE_THEMES.dark;
       const c=document.createElement('div');

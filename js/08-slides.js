@@ -133,7 +133,15 @@ function save(){
     }
     else if(d.type==='svg')d.svgContent=el.querySelector('.ec').innerHTML;
     else if(d.type==='code'){const dd=oldElsById[d.id];if(dd){d.codeLang=dd.codeLang;d.codeTheme=dd.codeTheme;d.codeRaw=dd.codeRaw;d.codeHtml=dd.codeHtml;d.codeFs=dd.codeFs;d.codeBg=dd.codeBg;}}
-    else if(d.type==='markdown'){const dd=oldElsById[d.id];if(dd){d.mdRaw=dd.mdRaw;d.mdHtml=dd.mdHtml;d.mdFs=dd.mdFs;d.mdColor=dd.mdColor||'#ffffff';d.mdColorScheme=dd.mdColorScheme!==undefined?dd.mdColorScheme:{col:7,row:0};}}
+    else if(d.type==='markdown'){const dd=oldElsById[d.id];if(dd){d.mdRaw=dd.mdRaw;d.mdHtml=dd.mdHtml;d.mdFs=dd.mdFs;d.mdColor=dd.mdColor||'#ffffff';d.mdColorScheme=dd.mdColorScheme!==undefined?dd.mdColorScheme:{col:7,row:0};}
+      if(el.dataset.textBg)d.textBg=el.dataset.textBg;
+      if(el.dataset.textBg){d.textBgOp=el.dataset.textBgOp!==undefined?+el.dataset.textBgOp:1;}
+      else if(el.dataset.textBgOp!=null){d.textBgOp=+el.dataset.textBgOp;}
+      if(el.dataset.textBgBlur>0)d.textBgBlur=+el.dataset.textBgBlur;
+      if(el.dataset.textBorderW&&+el.dataset.textBorderW>0){d.textBorderW=+el.dataset.textBorderW;d.textBorderColor=el.dataset.textBorderColor||'#ffffff';}
+      if(el.dataset.rx_tl||el.dataset.rx_tr||el.dataset.rx_bl||el.dataset.rx_br){d.rx_tl=+(el.dataset.rx_tl||0);d.rx_tr=+(el.dataset.rx_tr||0);d.rx_bl=+(el.dataset.rx_bl||0);d.rx_br=+(el.dataset.rx_br||0);}
+      const _odmd=oldElsById[d.id];if(_odmd){if(_odmd.textBgScheme!==undefined)d.textBgScheme=_odmd.textBgScheme;if(_odmd.borderScheme!==undefined)d.borderScheme=_odmd.borderScheme;}
+    }
     else if(d.type==='icon'){
       d.iconId=el.dataset.iconId||'';
       d.iconColor=el.dataset.iconColor||'#3b82f6';
@@ -154,6 +162,25 @@ function save(){
       d.appletId=el.dataset.appletId;
       d.appletHtml=el.dataset.appletHtml||'';
       if(el.dataset.appletAspect)d._appletAspect=+el.dataset.appletAspect;
+      // Read generator fields from dataset (kept in sync by refreshGeneratorEl)
+      const _gk=['genMin','genMax','genStep','genFontSize','genColor','genBg','genBgBlur','genBgOp',
+        'genBorderColor','genBorderWidth','genBold','genAlign','genVAlign',
+        'genShadowOn','genShadowBlur','genShadowColor',
+        'genColorScheme','genBgScheme','genBorderScheme'];
+      _gk.forEach(k=>{
+        if(el.dataset[k]!==undefined){
+          const v=el.dataset[k];
+          // convert numerics and booleans
+          if(k==='genBold') d[k]=(v==='true');
+          else if(k==='genShadowOn') d[k]=(v==='true');
+          else if(['genMin','genMax','genStep','genFontSize','genBgBlur','genBgOp','genBorderWidth','genShadowBlur'].includes(k)) d[k]=+v;
+          else if(['genColorScheme','genBgScheme','genBorderScheme'].includes(k)){
+            try{d[k]=JSON.parse(v);}catch(e){d[k]=null;}
+          }
+          else d[k]=v;
+        }
+      });
+      if(el.dataset.genRx!==undefined) d.rx=+el.dataset.genRx;
     }
     else if(d.type==='pagenum'){
       // page number element — data stored in slide data, no DOM reading needed

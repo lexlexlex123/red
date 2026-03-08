@@ -114,36 +114,82 @@ let _canvasZoom = 1.0;
 const ZOOM_MIN = 0.25, ZOOM_MAX = 4.0;
 const ZOOM_PAD = 100; // px black border around canvas at all zoom levels
 
-function zoomCanvas(factor, mouseClientX, mouseClientY){
-  const cwrap = document.getElementById('cwrap');
+// Smooth zoom state
+let _zoomTarget = 1.0;       // target zoom level
+let _zoomRafId  = null;      // rAF handle
+let _zoomOriginX = null;     // viewport-relative origin for current zoom gesture
+let _zoomOriginY = null;
+
+function _zoomTick(){
   const cc    = document.getElementById('canvas-container');
-  if(!cwrap || !cc) return;
+  const cwrap = document.getElementById('cwrap');
+  if(!cc || !cwrap){ _zoomRafId=null; return; }
+
+  const diff = _zoomTarget - _canvasZoom;
+  const done = Math.abs(diff) < 0.0005;
+  const newZ = done ? _zoomTarget : _canvasZoom + diff * 0.18;
 
   const oldZ = _canvasZoom;
-  const newZ = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, oldZ * factor));
-  if(newZ === oldZ) return;
-
-  // Mouse position in viewport coords relative to cwrap
-  const rect = cwrap.getBoundingClientRect();
-  const vx = (mouseClientX !== undefined) ? mouseClientX - rect.left : cwrap.clientWidth  / 2;
-  const vy = (mouseClientY !== undefined) ? mouseClientY - rect.top  : cwrap.clientHeight / 2;
-
-  // Canvas-space point under mouse (cc is always at ZOOM_PAD,ZOOM_PAD in scroll-space)
-  const scrollX = cwrap.scrollLeft;
-  const scrollY = cwrap.scrollTop;
-  const canvasX = (scrollX + vx - ZOOM_PAD) / oldZ;
-  const canvasY = (scrollY + vy - ZOOM_PAD) / oldZ;
-
   _canvasZoom = newZ;
   _applyCanvasZoom();
 
-  // New scroll: keep canvasX/Y under the same viewport pixel
-  cwrap.scrollLeft = canvasX * newZ + ZOOM_PAD - vx;
-  cwrap.scrollTop  = canvasY * newZ + ZOOM_PAD - vy;
+  // Keep origin pixel under cursor while animating
+  if(_zoomOriginX !== null){
+    const rect = cwrap.getBoundingClientRect();
+    const vx = _zoomOriginX - rect.left;
+    const vy = _zoomOriginY - rect.top;
+    // canvasX/Y was locked at gesture start — recompute scroll to keep it fixed
+    const canvasX = _zoomOriginCanvasX;
+    const canvasY = _zoomOriginCanvasY;
+    cwrap.scrollLeft = canvasX * newZ + ZOOM_PAD - vx;
+    cwrap.scrollTop  = canvasY * newZ + ZOOM_PAD - vy;
+  }
+
+  if(done){ _zoomRafId=null; }
+  else     { _zoomRafId = requestAnimationFrame(_zoomTick); }
+}
+
+let _zoomOriginCanvasX = 0;
+let _zoomOriginCanvasY = 0;
+
+function zoomCanvas(factor, mouseClientX, mouseClientY, instant){
+  const cwrap = document.getElementById('cwrap');
+  if(!cwrap) return;
+
+  const newTarget = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, _zoomTarget * factor));
+  if(newTarget === _zoomTarget) return;
+
+  // On first call in a gesture (or when origin changes significantly), lock origin
+  if(mouseClientX !== undefined){
+    const rect = cwrap.getBoundingClientRect();
+    const vx = mouseClientX - rect.left;
+    const vy = mouseClientY - rect.top;
+    // Only re-lock origin if this is a new gesture or position shifted a lot
+    if(_zoomRafId === null || Math.abs(mouseClientX-(_zoomOriginX||0))>30 || Math.abs(mouseClientY-(_zoomOriginY||0))>30){
+      _zoomOriginX = mouseClientX;
+      _zoomOriginY = mouseClientY;
+      _zoomOriginCanvasX = (cwrap.scrollLeft + vx - ZOOM_PAD) / _canvasZoom;
+      _zoomOriginCanvasY = (cwrap.scrollTop  + vy - ZOOM_PAD) / _canvasZoom;
+    }
+  } else {
+    _zoomOriginX = null; _zoomOriginY = null;
+  }
+
+  _zoomTarget = newTarget;
+
+  if(instant){
+    _canvasZoom = newTarget;
+    _applyCanvasZoom();
+    return;
+  }
+
+  if(!_zoomRafId) _zoomRafId = requestAnimationFrame(_zoomTick);
 }
 
 function resetZoom(){
+  _zoomTarget = 1.0;
   _canvasZoom = 1.0;
+  if(_zoomRafId){ cancelAnimationFrame(_zoomRafId); _zoomRafId=null; }
   _applyCanvasZoom();
   _centerSlide();
 }
@@ -154,8 +200,8 @@ function _centerSlide(){
   const z = _canvasZoom;
   const totalW = Math.round(canvasW * z) + ZOOM_PAD * 2;
   const totalH = Math.round(canvasH * z) + ZOOM_PAD * 2;
-  cwrap.scrollLeft = Math.max(0, (totalW - cwrap.clientWidth)  / 2);
-  cwrap.scrollTop  = Math.max(0, (totalH - cwrap.clientHeight) / 2);
+  cwrap.scrollLeft = Math.max(0, (totalW - cwrap.offsetWidth)  / 2);
+  cwrap.scrollTop  = Math.max(0, (totalH - cwrap.offsetHeight) / 2);
 }
 
 function _applyCanvasZoom(){
@@ -168,14 +214,11 @@ function _applyCanvasZoom(){
   const totalW  = scaledW + ZOOM_PAD * 2;
   const totalH  = scaledH + ZOOM_PAD * 2;
 
-  // cc is always at (ZOOM_PAD, ZOOM_PAD) in scroll-space
   cc.style.position      = 'absolute';
-  cc.style.left          = ZOOM_PAD + 'px';
-  cc.style.top           = ZOOM_PAD + 'px';
   cc.style.transform     = `scale(${z})`;
   cc.style.transformOrigin = 'top left';
 
-  // Ghost defines scroll area: at least cwrap size so cc can be centered when small
+  // Ghost defines scroll area
   let ghost = document.getElementById('cwrap-ghost');
   if(!ghost){
     ghost = document.createElement('div');
@@ -183,14 +226,26 @@ function _applyCanvasZoom(){
     ghost.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;';
     cwrap.appendChild(ghost);
   }
-  const gw = Math.max(totalW, cwrap.clientWidth);
-  const gh = Math.max(totalH, cwrap.clientHeight);
-  ghost.style.width  = gw + 'px';
-  ghost.style.height = gh + 'px';
 
-  // When canvas fits in cwrap, shift cc to visual center
-  if(totalW < cwrap.clientWidth)  cc.style.left = Math.round((cwrap.clientWidth  - scaledW) / 2) + 'px';
-  if(totalH < cwrap.clientHeight) cc.style.top  = Math.round((cwrap.clientHeight - scaledH) / 2) + 'px';
+  // Use offsetWidth/Height (ignores scrollbars) to avoid chicken-and-egg jitter
+  const cwW = cwrap.offsetWidth;
+  const cwH = cwrap.offsetHeight;
+  const fitsW = totalW <= cwW;
+  const fitsH = totalH <= cwH;
+
+  if(fitsW && fitsH){
+    // Fits both axes — no scrollbars, center canvas, ghost = cwrap size
+    ghost.style.width  = cwW + 'px';
+    ghost.style.height = cwH + 'px';
+    cc.style.left = Math.round((cwW - scaledW) / 2) + 'px';
+    cc.style.top  = Math.round((cwH - scaledH) / 2) + 'px';
+  } else {
+    // Overflows — show scrollbars, place cc at ZOOM_PAD offset
+    ghost.style.width  = totalW + 'px';
+    ghost.style.height = totalH + 'px';
+    cc.style.left = ZOOM_PAD + 'px';
+    cc.style.top  = ZOOM_PAD + 'px';
+  }
 
   // Sync canvas-bg-rect size with canvas dimensions
   const bgRect = document.getElementById('canvas-bg-rect');
@@ -216,7 +271,9 @@ window.addEventListener('load', function(){
       } else if(e.altKey){
         cwrap.scrollLeft += e.deltaY;
       } else {
-        const factor = e.deltaY < 0 ? 1.1 : 0.9;
+        // Scale factor proportional to scroll delta for smooth trackpad support
+        const delta = e.deltaY;
+        const factor = Math.pow(0.999, delta);  // smooth for both trackpad and wheel
         zoomCanvas(factor, e.clientX, e.clientY);
       }
     }, {passive: false});

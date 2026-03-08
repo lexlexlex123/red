@@ -35,7 +35,7 @@ function onKey(e){
       clearMultiSel();
       document.getElementById('canvas').querySelectorAll('.el').forEach(el=>addToMultiSel(el));
       if(multiSel.size===1){const only=[...multiSel][0];clearMultiSel();pick(only);}
-      else if(multiSel.size>1){pick([...multiSel].slice(-1)[0]);if(typeof toast==="function")toast(multiSel.size+(getLang()==='ru'?' элементов выбрано':' elements selected'),'ok');}
+      else if(multiSel.size>1){pick([...multiSel].slice(-1)[0]);if(typeof toast==="function")toast(multiSel.size+t('toastElementsSelected'),'ok');}
       return;
     }
   }
@@ -174,7 +174,7 @@ document.addEventListener('paste', async (e) => {
       const d = {
         id:'e'+(++ec), type:'image',
         x: Math.round((canvasW - w) / 2), y: Math.round((canvasH - h) / 2), w, h, src,
-        rot:0, anims:[], imgFit:'contain', imgRx:0,
+        rot:0, anims:[], imgFit:'fill', imgRx:0,
         imgBw:0, imgBc:'#ffffff', imgShadow:false,
         imgShadowBlur:15, imgShadowColor:'#000000', imgOpacity:1
       };
@@ -182,7 +182,7 @@ document.addEventListener('paste', async (e) => {
       const el = document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
       if(el) pick(el);
       save(); if(typeof drawThumbs==='function')drawThumbs(); if(typeof saveState==='function')saveState();
-      if(typeof toast==='function')toast((getLang()==='ru'?'Изображение вставлено':'Image pasted'),'ok');
+      if(typeof toast==='function')toast((t('toastImagePasted')),'ok');
     };
     img.onerror = () => { if(typeof toast==='function')toast('Не удалось загрузить изображение','err'); };
     img.src = src;
@@ -269,5 +269,5 @@ document.addEventListener('paste', async (e) => {
   const el = document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
   if (el) pick(el);
   save(); if(typeof drawThumbs==="function")drawThumbs(); if(typeof saveState==="function")saveState();
-  if(typeof toast==="function")toast((getLang()==='ru'?'Текст вставлен':'Text pasted'),'ok');
+  if(typeof toast==="function")toast((t('toastTextPasted')),'ok');
 });
