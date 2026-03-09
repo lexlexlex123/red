@@ -246,7 +246,7 @@ function applyTheme(){
     } else {
       delete domEl.dataset.textBg;
       delete domEl.dataset.textBgOp;
-      const ec2=domEl.querySelector('.ec');if(ec2)ec2.style.background='';
+      applyTextBg(domEl);
     }
   });
   invalidateThumbCache();

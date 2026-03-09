@@ -75,24 +75,27 @@ function stopPreview(){
   const _prevSelId = sel ? sel.dataset.id : null;
   // Re-render current slide from data so all styles (textBg etc.) are restored
   load();
-  // Explicitly re-apply textBg/textBgOp to all text elements + re-render tables
+  // Re-apply text backgrounds from model data (dataset may be stale after preview)
   requestAnimationFrame(()=>{
-    document.getElementById('canvas').querySelectorAll('.el').forEach(el=>{
+    const _cv=document.getElementById('canvas');
+    _cv.querySelectorAll('.el').forEach(el=>{
       // Re-render tables that may have lost their DOM after preview
       if(el.dataset.type==='table'&&typeof renderTableEl==='function'){
         const d=slides[cur]&&slides[cur].els.find(x=>x.id===el.dataset.id);
         if(d){ d.w=parseInt(el.style.width)||d.w; d.h=parseInt(el.style.height)||d.h; renderTableEl(el,d); }
       }
-      if(el.dataset.type==='text'&&(el.dataset.textBg||el.dataset.textBgBlur)){
-        const c=el.querySelector('.ec');if(!c)return;
-        if(el.dataset.textBg){
-          const col=el.dataset.textBg;
-          const op=parseFloat(el.dataset.textBgOp!=null?el.dataset.textBgOp:1);
-          const r=parseInt(col.slice(1,3),16),g=parseInt(col.slice(3,5),16),b=parseInt(col.slice(5,7),16);
-          el.style.background=`rgba(${r},${g},${b},${op})`;c.style.background='';}
-        const _blur=parseFloat(el.dataset.textBgBlur||0);
-        if(_blur>0){el.style.backdropFilter=`blur(${_blur}px)`;el.style.webkitBackdropFilter=`blur(${_blur}px)`;}
-        else{el.style.backdropFilter='';el.style.webkitBackdropFilter='';}
+      if(el.dataset.type==='text'){
+        // Re-stamp dataset from model to guarantee it's current
+        const d=slides[cur]&&slides[cur].els.find(x=>x.id===el.dataset.id);
+        if(d){
+          if(d.textBg)el.dataset.textBg=d.textBg; else delete el.dataset.textBg;
+          if(d.textBgOp!=null)el.dataset.textBgOp=d.textBgOp; else delete el.dataset.textBgOp;
+          if(d.textBgBlur>0)el.dataset.textBgBlur=d.textBgBlur; else delete el.dataset.textBgBlur;
+          if(d.textBgGrad)el.dataset.textBgGrad='1'; else delete el.dataset.textBgGrad;
+          if(d.textBgCol2)el.dataset.textBgCol2=d.textBgCol2; else delete el.dataset.textBgCol2;
+          if(d.textBgDir!=null)el.dataset.textBgDir=d.textBgDir; else delete el.dataset.textBgDir;
+        }
+        if(typeof applyTextBg==='function') applyTextBg(el);
       }
       // Force-rebuild icon SVG from data so shadow is always correct after preview
       if(el.dataset.type==='icon'){
@@ -356,8 +359,16 @@ function buildPSlide(container,idx){
       const c=document.createElement('div');
       const csStr=(d.cs||'').trim();
       c.style.cssText=(csStr?(csStr.endsWith(';')?csStr:csStr+';'):'')+'width:100%;height:100%;overflow:hidden;padding:6px 8px;display:flex;flex-direction:column;justify-content:'+jc+';pointer-events:none;user-select:none;';
-      if(d.textBg){const op2=d.textBgOp!=null?d.textBgOp:1;const r2=parseInt(d.textBg.slice(1,3),16),g2=parseInt(d.textBg.slice(3,5),16),b2=parseInt(d.textBg.slice(5,7),16);c.style.background='rgba('+r2+','+g2+','+b2+','+op2+')';}
-      // Wrap in inner div so mixed text/span nodes don't become separate flex items
+      if(d.textBg||d.textBgGrad){
+        const op2=d.textBgOp!=null?d.textBgOp:1;
+        const toRgba2=(hex,a)=>{if(!hex)return`rgba(0,0,0,0)`;const rv=parseInt(hex.slice(1,3),16),gv=parseInt(hex.slice(3,5),16),bv=parseInt(hex.slice(5,7),16);return`rgba(${rv},${gv},${bv},${a})`;};
+        if(d.textBgGrad){
+          const dir2=d.textBgDir!=null?d.textBgDir:90;
+          el.style.background=`linear-gradient(${dir2}deg,${toRgba2(d.textBg,op2)},${toRgba2(d.textBgCol2,op2)})`;
+        } else {
+          el.style.background=toRgba2(d.textBg,op2);
+        }
+      } // Wrap in inner div so mixed text/span nodes don't become separate flex items
       c.innerHTML='<div style="width:100%;white-space:pre-wrap;">'+(d.html||'')+'</div>';
       el.appendChild(c);
       // Border for text boxes
@@ -392,6 +403,7 @@ function buildPSlide(container,idx){
         el.appendChild(_pov);
       }
       const _ec=document.createElement('div');
+      _ec.className='ec';
       _ec.style.cssText='width:100%;height:100%;overflow:visible;position:relative;z-index:1;';
       const _selEl=document.createElement('div');
       _selEl.style.cssText='position:absolute;inset:0;';
@@ -519,16 +531,32 @@ function buildPSlide(container,idx){
     // Auto anims — from global map (already classified)
     const autoTimed = globalAutoMap.get(d.id) || [];
     if(autoTimed.length>0){
-      const cssAnims  = autoTimed.filter(({anim:a})=>a.name!=='moveTo');
-      const moveAnims = autoTimed.filter(({anim:a})=>a.name==='moveTo');
-      const groups={};
+      const cssAnims    = autoTimed.filter(({anim:a})=>a.name!=='moveTo'&&a.name!=='orbitTo'&&a.name!=='rotate');
+      const motionAnims = autoTimed.filter(({anim:a})=>a.name==='moveTo'||a.name==='orbitTo');
+      const rotateAnims = autoTimed.filter(({anim:a})=>a.name==='rotate');
+
+      // If first auto anim is entrance with delay > 0 — hide element until it starts
+      const firstCss = cssAnims[0];
+      if(firstCss && firstCss.anim.cat==='entrance' && (firstCss.absDelay||0) > 0){
+        el.style.visibility='hidden';
+      }
+
+      // Group cssAnims by absDelay AND by target element:
+      // entrance/exit anims go on .el (they may affect opacity+transform together)
+      // emphasis anims go on .ec (inner) so they don't conflict with motion transform on .el
+      const ecEl = el.querySelector('.ec') || null;
+      const groupsEl = {}, groupsEc = {};
       cssAnims.forEach(({anim:a,absDelay})=>{
-        if(!groups[absDelay]) groups[absDelay]=[];
-        groups[absDelay].push(a);
+        const isEmphasis = a.cat === 'emphasis';
+        // Put emphasis on .ec only if it exists; otherwise fall through to .el
+        const grps = (isEmphasis && ecEl) ? groupsEc : groupsEl;
+        if(!grps[absDelay]) grps[absDelay]=[];
+        grps[absDelay].push(a);
       });
-      Object.entries(groups).forEach(([delayStr,grp])=>{
+      Object.entries(groupsEl).forEach(([delayStr,grp])=>{
         const absDelay=+delayStr;
         setTimeout(()=>{
+          el.style.visibility='';
           el.style.animation='none';
           void el.offsetWidth;
           el.style.animation=grp.map(a=>{
@@ -538,7 +566,37 @@ function buildPSlide(container,idx){
           }).join(',');
         }, absDelay);
       });
-      moveAnims.forEach(({anim:a,absDelay})=>fireAnim(el,d,a,idx,absDelay));
+      Object.entries(groupsEc).forEach(([delayStr,grp])=>{
+        const absDelay=+delayStr;
+        setTimeout(()=>{
+          ecEl.style.animation='none';
+          void ecEl.offsetWidth;
+          ecEl.style.animation=grp.map(a=>{
+            const cssName=ANIM_CSS[a.name]||'el-fadein';
+            const dur=(a.duration||600)/1000;
+            return `${cssName} ${dur}s ease-out 0s both`;
+          }).join(',');
+          setTimeout(()=>{ ecEl.style.animation=''; }, Math.max(...grp.map(a=>a.duration||600)) + 50);
+        }, absDelay);
+      });
+      // Fire motion anims in original order — each needs cumulative offset from previous
+      {
+        let cumTx=0, cumTy=0;
+        motionAnims.forEach(({anim:a,absDelay})=>{
+          fireAnim(el,d,a,idx,absDelay,cumTx,cumTy);
+          if(a.name==='moveTo'){
+            cumTx=a.tx||0; cumTy=a.ty||0;
+          } else if(a.name==='orbitTo'){
+            const r=a.orbitR||120, ocx=a.orbitCx||0, ocy=a.orbitCy||0;
+            const dir=(a.orbitDir||'cw')==='cw'?1:-1;
+            const deg=(a.orbitDeg!=null?a.orbitDeg:360)*dir;
+            const sa=Math.atan2(-ocy,-ocx), ea=sa+deg*Math.PI/180;
+            cumTx+=(ocx+r*Math.cos(ea))-(ocx+r*Math.cos(sa));
+            cumTy+=(ocy+r*Math.sin(ea))-(ocy+r*Math.sin(sa));
+          }
+        });
+      }
+      rotateAnims.forEach(({anim:a,absDelay})=>fireAnim(el,d,a,idx,absDelay));
     }
 
     // Click anims — from global click map + nav triggers
@@ -639,16 +697,90 @@ function buildPSlide(container,idx){
   container._hasSteps=()=>groupIdx<clickGroups.length;
 }
 
-function fireAnim(el,d,a,idx,overrideDelay){
+function fireAnim(el,d,a,idx,overrideDelay,_cumTx,_cumTy){
   if(a.name==='moveTo'){
     const dur=(a.duration||600);
     const delay=typeof overrideDelay==='number' ? overrideDelay : (a.delay||0);
+    // tx/ty are absolute offsets from original element position (stored in data model)
+    // but when chaining after orbitTo we need to jump from cumulative position
+    const baseTx = typeof _cumTx==='number' ? _cumTx : 0;
+    const baseTy = typeof _cumTy==='number' ? _cumTy : 0;
     const tx=a.tx||0, ty=a.ty||0;
     setTimeout(()=>{
-      requestAnimationFrame(()=>{
-        el.style.transition=`transform ${dur}ms cubic-bezier(0.4,0,0.2,1)`;
-        el.style.transform=`translate(${tx}px,${ty}px)`;
-      });
+      if(el.animate){
+        // Set final in style + start animation atomically in same rAF
+        // fill:'none' means Web Anim overrides style during playback, style holds after finish
+        requestAnimationFrame(()=>{
+          el.style.transform = `translate(${tx}px,${ty}px)`;
+          el.animate(
+            [{transform:`translate(${baseTx.toFixed(2)}px,${baseTy.toFixed(2)}px)`},
+             {transform:`translate(${tx.toFixed(2)}px,${ty.toFixed(2)}px)`}],
+            {duration:dur, easing:'cubic-bezier(0.4,0,0.2,1)', fill:'none', composite:'replace'}
+          );
+        });
+      } else {
+        requestAnimationFrame(()=>{
+          el.style.transition=`transform ${dur}ms cubic-bezier(0.4,0,0.2,1)`;
+          el.style.transform=`translate(${tx}px,${ty}px)`;
+        });
+      }
+    }, delay);
+    return;
+  }
+  if(a.name==='orbitTo'){
+    const dur = a.duration||1200;
+    const delay = typeof overrideDelay==='number' ? overrideDelay : (a.delay||0);
+    const r = a.orbitR || 120;
+    const dir = (a.orbitDir||'cw')==='cw' ? 1 : -1;
+    const totalDeg = (a.orbitDeg != null ? a.orbitDeg : 360) * dir;
+    const ocx = (a.orbitCx||0);
+    const ocy = (a.orbitCy||0);
+    const baseTx = typeof _cumTx==='number' ? _cumTx : 0;
+    const baseTy = typeof _cumTy==='number' ? _cumTy : 0;
+    const startAngle = Math.atan2(-ocy, -ocx);
+    const steps = Math.max(60, Math.abs(totalDeg) * 2);
+    const frames = [];
+    for(let i=0;i<=steps;i++){
+      const t = i/steps;
+      const angle = startAngle + (totalDeg * Math.PI/180) * t;
+      const ftx = baseTx + ocx + r*Math.cos(angle);
+      const fty = baseTy + ocy + r*Math.sin(angle);
+      frames.push({transform:`translate(${ftx.toFixed(2)}px,${fty.toFixed(2)}px)`});
+    }
+    const endTx = baseTx + ocx + r*Math.cos(startAngle + totalDeg*Math.PI/180);
+    const endTy = baseTy + ocy + r*Math.sin(startAngle + totalDeg*Math.PI/180);
+    setTimeout(()=>{
+      if(el.animate){
+        requestAnimationFrame(()=>{
+          el.style.transform = `translate(${endTx.toFixed(2)}px,${endTy.toFixed(2)}px)`;
+          el.animate(frames, {duration:dur, easing:'linear', fill:'none', composite:'replace'});
+        });
+      }
+    }, delay);
+    return;
+  }
+  if(a.name==='rotate'){
+    const dur = a.duration||600;
+    const delay = typeof overrideDelay==='number' ? overrideDelay : (a.delay||0);
+    const dir = (a.rotateDir||'cw')==='cw' ? 1 : -1;
+    const deg = (a.rotateDeg!=null ? a.rotateDeg : 360) * dir;
+    // Use composite:'add' so rotate stacks on top of existing translate (from moveTo/orbitTo)
+    // Apply on inner .ec if available, otherwise on el itself with composite
+    const ecEl = el.querySelector('.ec') || null;
+    setTimeout(()=>{
+      if(ecEl && ecEl.animate){
+        const anim = ecEl.animate(
+          [{transform:'rotate(0deg)'},{transform:`rotate(${deg}deg)`}],
+          {duration:dur, easing:'linear', fill:'forwards'}
+        );
+        anim.onfinish = ()=>{ try{ anim.commitStyles(); }catch(e){} anim.cancel(); };
+      } else if(el.animate){
+        const anim = el.animate(
+          [{transform:'rotate(0deg)'},{transform:`rotate(${deg}deg)`}],
+          {duration:dur, easing:'linear', fill:'forwards', composite:'add'}
+        );
+        anim.onfinish = ()=>{ try{ anim.commitStyles(); }catch(e){} anim.cancel(); };
+      }
     }, delay);
     return;
   }

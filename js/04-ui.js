@@ -240,11 +240,11 @@ function _applyCanvasZoom(){
     cc.style.left = Math.round((cwW - scaledW) / 2) + 'px';
     cc.style.top  = Math.round((cwH - scaledH) / 2) + 'px';
   } else {
-    // Overflows — show scrollbars, place cc at ZOOM_PAD offset
+    // Overflows on at least one axis — center on fitting axis, pad on overflow axis
     ghost.style.width  = totalW + 'px';
     ghost.style.height = totalH + 'px';
-    cc.style.left = ZOOM_PAD + 'px';
-    cc.style.top  = ZOOM_PAD + 'px';
+    cc.style.left = fitsW ? Math.round((cwW - scaledW) / 2) + 'px' : ZOOM_PAD + 'px';
+    cc.style.top  = fitsH ? Math.round((cwH - scaledH) / 2) + 'px' : ZOOM_PAD + 'px';
   }
 
   // Sync canvas-bg-rect size with canvas dimensions
@@ -263,6 +263,13 @@ window.addEventListener('load', function(){
     if(!cwrap) return;
     _applyCanvasZoom();
     _centerSlide();
+
+    // Re-center on window resize (including browser zoom)
+    let _resizeTimer = null;
+    window.addEventListener('resize', function(){
+      clearTimeout(_resizeTimer);
+      _resizeTimer = setTimeout(function(){ _applyCanvasZoom(); _centerSlide(); }, 80);
+    });
 
     cwrap.addEventListener('wheel', function(e){
       e.preventDefault();

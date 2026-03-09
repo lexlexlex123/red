@@ -3,7 +3,7 @@
 // Автор / Author: Некрасов Александр
 
 const APP_NAME = 'Слайды';
-const APP_VERSION = '5.1';
+const APP_VERSION = '5.2';
 const APP_AUTHOR = 'Некрасов Александр';
 
 const LANG_DATA = {

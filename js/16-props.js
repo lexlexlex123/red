@@ -110,6 +110,15 @@ function syncProps(){
       document.getElementById('p-bg-op').value=bgOp;
       const bgBlur=parseFloat(sel.dataset.textBgBlur!=null?sel.dataset.textBgBlur:0);
       document.getElementById('p-bg-blur').value=bgBlur;
+      // Gradient state
+      const isGrad=sel.dataset.textBgGrad==='1';
+      const gradChk=document.getElementById('p-bg-grad-check');if(gradChk)gradChk.checked=isGrad;
+      const gradRow=document.getElementById('p-bg-grad-row');if(gradRow)gradRow.style.display=isGrad?'flex':'none';
+      const col2=sel.dataset.textBgCol2||'';
+      const _bgsw2=document.getElementById('p-bg-swatch2-inner');if(_bgsw2)_bgsw2.style.background=col2;
+      document.getElementById('p-bg-hex2').value=col2;
+      const bgDir=sel.dataset.textBgDir!=null?+sel.dataset.textBgDir:90;
+      document.querySelectorAll('.p-bg-dir-btn').forEach(b=>b.classList.toggle('on',+b.dataset.deg===bgDir));
     }catch(e){}
     // Text role
     const role=sel.dataset.textRole||'body';
@@ -274,12 +283,54 @@ function setTextBg(col, schemeRef){
   applyTextBg(sel);
   commitAll();
 }
+function clearTextBgCol1(){
+  if(!sel||sel.dataset.type!=='text')return;
+  delete sel.dataset.textBg;
+  try{
+    document.getElementById('p-bg-hex').value='';
+    const _bgsw=document.getElementById('p-bg-swatch-inner');if(_bgsw)_bgsw.style.background='';
+  }catch(e){}
+  applyTextBg(sel);
+  commitAll();
+}
 function clearTextBg(){
   if(!sel||sel.dataset.type!=='text')return;
   delete sel.dataset.textBg;delete sel.dataset.textBgOp;delete sel.dataset.textBgBlur;
+  delete sel.dataset.textBgGrad;delete sel.dataset.textBgCol2;delete sel.dataset.textBgDir;
+  // Clear both .ec and .el styles
   const c=sel.querySelector('.ec');if(c)c.style.background='';
-  try{document.getElementById('p-bg-hex').value='';const _bgsw=document.getElementById('p-bg-swatch-inner');if(_bgsw)_bgsw.style.background='';}catch(e){}
+  sel.style.background='';sel.style.backdropFilter='';sel.style.webkitBackdropFilter='';
+  try{
+    document.getElementById('p-bg-hex').value='';
+    const _bgsw=document.getElementById('p-bg-swatch-inner');if(_bgsw)_bgsw.style.background='';
+    // Reset gradient UI
+    const gradRow=document.getElementById('p-bg-grad-row');if(gradRow)gradRow.style.display='none';
+    const gradChk=document.getElementById('p-bg-grad-check');if(gradChk)gradChk.checked=false;
+  }catch(e){}
   commitAll();
+}
+function setTextBgGrad(on){
+  if(!sel||sel.dataset.type!=='text')return;
+  if(on){ sel.dataset.textBgGrad='1'; } else { delete sel.dataset.textBgGrad; }
+  applyTextBg(sel);
+  commitAll();
+  // Show/hide gradient row
+  const gradRow=document.getElementById('p-bg-grad-row');
+  if(gradRow) gradRow.style.display=on?'flex':'none';
+}
+function setTextBgCol2(col){
+  if(!sel||sel.dataset.type!=='text')return;
+  sel.dataset.textBgCol2=col;
+  applyTextBg(sel);
+  commitAll();
+}
+function setTextBgDir(deg){
+  if(!sel||sel.dataset.type!=='text')return;
+  sel.dataset.textBgDir=deg;
+  applyTextBg(sel);
+  commitAll();
+  // Update direction button active state
+  document.querySelectorAll('.p-bg-dir-btn').forEach(b=>b.classList.toggle('on',+b.dataset.deg===+deg));
 }
 function setTextBgOp(op){
   if(!sel||sel.dataset.type!=='text')return;
@@ -293,19 +344,43 @@ function setTextBgBlur(v){
   applyTextBg(sel);
   commitAll();
 }
+function _getBgLayer(el){
+  let layer=el.querySelector('.el-bg-layer');
+  if(!layer){
+    layer=document.createElement('div');
+    layer.className='el-bg-layer';
+    layer.style.cssText='position:absolute;inset:0;z-index:0;pointer-events:none;border-radius:inherit;';
+    el.insertBefore(layer,el.firstChild);
+  }
+  return layer;
+}
 function applyTextBg(el){
   const c=el.querySelector('.ec');if(!c)return;
   const col=el.dataset.textBg;
   const blur=parseFloat(el.dataset.textBgBlur!=null?el.dataset.textBgBlur:0);
-  if(!col && !blur){el.style.background='';el.style.backdropFilter='';el.style.webkitBackdropFilter='';c.style.background='';return;}
-  if(col){
-    const op=parseFloat(el.dataset.textBgOp!=null?el.dataset.textBgOp:1);
-    const r=parseInt(col.slice(1,3),16),g=parseInt(col.slice(3,5),16),b=parseInt(col.slice(5,7),16);
-    el.style.background=`rgba(${r},${g},${b},${op})`;
-  } else {
-    el.style.background='';
-  }
+  const isGrad=el.dataset.textBgGrad==='1';
+  // Always clear el.style.background — use bg-layer div instead to avoid white-strip under text
+  el.style.background='';
   c.style.background='';
+  if(!col && !blur && !isGrad){
+    const old=el.querySelector('.el-bg-layer');if(old)old.remove();
+    el.style.backdropFilter='';el.style.webkitBackdropFilter='';
+    return;
+  }
+  const layer=_getBgLayer(el);
+  const toRgba=(hex,a)=>{if(!hex)return`rgba(0,0,0,0)`;const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return`rgba(${r},${g},${b},${a})`;};
+  if(col || isGrad){
+    const op=parseFloat(el.dataset.textBgOp!=null?el.dataset.textBgOp:1);
+    const dir=el.dataset.textBgDir!=null?+el.dataset.textBgDir:90;
+    if(isGrad){
+      const c2val=el.dataset.textBgCol2?toRgba(el.dataset.textBgCol2,op):`rgba(0,0,0,0)`;
+      layer.style.background=`linear-gradient(${dir}deg,${toRgba(col,op)},${c2val})`;
+    } else {
+      layer.style.background=toRgba(col,op);
+    }
+  } else {
+    layer.style.background='';
+  }
   if(blur>0){
     el.style.backdropFilter=`blur(${blur}px)`;
     el.style.webkitBackdropFilter=`blur(${blur}px)`;

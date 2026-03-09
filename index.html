@@ -456,12 +456,43 @@
           <!-- Background color block -->
           <div class="pr"><label data-i18n="propBgColor">Фон блока</label>
             <div style="display:flex;flex-direction:column;gap:4px">
+              <!-- Gradient toggle -->
+              <div style="display:flex;align-items:center;justify-content:space-between">
+                <label style="display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text2);cursor:pointer">
+                  <label class="tog"><input type="checkbox" id="p-bg-grad-check" onchange="setTextBgGrad(this.checked)"><span class="tog-track"></span><span class="tog-thumb"></span></label>
+                  Градиент
+                </label>
+                <button onclick="clearTextBg()" title="Убрать фон полностью" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:1px 6px;cursor:pointer;font-size:9px;white-space:nowrap;opacity:.7">✕ всё</button>
+              </div>
+              <!-- Color 1 row -->
               <div style="display:flex;gap:4px;align-items:center">
                 <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;background:repeating-conic-gradient(#aaa 0% 25%,#fff 0% 50%) 0 0/8px 8px;" onmousedown="openColorPanel('cp-bg-slot','bg',function(c,sr){document.getElementById('p-bg-hex').value=c;document.getElementById('p-bg-swatch-inner').style.background=c;setTextBg(c,sr);})" title="Цвет фона"><div id="p-bg-swatch-inner" style="width:100%;height:100%;"></div></div>
                 <input type="text" id="p-bg-hex" placeholder="transparent" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('p-bg-swatch-inner').style.background=this.value;setTextBg(this.value);}">
-                <button onclick="clearTextBg()" title="Убрать фон" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:2px 6px;cursor:pointer;font-size:10px;white-space:nowrap">✕</button>
+                <button onclick="clearTextBgCol1()" title="Убрать цвет 1" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:2px 6px;cursor:pointer;font-size:10px;white-space:nowrap">✕</button>
               </div>
               <div id="cp-bg-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
+              <!-- Gradient row: color2 + direction -->
+              <div id="p-bg-grad-row" style="display:none;flex-direction:column;gap:4px;margin-top:2px;margin-bottom:2px">
+                <!-- Color 2 row -->
+                <div style="display:flex;gap:4px;align-items:center">
+                  <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;background:repeating-conic-gradient(#aaa 0% 25%,#fff 0% 50%) 0 0/8px 8px;" onmousedown="openColorPanel('cp-bg2-slot','bg2',function(c){document.getElementById('p-bg-hex2').value=c;document.getElementById('p-bg-swatch2-inner').style.background=c;setTextBgCol2(c);})" title="Цвет 2"><div id="p-bg-swatch2-inner" style="width:100%;height:100%;"></div></div>
+                  <input type="text" id="p-bg-hex2" placeholder="Цвет 2" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('p-bg-swatch2-inner').style.background=this.value;setTextBgCol2(this.value);}">
+                  <button onclick="setTextBgCol2('');document.getElementById('p-bg-hex2').value='';document.getElementById('p-bg-swatch2-inner').style.background='';" title="Убрать цвет 2" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:2px 6px;cursor:pointer;font-size:10px;white-space:nowrap">✕</button>
+                </div>
+                <div id="cp-bg2-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
+                <!-- Direction buttons -->
+                <div style="display:flex;gap:3px;align-items:center;margin-top:2px;margin-bottom:2px">
+                  <span style="font-size:10px;color:var(--text2);margin-right:2px;white-space:nowrap">Направление:</span>
+                  <button class="p-bg-dir-btn on" data-deg="90"  onclick="setTextBgDir(90)"  title="→" style="width:22px;height:22px;background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;cursor:pointer;font-size:13px;line-height:1;padding:0;flex-shrink:0">→</button>
+                  <button class="p-bg-dir-btn"    data-deg="270" onclick="setTextBgDir(270)" title="←" style="width:22px;height:22px;background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;cursor:pointer;font-size:13px;line-height:1;padding:0;flex-shrink:0">←</button>
+                  <button class="p-bg-dir-btn"    data-deg="180" onclick="setTextBgDir(180)" title="↓" style="width:22px;height:22px;background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;cursor:pointer;font-size:13px;line-height:1;padding:0;flex-shrink:0">↓</button>
+                  <button class="p-bg-dir-btn"    data-deg="0"   onclick="setTextBgDir(0)"   title="↑" style="width:22px;height:22px;background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;cursor:pointer;font-size:13px;line-height:1;padding:0;flex-shrink:0">↑</button>
+                  <button class="p-bg-dir-btn"    data-deg="135" onclick="setTextBgDir(135)" title="↙" style="width:22px;height:22px;background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;cursor:pointer;font-size:13px;line-height:1;padding:0;flex-shrink:0">↙</button>
+                  <button class="p-bg-dir-btn"    data-deg="45"  onclick="setTextBgDir(45)"  title="↘" style="width:22px;height:22px;background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;cursor:pointer;font-size:13px;line-height:1;padding:0;flex-shrink:0">↘</button>
+                  <button class="p-bg-dir-btn"    data-deg="225" onclick="setTextBgDir(225)" title="↗" style="width:22px;height:22px;background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;cursor:pointer;font-size:13px;line-height:1;padding:0;flex-shrink:0">↗</button>
+                  <button class="p-bg-dir-btn"    data-deg="315" onclick="setTextBgDir(315)" title="↖" style="width:22px;height:22px;background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;cursor:pointer;font-size:13px;line-height:1;padding:0;flex-shrink:0">↖</button>
+                </div>
+              </div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
                 <div style="display:flex;align-items:center;gap:5px"><label style="font-size:10px;color:var(--text2);white-space:nowrap;min-width:60px"><span data-i18n="propOpacityShort">Прозрачность</span></label><input type="number" id="p-bg-op" min="0" max="1" step="0.05" value="1" oninput="setTextBgOp(+this.value)" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;box-sizing:border-box"></div>
                 <div style="display:flex;align-items:center;gap:5px"><label style="font-size:10px;color:var(--text2);white-space:nowrap;min-width:40px"><span data-i18n="propBlurShort">Размытие</span></label><input type="number" id="p-bg-blur" min="0" max="40" step="1" value="0" oninput="setTextBgBlur(+this.value)" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;box-sizing:border-box"></div>
@@ -1309,6 +1340,9 @@
 <script src="js/32-scrubber.js"></script>
   <script src="js/33-objects.js"></script>
 <script src="js/33-pagenum.js"></script>
+<script src="js/34-config.js"></script>
+<script src="js/35-ai.js"></script>
+<script src="js/28-filedrop.js"></script>
 <script>boot();</script>
 </body>
 </html>

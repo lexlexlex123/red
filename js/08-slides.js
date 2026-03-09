@@ -64,10 +64,13 @@ function save(){
       }
       if(el.dataset.valign)d.valign=el.dataset.valign;
       if(el.dataset.textBg)d.textBg=el.dataset.textBg;
-      // Always save textBgOp when textBg is set so opacity is preserved on re-render
-      if(el.dataset.textBg){d.textBgOp=el.dataset.textBgOp!==undefined?+el.dataset.textBgOp:1;}
+      // Save textBgOp whenever textBg OR gradient is active
+      if(el.dataset.textBg||el.dataset.textBgGrad==='1'){d.textBgOp=el.dataset.textBgOp!=null?+el.dataset.textBgOp:1;}
       else if(el.dataset.textBgOp!=null){d.textBgOp=+el.dataset.textBgOp;}
       if(el.dataset.textBgBlur>0)d.textBgBlur=+el.dataset.textBgBlur;
+      if(el.dataset.textBgGrad==='1'){d.textBgGrad=true;} else {delete d.textBgGrad;}
+      if(el.dataset.textBgCol2)d.textBgCol2=el.dataset.textBgCol2; else delete d.textBgCol2;
+      if(el.dataset.textBgDir!=null)d.textBgDir=+el.dataset.textBgDir; else delete d.textBgDir;
       // Table bg opacity/blur — stored in dataset.tableData via _tblSaveToDataset
       if(d.type==='table'&&_od){
         if(_od.tableBgOp!=null)d.tableBgOp=_od.tableBgOp;
@@ -135,14 +138,15 @@ function save(){
     else if(d.type==='code'){const dd=oldElsById[d.id];if(dd){d.codeLang=dd.codeLang;d.codeTheme=dd.codeTheme;d.codeRaw=dd.codeRaw;d.codeHtml=dd.codeHtml;d.codeFs=dd.codeFs;d.codeBg=dd.codeBg;}}
     else if(d.type==='markdown'){const dd=oldElsById[d.id];if(dd){d.mdRaw=dd.mdRaw;d.mdHtml=dd.mdHtml;d.mdFs=dd.mdFs;d.mdColor=dd.mdColor||'#ffffff';d.mdColorScheme=dd.mdColorScheme!==undefined?dd.mdColorScheme:{col:7,row:0};}
       if(el.dataset.textBg)d.textBg=el.dataset.textBg;
-      if(el.dataset.textBg){d.textBgOp=el.dataset.textBgOp!==undefined?+el.dataset.textBgOp:1;}
+      if(el.dataset.textBg||el.dataset.textBgGrad==='1'){d.textBgOp=el.dataset.textBgOp!=null?+el.dataset.textBgOp:1;}
       else if(el.dataset.textBgOp!=null){d.textBgOp=+el.dataset.textBgOp;}
       if(el.dataset.textBgBlur>0)d.textBgBlur=+el.dataset.textBgBlur;
+      if(el.dataset.textBgGrad==='1'){d.textBgGrad=true;} else {delete d.textBgGrad;}
+      if(el.dataset.textBgCol2)d.textBgCol2=el.dataset.textBgCol2; else delete d.textBgCol2;
+      if(el.dataset.textBgDir!=null)d.textBgDir=+el.dataset.textBgDir; else delete d.textBgDir;
       if(el.dataset.textBorderW&&+el.dataset.textBorderW>0){d.textBorderW=+el.dataset.textBorderW;d.textBorderColor=el.dataset.textBorderColor||'#ffffff';}
       if(el.dataset.rx_tl||el.dataset.rx_tr||el.dataset.rx_bl||el.dataset.rx_br){d.rx_tl=+(el.dataset.rx_tl||0);d.rx_tr=+(el.dataset.rx_tr||0);d.rx_bl=+(el.dataset.rx_bl||0);d.rx_br=+(el.dataset.rx_br||0);}
       const _odmd=oldElsById[d.id];if(_odmd){if(_odmd.textBgScheme!==undefined)d.textBgScheme=_odmd.textBgScheme;if(_odmd.borderScheme!==undefined)d.borderScheme=_odmd.borderScheme;}
-    }
-    else if(d.type==='icon'){
       d.iconId=el.dataset.iconId||'';
       d.iconColor=el.dataset.iconColor||'#3b82f6';
       d.iconSw=el.dataset.iconSw!=null?+el.dataset.iconSw:1.8;

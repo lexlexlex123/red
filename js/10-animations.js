@@ -23,9 +23,10 @@ const ANIM_CATS = [
   {
     cat: 'emphasis', label: 'Выделение',
     items: [
-      {name:'pulse', label:'Пульсация', icon:'💓'},
-      {name:'shake', label:'Дрожание',  icon:'〰'},
-      {name:'flash', label:'Мигание',   icon:'🔦'},
+      {name:'pulse',  label:'Пульсация', icon:'💓'},
+      {name:'shake',  label:'Дрожание',  icon:'〰'},
+      {name:'flash',  label:'Мигание',   icon:'🔦'},
+      {name:'rotate', label:'Вращение',  icon:'🔁'},
     ]
   },
   {
@@ -39,7 +40,8 @@ const ANIM_CATS = [
   {
     cat: 'motion', label: 'Перемещение',
     items: [
-      {name:'moveTo', label:'Переместить', icon:'↗'},
+      {name:'moveTo',   label:'Переместить', icon:'↗'},
+      {name:'orbitTo',  label:'По окружности', icon:'⭕'},
     ]
   },
 ];
@@ -139,10 +141,14 @@ let _animPreviewTimer = null;
       const anim = {name:animName, cat, duration:600, delay:0, trigger:'auto'};
       // For moveTo: default offset = 100px right, initial ghost visible
       if(animName==='moveTo'){ anim.tx=100; anim.ty=0; }
+      // For orbitTo: default radius, direction, degrees
+      if(animName==='orbitTo'){ anim.orbitR=120; anim.orbitDir='cw'; anim.orbitDeg=360; anim.orbitCx=0; anim.orbitCy=0; }
+      if(animName==='rotate'){ anim.rotateDir='cw'; anim.rotateDeg=360; }
       d.anims.push(anim);
       el.dataset.anims=JSON.stringify(d.anims);
       _save(); renderAnimPanel(); _saveState();
       if(animName==='moveTo' && typeof renderMotionOverlay==='function') renderMotionOverlay();
+      if(animName==='orbitTo' && typeof renderMotionOverlay==='function') renderMotionOverlay();
     }catch(e){ console.warn('[10-animations] addAnimToSel:', e.message); }
   };
 
@@ -191,8 +197,17 @@ let _animPreviewTimer = null;
   };
 
   // Play single animation on element without accumulated delay
-  function playAnimOnEl(animName){
+  function playAnimOnEl(animName, animData){
     const el = _sel(); if(!el) return;
+    // rotate uses Web Animations API
+    if(animName === 'rotate'){
+      const dir = (animData && animData.rotateDir||'cw')==='cw' ? 1 : -1;
+      const deg = (animData && animData.rotateDeg!=null ? animData.rotateDeg : 360) * dir;
+      const dur = (animData && animData.duration) || 600;
+      el.animate([{transform:'rotate(0deg)'},{transform:`rotate(${deg}deg)`}],
+        {duration:dur, easing:'ease-in-out', fill:'none'});
+      return;
+    }
     const cssClass = ANIM_CSS[animName]; if(!cssClass) return;
     el.style.animation = '';
     void el.offsetWidth;
@@ -270,7 +285,7 @@ let _animPreviewTimer = null;
           item.classList.add('selected');
           const addBtn = document.getElementById('anim-add-btn');
           if(addBtn){ addBtn.disabled=false; addBtn.textContent='Добавить «'+it.label+'»'; }
-          playAnimOnEl(it.name);
+          playAnimOnEl(it.name, it);
         });
         grid.appendChild(item);
       });
@@ -415,6 +430,7 @@ let _animPreviewTimer = null;
             _save(); _saveState();
           }
           renderAnimPanel();
+          if(typeof renderMotionOverlay==='function') renderMotionOverlay();
         };
         document.addEventListener('mousemove', onMove);
         document.addEventListener('mouseup', onUp);
@@ -428,8 +444,8 @@ let _animPreviewTimer = null;
       const propGrid = document.createElement('div');
       propGrid.className = 'anim-row-props';
       propGrid.innerHTML = `
-        <label>Задержка, мс<input type="number" value="${a.delay||0}" min="0" max="10000" step="100" onchange="updateAnimProp('${d.id}',${ai},'delay',this.value)"></label>
-        <label>Длит., мс<input type="number" value="${a.duration||600}" min="50" max="5000" step="50" onchange="updateAnimProp('${d.id}',${ai},'duration',this.value)"></label>`;
+        <label>Задержка, мс<input type="number" value="${a.delay||0}" min="0" max="10000" step="100" oninput="updateAnimProp('${d.id}',${ai},'delay',this.value)" onchange="updateAnimProp('${d.id}',${ai},'delay',this.value)"></label>
+        <label>Длит., мс<input type="number" value="${a.duration||600}" min="50" max="5000" step="50" oninput="updateAnimProp('${d.id}',${ai},'duration',this.value)" onchange="updateAnimProp('${d.id}',${ai},'duration',this.value)"></label>`;
       props.appendChild(propGrid);
 
       // moveTo: show tx/ty fields + trigger
@@ -438,13 +454,86 @@ let _animPreviewTimer = null;
         motionGrid.className = 'anim-row-props';
         motionGrid.style.marginTop = '4px';
         motionGrid.innerHTML = `
-          <label>Смещение X<input type="number" value="${a.tx||0}" step="1" onchange="updateAnimProp('${d.id}',${ai},'tx',+this.value);if(typeof renderMotionOverlay==='function')renderMotionOverlay()"></label>
-          <label>Смещение Y<input type="number" value="${a.ty||0}" step="1" onchange="updateAnimProp('${d.id}',${ai},'ty',+this.value);if(typeof renderMotionOverlay==='function')renderMotionOverlay()"></label>`;
+          <label>Смещение X<input type="number" value="${a.tx||0}" step="1" oninput="updateAnimProp('${d.id}',${ai},'tx',+this.value);if(typeof renderMotionOverlay==='function')renderMotionOverlay()" onchange="updateAnimProp('${d.id}',${ai},'tx',+this.value);if(typeof renderMotionOverlay==='function')renderMotionOverlay()"></label>
+          <label>Смещение Y<input type="number" value="${a.ty||0}" step="1" oninput="updateAnimProp('${d.id}',${ai},'ty',+this.value);if(typeof renderMotionOverlay==='function')renderMotionOverlay()" onchange="updateAnimProp('${d.id}',${ai},'ty',+this.value);if(typeof renderMotionOverlay==='function')renderMotionOverlay()"></label>`;
         props.appendChild(motionGrid);
         const hint = document.createElement('div');
         hint.style.cssText='font-size:8px;color:var(--text3);margin-top:5px;line-height:1.4;';
         hint.textContent='↗ Перетащите бледную копию объекта чтобы задать точку назначения';
         props.appendChild(hint);
+      }
+
+      // orbitTo: radius, direction, degrees
+      if(a.name === 'orbitTo'){
+        const orbitGrid = document.createElement('div');
+        orbitGrid.className = 'anim-row-props';
+        orbitGrid.style.marginTop = '4px';
+        orbitGrid.innerHTML = `
+          <label>Радиус, px<input type="number" value="${a.orbitR||120}" min="10" max="2000" step="10" oninput="updateAnimProp('${d.id}',${ai},'orbitR',+this.value);if(typeof renderMotionOverlay==='function')renderMotionOverlay()" onchange="updateAnimProp('${d.id}',${ai},'orbitR',+this.value);if(typeof renderMotionOverlay==='function')renderMotionOverlay()"></label>
+          <label>Градусов<input type="number" value="${a.orbitDeg!=null?Math.abs(a.orbitDeg):360}" min="0" max="720" step="5" oninput="updateAnimProp('${d.id}',${ai},'orbitDeg',Math.abs(+this.value));if(typeof renderMotionOverlay==='function')renderMotionOverlay()" onchange="updateAnimProp('${d.id}',${ai},'orbitDeg',Math.abs(+this.value));if(typeof renderMotionOverlay==='function')renderMotionOverlay()"></label>`;
+        props.appendChild(orbitGrid);
+
+        // Direction select
+        const dirWrap = document.createElement('div');
+        dirWrap.style.cssText = 'margin-top:4px;display:flex;gap:4px;';
+        const dirBtns = [
+          {v:'cw',  l:'↻ По часовой'},
+          {v:'ccw', l:'↺ Против часовой'},
+        ];
+        dirBtns.forEach(btn => {
+          const b = document.createElement('button');
+          b.textContent = btn.l;
+          b.style.cssText = `flex:1;padding:3px 4px;font-size:9px;font-family:inherit;border-radius:3px;cursor:pointer;border:1px solid var(--border2);background:${(a.orbitDir||'cw')===btn.v?'var(--accent)':'var(--surface3)'};color:${(a.orbitDir||'cw')===btn.v?'#fff':'var(--text2)'};transition:.1s;`;
+          b.addEventListener('mousedown', e=>e.preventDefault());
+          b.addEventListener('click', ()=>{
+            updateAnimProp(d.id, ai, 'orbitDir', btn.v);
+            dirWrap.querySelectorAll('button').forEach((bb,bi)=>{
+              const isActive = dirBtns[bi].v === btn.v;
+              bb.style.background = isActive ? 'var(--accent)' : 'var(--surface3)';
+              bb.style.color = isActive ? '#fff' : 'var(--text2)';
+            });
+            if(typeof renderMotionOverlay==='function') renderMotionOverlay();
+          });
+          dirWrap.appendChild(b);
+        });
+        props.appendChild(dirWrap);
+
+        const hint2 = document.createElement('div');
+        hint2.style.cssText='font-size:8px;color:var(--text3);margin-top:5px;line-height:1.4;';
+        hint2.textContent='⭕ Перетащите центр окружности, тяните ручку для изменения радиуса';
+        props.appendChild(hint2);
+      }
+
+      // rotate: direction + degrees
+      if(a.name === 'rotate'){
+        const rotGrid = document.createElement('div');
+        rotGrid.className = 'anim-row-props';
+        rotGrid.style.marginTop = '4px';
+        rotGrid.innerHTML = `<label>Градусов<input type="number" value="${a.rotateDeg!=null?a.rotateDeg:360}" min="-3600" max="3600" step="5" oninput="updateAnimProp('${d.id}',${ai},'rotateDeg',+this.value)" onchange="updateAnimProp('${d.id}',${ai},'rotateDeg',+this.value)"></label>`;
+        props.appendChild(rotGrid);
+
+        const rotDirWrap = document.createElement('div');
+        rotDirWrap.style.cssText = 'margin-top:4px;display:flex;gap:4px;';
+        const rotDirBtns = [
+          {v:'cw',  l:'↻ По часовой'},
+          {v:'ccw', l:'↺ Против часовой'},
+        ];
+        rotDirBtns.forEach(btn => {
+          const b = document.createElement('button');
+          b.textContent = btn.l;
+          b.style.cssText = `flex:1;padding:3px 4px;font-size:9px;font-family:inherit;border-radius:3px;cursor:pointer;border:1px solid var(--border2);background:${(a.rotateDir||'cw')===btn.v?'var(--accent)':'var(--surface3)'};color:${(a.rotateDir||'cw')===btn.v?'#fff':'var(--text2)'};transition:.1s;`;
+          b.addEventListener('mousedown', e=>e.preventDefault());
+          b.addEventListener('click', ()=>{
+            updateAnimProp(d.id, ai, 'rotateDir', btn.v);
+            rotDirWrap.querySelectorAll('button').forEach((bb,bi)=>{
+              const isActive = rotDirBtns[bi].v === btn.v;
+              bb.style.background = isActive ? 'var(--accent)' : 'var(--surface3)';
+              bb.style.color = isActive ? '#fff' : 'var(--text2)';
+            });
+          });
+          rotDirWrap.appendChild(b);
+        });
+        props.appendChild(rotDirWrap);
       }
 
       // Trigger select for all anims
@@ -530,17 +619,29 @@ document.addEventListener('mousedown', function(e) {
   try{
     var anims = el.dataset.anims ? JSON.parse(el.dataset.anims) : [];
     if(!anims.length) return;
-    // Use inner .ec for shapes (they have transform:rotate on .el)
     var target = (el.dataset.type === 'shape' || el.dataset.type === 'icon') ? (el.querySelector('.ec') || el) : el;
-    target.style.animation = '';
-    void target.offsetWidth;
-    var parts = anims.map(function(a){
-      var cssName = ANIM_CSS[a.name] || 'el-fadein';
-      var dur = (a.duration || 600) / 1000;
-      return cssName + ' ' + dur + 's ease-out 0s both';
+    // Separate rotate (Web Animations) from CSS anims
+    var cssAnimParts = [];
+    var maxDur = 600;
+    anims.forEach(function(a){
+      maxDur = Math.max(maxDur, a.duration||600);
+      if(a.name === 'rotate'){
+        var dir = (a.rotateDir||'cw')==='cw' ? 1 : -1;
+        var deg = (a.rotateDeg!=null ? a.rotateDeg : 360) * dir;
+        var dur = a.duration||600;
+        target.animate([{transform:'rotate(0deg)'},{transform:'rotate('+deg+'deg)'}],
+          {duration:dur, easing:'ease-in-out', fill:'none'});
+      } else {
+        var cssName = ANIM_CSS[a.name] || 'el-fadein';
+        var durS = (a.duration || 600) / 1000;
+        cssAnimParts.push(cssName + ' ' + durS + 's ease-out 0s both');
+      }
     });
-    target.style.animation = parts.join(',');
-    var maxDur = anims.reduce(function(m,a){ return Math.max(m, a.duration||600); }, 600);
-    setTimeout(function(){ target.style.animation = ''; }, maxDur + 100);
+    if(cssAnimParts.length){
+      target.style.animation = '';
+      void target.offsetWidth;
+      target.style.animation = cssAnimParts.join(',');
+      setTimeout(function(){ target.style.animation = ''; }, maxDur + 100);
+    }
   }catch(ex){}
 });

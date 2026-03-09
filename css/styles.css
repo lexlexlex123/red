@@ -12,7 +12,7 @@
   --accent2:#ec4899;--accent3:#06b6d4;--accent4:#22c55e;--yellow:#f59e0b;--purple:#a855f7;
   --text:#e2e8f0;--text2:#8892a4;--text3:#424a5a;
   --selb:#3b82f6;--ribbon:#16161a;
-  --canvas-bg:#0a0a0b;
+  --canvas-bg:#16161a;
 }
 /* LIGHT THEME */
 html.light{
@@ -490,3 +490,10 @@ input[type=color]:focus{outline:none;box-shadow:none;}
 .el[data-crop-mode]{outline:2px dashed var(--accent)!important;}
 .crop-handle{position:absolute;width:10px;height:10px;background:#fff;border:2px solid #222;border-radius:1px;z-index:200;box-shadow:0 1px 4px rgba(0,0,0,.6);}
 .crop-overlay{position:absolute;background:rgba(0,0,0,0.55);pointer-events:none;z-index:100;}
+
+.p-bg-dir-btn.on{background:var(--accentl)!important;border-color:var(--accent)!important;color:var(--accent)!important;}
+#p-bg-grad-toggle.on{background:var(--accentl)!important;border-color:var(--accent)!important;color:var(--accent)!important;}
+
+/* Background layer for text elements — absolute fill, behind text */
+.el-bg-layer{position:absolute;inset:0;z-index:0;pointer-events:none;border-radius:inherit;}
+.el[data-type=text] > .ec.tel{position:relative;z-index:1;}

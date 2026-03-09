@@ -117,6 +117,32 @@ function _htmlTableToTSV(html) {
 }
 
 // ══════════════ SYSTEM CLIPBOARD PASTE ══════════════
+// Helper: add image from dataURL or external src to canvas — global so filedrop can use it
+function _addImageToCanvas(src) {
+  if(typeof pushUndo==='function')pushUndo();
+  const img = new Image();
+  img.onload = () => {
+    const maxW = canvasW * 0.6, maxH = canvasH * 0.6;
+    let w = img.naturalWidth || 400, h = img.naturalHeight || 300;
+    const scale = Math.min(maxW / w, maxH / h, 1);
+    w = Math.round(w * scale); h = Math.round(h * scale);
+    const d = {
+      id:'e'+(++ec), type:'image',
+      x: Math.round((canvasW - w) / 2), y: Math.round((canvasH - h) / 2), w, h, src,
+      rot:0, anims:[], imgFit:'fill', imgRx:0,
+      imgBw:0, imgBc:'#ffffff', imgShadow:false,
+      imgShadowBlur:15, imgShadowColor:'#000000', imgOpacity:1
+    };
+    slides[cur].els.push(d); mkEl(d);
+    const el = document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
+    if(el) pick(el);
+    save(); if(typeof drawThumbs==='function')drawThumbs(); if(typeof saveState==='function')saveState();
+    if(typeof toast==='function')toast((t('toastImagePasted')),'ok');
+  };
+  img.onerror = () => { if(typeof toast==='function')toast('Не удалось загрузить изображение','err'); };
+  img.src = src;
+}
+
 document.addEventListener('paste', async (e) => {
   // Don't intercept when editing text or typing in inputs
   const ae = document.activeElement;
@@ -163,30 +189,6 @@ document.addEventListener('paste', async (e) => {
   }
 
   // Helper: add image from dataURL or external src to canvas
-  function _addImageToCanvas(src) {
-    if(typeof pushUndo==='function')pushUndo();
-    const img = new Image();
-    img.onload = () => {
-      const maxW = canvasW * 0.6, maxH = canvasH * 0.6;
-      let w = img.naturalWidth || 400, h = img.naturalHeight || 300;
-      const scale = Math.min(maxW / w, maxH / h, 1);
-      w = Math.round(w * scale); h = Math.round(h * scale);
-      const d = {
-        id:'e'+(++ec), type:'image',
-        x: Math.round((canvasW - w) / 2), y: Math.round((canvasH - h) / 2), w, h, src,
-        rot:0, anims:[], imgFit:'fill', imgRx:0,
-        imgBw:0, imgBc:'#ffffff', imgShadow:false,
-        imgShadowBlur:15, imgShadowColor:'#000000', imgOpacity:1
-      };
-      slides[cur].els.push(d); mkEl(d);
-      const el = document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
-      if(el) pick(el);
-      save(); if(typeof drawThumbs==='function')drawThumbs(); if(typeof saveState==='function')saveState();
-      if(typeof toast==='function')toast((t('toastImagePasted')),'ok');
-    };
-    img.onerror = () => { if(typeof toast==='function')toast('Не удалось загрузить изображение','err'); };
-    img.src = src;
-  }
 
   // 1. Check for image
   // hasText guard: skip image if there's meaningful text (Excel/app screenshot has both image+text)

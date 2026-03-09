@@ -132,17 +132,8 @@ function mkEl(d){
     c.addEventListener('input',()=>{ if(typeof _rtCommit==='function') _rtCommit(); else save(); });
     c.addEventListener('keydown',e=>{if(e.key==='Escape'){c.contentEditable='false';c.blur();}else e.stopPropagation();});
     if(typeof rtAttachSelectionTracking==='function')rtAttachSelectionTracking(el,c);
-    // Restore vertical alignment
+    // Restore background — deferred to after el.append(c) so querySelector('.ec') works
     if(d.valign){el.dataset.valign=d.valign;} // applied after cv.appendChild below
-    // Restore background — apply directly to c since it may not be in el yet
-    if(d.textBg||d.textBgBlur){
-      if(d.textBg){el.dataset.textBg=d.textBg;if(d.textBgOp!=null)el.dataset.textBgOp=d.textBgOp;
-        const op=parseFloat(d.textBgOp!=null?d.textBgOp:1);
-        const col=d.textBg;const r=parseInt(col.slice(1,3),16),g=parseInt(col.slice(3,5),16),b=parseInt(col.slice(5,7),16);
-        el.style.background=`rgba(${r},${g},${b},${op})`;c.style.background='';}
-      if(d.textBgBlur>0){el.dataset.textBgBlur=d.textBgBlur;
-        el.style.backdropFilter=`blur(${d.textBgBlur}px)`;el.style.webkitBackdropFilter=`blur(${d.textBgBlur}px)`;}
-    }
     // Restore text role + uppercase for headings
     if(d.textRole){
       el.dataset.textRole=d.textRole;
@@ -189,7 +180,7 @@ function mkEl(d){
     c.innerHTML=d.mdHtml||markdownToHtml(d.mdRaw||'');
     c.addEventListener('dblclick',e=>{e.stopPropagation();if(typeof openMdEditor==='function')openMdEditor();});
     // Restore bg
-    if(d.textBg){el.dataset.textBg=d.textBg;el.dataset.textBgOp=d.textBgOp!=null?d.textBgOp:1;if(d.textBgBlur)el.dataset.textBgBlur=d.textBgBlur;if(typeof applyTextBg==='function')applyTextBg(el);}
+    if(d.textBg||d.textBgBlur||d.textBgGrad){el.dataset.textBg=d.textBg||'';if(d.textBgOp!=null)el.dataset.textBgOp=d.textBgOp;if(d.textBgBlur)el.dataset.textBgBlur=d.textBgBlur;if(d.textBgGrad)el.dataset.textBgGrad='1';if(d.textBgCol2)el.dataset.textBgCol2=d.textBgCol2;if(d.textBgDir!=null)el.dataset.textBgDir=d.textBgDir;if(typeof applyTextBg==='function')applyTextBg(el);}
     else if(d.textBgBlur>0){el.dataset.textBgBlur=d.textBgBlur;if(typeof applyTextBg==='function')applyTextBg(el);}
     // Restore border
     if(d.textBorderW&&+d.textBorderW>0){el.dataset.textBorderW=d.textBorderW;el.dataset.textBorderColor=d.textBorderColor||'#ffffff';if(typeof _applyMdBorder==='function')_applyMdBorder(el);}
@@ -373,6 +364,20 @@ function mkEl(d){
     });
   }
   el.append(c,lb,trigBadge);cv.appendChild(el);
+  // Restore text background here — after el.append(c) so .ec is queryable
+  if(d.type==='text'){
+    if(d.textBg){el.dataset.textBg=d.textBg;}
+    if(d.textBgOp!=null)el.dataset.textBgOp=d.textBgOp;
+    if(d.textBgGrad)el.dataset.textBgGrad='1'; else delete el.dataset.textBgGrad;
+    if(d.textBgCol2)el.dataset.textBgCol2=d.textBgCol2; else delete el.dataset.textBgCol2;
+    if(d.textBgDir!=null)el.dataset.textBgDir=d.textBgDir;
+    if(d.textBgBlur>0)el.dataset.textBgBlur=d.textBgBlur;
+    if(typeof applyTextBg==='function'){
+      applyTextBg(el);
+      // Second pass in next frame in case first call ran before layout
+      requestAnimationFrame(()=>{ if(el.isConnected&&typeof applyTextBg==='function')applyTextBg(el); });
+    }
+  }
   if(d.valign&&d.type==='text'&&typeof applyTextVAlign==='function')applyTextVAlign(el,d.valign);
   if(d.type==='table'&&d.tableBgBlur>0){
     el.style.backdropFilter=`blur(${d.tableBgBlur}px)`;el.style.webkitBackdropFilter=`blur(${d.tableBgBlur}px)`;}

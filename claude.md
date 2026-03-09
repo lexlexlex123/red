@@ -5,7 +5,7 @@
 **«Слайды»** — презентационный редактор, работающий в одном HTML-файле (или модульно).
 Не требует сервера, сборки или интернета. Открывается напрямую в браузере.
 
-- **Версия:** v5.1
+- **Версия:** v5.2
 - **Автор:** Некрасов Александр
 - **Стек:** Vanilla JS + HTML + CSS, без фреймворков
 - **Зависимости:** JSZip (офлайн), QRCode (офлайн), системные шрифты
@@ -29,7 +29,7 @@ project/
     ├── 02-applets.js       # Встроенные виджеты (APPLETS[])
     ├── 02b-icons.js        # Расширенная библиотека иконок
     ├── 03-boot.js          # boot(), инициализация, openColorPanel(), buildThemeGrid()
-    ├── 04-ui.js            # Сетка, табы, snap/guides, aspect ratio
+    ├── 04-ui.js            # Сетка, табы, snap/guides, zoom, центрирование канваса
     ├── 05-backgrounds.js   # Фоны слайдов, setSlideBgFromPalette(), resetSlideBgToTheme()
     ├── 06-themes.js        # Применение цветовых схем, _resolveSchemeColor()
     ├── 07-transitions.js   # Переходы между слайдами
@@ -46,14 +46,15 @@ project/
     ├── 17-text.js          # Редактирование текста, setTextBorder()
     ├── 19-hover.js         # Hover-эффекты
     ├── 20-thumbnails.js    # Миниатюры слайдов, renderAll()
-    ├── 21-keyboard.js      # Горячие клавиши
+    ├── 21-keyboard.js      # Горячие клавиши, _addImageToCanvas() [глобальная]
     ├── 22-undo.js          # Undo/Redo (до 40 шагов)
     ├── 23-layout.js        # Декоратор готовых макетов, buildLayoutGrid()
     ├── 24-preview.js       # Режим показа, startPreview() / stopPreview()
     ├── 25-links.js         # Ссылки-навигация на элементах
-    ├── 26-export.js        # Экспорт HTML, импорт PPTX
+    ├── 26-export.js        # Экспорт HTML, импорт PPTX/HTML, importHTMLFile()
     ├── 27-persist.js       # save() / saveState() / commitAll() / loadState()
     ├── 28-multisel.js      # Множественное выделение
+    ├── 28-filedrop.js      # Drag-and-drop импорт файлов (PPTX/PPT/ODP/HTML/JSON/изображения)
     ├── 29-icons.js         # buildIconSVG()
     ├── 30-rich-text.js     # Rich text: rtColor(color, schemeRef), _charObjsToHtml()
     ├── 31-table.js         # Таблицы
@@ -61,6 +62,40 @@ project/
     ├── 33-objects.js       # Управление объектами
     └── 33-pagenum.js       # Нумерация страниц, pnSettings, pnApplyAll()
 ```
+
+---
+
+## Drag-and-drop импорт файлов (`js/28-filedrop.js`)
+
+При перетаскивании файла на окно программы появляется полупрозрачный оверлей с подсказкой.
+Поддерживаемые форматы (по расширению):
+
+| Расширение | Действие |
+|------------|----------|
+| `.pptx`, `.ppt`, `.odp` | `importPPTX(file)` — импорт презентации |
+| `.html`, `.htm` | `importHTMLFile(file)` — импорт экспортированного HTML |
+| `.json` | Парсит, проверяет `slides`, пишет в `localStorage`, вызывает `loadState()` + `renderAll()` |
+| `image/*` | `_addImageToCanvas(dataURL)` — вставить на текущий слайд |
+
+**Важно:** `_addImageToCanvas` объявлена **глобально** в `21-keyboard.js` (вне paste-closure),
+чтобы `28-filedrop.js` мог её вызывать. Paste-обработчик использует её же.
+
+При перетаскивании нескольких файлов — обрабатывается первый по приоритету: pptx/ppt/odp → html → json → изображение.
+
+---
+
+## Центрирование канваса (`js/04-ui.js`)
+
+```js
+_applyCanvasZoom()  // вычисляет позицию canvas-container с учётом zoom
+_centerSlide()      // скроллит cwrap к центру
+```
+
+**Логика позиционирования:**
+- Если канвас меньше `cwrap` по обеим осям → `cc.style.left/top` выставляются в центр, ghost = размер cwrap
+- Если переполняет хотя бы одну ось → на переполненной оси `left/top = ZOOM_PAD`, на влезающей — центрируется
+
+**Resize:** debounced listener на `window resize` (80мс) перевызывает `_applyCanvasZoom` + `_centerSlide` — работает корректно при изменении масштаба браузера (Ctrl+/−).
 
 ---
 
@@ -176,6 +211,34 @@ closeColorPanel(panelId)
 
 ---
 
+## Градиент фона текстового блока (`js/16-props.js`)
+
+### Поля данных
+
+```js
+d.textBg        // hex цвет 1 (одиночный режим)
+d.textBgOp      // прозрачность (0–1), сохраняется при textBg ИЛИ textBgGrad
+d.textBgBlur    // размытие (backdrop-filter)
+d.textBgGrad    // true — включён режим градиента
+d.textBgCol2    // hex цвет 2 (пустой = transparent)
+d.textBgDir     // угол градиента в градусах (0/45/90/135/180/225/270/315)
+```
+
+### Ключевые функции
+
+```js
+applyTextBg(el)        // рендерит фон через div.el-bg-layer (position:absolute;inset:0)
+clearTextBg()          // сбрасывает всё (цвет, градиент, blur)
+clearTextBgCol1()      // только цвет 1, не трогает градиент
+setTextBgGrad(on)      // вкл/выкл градиент
+setTextBgCol2(col)     // второй цвет
+setTextBgDir(deg)      // направление
+```
+
+**Важно:** используется `div.el-bg-layer` вместо `el.style.background`, т.к. `.tel` имеет `height:auto` и не заполняет весь `.el`.
+
+---
+
 ## Markdown-блоки (`js/12-markdown.js`)
 
 ### Поля данных
@@ -266,6 +329,7 @@ pnSyncUI()    // синхронизирует UI
 6. **`event.preventDefault()`** на UI-элементах которые не должны уводить фокус.
 7. **`pnApplyAll()`** — вызывать после любого `load()` если нумерация включена.
 8. **Code blocks** — `refreshAllCodeBlocks()` при смене схемы.
+9. **Глобальные хелперы** — `_addImageToCanvas` объявлена глобально в `21-keyboard.js`, доступна из любого модуля.
 
 ---
 
@@ -273,7 +337,8 @@ pnSyncUI()    // синхронизирует UI
 
 | Версия | Ключевые изменения |
 |--------|-------------------|
-| **v5.1** | Нейтральная колонка палитры: тёмная row0=белый, светлая row0=чёрный. Дефолт надписей `{col:7,row:0}` через `_resolveSchemeColor`. Markdown: `mdColorScheme`, `--md-c`, палитра в панели. Dblclick открывает markdown/code редакторы. Модалка тем: применять без закрытия. «Без декора» — крестик. Отступы гридов 10px. |
+| **v5.2** | Drag-and-drop импорт файлов (PPTX/PPT/ODP/HTML/JSON/изображения) с оверлеем. Центрирование канваса по каждой оси независимо. Авто-перецентрирование при ресайзе окна/браузерном зуме. `_addImageToCanvas` вынесена в глобальный скоуп. |
+| **v5.1** | Нейтральная колонка палитры: тёмная row0=белый, светлая row0=чёрный. Дефолт надписей `{col:7,row:0}` через `_resolveSchemeColor`. Markdown: `mdColorScheme`, `--md-c`, палитра в панели. Dblclick открывает markdown/code редакторы. Модалка тем: применять без закрытия. «Без декора» — крестик. Градиент фона текстового блока с 8 направлениями. |
 | v5.0 | Панель анимаций в правой панели (4 колонки), кроп изображений с persist через dataset, `clickNav=off`, markdown на светлой теме через CSS-переменные |
 | v4.9 | Per-char schemeRef, защита blur, размытие фона текста, синхронизация темы кода |
 | v4.8 | 8-цветные схемы, встроенная палитра, система schemeRef, rich-text |
@@ -311,43 +376,30 @@ SVG из `titleSvg(w,h,a1,a2,doAnimate)` вставляется через `btn.
 <circle cx="278" cy="74" r="5">
   <animateTransform type="translate" values="278,74;100,200;..."/>
 </circle>
-<!-- transform добавляется к cx/cy → двойное смещение, объект улетает -->
 
 <!-- НЕПРАВИЛЬНО: mpath + xlink:href -->
 <animateMotion><mpath xlink:href="#path1"/></animateMotion>
-<!-- xlink:href устарел, не работает в innerHTML-вставленных SVG -->
 
 <!-- НЕПРАВИЛЬНО: CSS @keyframes в <style> внутри SVG -->
 <style>.sat { animation: orbit 8s linear infinite; }</style>
-<!-- CSS-анимации в innerHTML SVG не работают в большинстве браузеров -->
 ```
 
 ### Правила для всех анимированных объектов
 
-1. **Позиция** — всегда через `<g transform="translate(startX,startY)">` + `<animateTransform type="translate">` на `<g>`, объект внутри с `cx="0" cy="0"` (или `x="0" y="0"`)
-
-2. **Начальная позиция** — `transform="translate(firstX,firstY)"` на `<g>` = первая точка из `values`, чтобы объект был виден до старта анимации
-
-3. **Вращение** — `<animateTransform type="rotate">` на вложенном `<g>`, не на самом объекте
-
-4. **Масштаб/зеркало** — `<animateTransform type="scale">` на `<g>`, объект внутри
-
+1. **Позиция** — всегда через `<g transform="translate(startX,startY)">` + `<animateTransform type="translate">` на `<g>`, объект внутри с `cx="0" cy="0"`
+2. **Начальная позиция** — `transform="translate(firstX,firstY)"` на `<g>` = первая точка из `values`
+3. **Вращение** — `<animateTransform type="rotate">` на вложенном `<g>`
+4. **Масштаб/зеркало** — `<animateTransform type="scale">` на `<g>`
 5. **Морфинг путей** — `<animate attributeName="d">` прямо на `<path>` — работает
-
 6. **Атрибуты** — `<animate attributeName="opacity/cx/cy/r">` прямо на элементе — работает
-
-7. **`calcMode="linear"`** для плавного бесконечного движения (без рывков на стыке). `calcMode="spline"` только если нужен ease с явными `keySplines`
-
-8. **`doAnimate` флаг** — все `<animateTransform>` и `<animate>` оборачивать в `${doAnimate?\`...\`:''}`. Статичный вариант: объект на месте, без анимационных тегов
-
-9. **Уникальные ID** — `const uid = 'pfx' + Math.random().toString(36).slice(2,7)` — обязательно, т.к. несколько SVG живут в одном DOM
-
-10. **Никаких `xlink:href`** — только `href` или лучше вообще не использовать `<mpath>`
+7. **`calcMode="linear"`** для плавного бесконечного движения
+8. **`doAnimate` флаг** — все анимационные теги оборачивать в `${doAnimate?\`...\`:''}`
+9. **Уникальные ID** — `const uid = 'pfx' + Math.random().toString(36).slice(2,7)`
+10. **Никаких `xlink:href`** — только `href`
 
 ### Паттерн для орбитального движения
 
 ```js
-// Предвычислить точки эллипса в JS внутри _build:
 function orbitVals(rx, ry, rotDeg, cx, cy, phase, n){
   const r = rotDeg * Math.PI / 180;
   const pts = [];
@@ -359,22 +411,5 @@ function orbitVals(rx, ry, rotDeg, cx, cy, phase, n){
   }
   return pts.join(';');
 }
-// Использовать с n=48 для плавности, calcMode="linear"
+// n=48 для плавности, calcMode="linear"
 ```
-
-### Паттерн для fish-style анимации (translate + scale-mirror)
-
-```svg
-<g transform="translate(START_X,START_Y)">
-  <animateTransform attributeName="transform" type="translate"
-    dur="9s" repeatCount="indefinite" calcMode="spline" ...
-    values="x1,y1;x2,y2;x2,y2;x1,y1;x1,y1"/>
-  <g transform="scale(1,1)">
-    <animateTransform attributeName="transform" type="scale"
-      dur="9s" repeatCount="indefinite"
-      values="1 1;1 1;-1 1;-1 1;1 1"/>
-    <ellipse cx="0" cy="0" .../>
-  </g>
-</g>
-```
-
