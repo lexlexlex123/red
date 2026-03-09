@@ -1,4 +1,5 @@
 # Слайды v5.2
+<img width="1909" height="903" alt="image" src="https://github.com/user-attachments/assets/b0903e6c-6df6-44bb-aeea-3c1809d0a7a0" />
 
 Редактор презентаций, работающий прямо в браузере — без установки, без сервера, без интернета.
 
