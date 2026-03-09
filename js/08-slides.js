@@ -163,7 +163,7 @@ function save(){
       d.appletHtml=el.dataset.appletHtml||'';
       if(el.dataset.appletAspect)d._appletAspect=+el.dataset.appletAspect;
       // Read generator fields from dataset (kept in sync by refreshGeneratorEl)
-      const _gk=['genMin','genMax','genStep','genFontSize','genColor','genBg','genBgBlur','genBgOp',
+      const _gk=['tmMin','tmSec','tmOnEnd','tmOnEndSlide','genMin','genMax','genStep','genFontSize','genColor','genBg','genBgBlur','genBgOp',
         'genBorderColor','genBorderWidth','genBold','genAlign','genVAlign',
         'genShadowOn','genShadowBlur','genShadowColor',
         'genColorScheme','genBgScheme','genBorderScheme'];
@@ -173,7 +173,7 @@ function save(){
           // convert numerics and booleans
           if(k==='genBold') d[k]=(v==='true');
           else if(k==='genShadowOn') d[k]=(v==='true');
-          else if(['genMin','genMax','genStep','genFontSize','genBgBlur','genBgOp','genBorderWidth','genShadowBlur'].includes(k)) d[k]=+v;
+          else if(['tmMin','tmSec','tmOnEndSlide','genMin','genMax','genStep','genFontSize','genBgBlur','genBgOp','genBorderWidth','genShadowBlur'].includes(k)) d[k]=+v;
           else if(['genColorScheme','genBgScheme','genBorderScheme'].includes(k)){
             try{d[k]=JSON.parse(v);}catch(e){d[k]=null;}
           }

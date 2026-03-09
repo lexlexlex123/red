@@ -279,3 +279,102 @@ pnSyncUI()    // синхронизирует UI
 | v4.8 | 8-цветные схемы, встроенная палитра, система schemeRef, rich-text |
 | v4.7 | RU/EN, 32 темы, нумерация страниц |
 | v4.0 | Первый релиз |
+
+---
+
+## Правила написания анимированных макетов (LAYOUTS)
+
+### Как работает рендеринг
+
+SVG из `titleSvg(w,h,a1,a2,doAnimate)` вставляется через `btn.innerHTML = svgStr` и через `el.innerHTML = svgStr` на слайдах. Это накладывает строгие ограничения.
+
+### ✅ Единственный рабочий способ анимировать позицию объекта
+
+**SMIL `<animateTransform type="translate">` на `<g>`, дочерний объект с `cx="0" cy="0"`:**
+
+```svg
+<!-- ПРАВИЛЬНО -->
+<g transform="translate(СТАРТ_X,СТАРТ_Y)">
+  <animateTransform attributeName="transform" type="translate"
+    dur="8s" repeatCount="indefinite" calcMode="linear"
+    values="x1,y1;x2,y2;x3,y3;..."/>
+  <circle cx="0" cy="0" r="5" fill="${a1}"/>
+</g>
+```
+
+`transform="translate(...)"` на `<g>` задаёт начальную позицию — объект виден сразу, без задержки до первого кадра анимации.
+
+### ❌ Что НЕ работает
+
+```svg
+<!-- НЕПРАВИЛЬНО: animateTransform на circle с cx/cy != 0 -->
+<circle cx="278" cy="74" r="5">
+  <animateTransform type="translate" values="278,74;100,200;..."/>
+</circle>
+<!-- transform добавляется к cx/cy → двойное смещение, объект улетает -->
+
+<!-- НЕПРАВИЛЬНО: mpath + xlink:href -->
+<animateMotion><mpath xlink:href="#path1"/></animateMotion>
+<!-- xlink:href устарел, не работает в innerHTML-вставленных SVG -->
+
+<!-- НЕПРАВИЛЬНО: CSS @keyframes в <style> внутри SVG -->
+<style>.sat { animation: orbit 8s linear infinite; }</style>
+<!-- CSS-анимации в innerHTML SVG не работают в большинстве браузеров -->
+```
+
+### Правила для всех анимированных объектов
+
+1. **Позиция** — всегда через `<g transform="translate(startX,startY)">` + `<animateTransform type="translate">` на `<g>`, объект внутри с `cx="0" cy="0"` (или `x="0" y="0"`)
+
+2. **Начальная позиция** — `transform="translate(firstX,firstY)"` на `<g>` = первая точка из `values`, чтобы объект был виден до старта анимации
+
+3. **Вращение** — `<animateTransform type="rotate">` на вложенном `<g>`, не на самом объекте
+
+4. **Масштаб/зеркало** — `<animateTransform type="scale">` на `<g>`, объект внутри
+
+5. **Морфинг путей** — `<animate attributeName="d">` прямо на `<path>` — работает
+
+6. **Атрибуты** — `<animate attributeName="opacity/cx/cy/r">` прямо на элементе — работает
+
+7. **`calcMode="linear"`** для плавного бесконечного движения (без рывков на стыке). `calcMode="spline"` только если нужен ease с явными `keySplines`
+
+8. **`doAnimate` флаг** — все `<animateTransform>` и `<animate>` оборачивать в `${doAnimate?\`...\`:''}`. Статичный вариант: объект на месте, без анимационных тегов
+
+9. **Уникальные ID** — `const uid = 'pfx' + Math.random().toString(36).slice(2,7)` — обязательно, т.к. несколько SVG живут в одном DOM
+
+10. **Никаких `xlink:href`** — только `href` или лучше вообще не использовать `<mpath>`
+
+### Паттерн для орбитального движения
+
+```js
+// Предвычислить точки эллипса в JS внутри _build:
+function orbitVals(rx, ry, rotDeg, cx, cy, phase, n){
+  const r = rotDeg * Math.PI / 180;
+  const pts = [];
+  for(let i = 0; i <= n; i++){
+    const a = 2 * Math.PI * (phase + i/n);
+    const ex = rx*Math.cos(a), ey = ry*Math.sin(a);
+    pts.push((cx + ex*Math.cos(r) - ey*Math.sin(r)).toFixed(1) + ','
+           + (cy + ex*Math.sin(r) + ey*Math.cos(r)).toFixed(1));
+  }
+  return pts.join(';');
+}
+// Использовать с n=48 для плавности, calcMode="linear"
+```
+
+### Паттерн для fish-style анимации (translate + scale-mirror)
+
+```svg
+<g transform="translate(START_X,START_Y)">
+  <animateTransform attributeName="transform" type="translate"
+    dur="9s" repeatCount="indefinite" calcMode="spline" ...
+    values="x1,y1;x2,y2;x2,y2;x1,y1;x1,y1"/>
+  <g transform="scale(1,1)">
+    <animateTransform attributeName="transform" type="scale"
+      dur="9s" repeatCount="indefinite"
+      values="1 1;1 1;-1 1;-1 1;1 1"/>
+    <ellipse cx="0" cy="0" .../>
+  </g>
+</g>
+```
+

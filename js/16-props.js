@@ -50,8 +50,9 @@ function syncProps(){
   if(cdp){cdp.style.display=t==='code'?'flex':'none';cdp.style.flexDirection='column';}
   if(mdp){mdp.style.display=t==='markdown'?'flex':'none';mdp.style.flexDirection='column';}
   if(tblp){tblp.style.display=t==='table'?'flex':'none';tblp.style.flexDirection='column';if(t==='table')syncTableProps();}
-  const isGen = t==='applet' && sel.dataset.appletId==='generator';
-  if(genp){genp.style.display=isGen?'flex':'none';genp.style.flexDirection='column';if(isGen)syncGenProps();}
+  const isGen   = t==='applet' && sel.dataset.appletId==='generator';
+  const isTimer = t==='applet' && sel.dataset.appletId==='timer';
+  if(genp){genp.style.display=(isGen||isTimer)?'flex':'none';genp.style.flexDirection='column';if(isGen)syncGenProps();if(isTimer)syncTimerProps();}
   if(icp){
     icp.style.display=t==='icon'?'flex':'none';icp.style.flexDirection='column';
     if(t==='icon'){
@@ -423,6 +424,11 @@ function syncGenProps(){
   if(!sel||!s) return;
   const d=s.els.find(x=>x.id===sel.dataset.id);
   if(!d) return;
+  // Restore generator UI
+  const ph2=document.querySelector('#genprops .ph'); if(ph2) ph2.textContent='🎲 Генератор';
+  const rr=document.getElementById('gen-range-row'); if(rr) rr.style.display='';
+  const tr=document.getElementById('tm-row'); if(tr) tr.style.display='none';
+  const oer2=document.getElementById('tm-onend-row'); if(oer2) oer2.style.display='none';
   try{document.getElementById('gen-min').value  = d.genMin  !== undefined ? d.genMin  : 1;}catch(e){}
   try{document.getElementById('gen-max').value  = d.genMax  !== undefined ? d.genMax  : 100;}catch(e){}
   try{document.getElementById('gen-step').value = d.genStep !== undefined ? d.genStep : 1;}catch(e){}
@@ -438,12 +444,17 @@ function syncGenProps(){
   ['t','m','b'].forEach(k=>{
     try{document.getElementById('gen-v'+k).classList.toggle('active', va==={t:'top',m:'middle',b:'bottom'}[k]);}catch(e){}
   });
+  const _pc=typeof _appletTheme==='function'?_appletTheme():{ac1:'#6366f1',head:'#a5b4fc'};
   const col = d.genColor || '';
-  try{document.getElementById('gen-color-hex').value=col; document.getElementById('gen-color-preview').style.background=col||'var(--accent)';}catch(e){}
+  const _colDisp = col || _pc.head || _pc.ac1;
+  try{document.getElementById('gen-color-hex').value=col; document.getElementById('gen-color-preview').style.background=_colDisp;}catch(e){}
+  const _p2=typeof _appletTheme==='function'?_appletTheme():{ac1:'#6366f1'};
   const bg = d.genBg || '';
-  try{document.getElementById('gen-bg-hex').value=bg; document.getElementById('gen-bg-swatch').style.background=bg;}catch(e){}
+  const _bgHex = bg || (_p2.ac1||'#6366f1');
+  const _bgOp = d.genBgOp !== undefined ? d.genBgOp : (bg ? 1 : 0.2);
+  try{document.getElementById('gen-bg-hex').value=bg; document.getElementById('gen-bg-swatch').style.background=_bgHex;}catch(e){}
   try{document.getElementById('gen-bg-blur').value = d.genBgBlur !== undefined ? d.genBgBlur : 0;}catch(e){}
-  try{document.getElementById('gen-bg-op').value = d.genBgOp !== undefined ? d.genBgOp : 1;}catch(e){}
+  try{document.getElementById('gen-bg-op').value = _bgOp;}catch(e){}
   try{document.getElementById('gen-sh-enable').checked = d.genShadowOn !== undefined ? !!d.genShadowOn : true;}catch(e){}
   try{document.getElementById('gen-sh-blur').value = d.genShadowBlur !== undefined ? d.genShadowBlur : 8;}catch(e){}
   try{const sc=d.genShadowColor||'#000000';document.getElementById('gen-sh-preview').style.background=sc;document.getElementById('gen-sh-hex').value=sc;}catch(e){}
@@ -461,6 +472,116 @@ function syncGenProps(){
 // Map from gen color prop → its scheme key
 const _genSchemeKeys = {genColor:'genColorScheme', genBg:'genBgScheme', genBorderColor:'genBorderScheme'};
 
+function syncTimerProps(){
+  if(!sel) return;
+  const d_= slides[cur] && slides[cur].els.find(x=>x.id===sel.dataset.id);
+  if(!d_) return;
+  // Update header label
+  const ph = document.querySelector('#genprops .ph');
+  if(ph) ph.textContent = '⏱ Таймер';
+  // Show timer duration row, hide generator range row
+  const rangeRow = document.getElementById('gen-range-row');
+  const timerRow = document.getElementById('tm-row');
+  if(rangeRow) rangeRow.style.display = 'none';
+  if(timerRow) timerRow.style.display = 'flex';
+  // Sync timer duration fields
+  try{document.getElementById('tm-min').value = d_.tmMin !== undefined ? d_.tmMin : 5;}catch(e){}
+  try{document.getElementById('tm-sec').value = d_.tmSec !== undefined ? d_.tmSec : 0;}catch(e){}
+  // On-end action
+  try{
+    const oe = d_.tmOnEnd || 'none';
+    document.getElementById('tm-onend').value = oe;
+    const slideRow = document.getElementById('tm-onend-slide-row');
+    if(slideRow) slideRow.style.display = oe==='slide' ? 'flex' : 'none';
+    // Populate slide select
+    const slideSel = document.getElementById('tm-onend-slide');
+    if(slideSel){
+      const curVal = d_.tmOnEndSlide !== undefined ? +d_.tmOnEndSlide : 0;
+      slideSel.innerHTML = slides.map((s,i)=>{
+        const label = s.title && s.title.trim() ? s.title.trim() : ('Слайд '+(i+1));
+        const sel2 = i===curVal ? ' selected' : '';
+        return `<option value="${i}"${sel2}>${i+1}. ${label}</option>`;
+      }).join('');
+    }
+  }catch(e){}
+  // Show onend row
+  const oer = document.getElementById('tm-onend-row'); if(oer) oer.style.display='flex';
+  // Sync shared visual props
+  try{document.getElementById('gen-fs').value = d_.genFontSize !== undefined ? d_.genFontSize : 72;}catch(e){}
+  try{document.getElementById('gen-bold').classList.toggle('active', !!d_.genBold);}catch(e){}
+  try{document.getElementById('gen-al').classList.toggle('active', (d_.genAlign||'center')==='left');}catch(e){}
+  try{document.getElementById('gen-ac').classList.toggle('active', (d_.genAlign||'center')==='center');}catch(e){}
+  try{document.getElementById('gen-ar').classList.toggle('active', (d_.genAlign||'center')==='right');}catch(e){}
+  try{document.getElementById('gen-vt').classList.toggle('active', (d_.genVAlign||'middle')==='top');}catch(e){}
+  try{document.getElementById('gen-vm').classList.toggle('active', (d_.genVAlign||'middle')==='middle');}catch(e){}
+  try{document.getElementById('gen-vb').classList.toggle('active', (d_.genVAlign||'middle')==='bottom');}catch(e){}
+  const _pct=typeof _appletTheme==='function'?_appletTheme():{ac1:'#6366f1',head:'#a5b4fc'};
+  const tc=d_.genColor||'';
+  const _tcDisp = tc || _pct.head || _pct.ac1;
+  try{document.getElementById('gen-color-preview').style.background=_tcDisp;document.getElementById('gen-color-hex').value=tc;}catch(e){}
+  const _pt=typeof _appletTheme==='function'?_appletTheme():{ac1:'#6366f1'};
+  const bg=d_.genBg||'';
+  const _bgHexT = bg || (_pt.ac1||'#6366f1');
+  const _bgOpT = d_.genBgOp !== undefined ? d_.genBgOp : (bg ? 1 : 0.2);
+  try{document.getElementById('gen-bg-swatch').style.background=_bgHexT;document.getElementById('gen-bg-hex').value=bg;}catch(e){}
+  try{document.getElementById('gen-bg-op').value=_bgOpT;}catch(e){}
+  try{document.getElementById('gen-bg-blur').value=d_.genBgBlur!==undefined?d_.genBgBlur:0;}catch(e){}
+  try{document.getElementById('gen-sh-enable').checked=d_.genShadowOn!==undefined?!!d_.genShadowOn:true;}catch(e){}
+  try{document.getElementById('gen-sh-blur').value=d_.genShadowBlur!==undefined?d_.genShadowBlur:8;}catch(e){}
+  try{const sc=d_.genShadowColor||'#000000';document.getElementById('gen-sh-preview').style.background=sc;document.getElementById('gen-sh-hex').value=sc;}catch(e){}
+  try{document.getElementById('gen-op').value=d_.opacity!==undefined?d_.opacity:1;}catch(e){}
+  try{document.getElementById('gen-rx').value=d_.rx!==undefined?d_.rx:0;}catch(e){}
+}
+
+window.setTimerProp = function(prop, val){
+  if(!sel) return;
+  const elId = sel.dataset.id;
+  const s = slides[cur];
+  if(!s) return;
+  const d_ = s.els.find(x=>x.id===elId);
+  if(!d_) return;
+  d_[prop] = val;
+  _refreshAppletEl(d_);
+  if(typeof save==='function') save();
+  if(typeof saveState==='function') saveState();
+};
+
+
+window.setTimerOnEnd = function(val){
+  if(!sel) return;
+  const elId = sel.dataset.id;
+  const s = slides[cur]; if(!s) return;
+  const d_ = s.els.find(x=>x.id===elId); if(!d_) return;
+  d_.tmOnEnd = val;
+  // show/hide slide select
+  try{
+    const slideRow2 = document.getElementById('tm-onend-slide-row');
+    if(slideRow2) slideRow2.style.display = val==='slide' ? 'flex' : 'none';
+    if(val==='slide'){
+      const slideSel2 = document.getElementById('tm-onend-slide');
+      if(slideSel2 && slideSel2.options.length===0){
+        const curVal2 = d_.tmOnEndSlide !== undefined ? +d_.tmOnEndSlide : 0;
+        slideSel2.innerHTML = slides.map((s,i)=>{
+          const label2 = s.title && s.title.trim() ? s.title.trim() : ('Слайд '+(i+1));
+          return `<option value="${i}"${i===curVal2?' selected':''}>${i+1}. ${label2}</option>`;
+        }).join('');
+      }
+    }
+  }catch(e){}
+  if(typeof refreshTimerEl==='function') refreshTimerEl(elId);
+  if(typeof save==='function') save();
+  if(typeof saveState==='function') saveState();
+};
+
+
+
+// Unified refresh for generator/timer — picks right function by appletId
+function _refreshAppletEl(d){
+  if(!d) return;
+  if(d.appletId==='timer'     && typeof refreshTimerEl    ==='function') refreshTimerEl(d.id);
+  if(d.appletId==='generator' && typeof refreshGeneratorEl==='function') refreshGeneratorEl(d.id);
+}
+
 window.setGenProp = function(prop, val, sr){
   if(!sel) return;
   const elId = sel.dataset.id;
@@ -472,7 +593,7 @@ window.setGenProp = function(prop, val, sr){
   if(sk){
     d[sk] = (sr !== undefined) ? sr : null;  // null = custom color
   }
-  if(typeof refreshGeneratorEl==='function') refreshGeneratorEl(d.id);
+  _refreshAppletEl(d);
   if(typeof saveState==='function') saveState();
 };
 
@@ -483,7 +604,7 @@ window.toggleGenBold = function(){
   const d=s.els.find(x=>x.id===elId); if(!d) return;
   d.genBold = !d.genBold;
   document.getElementById('gen-bold').classList.toggle('active', d.genBold);
-  if(typeof refreshGeneratorEl==='function') refreshGeneratorEl(d.id);
+  _refreshAppletEl(d);
   if(typeof saveState==='function') saveState();
 };
 
@@ -495,7 +616,7 @@ window.setGenAlign = function(val){
   ['l','c','r'].forEach(k=>{
     try{document.getElementById('gen-a'+k).classList.toggle('active', val==={l:'left',c:'center',r:'right'}[k]);}catch(e){}
   });
-  if(typeof refreshGeneratorEl==='function') refreshGeneratorEl(d.id);
+  _refreshAppletEl(d);
   if(typeof saveState==='function') saveState();
 };
 
@@ -507,7 +628,7 @@ window.setGenVAlign = function(val){
   ['t','m','b'].forEach(k=>{
     try{document.getElementById('gen-v'+k).classList.toggle('active', val==={t:'top',m:'middle',b:'bottom'}[k]);}catch(e){}
   });
-  if(typeof refreshGeneratorEl==='function') refreshGeneratorEl(d.id);
+  _refreshAppletEl(d);
   if(typeof saveState==='function') saveState();
 };
 

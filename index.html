@@ -505,8 +505,25 @@
         <!-- GENERATOR PROPS -->
         <div id="genprops" style="display:none">
           <div class="ph">🎲 Генератор</div>
-          <!-- Range settings -->
-          <div class="psec" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px">
+          <!-- Timer duration row (hidden for generator) -->
+          <div id="tm-row" style="display:none;flex-direction:row;gap:6px;margin-bottom:8px;align-items:center">
+            <div class="pr" style="margin:0;flex:1"><label style="font-size:9px">Мин</label><input type="number" id="tm-min" value="5" min="0" max="99" oninput="setTimerProp('tmMin',+this.value)"></div>
+            <div class="pr" style="margin:0;flex:1"><label style="font-size:9px">Сек</label><input type="number" id="tm-sec" value="0" min="0" max="59" oninput="setTimerProp('tmSec',+this.value)"></div>
+          </div>
+          <div id="tm-onend-row" style="display:none;flex-direction:column;gap:5px;margin-bottom:8px">
+            <label style="font-size:9px;color:var(--text2)">По окончании</label>
+            <select id="tm-onend" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 6px;font-size:11px;width:100%" onchange="setTimerOnEnd(this.value)">
+              <option value="none">Ничего</option>
+              <option value="next">Следующий слайд</option>
+              <option value="slide">Конкретный слайд</option>
+            </select>
+            <div id="tm-onend-slide-row" style="display:none;flex-direction:column;gap:4px">
+              <label style="font-size:9px;color:var(--text2)">Перейти на слайд</label>
+              <select id="tm-onend-slide" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 6px;font-size:11px;width:100%" onchange="setTimerProp('tmOnEndSlide',+this.value)"></select>
+            </div>
+          </div>
+          <!-- Range settings (hidden for timer) -->
+          <div id="gen-range-row" class="psec" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px">
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px">
               <div class="pr" style="margin:0"><label style="font-size:9px">От</label><input type="number" id="gen-min" value="1" oninput="setGenProp('genMin',+this.value)"></div>
               <div class="pr" style="margin:0"><label style="font-size:9px">До</label><input type="number" id="gen-max" value="100" oninput="setGenProp('genMax',+this.value)"></div>
@@ -556,12 +573,12 @@
             <label class="tog" style="margin-right:5px"><input type="checkbox" id="gen-sh-enable" onchange="setGenProp('genShadowOn',this.checked)"><span class="tog-track"></span><span class="tog-thumb"></span></label>
             <span style="font-size:11px;color:var(--text2)">Тень текста</span>
           </div>
-          <div id="gen-sh-opts" style="display:flex;gap:4px;align-items:center;margin-bottom:6px">
+          <div id="gen-sh-opts" style="display:flex;gap:4px;align-items:center;margin-bottom:4px">
             <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;" onmousedown="openColorPanel('cp-gen-sh-slot','gen-sh',function(c,sr){document.getElementById('gen-sh-hex').value=c;document.getElementById('gen-sh-preview').style.background=c;setGenProp('genShadowColor',c,sr);})"><div id="gen-sh-preview" style="width:100%;height:100%;background:#000000;pointer-events:none;"></div></div>
             <input type="text" id="gen-sh-hex" value="#000000" placeholder="#000000" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;font-family:monospace" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('gen-sh-preview').style.background=this.value;setGenProp('genShadowColor',this.value);}">
             <input type="number" id="gen-sh-blur" min="0" max="60" step="1" value="8" placeholder="blur" style="width:52px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;box-sizing:border-box" oninput="setGenProp('genShadowBlur',+this.value)">
-            <div id="cp-gen-sh-slot" class="cp-slot" style="display:none" onmousedown="event.preventDefault()"></div>
           </div>
+          <div id="cp-gen-sh-slot" class="cp-slot" style="display:none;margin-bottom:6px" onmousedown="event.preventDefault()"></div>
           <!-- Border -->
           <div class="pr" style="margin-bottom:6px"><label data-i18n="propBorder">Граница</label>
             <div style="display:flex;gap:4px;align-items:center">

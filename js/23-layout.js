@@ -388,71 +388,6 @@ const LAYOUTS=[
     },
   },
 
-  // ── SPACE ── космос: звёзды, орбиты, планета
-  {
-    name:'Космос',nameEn:'Space',
-    desc:'Звёзды, орбиты, планеты',descEn:'Stars, orbits, celestial bodies',
-    titleSvg:(w,h,a1,a2)=>(()=>{
-      const pts=[[.08,.06],[.18,.12],[.32,.04],[.48,.09],[.58,.18],[.70,.07],[.82,.14],[.90,.22],[.95,.06],
-                 [.12,.28],[.25,.38],[.40,.22],[.52,.32],[.64,.25],[.76,.35],[.88,.42],[.94,.32],
-                 [.06,.52],[.20,.58],[.35,.48],[.50,.55],[.62,.45],[.72,.60],[.85,.52],[.92,.62],
-                 [.10,.72],[.28,.68],[.44,.75],[.60,.70],[.74,.80],[.88,.72],[.96,.82]];
-      let stars='';
-      pts.forEach(([px,py],i)=>{
-        const r=(i%5===0?1.8:i%3===0?1.3:0.8).toFixed(1);
-        const op=(i%5===0?0.7:i%3===0?0.5:0.3).toFixed(2);
-        stars+=`<circle cx="${(w*px).toFixed(1)}" cy="${(h*py).toFixed(1)}" r="${r}" fill="${i%4===0?a2:a1}" opacity="${op}"/>`;
-      });
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
-        <defs>
-          <radialGradient id="spg" cx="${w*.78}" cy="${h*.32}" r="${h*.5}" gradientUnits="userSpaceOnUse">
-            <stop offset="0" stop-color="${a1}" stop-opacity="0.2"/>
-            <stop offset="1" stop-color="${a1}" stop-opacity="0"/>
-          </radialGradient>
-          <filter id="spf"><feGaussianBlur stdDeviation="22"/></filter>
-          <filter id="spf2"><feGaussianBlur stdDeviation="8"/></filter>
-        </defs>
-        ${stars}
-        <ellipse cx="${w*.78}" cy="${h*.32}" rx="${h*.5}" ry="${h*.5}" fill="url(#spg)"/>
-        <circle cx="${w*.78}" cy="${h*.32}" r="${h*.22}" fill="${a1}" opacity="0.08" filter="url(#spf)"/>
-        <circle cx="${w*.78}" cy="${h*.32}" r="${h*.13}" fill="${a1}" opacity="0.14"/>
-        <circle cx="${w*.78}" cy="${h*.32}" r="${h*.07}" fill="${a1}" opacity="0.35"/>
-        <circle cx="${w*.78}" cy="${h*.32}" r="${h*.025}" fill="${a1}" opacity="0.85"/>
-        <ellipse cx="${w*.78}" cy="${h*.32}" rx="${h*.32}" ry="${h*.09}" fill="none" stroke="${a2}" stroke-width="1" opacity="0.28" transform="rotate(-22,${w*.78},${h*.32})"/>
-        <ellipse cx="${w*.78}" cy="${h*.32}" rx="${h*.42}" ry="${h*.12}" fill="none" stroke="${a1}" stroke-width="0.7" opacity="0.15" transform="rotate(-22,${w*.78},${h*.32})"/>
-        <circle cx="${w*.78}" cy="${h*.32}" r="${h*.22}" fill="none" stroke="${a1}" stroke-width="1" opacity="0.2"/>
-        <circle cx="${w*.78}" cy="${h*.32}" r="${h*.35}" fill="none" stroke="${a2}" stroke-width="0.6" opacity="0.1"/>
-        <circle cx="${(w*.78-h*.32*Math.cos(22*Math.PI/180)).toFixed(1)}" cy="${(h*.32-h*.32*Math.sin(22*Math.PI/180)).toFixed(1)}" r="3" fill="${a2}" opacity="0.7" filter="url(#spf2)"/>
-      </svg>`;
-    })(),
-    contentSvg:(w,h,a1,a2)=>(()=>{
-      const pts=[[.08,.08],[.22,.04],[.38,.14],[.52,.06],[.68,.12],[.78,.20],[.90,.08],[.95,.18],
-                 [.12,.35],[.30,.28],[.48,.38],[.65,.30],[.82,.42],[.94,.35],
-                 [.06,.58],[.25,.65],[.45,.55],[.62,.62],[.80,.55],[.92,.65]];
-      let stars='';
-      pts.forEach(([px,py],i)=>{
-        stars+=`<circle cx="${(w*px).toFixed(1)}" cy="${(h*py).toFixed(1)}" r="${(i%4===0?1.5:0.8).toFixed(1)}" fill="${i%3===0?a2:a1}" opacity="${(i%4===0?0.55:0.3).toFixed(2)}"/>`;
-      });
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
-        <defs>
-          <radialGradient id="spcg" cx="${w*.86}" cy="${h*.5}" r="${h*.42}" gradientUnits="userSpaceOnUse">
-            <stop offset="0" stop-color="${a1}" stop-opacity="0.18"/>
-            <stop offset="1" stop-color="${a1}" stop-opacity="0"/>
-          </radialGradient>
-          <filter id="spcf"><feGaussianBlur stdDeviation="16"/></filter>
-        </defs>
-        ${stars}
-        <circle cx="${w*.86}" cy="${h*.5}" r="${h*.42}" fill="url(#spcg)"/>
-        <circle cx="${w*.86}" cy="${h*.5}" r="${h*.14}" fill="${a1}" opacity="0.1"/>
-        <circle cx="${w*.86}" cy="${h*.5}" r="${h*.06}" fill="${a1}" opacity="0.3"/>
-        <circle cx="${w*.86}" cy="${h*.5}" r="${h*.02}" fill="${a1}" opacity="0.75"/>
-        <ellipse cx="${w*.86}" cy="${h*.5}" rx="${h*.24}" ry="${h*.07}" fill="none" stroke="${a2}" stroke-width="0.9" opacity="0.25" transform="rotate(-18,${w*.86},${h*.5})"/>
-        <circle cx="${w*.86}" cy="${h*.5}" r="${h*.28}" fill="none" stroke="${a1}" stroke-width="0.7" opacity="0.15"/>
-        <rect x="0" y="0" width="5" height="${h}" fill="${a1}" opacity="0.45"/>
-      </svg>`;
-    })(),
-  },
-
 
   // ── COSMOS ── планета с орбитами и спутниками
   {
@@ -464,106 +399,85 @@ const LAYOUTS=[
     // helper: build the orbit+satellite SVG structure
     // animated=true → CSS keyframe animation, false → static snapshot
     _build:(w,h,a1,a2,isTitleSlide,doAnimate)=>{
-      const cx = isTitleSlide ? w*0.72 : w*0.82;
-      const cy = isTitleSlide ? h*0.52 : h*0.50;
+      const cx = isTitleSlide ? w*0.72 : w*0.88;
+      const cy = isTitleSlide ? h*0.52 : h*0.82;
       const pr = isTitleSlide ? h*0.13  : h*0.10;
 
-      // orbits: rx, ry — semi-axes of ellipse; rot — tilt deg; period — seconds; sat — satellite radius
       const orbits = [
-        {rx:pr*2.2, ry:pr*0.65, rot:-22, period:8,  sat:pr*0.10, op:0.80, phase:0.00, color:a1},
-        {rx:pr*3.2, ry:pr*1.00, rot:-10, period:15, sat:pr*0.075,op:0.65, phase:0.35, color:a2},
-        {rx:pr*4.2, ry:pr*1.40, rot:  6, period:25, sat:pr*0.06, op:0.50, phase:0.65, color:a1},
-        {rx:pr*5.3, ry:pr*1.70, rot: 18, period:38, sat:pr*0.045,op:0.40, phase:0.15, color:a2},
+        {rx:pr*2.2, ry:pr*0.65, rot:-22, period:8,  sat:pr*0.10,  phase:0.00, color:a1},
+        {rx:pr*3.2, ry:pr*1.00, rot:-10, period:15, sat:pr*0.075, phase:0.35, color:a2},
+        {rx:pr*4.2, ry:pr*1.40, rot:  6, period:25, sat:pr*0.06,  phase:0.65, color:a1},
+        {rx:pr*5.3, ry:pr*1.70, rot: 18, period:38, sat:pr*0.045, phase:0.15, color:a2},
       ];
 
-      const uid = 'csm_' + (w|0) + '_' + (h|0) + '_' + (isTitleSlide?'t':'c');
+      // Pre-compute ellipse orbit points: returns "x,y;x,y;..." string
+      function orbitVals(rx, ry, rotDeg, phase, n){
+        const r=rotDeg*Math.PI/180, pts=[];
+        for(let i=0;i<=n;i++){
+          const a=2*Math.PI*(phase+i/n);
+          const ex=rx*Math.cos(a), ey=ry*Math.sin(a);
+          const x=cx + ex*Math.cos(r) - ey*Math.sin(r);
+          const y=cy + ex*Math.sin(r) + ey*Math.cos(r);
+          pts.push(x.toFixed(1)+','+y.toFixed(1));
+        }
+        return pts.join(';');
+      }
+
+      const uid = 'csm' + Math.random().toString(36).slice(2,7);
 
       // Stars (deterministic)
       const rng=(s)=>{let x=Math.sin(s+1.7)*93741;return x-Math.floor(x);};
       let stars='';
       for(let i=0;i<65;i++){
-        const sx=(rng(i*3  )*w).toFixed(1);
-        const sy=(rng(i*3+1)*h).toFixed(1);
-        const sr=(rng(i*3+2)*1.4+0.3).toFixed(2);
-        const sop=(rng(i*3+0.5)*0.55+0.12).toFixed(2);
-        stars+=`<circle cx="${sx}" cy="${sy}" r="${sr}" fill="${a1}" opacity="${sop}"/>`;
+        stars+=`<circle cx="${(rng(i*3)*w).toFixed(1)}" cy="${(rng(i*3+1)*h).toFixed(1)}" r="${(rng(i*3+2)*1.4+0.3).toFixed(2)}" fill="${a1}" opacity="${(rng(i*3+0.5)*0.55+0.12).toFixed(2)}"/>`;
       }
 
-      // Orbit ellipse paths (dashed rings)
+      // Dashed orbit rings
       let orbitRings='';
       orbits.forEach(o=>{
-        orbitRings+=`<ellipse cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}"
-          rx="${o.rx.toFixed(1)}" ry="${o.ry.toFixed(1)}"
-          fill="none" stroke="${o.color}" stroke-width="0.6" opacity="${(o.op*0.38).toFixed(2)}"
-          stroke-dasharray="3 5"
-          transform="rotate(${o.rot} ${cx.toFixed(1)} ${cy.toFixed(1)})"/>`;
+        orbitRings+=`<ellipse cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" rx="${o.rx.toFixed(1)}" ry="${o.ry.toFixed(1)}" fill="none" stroke="${o.color}" stroke-width="0.6" opacity="0.28" stroke-dasharray="3 5" transform="rotate(${o.rot} ${cx.toFixed(1)} ${cy.toFixed(1)})"/>`;
       });
 
-      // Planet glow + body
-      const glowR=(pr*3.0).toFixed(1);
-      const planet=`
-        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${glowR}" fill="${a1}" opacity="0.08" filter="url(#${uid}_bf)"/>
-        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${pr.toFixed(1)}" fill="url(#${uid}_pg)"/>
-        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${pr.toFixed(1)}" fill="none" stroke="${a1}" stroke-width="0.8" opacity="0.25"/>
-        <circle cx="${(cx-pr*0.28).toFixed(1)}" cy="${(cy-pr*0.28).toFixed(1)}" r="${(pr*0.32).toFixed(1)}" fill="${a1}" opacity="0.10"/>`;
+      // Planet: solid fill so satellites don't show through.
+      // Glow is drawn BEFORE satellites (behind them); body drawn AFTER (on top).
+      const planetGlow=`
+        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${(pr*2.4).toFixed(1)}" fill="${a1}" opacity="0.15" filter="url(#${uid}bf)"/>`;
+      const planetBody=`
+        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${pr.toFixed(1)}" fill="${a1}" opacity="1"/>
+        <circle cx="${(cx-pr*0.3).toFixed(1)}" cy="${(cy-pr*0.3).toFixed(1)}" r="${(pr*0.28).toFixed(1)}" fill="${a2}" opacity="0.22"/>`;
 
-      // Satellites
+      // Satellites: CORRECT pattern — <g transform="translate(x,y)"> animates,
+      // child <circle cx="0" cy="0"> stays at origin of the group
       let sats='';
       orbits.forEach((o,i)=>{
-        const glowSr=(o.sat*2.2).toFixed(1);
-        const satR=o.sat.toFixed(1);
-        const color=o.color;
-        const opG=(o.op*0.3).toFixed(2);
-        const opS=o.op.toFixed(2);
-        const startDeg=(o.phase*360).toFixed(1);
-
+        const satR=o.sat.toFixed(2);
         if(doAnimate){
-          // Use SVG animateTransform: rotate the whole group around planet center
-          // Satellite sits at (cx+rx, cy) in pre-tilt space; we rotate orbit+tilt together
-          sats+=`
-          <g transform="rotate(${o.rot} ${cx.toFixed(1)} ${cy.toFixed(1)})">
-            <g>
-              <animateTransform attributeName="transform" type="rotate"
-                from="${startDeg} ${cx.toFixed(1)} ${cy.toFixed(1)}"
-                to="${(parseFloat(startDeg)+360).toFixed(1)} ${cx.toFixed(1)} ${cy.toFixed(1)}"
-                dur="${o.period}s" repeatCount="indefinite"/>
-              <!-- satellite at right side of ellipse, then scale Y to squash to orbit -->
-              <g transform="translate(${cx.toFixed(1)} ${cy.toFixed(1)}) scale(1 ${(o.ry/o.rx).toFixed(4)}) translate(-${cx.toFixed(1)} -${cy.toFixed(1)})">
-                <circle cx="${(cx+o.rx).toFixed(1)}" cy="${cy.toFixed(1)}" r="${glowSr}" fill="${color}" opacity="${opG}" filter="url(#${uid}_sbf)"/>
-                <circle cx="${(cx+o.rx).toFixed(1)}" cy="${cy.toFixed(1)}" r="${satR}" fill="${color}" opacity="${opS}"/>
-              </g>
-            </g>
+          const vals=orbitVals(o.rx,o.ry,o.rot,o.phase,48);
+          const firstPt=vals.split(';')[0];
+          sats+=`<g transform="translate(${firstPt})">
+            <animateTransform attributeName="transform" type="translate"
+              dur="${o.period}s" repeatCount="indefinite" calcMode="linear"
+              values="${vals}"/>
+            <circle cx="0" cy="0" r="${satR}" fill="${o.color}" opacity="0.82"/>
           </g>`;
         } else {
-          // Static: position satellite at phase angle on ellipse
-          const ang=o.phase*Math.PI*2;
+          const ang=o.phase*Math.PI*2, r=o.rot*Math.PI/180;
           const ex=o.rx*Math.cos(ang), ey=o.ry*Math.sin(ang);
-          const rad=o.rot*Math.PI/180;
-          const sx=cx + ex*Math.cos(rad) - ey*Math.sin(rad);
-          const sy=cy + ex*Math.sin(rad) + ey*Math.cos(rad);
-          sats+=`<circle cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" r="${glowSr}" fill="${color}" opacity="${opG}" filter="url(#${uid}_sbf)"/>`;
-          sats+=`<circle cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" r="${satR}" fill="${color}" opacity="${opS}"/>`;
+          const sx=cx + ex*Math.cos(r) - ey*Math.sin(r);
+          const sy=cy + ex*Math.sin(r) + ey*Math.cos(r);
+          sats+=`<circle cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" r="${satR}" fill="${o.color}" opacity="0.82"/>`;
         }
       });
 
       const defs=`<defs>
-        <radialGradient id="${uid}_pg" cx="38%" cy="32%" r="68%">
-          <stop offset="0%"   stop-color="${a1}" stop-opacity="0.95"/>
-          <stop offset="45%"  stop-color="${a2}" stop-opacity="0.65"/>
-          <stop offset="100%" stop-color="#050510" stop-opacity="0.92"/>
-        </radialGradient>
-        <filter id="${uid}_bf" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="20"/></filter>
-        <filter id="${uid}_sbf" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="2.5"/></filter>
+        <filter id="${uid}bf" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="18"/></filter>
       </defs>`;
 
       return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
-        ${defs}
-        ${stars}
-        ${orbitRings}
-        ${sats}
-        ${planet}
+        ${defs}${stars}${planetGlow}${orbitRings}${sats}${planetBody}
       </svg>`;
     },
+
     titleSvg(w,h,a1,a2,doAnimate){
       return this._build(w,h,a1,a2,true, doAnimate!==false);
     },
@@ -571,133 +485,200 @@ const LAYOUTS=[
       return this._build(w,h,a1,a2,false, doAnimate!==false);
     },
   },
-
-  // ── OCEAN ── волны и рыбки
+  // -- OCEAN -- волны и рыбки
   {
     name:'Океан', nameEn:'Ocean',
     desc:'Волны и рыбки под водой', descEn:'Animated waves and swimming fish',
+    animated: true,
 
     titleSvg(w, h, a1, a2, doAnimate) {
-      const uid = 'oc' + Math.random().toString(36).slice(2,7);
-      const anim = doAnimate !== false;
+      const uid = 'oc' + Math.random().toString(36).slice(2,8);
+      const W1 = "M0.0,374.4 C30.4,377.5 99.2,386.3 160.0,390.7 C220.8,395.1 259.2,397.4 320.0,397.4 C380.8,397.4 419.2,395.1 480.0,390.7 C540.8,386.3 579.2,380.6 640.0,374.4 C700.8,368.2 739.2,362.5 800.0,358.1 C860.8,353.7 899.2,351.4 960.0,351.4 C1020.8,351.4 1059.2,353.7 1120.0,358.1 C1180.8,362.5 1249.6,371.3 1280.0,374.4 L1280.0,720.0 L0,720.0 Z;M0.0,385.9 C30.4,388.0 99.2,395.1 160.0,396.7 C220.8,398.3 259.2,397.4 320.0,394.4 C380.8,391.3 419.2,386.3 480.0,380.4 C540.8,374.4 579.2,368.2 640.0,362.9 C700.8,357.5 739.2,353.7 800.0,352.1 C860.8,350.5 899.2,351.4 960.0,354.4 C1020.8,357.5 1059.2,362.5 1120.0,368.4 C1180.8,374.4 1249.6,382.6 1280.0,385.9 L1280.0,720.0 L0,720.0 Z;M0.0,394.4 C30.4,394.8 99.2,398.3 160.0,396.7 C220.8,395.1 259.2,391.3 320.0,385.9 C380.8,380.6 419.2,374.4 480.0,368.4 C540.8,362.5 579.2,357.5 640.0,354.4 C700.8,351.4 739.2,350.5 800.0,352.1 C860.8,353.7 899.2,357.5 960.0,362.9 C1020.8,368.2 1059.2,374.4 1120.0,380.4 C1180.8,386.3 1249.6,391.7 1280.0,394.4 L1280.0,720.0 L0,720.0 Z;M0.0,397.4 C30.4,396.2 99.2,395.1 160.0,390.7 C220.8,386.3 259.2,380.6 320.0,374.4 C380.8,368.2 419.2,362.5 480.0,358.1 C540.8,353.7 579.2,351.4 640.0,351.4 C700.8,351.4 739.2,353.7 800.0,358.1 C860.8,362.5 899.2,368.2 960.0,374.4 C1020.8,380.6 1059.2,386.3 1120.0,390.7 C1180.8,395.1 1249.6,396.2 1280.0,397.4 L1280.0,720.0 L0,720.0 Z;M0.0,394.4 C30.4,391.7 99.2,386.3 160.0,380.4 C220.8,374.4 259.2,368.2 320.0,362.9 C380.8,357.5 419.2,353.7 480.0,352.1 C540.8,350.5 579.2,351.4 640.0,354.4 C700.8,357.5 739.2,362.5 800.0,368.4 C860.8,374.4 899.2,380.6 960.0,385.9 C1020.8,391.3 1059.2,395.1 1120.0,396.7 C1180.8,398.3 1249.6,394.8 1280.0,394.4 L1280.0,720.0 L0,720.0 Z;M0.0,385.9 C30.4,382.6 99.2,374.4 160.0,368.4 C220.8,362.5 259.2,357.5 320.0,354.4 C380.8,351.4 419.2,350.5 480.0,352.1 C540.8,353.7 579.2,357.5 640.0,362.9 C700.8,368.2 739.2,374.4 800.0,380.4 C860.8,386.3 899.2,391.3 960.0,394.4 C1020.8,397.4 1059.2,398.3 1120.0,396.7 C1180.8,395.1 1249.6,388.0 1280.0,385.9 L1280.0,720.0 L0,720.0 Z;M0.0,374.4 C30.4,371.3 99.2,362.5 160.0,358.1 C220.8,353.7 259.2,351.4 320.0,351.4 C380.8,351.4 419.2,353.7 480.0,358.1 C540.8,362.5 579.2,368.2 640.0,374.4 C700.8,380.6 739.2,386.3 800.0,390.7 C860.8,395.1 899.2,397.4 960.0,397.4 C1020.8,397.4 1059.2,395.1 1120.0,390.7 C1180.8,386.3 1249.6,377.5 1280.0,374.4 L1280.0,720.0 L0,720.0 Z;M0.0,362.9 C30.4,360.8 99.2,353.7 160.0,352.1 C220.8,350.5 259.2,351.4 320.0,354.4 C380.8,357.5 419.2,362.5 480.0,368.4 C540.8,374.4 579.2,380.6 640.0,385.9 C700.8,391.3 739.2,395.1 800.0,396.7 C860.8,398.3 899.2,397.4 960.0,394.4 C1020.8,391.3 1059.2,386.3 1120.0,380.4 C1180.8,374.4 1249.6,366.2 1280.0,362.9 L1280.0,720.0 L0,720.0 Z;M0.0,354.4 C30.4,354.0 99.2,350.5 160.0,352.1 C220.8,353.7 259.2,357.5 320.0,362.9 C380.8,368.2 419.2,374.4 480.0,380.4 C540.8,386.3 579.2,391.3 640.0,394.4 C700.8,397.4 739.2,398.3 800.0,396.7 C860.8,395.1 899.2,391.3 960.0,385.9 C1020.8,380.6 1059.2,374.4 1120.0,368.4 C1180.8,362.5 1249.6,357.1 1280.0,354.4 L1280.0,720.0 L0,720.0 Z;M0.0,351.4 C30.4,352.6 99.2,353.7 160.0,358.1 C220.8,362.5 259.2,368.2 320.0,374.4 C380.8,380.6 419.2,386.3 480.0,390.7 C540.8,395.1 579.2,397.4 640.0,397.4 C700.8,397.4 739.2,395.1 800.0,390.7 C860.8,386.3 899.2,380.6 960.0,374.4 C1020.8,368.2 1059.2,362.5 1120.0,358.1 C1180.8,353.7 1249.6,352.6 1280.0,351.4 L1280.0,720.0 L0,720.0 Z;M0.0,354.4 C30.4,357.1 99.2,362.5 160.0,368.4 C220.8,374.4 259.2,380.6 320.0,385.9 C380.8,391.3 419.2,395.1 480.0,396.7 C540.8,398.3 579.2,397.4 640.0,394.4 C700.8,391.3 739.2,386.3 800.0,380.4 C860.8,374.4 899.2,368.2 960.0,362.9 C1020.8,357.5 1059.2,353.7 1120.0,352.1 C1180.8,350.5 1249.6,354.0 1280.0,354.4 L1280.0,720.0 L0,720.0 Z;M0.0,362.9 C30.4,366.2 99.2,374.4 160.0,380.4 C220.8,386.3 259.2,391.3 320.0,394.4 C380.8,397.4 419.2,398.3 480.0,396.7 C540.8,395.1 579.2,391.3 640.0,385.9 C700.8,380.6 739.2,374.4 800.0,368.4 C860.8,362.5 899.2,357.5 960.0,354.4 C1020.8,351.4 1059.2,350.5 1120.0,352.1 C1180.8,353.7 1249.6,360.8 1280.0,362.9 L1280.0,720.0 L0,720.0 Z;M0.0,374.4 C30.4,377.5 99.2,386.3 160.0,390.7 C220.8,395.1 259.2,397.4 320.0,397.4 C380.8,397.4 419.2,395.1 480.0,390.7 C540.8,386.3 579.2,380.6 640.0,374.4 C700.8,368.2 739.2,362.5 800.0,358.1 C860.8,353.7 899.2,351.4 960.0,351.4 C1020.8,351.4 1059.2,353.7 1120.0,358.1 C1180.8,362.5 1249.6,371.3 1280.0,374.4 L1280.0,720.0 L0,720.0 Z";
+      const W2 = "M0.0,464.6 C30.4,464.8 99.2,467.2 160.0,465.4 C220.8,463.5 259.2,459.9 320.0,455.0 C380.8,450.1 419.2,444.7 480.0,439.6 C540.8,434.5 579.2,430.5 640.0,428.2 C700.8,425.9 739.2,425.6 800.0,427.4 C860.8,429.3 899.2,432.9 960.0,437.8 C1020.8,442.7 1059.2,448.1 1120.0,453.2 C1180.8,458.3 1249.6,462.5 1280.0,464.6 L1280.0,720.0 L0,720.0 Z;M0.0,466.5 C30.4,465.1 99.2,463.5 160.0,459.4 C220.8,455.3 259.2,450.1 320.0,444.7 C380.8,439.3 419.2,434.5 480.0,431.0 C540.8,427.5 579.2,425.9 640.0,426.3 C700.8,426.8 739.2,429.3 800.0,433.4 C860.8,437.5 899.2,442.7 960.0,448.1 C1020.8,453.5 1059.2,458.3 1120.0,461.8 C1180.8,465.3 1249.6,465.6 1280.0,466.5 L1280.0,720.0 L0,720.0 Z;M0.0,463.0 C30.4,460.5 99.2,455.3 160.0,450.0 C220.8,444.6 259.2,439.3 320.0,434.9 C380.8,430.4 419.2,427.5 480.0,426.6 C540.8,425.6 579.2,426.8 640.0,429.8 C700.8,432.9 739.2,437.5 800.0,442.8 C860.8,448.2 899.2,453.5 960.0,457.9 C1020.8,462.4 1059.2,465.3 1120.0,466.2 C1180.8,467.2 1249.6,463.6 1280.0,463.0 L1280.0,720.0 L0,720.0 Z;M0.0,455.0 C30.4,452.1 99.2,444.7 160.0,439.6 C220.8,434.5 259.2,430.5 320.0,428.2 C380.8,425.9 419.2,425.6 480.0,427.4 C540.8,429.3 579.2,432.9 640.0,437.8 C700.8,442.7 739.2,448.1 800.0,453.2 C860.8,458.3 899.2,462.3 960.0,464.6 C1020.8,466.9 1059.2,467.2 1120.0,465.4 C1180.8,463.5 1249.6,457.0 1280.0,455.0 L1280.0,720.0 L0,720.0 Z;M0.0,444.7 C30.4,442.1 99.2,434.5 160.0,431.0 C220.8,427.5 259.2,425.9 320.0,426.3 C380.8,426.8 419.2,429.3 480.0,433.4 C540.8,437.5 579.2,442.7 640.0,448.1 C700.8,453.5 739.2,458.3 800.0,461.8 C860.8,465.3 899.2,466.9 960.0,466.5 C1020.8,466.0 1059.2,463.5 1120.0,459.4 C1180.8,455.3 1249.6,447.5 1280.0,444.7 L1280.0,720.0 L0,720.0 Z;M0.0,434.9 C30.4,433.3 99.2,427.5 160.0,426.6 C220.8,425.6 259.2,426.8 320.0,429.8 C380.8,432.9 419.2,437.5 480.0,442.8 C540.8,448.2 579.2,453.5 640.0,457.9 C700.8,462.4 739.2,465.3 800.0,466.2 C860.8,467.2 899.2,466.0 960.0,463.0 C1020.8,459.9 1059.2,455.3 1120.0,450.0 C1180.8,444.6 1249.6,437.8 1280.0,434.9 L1280.0,720.0 L0,720.0 Z;M0.0,428.2 C30.4,428.0 99.2,425.6 160.0,427.4 C220.8,429.3 259.2,432.9 320.0,437.8 C380.8,442.7 419.2,448.1 480.0,453.2 C540.8,458.3 579.2,462.3 640.0,464.6 C700.8,466.9 739.2,467.2 800.0,465.4 C860.8,463.5 899.2,459.9 960.0,455.0 C1020.8,450.1 1059.2,444.7 1120.0,439.6 C1180.8,434.5 1249.6,430.3 1280.0,428.2 L1280.0,720.0 L0,720.0 Z;M0.0,426.3 C30.4,427.7 99.2,429.3 160.0,433.4 C220.8,437.5 259.2,442.7 320.0,448.1 C380.8,453.5 419.2,458.3 480.0,461.8 C540.8,465.3 579.2,466.9 640.0,466.5 C700.8,466.0 739.2,463.5 800.0,459.4 C860.8,455.3 899.2,450.1 960.0,444.7 C1020.8,439.3 1059.2,434.5 1120.0,431.0 C1180.8,427.5 1249.6,427.2 1280.0,426.3 L1280.0,720.0 L0,720.0 Z;M0.0,429.8 C30.4,432.3 99.2,437.5 160.0,442.8 C220.8,448.2 259.2,453.5 320.0,457.9 C380.8,462.4 419.2,465.3 480.0,466.2 C540.8,467.2 579.2,466.0 640.0,463.0 C700.8,459.9 739.2,455.3 800.0,450.0 C860.8,444.6 899.2,439.3 960.0,434.9 C1020.8,430.4 1059.2,427.5 1120.0,426.6 C1180.8,425.6 1249.6,429.2 1280.0,429.8 L1280.0,720.0 L0,720.0 Z;M0.0,437.8 C30.4,440.7 99.2,448.1 160.0,453.2 C220.8,458.3 259.2,462.3 320.0,464.6 C380.8,466.9 419.2,467.2 480.0,465.4 C540.8,463.5 579.2,459.9 640.0,455.0 C700.8,450.1 739.2,444.7 800.0,439.6 C860.8,434.5 899.2,430.5 960.0,428.2 C1020.8,425.9 1059.2,425.6 1120.0,427.4 C1180.8,429.3 1249.6,435.8 1280.0,437.8 L1280.0,720.0 L0,720.0 Z;M0.0,448.1 C30.4,450.7 99.2,458.3 160.0,461.8 C220.8,465.3 259.2,466.9 320.0,466.5 C380.8,466.0 419.2,463.5 480.0,459.4 C540.8,455.3 579.2,450.1 640.0,444.7 C700.8,439.3 739.2,434.5 800.0,431.0 C860.8,427.5 899.2,425.9 960.0,426.3 C1020.8,426.8 1059.2,429.3 1120.0,433.4 C1180.8,437.5 1249.6,445.3 1280.0,448.1 L1280.0,720.0 L0,720.0 Z;M0.0,457.9 C30.4,459.5 99.2,465.3 160.0,466.2 C220.8,467.2 259.2,466.0 320.0,463.0 C380.8,459.9 419.2,455.3 480.0,450.0 C540.8,444.6 579.2,439.3 640.0,434.9 C700.8,430.4 739.2,427.5 800.0,426.6 C860.8,425.6 899.2,426.8 960.0,429.8 C1020.8,432.9 1059.2,437.5 1120.0,442.8 C1180.8,448.2 1249.6,455.0 1280.0,457.9 L1280.0,720.0 L0,720.0 Z;M0.0,464.6 C30.4,464.8 99.2,467.2 160.0,465.4 C220.8,463.5 259.2,459.9 320.0,455.0 C380.8,450.1 419.2,444.7 480.0,439.6 C540.8,434.5 579.2,430.5 640.0,428.2 C700.8,425.9 739.2,425.6 800.0,427.4 C860.8,429.3 899.2,432.9 960.0,437.8 C1020.8,442.7 1059.2,448.1 1120.0,453.2 C1180.8,458.3 1249.6,462.5 1280.0,464.6 L1280.0,720.0 L0,720.0 Z";
+      const W3 = "M0.0,529.4 C30.4,526.8 99.2,520.4 160.0,515.5 C220.8,510.5 259.2,506.2 320.0,503.3 C380.8,500.3 419.2,499.1 480.0,499.9 C540.8,500.7 579.2,503.3 640.0,507.4 C700.8,511.5 739.2,516.4 800.0,521.3 C860.8,526.3 899.2,530.6 960.0,533.5 C1020.8,536.5 1059.2,537.7 1120.0,536.9 C1180.8,536.1 1249.6,530.8 1280.0,529.4 L1280.0,720.0 L0,720.0 Z;M0.0,520.4 C30.4,517.7 99.2,510.5 160.0,506.6 C220.8,502.7 259.2,500.3 320.0,499.8 C380.8,499.3 419.2,500.7 480.0,503.9 C540.8,507.0 579.2,511.4 640.0,516.4 C700.8,521.4 739.2,526.3 800.0,530.2 C860.8,534.1 899.2,536.5 960.0,537.0 C1020.8,537.5 1059.2,536.1 1120.0,532.9 C1180.8,529.8 1249.6,522.7 1280.0,520.4 L1280.0,720.0 L0,720.0 Z;M0.0,510.8 C30.4,508.9 99.2,502.7 160.0,500.9 C220.8,499.1 259.2,499.3 320.0,501.3 C380.8,503.3 419.2,507.0 480.0,511.7 C540.8,516.4 579.2,521.4 640.0,526.0 C700.8,530.6 739.2,534.1 800.0,535.9 C860.8,537.7 899.2,537.5 960.0,535.5 C1020.8,533.5 1059.2,529.8 1120.0,525.1 C1180.8,520.4 1249.6,513.5 1280.0,510.8 L1280.0,720.0 L0,720.0 Z;M0.0,503.3 C30.4,502.6 99.2,499.1 160.0,499.9 C220.8,500.7 259.2,503.3 320.0,507.4 C380.8,511.5 419.2,516.4 480.0,521.3 C540.8,526.3 579.2,530.6 640.0,533.5 C700.8,536.5 739.2,537.7 800.0,536.9 C860.8,536.1 899.2,533.5 960.0,529.4 C1020.8,525.3 1059.2,520.4 1120.0,515.5 C1180.8,510.5 1249.6,505.6 1280.0,503.3 L1280.0,720.0 L0,720.0 Z;M0.0,499.8 C30.4,500.6 99.2,500.7 160.0,503.9 C220.8,507.0 259.2,511.4 320.0,516.4 C380.8,521.4 419.2,526.3 480.0,530.2 C540.8,534.1 579.2,536.5 640.0,537.0 C700.8,537.5 739.2,536.1 800.0,532.9 C860.8,529.8 899.2,525.4 960.0,520.4 C1020.8,515.4 1059.2,510.5 1120.0,506.6 C1180.8,502.7 1249.6,501.1 1280.0,499.8 L1280.0,720.0 L0,720.0 Z;M0.0,501.3 C30.4,503.3 99.2,507.0 160.0,511.7 C220.8,516.4 259.2,521.4 320.0,526.0 C380.8,530.6 419.2,534.1 480.0,535.9 C540.8,537.7 579.2,537.5 640.0,535.5 C700.8,533.5 739.2,529.8 800.0,525.1 C860.8,520.4 899.2,515.4 960.0,510.8 C1020.8,506.2 1059.2,502.7 1120.0,500.9 C1180.8,499.1 1249.6,501.2 1280.0,501.3 L1280.0,720.0 L0,720.0 Z;M0.0,507.4 C30.4,510.0 99.2,516.4 160.0,521.3 C220.8,526.3 259.2,530.6 320.0,533.5 C380.8,536.5 419.2,537.7 480.0,536.9 C540.8,536.1 579.2,533.5 640.0,529.4 C700.8,525.3 739.2,520.4 800.0,515.5 C860.8,510.5 899.2,506.2 960.0,503.3 C1020.8,500.3 1059.2,499.1 1120.0,499.9 C1180.8,500.7 1249.6,506.0 1280.0,507.4 L1280.0,720.0 L0,720.0 Z;M0.0,516.4 C30.4,519.1 99.2,526.3 160.0,530.2 C220.8,534.1 259.2,536.5 320.0,537.0 C380.8,537.5 419.2,536.1 480.0,532.9 C540.8,529.8 579.2,525.4 640.0,520.4 C700.8,515.4 739.2,510.5 800.0,506.6 C860.8,502.7 899.2,500.3 960.0,499.8 C1020.8,499.3 1059.2,500.7 1120.0,503.9 C1180.8,507.0 1249.6,514.1 1280.0,516.4 L1280.0,720.0 L0,720.0 Z;M0.0,526.0 C30.4,527.9 99.2,534.1 160.0,535.9 C220.8,537.7 259.2,537.5 320.0,535.5 C380.8,533.5 419.2,529.8 480.0,525.1 C540.8,520.4 579.2,515.4 640.0,510.8 C700.8,506.2 739.2,502.7 800.0,500.9 C860.8,499.1 899.2,499.3 960.0,501.3 C1020.8,503.3 1059.2,507.0 1120.0,511.7 C1180.8,516.4 1249.6,523.3 1280.0,526.0 L1280.0,720.0 L0,720.0 Z;M0.0,533.5 C30.4,534.2 99.2,537.7 160.0,536.9 C220.8,536.1 259.2,533.5 320.0,529.4 C380.8,525.3 419.2,520.4 480.0,515.5 C540.8,510.5 579.2,506.2 640.0,503.3 C700.8,500.3 739.2,499.1 800.0,499.9 C860.8,500.7 899.2,503.3 960.0,507.4 C1020.8,511.5 1059.2,516.4 1120.0,521.3 C1180.8,526.3 1249.6,531.2 1280.0,533.5 L1280.0,720.0 L0,720.0 Z;M0.0,537.0 C30.4,536.2 99.2,536.1 160.0,532.9 C220.8,529.8 259.2,525.4 320.0,520.4 C380.8,515.4 419.2,510.5 480.0,506.6 C540.8,502.7 579.2,500.3 640.0,499.8 C700.8,499.3 739.2,500.7 800.0,503.9 C860.8,507.0 899.2,511.4 960.0,516.4 C1020.8,521.4 1059.2,526.3 1120.0,530.2 C1180.8,534.1 1249.6,535.7 1280.0,537.0 L1280.0,720.0 L0,720.0 Z;M0.0,535.5 C30.4,533.5 99.2,529.8 160.0,525.1 C220.8,520.4 259.2,515.4 320.0,510.8 C380.8,506.2 419.2,502.7 480.0,500.9 C540.8,499.1 579.2,499.3 640.0,501.3 C700.8,503.3 739.2,507.0 800.0,511.7 C860.8,516.4 899.2,521.4 960.0,526.0 C1020.8,530.6 1059.2,534.1 1120.0,535.9 C1180.8,537.7 1249.6,535.6 1280.0,535.5 L1280.0,720.0 L0,720.0 Z;M0.0,529.4 C30.4,526.8 99.2,520.4 160.0,515.5 C220.8,510.5 259.2,506.2 320.0,503.3 C380.8,500.3 419.2,499.1 480.0,499.9 C540.8,500.7 579.2,503.3 640.0,507.4 C700.8,511.5 739.2,516.4 800.0,521.3 C860.8,526.3 899.2,530.6 960.0,533.5 C1020.8,536.5 1059.2,537.7 1120.0,536.9 C1180.8,536.1 1249.6,530.8 1280.0,529.4 L1280.0,720.0 L0,720.0 Z";
+      const KS = '0.5 0 0.5 1;0.5 0 0.5 1;0.5 0 0.5 1;0.5 0 0.5 1;0.5 0 0.5 1;0.5 0 0.5 1;0.5 0 0.5 1;0.5 0 0.5 1;0.5 0 0.5 1;0.5 0 0.5 1;0.5 0 0.5 1;0.5 0 0.5 1';
+      const W1s=W1.split(';')[0], W2s=W2.split(';')[0], W3s=W3.split(';')[0];
       return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden">
   <defs>
-    <linearGradient id="${uid}wg" x1="0" y1="0" x2="0" y2="1">
+    <linearGradient id="${uid}g1" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="${a1}" stop-opacity="0"/>
-      <stop offset="0.5" stop-color="${a1}" stop-opacity="0.18"/>
       <stop offset="1" stop-color="${a2}" stop-opacity="0.38"/>
     </linearGradient>
-    <linearGradient id="${uid}wg2" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="${a1}" stop-opacity="0"/>
-      <stop offset="1" stop-color="${a1}" stop-opacity="0.22"/>
+    <linearGradient id="${uid}g2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="${a1}" stop-opacity="0.06"/>
+      <stop offset="1" stop-color="${a1}" stop-opacity="0.32"/>
     </linearGradient>
-    ${anim ? `
-    <style>
-      @keyframes ${uid}w1{0%,100%{d:path("M0,${h*.52} C${w*.15},${h*.46} ${w*.35},${h*.58} ${w*.5},${h*.52} C${w*.65},${h*.46} ${w*.85},${h*.58} ${w},${h*.52} L${w},${h} L0,${h} Z")} 50%{d:path("M0,${h*.55} C${w*.15},${h*.61} ${w*.35},${h*.49} ${w*.5},${h*.55} C${w*.65},${h*.61} ${w*.85},${h*.49} ${w},${h*.55} L${w},${h} L0,${h} Z")}}
-      @keyframes ${uid}w2{0%,100%{d:path("M0,${h*.62} C${w*.18},${h*.56} ${w*.38},${h*.68} ${w*.55},${h*.62} C${w*.72},${h*.56} ${w*.88},${h*.68} ${w},${h*.62} L${w},${h} L0,${h} Z")} 50%{d:path("M0,${h*.65} C${w*.18},${h*.71} ${w*.38},${h*.59} ${w*.55},${h*.65} C${w*.72},${h*.71} ${w*.88},${h*.59} ${w},${h*.65} L${w},${h} L0,${h} Z")}}
-      @keyframes ${uid}w3{0%,100%{d:path("M0,${h*.73} C${w*.2},${h*.67} ${w*.42},${h*.79} ${w*.6},${h*.73} C${w*.78},${h*.67} ${w*.9},${h*.79} ${w},${h*.73} L${w},${h} L0,${h} Z")} 50%{d:path("M0,${h*.76} C${w*.2},${h*.82} ${w*.42},${h*.70} ${w*.6},${h*.76} C${w*.78},${h*.82} ${w*.9},${h*.70} ${w},${h*.76} L${w},${h} L0,${h} Z")}}
-      .${uid}w1{animation:${uid}w1 5s ease-in-out infinite;}
-      .${uid}w2{animation:${uid}w2 6.5s ease-in-out infinite;}
-      .${uid}w3{animation:${uid}w3 4.8s ease-in-out infinite;}
-      @keyframes ${uid}f1{0%{transform:translate(${w*.05}px,${h*.64}px) scaleX(1);}45%{transform:translate(${w*.9}px,${h*.58}px) scaleX(1);}50%{transform:translate(${w*.9}px,${h*.58}px) scaleX(-1);}95%{transform:translate(${w*.05}px,${h*.64}px) scaleX(-1);}100%{transform:translate(${w*.05}px,${h*.64}px) scaleX(1);}}
-      @keyframes ${uid}f2{0%{transform:translate(${w*.8}px,${h*.76}px) scaleX(-1);}48%{transform:translate(${w*.08}px,${h*.71}px) scaleX(-1);}52%{transform:translate(${w*.08}px,${h*.71}px) scaleX(1);}98%{transform:translate(${w*.8}px,${h*.76}px) scaleX(1);}100%{transform:translate(${w*.8}px,${h*.76}px) scaleX(-1);}}
-      @keyframes ${uid}f3{0%{transform:translate(${w*.25}px,${h*.82}px) scaleX(1);}47%{transform:translate(${w*.75}px,${h*.87}px) scaleX(1);}53%{transform:translate(${w*.75}px,${h*.87}px) scaleX(-1);}97%{transform:translate(${w*.25}px,${h*.82}px) scaleX(-1);}100%{transform:translate(${w*.25}px,${h*.82}px) scaleX(1);}}
-      @keyframes ${uid}f4{0%{transform:translate(${w*.6}px,${h*.69}px) scaleX(-1);}44%{transform:translate(${w*.15}px,${h*.74}px) scaleX(-1);}56%{transform:translate(${w*.15}px,${h*.74}px) scaleX(1);}96%{transform:translate(${w*.6}px,${h*.69}px) scaleX(1);}100%{transform:translate(${w*.6}px,${h*.69}px) scaleX(-1);}}
-      .${uid}f1{animation:${uid}f1 9s ease-in-out infinite;}
-      .${uid}f2{animation:${uid}f2 12s ease-in-out infinite 2s;}
-      .${uid}f3{animation:${uid}f3 10s ease-in-out infinite 4s;}
-      .${uid}f4{animation:${uid}f4 8s ease-in-out infinite 1s;}
-      @keyframes ${uid}b{0%,100%{opacity:.4;transform:translateY(0) scale(1);}50%{opacity:.7;transform:translateY(-${h*.02}px) scale(1.15);}}
-      .${uid}b1{animation:${uid}b 3s ease-in-out infinite;}
-      .${uid}b2{animation:${uid}b 4s ease-in-out infinite 1s;}
-      .${uid}b3{animation:${uid}b 5s ease-in-out infinite 2s;}
-    </style>` : ''}
   </defs>
-
-  <!-- Underwater fill -->
-  <rect x="0" y="${h*.5}" width="${w}" height="${h*.5}" fill="url(#${uid}wg)"/>
-
-  <!-- Bubbles -->
-  <circle class="${uid}b1" cx="${w*.18}" cy="${h*.72}" r="${w*.006}" fill="${a1}" opacity=".4"/>
-  <circle class="${uid}b2" cx="${w*.44}" cy="${h*.65}" r="${w*.004}" fill="${a2}" opacity=".35"/>
-  <circle class="${uid}b3" cx="${w*.71}" cy="${h*.78}" r="${w*.005}" fill="${a1}" opacity=".3"/>
-
-  <!-- Fish (tiny, schematic) -->
-  <g class="${uid}f1" opacity=".6">
-    <ellipse cx="0" cy="0" rx="${w*.022}" ry="${w*.009}" fill="${a1}" opacity=".7"/>
-    <polygon points="${w*.022},0 ${w*.034},${-w*.007} ${w*.034},${w*.007}" fill="${a1}" opacity=".5"/>
-    <circle cx="${-w*.008}" cy="${-w*.002}" r="${w*.002}" fill="${a2}"/>
+  <rect x="0" y="${h*.5}" width="${w}" height="${h*.5}" fill="url(#${uid}g1)"/>
+  <path d="${W1s}" fill="${a1}" opacity=".11">
+    ${doAnimate?`<animate attributeName="d" dur="8s" repeatCount="indefinite" calcMode="spline" keySplines="${KS}" values="${W1}"/>`:''}
+  </path>
+  <path d="${W2s}" fill="${a1}" opacity=".16">
+    ${doAnimate?`<animate attributeName="d" dur="11s" repeatCount="indefinite" calcMode="spline" keySplines="${KS}" values="${W2}"/>`:''}
+  </path>
+  <path d="${W3s}" fill="url(#${uid}g2)" opacity=".9">
+    ${doAnimate?`<animate attributeName="d" dur="7s" repeatCount="indefinite" calcMode="spline" keySplines="${KS}" values="${W3}"/>`:''}
+  </path>
+  <circle cx="${w*.22}" cy="${h*.79}" r="${w*.005}" opacity="0" fill="${a1}">
+    ${doAnimate?`<animate attributeName="cy" dur="4s" repeatCount="indefinite" calcMode="spline" keySplines="0.3 0 0.7 1" values="${h*.79};${h*.56}"/><animate attributeName="opacity" dur="4s" repeatCount="indefinite" keyTimes="0;0.08;0.65;1" values="0;0.5;0.4;0"/>`:''}
+  </circle>
+  <circle cx="${w*.5}" cy="${h*.83}" r="${w*.0035}" opacity="0" fill="${a2}">
+    ${doAnimate?`<animate attributeName="cy" dur="5.5s" repeatCount="indefinite" begin="1.5s" calcMode="spline" keySplines="0.3 0 0.7 1" values="${h*.83};${h*.59}"/><animate attributeName="opacity" dur="5.5s" repeatCount="indefinite" begin="1.5s" keyTimes="0;0.08;0.7;1" values="0;0.45;0.35;0"/>`:''}
+  </circle>
+  <circle cx="${w*.72}" cy="${h*.76}" r="${w*.004}" opacity="0" fill="${a1}">
+    ${doAnimate?`<animate attributeName="cy" dur="3.8s" repeatCount="indefinite" begin="3s" calcMode="spline" keySplines="0.3 0 0.7 1" values="${h*.76};${h*.55}"/><animate attributeName="opacity" dur="3.8s" repeatCount="indefinite" begin="3s" keyTimes="0;0.1;0.65;1" values="0;0.42;0.32;0"/>`:''}
+  </circle>
+  <!-- Fish 1 -->
+  <g transform="translate(51.2,460.8)">
+    <animateTransform attributeName="transform" type="translate"
+      dur="9s" repeatCount="indefinite" begin="0s"
+      calcMode="spline" keySplines="0.45 0 0.55 1;0 0 1 1;0.45 0 0.55 1;0 0 1 1"
+      keyTimes="0;0.47;0.5;0.97;1"
+      values="51.2 460.8;1152.0 424.8;1152.0 424.8;51.2 460.8;51.2 460.8"/>
+    <g transform="scale(1,1)">
+      <animateTransform attributeName="transform" type="scale"
+        dur="9s" repeatCount="indefinite" begin="0s"
+        keyTimes="0;0.469;0.5;0.969;1"
+        values="1 1;1 1;-1 1;-1 1;1 1"/>
+      <ellipse cx="0" cy="0" rx="28.16" ry="11.52" fill="${a1}" opacity=".72"/>
+      <polygon points="-28.16,0 -43.65,-9.79 -43.65,9.79" fill="${a1}" opacity=".5"/>
+      <circle cx="15.49" cy="-2.88" r="2.53" fill="${a2}"/>
+    </g>
   </g>
-  <g class="${uid}f2" opacity=".5">
-    <ellipse cx="0" cy="0" rx="${w*.018}" ry="${w*.007}" fill="${a2}" opacity=".7"/>
-    <polygon points="${w*.018},0 ${w*.028},${-w*.005} ${w*.028},${w*.005}" fill="${a2}" opacity=".5"/>
-    <circle cx="${-w*.006}" cy="${-w*.002}" r="${w*.0015}" fill="${a1}"/>
+  <!-- Fish 2 -->
+  <g transform="translate(1126.4,547.2)">
+    <animateTransform attributeName="transform" type="translate"
+      dur="12s" repeatCount="indefinite" begin="0s"
+      calcMode="spline" keySplines="0.45 0 0.55 1;0 0 1 1;0.45 0 0.55 1;0 0 1 1"
+      keyTimes="0;0.47;0.5;0.97;1"
+      values="1126.4 547.2;102.4 511.2;102.4 511.2;1126.4 547.2;1126.4 547.2"/>
+    <g transform="scale(-1,1)">
+      <animateTransform attributeName="transform" type="scale"
+        dur="12s" repeatCount="indefinite" begin="2s"
+        keyTimes="0;0.469;0.5;0.969;1"
+        values="-1 1;-1 1;1 1;1 1;-1 1"/>
+      <ellipse cx="0" cy="0" rx="24.32" ry="10.24" fill="${a2}" opacity=".72"/>
+      <polygon points="-24.32,0 -37.70,-8.70 -37.70,8.70" fill="${a2}" opacity=".5"/>
+      <circle cx="13.38" cy="-2.56" r="2.25" fill="${a1}"/>
+    </g>
   </g>
-  <g class="${uid}f3" opacity=".55">
-    <ellipse cx="0" cy="0" rx="${w*.016}" ry="${w*.006}" fill="${a1}" opacity=".6"/>
-    <polygon points="${w*.016},0 ${w*.025},${-w*.005} ${w*.025},${w*.005}" fill="${a1}" opacity=".4"/>
-    <circle cx="${-w*.005}" cy="${-w*.0015}" r="${w*.0013}" fill="${a2}"/>
+  <!-- Fish 3 -->
+  <g transform="translate(384.0,597.6)">
+    <animateTransform attributeName="transform" type="translate"
+      dur="10s" repeatCount="indefinite" begin="0s"
+      calcMode="spline" keySplines="0.45 0 0.55 1;0 0 1 1;0.45 0 0.55 1;0 0 1 1"
+      keyTimes="0;0.47;0.5;0.97;1"
+      values="384.0 597.6;998.4 568.8;998.4 568.8;384.0 597.6;384.0 597.6"/>
+    <g transform="scale(1,1)">
+      <animateTransform attributeName="transform" type="scale"
+        dur="10s" repeatCount="indefinite" begin="5s"
+        keyTimes="0;0.469;0.5;0.969;1"
+        values="1 1;1 1;-1 1;-1 1;1 1"/>
+      <ellipse cx="0" cy="0" rx="20.48" ry="8.96" fill="${a1}" opacity=".72"/>
+      <polygon points="-20.48,0 -31.74,-7.62 -31.74,7.62" fill="${a1}" opacity=".5"/>
+      <circle cx="11.26" cy="-2.24" r="1.97" fill="${a2}"/>
+    </g>
   </g>
-  <g class="${uid}f4" opacity=".5">
-    <ellipse cx="0" cy="0" rx="${w*.02}" ry="${w*.008}" fill="${a2}" opacity=".65"/>
-    <polygon points="${w*.02},0 ${w*.031},${-w*.006} ${w*.031},${w*.006}" fill="${a2}" opacity=".45"/>
-    <circle cx="${-w*.007}" cy="${-w*.002}" r="${w*.0017}" fill="${a1}"/>
+  <!-- Fish 4 -->
+  <g transform="translate(832.0,496.8)">
+    <animateTransform attributeName="transform" type="translate"
+      dur="8s" repeatCount="indefinite" begin="0s"
+      calcMode="spline" keySplines="0.45 0 0.55 1;0 0 1 1;0.45 0 0.55 1;0 0 1 1"
+      keyTimes="0;0.47;0.5;0.97;1"
+      values="832.0 496.8;153.6 532.8;153.6 532.8;832.0 496.8;832.0 496.8"/>
+    <g transform="scale(-1,1)">
+      <animateTransform attributeName="transform" type="scale"
+        dur="8s" repeatCount="indefinite" begin="1s"
+        keyTimes="0;0.469;0.5;0.969;1"
+        values="-1 1;-1 1;1 1;1 1;-1 1"/>
+      <ellipse cx="0" cy="0" rx="25.60" ry="10.24" fill="${a2}" opacity=".72"/>
+      <polygon points="-25.60,0 -39.68,-8.70 -39.68,8.70" fill="${a2}" opacity=".5"/>
+      <circle cx="14.08" cy="-2.56" r="2.25" fill="${a1}"/>
+    </g>
   </g>
 
-  <!-- 3 waves top to bottom -->
-  <path class="${uid}w1" d="M0,${h*.52} C${w*.15},${h*.46} ${w*.35},${h*.58} ${w*.5},${h*.52} C${w*.65},${h*.46} ${w*.85},${h*.58} ${w},${h*.52} L${w},${h} L0,${h} Z" fill="${a1}" opacity=".13"/>
-  <path class="${uid}w2" d="M0,${h*.62} C${w*.18},${h*.56} ${w*.38},${h*.68} ${w*.55},${h*.62} C${w*.72},${h*.56} ${w*.88},${h*.68} ${w},${h*.62} L${w},${h} L0,${h} Z" fill="${a1}" opacity=".18"/>
-  <path class="${uid}w3" d="M0,${h*.73} C${w*.2},${h*.67} ${w*.42},${h*.79} ${w*.6},${h*.73} C${w*.78},${h*.67} ${w*.9},${h*.79} ${w},${h*.73} L${w},${h} L0,${h} Z" fill="url(#${uid}wg2)" opacity=".9"/>
 </svg>`;
     },
 
     contentSvg(w, h, a1, a2, doAnimate) {
-      const uid = 'ocs' + Math.random().toString(36).slice(2,7);
-      const anim = doAnimate !== false;
-      // Content slides: one wave at bottom + fish that jump out
+      const uid = 'ocs' + Math.random().toString(36).slice(2,8);
+      const WC = "M0.0,597.6 C30.4,601.0 99.2,610.6 160.0,615.4 C220.8,620.2 259.2,622.8 320.0,622.8 C380.8,622.8 419.2,620.2 480.0,615.4 C540.8,610.6 579.2,604.4 640.0,597.6 C700.8,590.8 739.2,584.6 800.0,579.8 C860.8,575.0 899.2,572.4 960.0,572.4 C1020.8,572.4 1059.2,575.0 1120.0,579.8 C1180.8,584.6 1249.6,594.2 1280.0,597.6 L1280.0,720.0 L0,720.0 Z;M0.0,610.2 C30.4,612.4 99.2,620.2 160.0,621.9 C220.8,623.7 259.2,622.8 320.0,619.4 C380.8,616.0 419.2,610.7 480.0,604.1 C540.8,597.6 579.2,590.9 640.0,585.0 C700.8,579.1 739.2,575.0 800.0,573.3 C860.8,571.5 899.2,572.4 960.0,575.8 C1020.8,579.2 1059.2,584.5 1120.0,591.1 C1180.8,597.6 1249.6,606.6 1280.0,610.2 L1280.0,720.0 L0,720.0 Z;M0.0,619.4 C30.4,619.9 99.2,623.7 160.0,621.9 C220.8,620.2 259.2,616.1 320.0,610.2 C380.8,604.3 419.2,597.6 480.0,591.1 C540.8,584.5 579.2,579.2 640.0,575.8 C700.8,572.4 739.2,571.5 800.0,573.3 C860.8,575.0 899.2,579.1 960.0,585.0 C1020.8,590.9 1059.2,597.6 1120.0,604.1 C1180.8,610.7 1249.6,616.5 1280.0,619.4 L1280.0,720.0 L0,720.0 Z;M0.0,622.8 C30.4,621.4 99.2,620.2 160.0,615.4 C220.8,610.6 259.2,604.4 320.0,597.6 C380.8,590.8 419.2,584.6 480.0,579.8 C540.8,575.0 579.2,572.4 640.0,572.4 C700.8,572.4 739.2,575.0 800.0,579.8 C860.8,584.6 899.2,590.8 960.0,597.6 C1020.8,604.4 1059.2,610.6 1120.0,615.4 C1180.8,620.2 1249.6,621.4 1280.0,622.8 L1280.0,720.0 L0,720.0 Z;M0.0,619.4 C30.4,616.5 99.2,610.7 160.0,604.1 C220.8,597.6 259.2,590.9 320.0,585.0 C380.8,579.1 419.2,575.0 480.0,573.3 C540.8,571.5 579.2,572.4 640.0,575.8 C700.8,579.2 739.2,584.5 800.0,591.1 C860.8,597.6 899.2,604.3 960.0,610.2 C1020.8,616.1 1059.2,620.2 1120.0,621.9 C1180.8,623.7 1249.6,619.9 1280.0,619.4 L1280.0,720.0 L0,720.0 Z;M0.0,610.2 C30.4,606.6 99.2,597.6 160.0,591.1 C220.8,584.5 259.2,579.2 320.0,575.8 C380.8,572.4 419.2,571.5 480.0,573.3 C540.8,575.0 579.2,579.1 640.0,585.0 C700.8,590.9 739.2,597.6 800.0,604.1 C860.8,610.7 899.2,616.0 960.0,619.4 C1020.8,622.8 1059.2,623.7 1120.0,621.9 C1180.8,620.2 1249.6,612.4 1280.0,610.2 L1280.0,720.0 L0,720.0 Z;M0.0,597.6 C30.4,594.2 99.2,584.6 160.0,579.8 C220.8,575.0 259.2,572.4 320.0,572.4 C380.8,572.4 419.2,575.0 480.0,579.8 C540.8,584.6 579.2,590.8 640.0,597.6 C700.8,604.4 739.2,610.6 800.0,615.4 C860.8,620.2 899.2,622.8 960.0,622.8 C1020.8,622.8 1059.2,620.2 1120.0,615.4 C1180.8,610.6 1249.6,601.0 1280.0,597.6 L1280.0,720.0 L0,720.0 Z;M0.0,585.0 C30.4,582.8 99.2,575.0 160.0,573.3 C220.8,571.5 259.2,572.4 320.0,575.8 C380.8,579.2 419.2,584.5 480.0,591.1 C540.8,597.6 579.2,604.3 640.0,610.2 C700.8,616.1 739.2,620.2 800.0,621.9 C860.8,623.7 899.2,622.8 960.0,619.4 C1020.8,616.0 1059.2,610.7 1120.0,604.1 C1180.8,597.6 1249.6,588.6 1280.0,585.0 L1280.0,720.0 L0,720.0 Z;M0.0,575.8 C30.4,575.3 99.2,571.5 160.0,573.3 C220.8,575.0 259.2,579.1 320.0,585.0 C380.8,590.9 419.2,597.6 480.0,604.1 C540.8,610.7 579.2,616.0 640.0,619.4 C700.8,622.8 739.2,623.7 800.0,621.9 C860.8,620.2 899.2,616.1 960.0,610.2 C1020.8,604.3 1059.2,597.6 1120.0,591.1 C1180.8,584.5 1249.6,578.7 1280.0,575.8 L1280.0,720.0 L0,720.0 Z;M0.0,572.4 C30.4,573.8 99.2,575.0 160.0,579.8 C220.8,584.6 259.2,590.8 320.0,597.6 C380.8,604.4 419.2,610.6 480.0,615.4 C540.8,620.2 579.2,622.8 640.0,622.8 C700.8,622.8 739.2,620.2 800.0,615.4 C860.8,610.6 899.2,604.4 960.0,597.6 C1020.8,590.8 1059.2,584.6 1120.0,579.8 C1180.8,575.0 1249.6,573.8 1280.0,572.4 L1280.0,720.0 L0,720.0 Z;M0.0,575.8 C30.4,578.7 99.2,584.5 160.0,591.1 C220.8,597.6 259.2,604.3 320.0,610.2 C380.8,616.1 419.2,620.2 480.0,621.9 C540.8,623.7 579.2,622.8 640.0,619.4 C700.8,616.0 739.2,610.7 800.0,604.1 C860.8,597.6 899.2,590.9 960.0,585.0 C1020.8,579.1 1059.2,575.0 1120.0,573.3 C1180.8,571.5 1249.6,575.3 1280.0,575.8 L1280.0,720.0 L0,720.0 Z;M0.0,585.0 C30.4,588.6 99.2,597.6 160.0,604.1 C220.8,610.7 259.2,616.0 320.0,619.4 C380.8,622.8 419.2,623.7 480.0,621.9 C540.8,620.2 579.2,616.1 640.0,610.2 C700.8,604.3 739.2,597.6 800.0,591.1 C860.8,584.5 899.2,579.2 960.0,575.8 C1020.8,572.4 1059.2,571.5 1120.0,573.3 C1180.8,575.0 1249.6,582.8 1280.0,585.0 L1280.0,720.0 L0,720.0 Z;M0.0,597.6 C30.4,601.0 99.2,610.6 160.0,615.4 C220.8,620.2 259.2,622.8 320.0,622.8 C380.8,622.8 419.2,620.2 480.0,615.4 C540.8,610.6 579.2,604.4 640.0,597.6 C700.8,590.8 739.2,584.6 800.0,579.8 C860.8,575.0 899.2,572.4 960.0,572.4 C1020.8,572.4 1059.2,575.0 1120.0,579.8 C1180.8,584.6 1249.6,594.2 1280.0,597.6 L1280.0,720.0 L0,720.0 Z";
+      const KS = '0.5 0 0.5 1;0.5 0 0.5 1;0.5 0 0.5 1;0.5 0 0.5 1;0.5 0 0.5 1;0.5 0 0.5 1;0.5 0 0.5 1;0.5 0 0.5 1;0.5 0 0.5 1;0.5 0 0.5 1;0.5 0 0.5 1;0.5 0 0.5 1';
+      const WCs = WC.split(';')[0];
       return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden">
   <defs>
-    <linearGradient id="${uid}wg" x1="0" y1="0" x2="0" y2="1">
+    <linearGradient id="${uid}g" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="${a1}" stop-opacity="0"/>
-      <stop offset="1" stop-color="${a2}" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="${a2}" stop-opacity="0.35"/>
     </linearGradient>
-    ${anim ? `
-    <style>
-      @keyframes ${uid}w{0%,100%{d:path("M0,${h*.82} C${w*.18},${h*.76} ${w*.4},${h*.88} ${w*.6},${h*.82} C${w*.8},${h*.76} ${w*.9},${h*.88} ${w},${h*.82} L${w},${h} L0,${h} Z")} 50%{d:path("M0,${h*.86} C${w*.18},${h*.92} ${w*.4},${h*.80} ${w*.6},${h*.86} C${w*.8},${h*.92} ${w*.9},${h*.80} ${w},${h*.86} L${w},${h} L0,${h} Z")}}
-      .${uid}wv{animation:${uid}w 5s ease-in-out infinite;}
-
-      @keyframes ${uid}j1{0%,70%,100%{transform:translate(${w*.28}px,${h*.82}px) rotate(0deg) scaleX(1);opacity:0;}72%{opacity:.8;}75%{transform:translate(${w*.3}px,${h*.55}px) rotate(-30deg) scaleX(1);opacity:.8;}80%{transform:translate(${w*.32}px,${h*.48}px) rotate(-45deg) scaleX(1);opacity:.6;}88%{transform:translate(${w*.29}px,${h*.72}px) rotate(10deg) scaleX(1);opacity:.5;}92%{transform:translate(${w*.28}px,${h*.85}px) rotate(0deg) scaleX(1);opacity:0;}}
-      @keyframes ${uid}j2{0%,40%,100%{transform:translate(${w*.6}px,${h*.84}px) rotate(0deg) scaleX(-1);opacity:0;}42%{opacity:.7;}45%{transform:translate(${w*.58}px,${h*.58}px) rotate(25deg) scaleX(-1);opacity:.7;}50%{transform:translate(${w*.57}px,${h*.5}px) rotate(40deg) scaleX(-1);opacity:.5;}58%{transform:translate(${w*.59}px,${h*.75}px) rotate(-5deg) scaleX(-1);opacity:.4;}63%{transform:translate(${w*.6}px,${h*.86}px) rotate(0deg) scaleX(-1);opacity:0;}}
-      @keyframes ${uid}j3{0%,85%,100%{transform:translate(${w*.45}px,${h*.83}px) rotate(0deg) scaleX(1);opacity:0;}87%{opacity:.75;}90%{transform:translate(${w*.47}px,${h*.6}px) rotate(-20deg) scaleX(1);opacity:.75;}94%{transform:translate(${w*.48}px,${h*.54}px) rotate(-35deg) scaleX(1);opacity:.55;}98%{transform:translate(${w*.46}px,${h*.78}px) rotate(5deg) scaleX(1);opacity:.2;}}
-
-      .${uid}j1{animation:${uid}j1 8s ease-in-out infinite;}
-      .${uid}j2{animation:${uid}j2 11s ease-in-out infinite 3s;}
-      .${uid}j3{animation:${uid}j3 9s ease-in-out infinite 6s;}
-    </style>` : ''}
   </defs>
-
-  <!-- Wave fill -->
-  <rect x="0" y="${h*.8}" width="${w}" height="${h*.2}" fill="url(#${uid}wg)"/>
-
-  <!-- Jumping fish -->
-  <g class="${uid}j1" opacity="0">
-    <ellipse cx="0" cy="0" rx="${w*.022}" ry="${w*.009}" fill="${a1}" opacity=".75"/>
-    <polygon points="${w*.022},0 ${w*.034},${-w*.007} ${w*.034},${w*.007}" fill="${a1}" opacity=".55"/>
-    <circle cx="${-w*.008}" cy="${-w*.002}" r="${w*.002}" fill="${a2}"/>
+  <path d="${WCs}" fill="url(#${uid}g)" opacity=".9">
+    ${doAnimate?`<animate attributeName="d" dur="7s" repeatCount="indefinite" calcMode="spline" keySplines="${KS}" values="${WC}"/>`:''}
+  </path>
+  <!-- Jump fish 1 -->
+  <g opacity="0" transform="translate(358.4,622.8)">
+    <animateTransform attributeName="transform" type="translate"
+      dur="8s" repeatCount="indefinite" 
+      keyTimes="0;0.70;0.72;0.79;0.86;0.92;0.96;1"
+      calcMode="spline" keySplines="0 0 1 1;0.1 0 0.5 1;0.2 0 0.5 1;0.5 0 0.8 1;0.3 0 0.6 1;0.5 0 0.5 1;0 0 1 1"
+      values="358.4 622.8;358.4 622.8;358.4 619.7;384.0 338.4;390.4 351.9;377.6 635.3;358.4 625.9;358.4 622.8"/>
+    <animate attributeName="opacity"
+      dur="8s" repeatCount="indefinite" 
+      keyTimes="0;0.70;0.72;0.78;0.85;0.92;0.96;1"
+      values="0;0;0.8;0.8;0.6;0.3;0;0"/>
+    <g>
+      <animateTransform attributeName="transform" type="rotate"
+        dur="8s" repeatCount="indefinite" 
+        keyTimes="0;0.70;0.79;0.86;0.92;1"
+        values="0;0;-42.0;-18.9;5.0;0"/>
+      <ellipse cx="0" cy="0" rx="28.16" ry="11.52" fill="${a1}" opacity="1"/>
+      <polygon points="-28.16,0 -43.65,-9.79 -43.65,9.79" fill="${a1}" opacity="1"/>
+      <circle cx="15.49" cy="-2.88" r="2.53" fill="${a2}"/>
+    </g>
   </g>
-  <g class="${uid}j2" opacity="0">
-    <ellipse cx="0" cy="0" rx="${w*.019}" ry="${w*.008}" fill="${a2}" opacity=".7"/>
-    <polygon points="${w*.019},0 ${w*.03},${-w*.006} ${w*.03},${w*.006}" fill="${a2}" opacity=".5"/>
-    <circle cx="${-w*.007}" cy="${-w*.002}" r="${w*.0017}" fill="${a1}"/>
+  <!-- Jump fish 2 -->
+  <g opacity="0" transform="translate(793.6,626.4)">
+    <animateTransform attributeName="transform" type="translate"
+      dur="11s" repeatCount="indefinite" begin="3.5s"
+      keyTimes="0;0.70;0.72;0.79;0.86;0.92;0.96;1"
+      calcMode="spline" keySplines="0 0 1 1;0.1 0 0.5 1;0.2 0 0.5 1;0.5 0 0.8 1;0.3 0 0.6 1;0.5 0 0.5 1;0 0 1 1"
+      values="793.6 626.4;793.6 626.4;793.6 623.3;819.2 331.2;825.6 344.4;812.8 638.9;793.6 629.5;793.6 626.4"/>
+    <animate attributeName="opacity"
+      dur="11s" repeatCount="indefinite" begin="3.5s"
+      keyTimes="0;0.70;0.72;0.78;0.85;0.92;0.96;1"
+      values="0;0;0.8;0.8;0.6;0.3;0;0"/>
+    <g>
+      <animateTransform attributeName="transform" type="rotate"
+        dur="11s" repeatCount="indefinite" begin="3.5s"
+        keyTimes="0;0.70;0.79;0.86;0.92;1"
+        values="0;0;-38.0;-17.1;4.6;0"/>
+      <ellipse cx="0" cy="0" rx="24.32" ry="10.24" fill="${a2}" opacity="1"/>
+      <polygon points="-24.32,0 -37.70,-8.70 -37.70,8.70" fill="${a2}" opacity="1"/>
+      <circle cx="13.38" cy="-2.56" r="2.25" fill="${a1}"/>
+    </g>
   </g>
-  <g class="${uid}j3" opacity="0">
-    <ellipse cx="0" cy="0" rx="${w*.017}" ry="${w*.007}" fill="${a1}" opacity=".65"/>
-    <polygon points="${w*.017},0 ${w*.026},${-w*.005} ${w*.026},${w*.005}" fill="${a1}" opacity=".45"/>
-    <circle cx="${-w*.006}" cy="${-w*.0015}" r="${w*.0014}" fill="${a2}"/>
+  <!-- Jump fish 3 -->
+  <g opacity="0" transform="translate(576.0,615.6)">
+    <animateTransform attributeName="transform" type="translate"
+      dur="9s" repeatCount="indefinite" begin="7s"
+      keyTimes="0;0.70;0.72;0.79;0.86;0.92;0.96;1"
+      calcMode="spline" keySplines="0 0 1 1;0.1 0 0.5 1;0.2 0 0.5 1;0.5 0 0.8 1;0.3 0 0.6 1;0.5 0 0.5 1;0 0 1 1"
+      values="576.0 615.6;576.0 615.6;576.0 612.5;601.6 345.6;608.0 359.4;595.2 627.9;576.0 618.7;576.0 615.6"/>
+    <animate attributeName="opacity"
+      dur="9s" repeatCount="indefinite" begin="7s"
+      keyTimes="0;0.70;0.72;0.78;0.85;0.92;0.96;1"
+      values="0;0;0.8;0.8;0.6;0.3;0;0"/>
+    <g>
+      <animateTransform attributeName="transform" type="rotate"
+        dur="9s" repeatCount="indefinite" begin="7s"
+        keyTimes="0;0.70;0.79;0.86;0.92;1"
+        values="0;0;-40.0;-18.0;4.8;0"/>
+      <ellipse cx="0" cy="0" rx="21.76" ry="8.96" fill="${a1}" opacity="1"/>
+      <polygon points="-21.76,0 -33.73,-7.62 -33.73,7.62" fill="${a1}" opacity="1"/>
+      <circle cx="11.97" cy="-2.24" r="1.97" fill="${a2}"/>
+    </g>
   </g>
 
-  <!-- Wave -->
-  <path class="${uid}wv" d="M0,${h*.82} C${w*.18},${h*.76} ${w*.4},${h*.88} ${w*.6},${h*.82} C${w*.8},${h*.76} ${w*.9},${h*.88} ${w},${h*.82} L${w},${h} L0,${h} Z" fill="url(#${uid}wg)" opacity=".9"/>
 </svg>`;
     },
   },

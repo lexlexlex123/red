@@ -224,7 +224,18 @@ function mkEl(d){
     // Apply clip-path so hit area matches shape, not bounding box
     _applyShapeClipPath(el, d);
   }else if(d.type==='svg'){
-    c.style.cssText='width:100%;height:100%;overflow:visible;';c.innerHTML=d.svgContent||'';
+    c.style.cssText='width:100%;height:100%;overflow:visible;';
+    // Use DOMParser so SVG SMIL animations (<animate>, <animateTransform>) work correctly.
+    // innerHTML uses the HTML parser which drops unknown SVG animation elements.
+    const _svgStr=d.svgContent||'';
+    try{
+      const _dp=new DOMParser();
+      const _doc=_dp.parseFromString(_svgStr,'image/svg+xml');
+      const _parsed=_doc.documentElement;
+      if(_parsed && _parsed.tagName!=='parsererror'){
+        c.appendChild(document.adoptNode(_parsed));
+      } else { c.innerHTML=_svgStr; }
+    }catch(e){ c.innerHTML=_svgStr; }
     const svgEl=c.querySelector('svg');
     if(svgEl){svgEl.style.width='100%';svgEl.style.height='100%';}
     // Decor elements: fully locked, not interactive
@@ -261,7 +272,7 @@ function mkEl(d){
     const iframe=document.createElement('iframe');iframe.srcdoc=d.appletHtml||'<p>Applet</p>';
     iframe.style.cssText='width:100%;height:100%;border:none;background:transparent;';
     iframe.setAttribute('allowtransparency','true');
-    iframe.sandbox='allow-scripts';
+    iframe.sandbox = (d.appletId==='timer') ? 'allow-scripts allow-same-origin' : 'allow-scripts';
     clip.appendChild(iframe);
     // Layer 2: border overlay div — sits ON TOP of clip, pointer-events:none, never clipped
     const bord=document.createElement('div');bord.className='applet-border-overlay';
@@ -307,6 +318,31 @@ function mkEl(d){
     if(d.appletId==='generator'){
       requestAnimationFrame(function(){
         if(typeof refreshGeneratorEl==='function') refreshGeneratorEl(d.id);
+      });
+    }
+    if(d.appletId==='timer'){
+      el.dataset.tmMin          = d.tmMin          !== undefined ? d.tmMin          : 5;
+      el.dataset.tmSec          = d.tmSec          !== undefined ? d.tmSec          : 0;
+      el.dataset.tmOnEnd        = d.tmOnEnd        || 'none';
+      el.dataset.tmOnEndSlide   = d.tmOnEndSlide   !== undefined ? d.tmOnEndSlide   : 0;
+      el.dataset.genFontSize    = d.genFontSize     !== undefined ? d.genFontSize    : 72;
+      el.dataset.genColor       = d.genColor        || '';
+      el.dataset.genBg          = d.genBg           || '';
+      el.dataset.genBgBlur      = d.genBgBlur       !== undefined ? d.genBgBlur      : 0;
+      el.dataset.genBorderColor = d.genBorderColor  || '';
+      el.dataset.genBorderWidth = d.genBorderWidth  !== undefined ? d.genBorderWidth : 0;
+      el.dataset.genBgOp        = d.genBgOp         !== undefined ? d.genBgOp        : 1;
+      el.dataset.genShadowOn    = d.genShadowOn     !== undefined ? (d.genShadowOn ? 'true' : 'false') : 'true';
+      el.dataset.genShadowBlur  = d.genShadowBlur   !== undefined ? d.genShadowBlur  : 8;
+      el.dataset.genShadowColor = d.genShadowColor  || '';
+      el.dataset.genBold        = d.genBold ? 'true' : 'false';
+      el.dataset.genAlign       = d.genAlign        || 'center';
+      el.dataset.genVAlign      = d.genVAlign       || 'middle';
+      el.dataset.genColorScheme  = d.genColorScheme  ? JSON.stringify(d.genColorScheme)  : '';
+      el.dataset.genBgScheme     = d.genBgScheme     ? JSON.stringify(d.genBgScheme)     : '';
+      el.dataset.genBorderScheme = d.genBorderScheme ? JSON.stringify(d.genBorderScheme) : '';
+      requestAnimationFrame(function(){
+        if(typeof refreshTimerEl==='function') refreshTimerEl(d.id);
       });
     }
   }else if(d.type==='pagenum'){

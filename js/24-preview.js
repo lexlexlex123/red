@@ -44,6 +44,17 @@ function startPreview(startIdx){
     nextPreview();
   };
   po2.addEventListener('click',po2._stageClick);
+  // Listen for timer navigation messages from applet iframes
+  window._timerNavHandler = function(e){
+    if(!e.data || e.data.type!=='timerNav') return;
+    if(e.data.mode==='next'){
+      nextPreview();
+    } else if(e.data.mode==='slide'){
+      const to=e.data.slide;
+      if(typeof to==='number' && to>=0 && to<slides.length) gotoPreview(to,'next');
+    }
+  };
+  window.addEventListener('message', window._timerNavHandler);
   const sc=pScale();
   buildPSlide(document.getElementById('psa'),pidx);
   document.getElementById('psb').innerHTML='';
@@ -56,6 +67,7 @@ function stopPreview(){
   clearAutoTimer();
   const po=document.getElementById('preview-ov');
   if(po._stageClick){po.removeEventListener('click',po._stageClick);delete po._stageClick;}
+  if(window._timerNavHandler){window.removeEventListener('message',window._timerNavHandler);delete window._timerNavHandler;}
   po.classList.remove('active');
   document.fullscreenElement&&document.exitFullscreen&&document.exitFullscreen();
   window.removeEventListener('resize',resizePStage);
@@ -130,13 +142,14 @@ function gotoPreview(to,dir){
   else animTrans(a,b,trans,dir==='next',transitionDur,()=>{finalizePreview(a,b,to);});
 }
 function finalizePreview(a,b,to){
-  // Stop any ongoing transitions before rebuilding DOM
+  // Stop any ongoing transitions
   a.style.transition='none'; b.style.transition='none';
   const sc=pScale();
-  // b is now fully visible (end of animation) — swap: rebuild a as new current, hide b
-  b.style.cssText='position:absolute;inset:0;opacity:0;pointer-events:none;width:'+canvasW+'px;height:'+canvasH+'px;transform:scale('+sc+');transform-origin:top left;';
-  a.style.cssText='position:absolute;inset:0;width:'+canvasW+'px;height:'+canvasH+'px;transform:scale('+sc+');transform-origin:top left;';
-  buildPSlide(a,to);
+  // Swap IDs so b becomes psa (active) without moving any DOM nodes.
+  // Moving srcdoc iframes in DOM causes browser to reload them — killing live timers.
+  a.id='psb'; b.id='psa';
+  b.style.cssText='position:absolute;inset:0;width:'+canvasW+'px;height:'+canvasH+'px;transform:scale('+sc+');transform-origin:top left;';
+  a.style.cssText='position:absolute;inset:0;opacity:0;pointer-events:none;width:'+canvasW+'px;height:'+canvasH+'px;transform:scale('+sc+');transform-origin:top left;';
   pidx=to;updatePUI();pTransiting=false;scheduleAuto();
 }
 // Morph transition — match elements by position/size similarity
@@ -393,7 +406,9 @@ function buildPSlide(container,idx){
       }
       _ec.appendChild(_selEl);el.appendChild(_ec);
     }else if(d.type==='svg'){
-      el.style.overflow='visible';el.innerHTML=d.svgContent||'';
+      el.style.overflow='visible';
+      const _svgStr2=d.svgContent||'';
+      try{const _dp2=new DOMParser();const _doc2=_dp2.parseFromString(_svgStr2,'image/svg+xml');const _p2=_doc2.documentElement;if(_p2&&_p2.tagName!=='parsererror'){el.appendChild(document.adoptNode(_p2));}else{el.innerHTML=_svgStr2;}}catch(e){el.innerHTML=_svgStr2;}
       const svgEl=el.querySelector('svg');if(svgEl){svgEl.style.width='100%';svgEl.style.height='100%';}
     }else if(d.type==='icon'){
       el.style.overflow='visible';el.style.display='flex';el.style.alignItems='center';el.style.justifyContent='center';
@@ -412,14 +427,19 @@ function buildPSlide(container,idx){
       var _aClip=document.createElement('div');
       _aClip.style.cssText='position:absolute;inset:0;overflow:hidden;border-radius:'+_aRx+';';
       var iframe=document.createElement('iframe');iframe.srcdoc=d.appletHtml||'';
-      var _pvPE = (d.appletId==='generator') ? 'none' : 'auto';
+      var _pvPE = (d.appletId==='generator'||d.appletId==='timer') ? 'none' : 'auto';
       iframe.style.cssText='width:100%;height:100%;border:none;background:transparent;pointer-events:'+_pvPE+';user-select:none;';
       iframe.setAttribute('allowtransparency','true');
-      iframe.sandbox='allow-scripts';
+      iframe.sandbox = (d.appletId==='timer') ? 'allow-scripts allow-same-origin' : 'allow-scripts';
+      if(d.appletId==='timer'){
+        iframe.addEventListener('load', function(){
+          try{ iframe.contentWindow.postMessage({type:'timerStart'}, '*'); }catch(e){}
+        }, {once:true});
+      }
       _aClip.appendChild(iframe);
       el.appendChild(_aClip);
       // Layer 2: border overlay — after clip in DOM, not clipped by anything
-      if(d.appletId==='generator'){
+      if(d.appletId==='generator'||d.appletId==='timer'){
         var _bw=d.genBorderWidth!==undefined?+d.genBorderWidth:0;
         var _bordDiv=document.createElement('div');
         _bordDiv.className='applet-border-overlay';
