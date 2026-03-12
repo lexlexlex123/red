@@ -1,5 +1,6 @@
 # Слайды — v5.4
-![Uploading image.png…]()
+<img width="1908" height="889" alt="image" src="https://github.com/user-attachments/assets/016508d4-a09d-455b-97b0-4ef5c685c644" />
+
 
 Веб-редактор презентаций. Работает полностью в браузере, без серверной части.  
 **Автор:** Некрасов Александр
