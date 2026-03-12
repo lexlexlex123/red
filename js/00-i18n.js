@@ -1,9 +1,9 @@
 // ══════════════ LOCALIZATION (i18n) ══════════════
-// Версия / Version: 4.7
+// Версия / Version: 5.4
 // Автор / Author: Некрасов Александр
 
 const APP_NAME = 'Слайды';
-const APP_VERSION = '5.2';
+const APP_VERSION = '5.4';
 const APP_AUTHOR = 'Некрасов Александр';
 
 const LANG_DATA = {

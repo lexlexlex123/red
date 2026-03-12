@@ -65,15 +65,25 @@ function pickMulti(el,shiftKey){
   // Start rubber-band on canvas background OR on cwrap (outside canvas)
   function onDown(e){
     if(e.button!==0)return;
-    // If clicked on an element — skip
+    if(window._anyDragging)return;
+    if(typeof _rotDragging!=='undefined'&&_rotDragging)return;
+    // If clicked near a rotation corner — skip (let rotation handler take over)
+    if(typeof _rotEl!=='undefined'&&_rotEl&&typeof _nearCorner==='function'){
+      const pt=toCanvasCoords(e);
+      if(_nearCorner(_rotEl,pt.x,pt.y))return;
+    }
+    // If clicked on an element or resize handle — skip
     if(e.target.closest('.el'))return;
+    if(e.target.closest('.rh'))return;
+    if(e.target.closest('#conn-handles'))return;
+    if(e.target.closest('#handles-overlay'))return;
     // Must be inside cwrap area
     if(!e.target.closest('#cwrap'))return;
     if(typeof stopTextEditing==='function')stopTextEditing();
     const wasMulti = multiSel.size > 1;
     _justClearedMulti = wasMulti;
     clearMultiSel();
-    if(sel){sel.classList.remove('sel');sel=null;}
+    if(sel&&!(typeof _rotDragging!=='undefined'&&_rotDragging)){sel.classList.remove('sel');sel=null;}
     // If clicking outside canvas (on cwrap bg) always show slide props regardless
     const onCanvas = e.target.closest('#canvas') || e.target.closest('#canvas-bg-rect');
     if(!wasMulti || !onCanvas) _justClearedMulti = false;
@@ -92,6 +102,7 @@ function pickMulti(el,shiftKey){
 
   document.addEventListener('mousemove',e=>{
     if(!rbStart)return;
+    if(typeof _rotDragging!=='undefined'&&_rotDragging){rbStart=null;document.getElementById('rubberband').style.display='none';return;}
     const z=typeof _canvasZoom==='number'?_canvasZoom:1;
     const rect=cv.getBoundingClientRect();
     // Clamp to canvas bounds in canvas-space
@@ -174,6 +185,7 @@ function deleteSelected(){
     multiSel.forEach(domEl=>{
       const s=slides[cur];if(!s)return;
       const idx2=s.els.findIndex(x=>x.id===domEl.dataset.id);
+      if(typeof _hfOnDelete==='function'){ const _d=s.els[idx2]; if(_d)_hfOnDelete(_d); }
       if(idx2>=0)s.els.splice(idx2,1);
       domEl.remove();
     });
@@ -181,12 +193,19 @@ function deleteSelected(){
     if(typeof renderAnimPanel==="function")renderAnimPanel();
     if(typeof renderMotionOverlay==="function")renderMotionOverlay();
     if(typeof toast==="function")toast('Deleted elements','ok');
+    _rotEl=null;const _ov2=document.getElementById('handles-overlay');if(_ov2)_ov2.innerHTML='';
   } else if(sel){
     const s=slides[cur];if(!s)return;
     if(typeof pushUndo==="function")pushUndo();
     const idx2=s.els.findIndex(x=>x.id===sel.dataset.id);
+    // If deleting a formula, also delete linked graphs
+    if(sel.dataset.type==='formula' && typeof _deleteLinkedGraphs==='function'){
+      _deleteLinkedGraphs(sel.dataset.id);
+    }
+    // htmlframe: delete linked code; code: unlink parent
+    if(typeof _hfOnDelete==='function'){ const _d=s.els[idx2]; if(_d)_hfOnDelete(_d); }
     if(idx2>=0)s.els.splice(idx2,1);
-    sel.remove();sel=null;save();if(typeof drawThumbs==="function")drawThumbs();if(typeof saveState==="function")saveState();syncProps();
+    sel.remove();sel=null;_rotEl=null;const _ov=document.getElementById('handles-overlay');if(_ov)_ov.innerHTML='';save();if(typeof drawThumbs==="function")drawThumbs();if(typeof saveState==="function")saveState();syncProps();
     if(typeof renderAnimPanel==="function")renderAnimPanel();
     if(typeof renderMotionOverlay==="function")renderMotionOverlay();
   }

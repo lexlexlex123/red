@@ -60,15 +60,13 @@ function applyTheme(){
     return tmp.innerHTML;
   }
 
-  slides.forEach(s=>{
+  slides.forEach((s,si)=>{
     if(s.bgScheme !== null && s.bgScheme !== undefined){
-      // Scheme-pinned bg — remap to same position in new theme
       const resolved = _resolveSchemeColor(s.bgScheme, theme);
       s.bg='custom'; s.bgc = resolved || theme.bg;
     } else if(s.bgScheme === null){
-      // Custom bg — leave s.bg/s.bgc unchanged
+      // Custom bg — leave unchanged
     } else {
-      // Legacy or theme bg — apply new theme bg
       s.bg='custom'; s.bgc=theme.bg;
     }
     s.els.forEach(el=>{
@@ -99,6 +97,14 @@ function applyTheme(){
           const chars=_toCharObjs(el.html);
           let changed=false;
           chars.forEach(ch=>{
+            if(ch._listMarker && ch._listMarker.type==='bullet'){
+              // If marker has a schemeRef, remap it
+              if(ch._listMarker.iconSchemeRef){
+                const resolved=_resolveSchemeColor(ch._listMarker.iconSchemeRef, theme);
+                if(resolved){ ch._listMarker.iconColor=resolved; changed=true; }
+              }
+              // currentColor markers stay as-is (inherit from .cs)
+            }
             if(ch.style._schemeRef){
               // Scheme-pinned: remap to same position in new theme
               const resolved=_resolveSchemeColor(ch.style._schemeRef, theme);
@@ -186,12 +192,34 @@ function applyTheme(){
         el.textColor=textC;
       }
       if(el.type==='icon'){
-        const newColor=theme.shapeFill||theme.tc||'#3b82f6';
-        el.iconColor=newColor;
-        // Update shadow color to accent if shadow is enabled
-        if(el.shadow) el.shadowColor=theme.ac1||newColor;
-        const ic=ICONS.find(function(x){return x.id===el.iconId;});
-        if(ic)el.svgContent=_buildIconSVG(ic,newColor,el.iconSw!=null?el.iconSw:1.8,el.iconStyle||'stroke',el.shadow,el.shadowBlur,el.shadowColor);
+        if(!el.iconColorCustom){
+          const newColor=theme.shapeFill||theme.tc||'#3b82f6';
+          el.iconColor=newColor;
+          // Update shadow color to accent if shadow is enabled
+          if(el.shadow) el.shadowColor=theme.ac1||newColor;
+          const ic=ICONS.find(function(x){return x.id===el.iconId;});
+          if(ic){
+            const _newSvg=_buildIconSVG(ic,newColor,el.iconSw!=null?el.iconSw:1.8,el.iconStyle||'stroke',el.shadow,el.shadowBlur,el.shadowColor);
+            // Re-fit viewBox after color change to preserve tight bounds
+            try{
+              const _pm=[..._newSvg.matchAll(/d="([^"]+)"/g)].map(m=>m[1]);
+              if(_pm.length>0){
+                const _wr=document.createElement('div');_wr.style.cssText='position:fixed;left:-9999px;top:-9999px;width:200px;height:200px;';
+                const _ts=document.createElementNS('http://www.w3.org/2000/svg','svg');_ts.setAttribute('viewBox','0 0 24 24');_ts.style.cssText='width:200px;height:200px;';
+                const _g=document.createElementNS('http://www.w3.org/2000/svg','g');
+                _pm.forEach(pd=>{const _p=document.createElementNS('http://www.w3.org/2000/svg','path');_p.setAttribute('d',pd);_g.appendChild(_p);});
+                _ts.appendChild(_g);_wr.appendChild(_ts);document.body.appendChild(_wr);
+                const bb=_g.getBBox();document.body.removeChild(_wr);
+                if(bb&&bb.width>0&&bb.height>0){
+                  const sw2=(parseFloat(el.iconSw)||1.8)/2;
+                  const vx=bb.x-sw2,vy=bb.y-sw2,vw=bb.width+sw2*2,vh=bb.height+sw2*2;
+                  el.svgContent=_newSvg.replace(/viewBox="[^"]*"/,'viewBox="'+vx+' '+vy+' '+vw+' '+vh+'"');
+                  el.iconFitted=true;
+                } else { el.svgContent=_newSvg; el.iconFitted=false; }
+              } else { el.svgContent=_newSvg; el.iconFitted=false; }
+            }catch(_e){ el.svgContent=_newSvg; el.iconFitted=false; }
+          }
+        }
       }
       if(el.type==='markdown'){
         const ref = el.mdColorScheme !== undefined ? el.mdColorScheme : {col:7,row:0};
@@ -199,6 +227,20 @@ function applyTheme(){
           const resolved = _resolveSchemeColor(ref, theme);
           if(resolved) el.mdColor = resolved;
         }
+      }
+      if(el.type==='formula'){
+        const _defScheme = {col:7, row:0}; // col:7=neutral, row:0 → white on dark, black on light
+        const _defColor  = _resolveSchemeColor(_defScheme, theme);
+        let newFc;
+        if(el.formulaColorScheme !== null && el.formulaColorScheme !== undefined){
+          newFc = _resolveSchemeColor(el.formulaColorScheme, theme) || _defColor;
+        } else if(el.formulaColorScheme === undefined){
+          el.formulaColorScheme = _defScheme;
+          newFc = _defColor;
+        } else {
+          newFc = null; // custom — skip
+        }
+        if(newFc){ el.formulaColor = newFc; }
       }
       if(el.type==='applet' && el.appletId==='generator'){
         // Remap scheme-pinned colors; leave custom (null) unchanged
@@ -224,6 +266,7 @@ function applyTheme(){
   // Refresh applets with new theme colors
   if(typeof refreshAppletThemes==='function')refreshAppletThemes();
   if(typeof refreshAllCodeBlocks==='function')refreshAllCodeBlocks();
+  if(typeof refreshAllGraphs==='function')refreshAllGraphs(theme);
   // Now render all slides from fully updated data
   renderAll();
   // Force-update decor SVG elements in DOM (in case load() used cached content)
@@ -248,6 +291,15 @@ function applyTheme(){
       delete domEl.dataset.textBgOp;
       applyTextBg(domEl);
     }
+  });
+  // Force-sync formula colors in DOM
+  slides[cur].els.forEach(d=>{
+    if(d.type!=='formula')return;
+    const domEl=document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
+    if(!domEl)return;
+    domEl.dataset.formulaColor=d.formulaColor;
+    const ec=domEl.querySelector('.ec');
+    if(ec) ec.style.color=d.formulaColor;
   });
   invalidateThumbCache();
   saveState();

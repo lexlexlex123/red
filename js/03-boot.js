@@ -14,6 +14,27 @@ function boot(){
   buildPalette('cp-fill-palette','fill');
   drawGrid();
   // Sync click-nav checkboxes
+  // Close any open modal when clicking the overlay (outside .modal content)
+  document.addEventListener('mousedown', e => {
+    if(!e.target.classList.contains('modal-ov')) return;
+    // Click landed directly on overlay — close it
+    e.target.classList.remove('open');
+    // For dynamically created modals (formula editor etc) also remove from DOM
+    if(!e.target.id) e.target.remove();
+  });
+
+  // Global helper to blur any active shape text editor
+  window._blurActiveShapeText = function(){
+    const editing = document.querySelector('.shape-text[contenteditable="true"]');
+    if(editing){
+      editing.contentEditable='false';
+      editing.style.pointerEvents='none';
+      const elP=editing.closest('[data-type="shape"]');
+      if(elP) elP.dataset.editing='false';
+      if(typeof commitAll==='function') commitAll();
+    }
+  };
+
   document.getElementById('canvas').addEventListener('mousedown',e=>{
     if(e.target.id==='canvas'||e.target.id==='cvbg'){if(pipetteMode){cancelPipetteMode();return;}desel();}
   });
@@ -40,6 +61,11 @@ function boot(){
       // Don't drawThumbs here if clicking slide panel — pickSlide will handle it
       if(inSlidePanel){save();saveState();return;}
       save();drawThumbs();saveState();
+      return;
+    }
+    // Exit shape text editing
+    if(sel.dataset.type==='shape'){
+      window._blurActiveShapeText();
       return;
     }
     // Exit text element editing
@@ -113,7 +139,7 @@ function _applyThemeByIdx(idx){
         if(el.strokeScheme!==null&&el.strokeScheme!==undefined){const r=typeof _resolveSchemeColor==='function'?_resolveSchemeColor(el.strokeScheme,theme):null;if(r)el.stroke=r;}
         else if(el.strokeScheme===undefined&&theme.shapeStroke)el.stroke=theme.shapeStroke;
       }
-      if(el.type==='icon'){const newColor=theme.shapeFill||theme.tc||'#3b82f6';el.iconColor=newColor;}
+      if(el.type==='icon'&&!el.iconColorCustom){const newColor=theme.shapeFill||theme.tc||'#3b82f6';el.iconColor=newColor;}
     });
   });
   if(typeof refreshDecorColors==='function')refreshDecorColors(theme.ac1||'#6366f1',theme.ac2||'#818cf8',true);
@@ -206,10 +232,11 @@ function buildShapeGallery(){
     const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 100 100');
     let el;
     if(s.special==='rect'){el=document.createElementNS('http://www.w3.org/2000/svg','rect');el.setAttribute('x','5');el.setAttribute('y','5');el.setAttribute('width','90');el.setAttribute('height','90');}
-    else if(s.special==='rounded'){el=document.createElementNS('http://www.w3.org/2000/svg','rect');el.setAttribute('x','5');el.setAttribute('y','5');el.setAttribute('width','90');el.setAttribute('height','90');el.setAttribute('rx','15');}
     else if(s.special==='ellipse'){el=document.createElementNS('http://www.w3.org/2000/svg','ellipse');el.setAttribute('cx','50');el.setAttribute('cy','50');el.setAttribute('rx','45');el.setAttribute('ry','45');}
+    else if(s.special==='callout'){el=document.createElementNS('http://www.w3.org/2000/svg','path');el.setAttribute('d','M 5 5 H 95 V 72 H 57 L 50 92 L 44 72 H 5 Z');}
     else{el=document.createElementNS('http://www.w3.org/2000/svg','path');el.setAttribute('d',s.path);}
-    el.setAttribute('fill','#3b82f6');el.setAttribute('stroke','none');svg.appendChild(el);
+    const _smFill=document.getElementById('sm-fill');const _fc=(_smFill&&_smFill.value)||'#3b82f6';
+    el.setAttribute('fill',_fc);el.setAttribute('stroke','none');el.classList.add('sg-fill');svg.appendChild(el);
     const span=document.createElement('span');span.textContent=s.name;
     card.append(svg,span);
     card.onclick=()=>{
@@ -246,8 +273,9 @@ function buildAppletGallery(){
 let _cpActivePanelId = null;
 
 function openColorPanel(panelId, mode, onPick) {
-  // If same panel already open — close it
+  // If same panel already open — close it (but not if native color picker is open)
   if (_cpActivePanelId === panelId) {
+    if (window._cpNativeOpen) return;
     closeColorPanel(panelId);
     return;
   }
@@ -320,18 +348,24 @@ function openColorPanel(panelId, mode, onPick) {
   slot.appendChild(sep);
 
   const customRow = document.createElement('div');
-  customRow.style.cssText = 'display:flex;align-items:center;gap:7px;';
+  customRow.style.cssText = 'display:flex;align-items:center;gap:7px;position:relative;';
   const customLbl = document.createElement('span');
-  customLbl.style.cssText = 'font-size:10px;color:var(--text2);flex:1;';
+  customLbl.style.cssText = 'font-size:10px;color:var(--text2);flex:1;cursor:pointer;';
   customLbl.textContent = 'Выбрать свой цвет';
   const customInput = document.createElement('input');
   customInput.type = 'color';
   customInput.value = '#3b82f6';
-  customInput.style.cssText = 'width:30px;height:24px;border:1px solid var(--border2);border-radius:3px;cursor:pointer;padding:1px;background:none;';
+  customInput.style.cssText = 'position:absolute;right:0;bottom:28px;width:0;height:0;opacity:0;pointer-events:none;';
   customInput.onmousedown = e => e.stopPropagation();
-  customInput.oninput = e => { onPick(e.target.value, null); closeColorPanel(panelId); };
+  customInput.onchange = e => { onPick(e.target.value, null); closeColorPanel(panelId); };
+  customInput.oninput = e => { onPick(e.target.value, null); };
+  const customBtn = document.createElement('div');
+  customBtn.style.cssText = 'width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;background:conic-gradient(red,yellow,lime,cyan,blue,magenta,red);';
+  customBtn.title = 'Выбрать свой цвет';
+  customBtn.onmousedown = e => { e.preventDefault(); e.stopPropagation(); window._cpNativeOpen = true; customInput.click(); requestAnimationFrame(()=>{ window._cpNativeOpen = false; }); };
   customRow.appendChild(customLbl);
   customRow.appendChild(customInput);
+  customRow.appendChild(customBtn);
   slot.appendChild(customRow);
 }
 

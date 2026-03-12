@@ -5,12 +5,41 @@
 
 function saveState(){
   const _pn=typeof pnGetSettings==='function'?pnGetSettings():null;
+  // Strip heavy svgContent from icon elements before saving — always rebuilt from iconId on load
+  const slidesClean = slides.map(s=>({
+    ...s,
+    els: (s.els||[]).map(d=>{
+      if(d.type==='icon'){
+        // Keep svgContent only if fitted (tight viewBox) — it's needed to restore correctly
+        if(d.iconFitted&&d.svgContent) return d;
+        const {svgContent,...rest}=d; return rest;
+      }
+      // Strip inline SVG from list bullet markers to save space — rebuilt from data-icon-* attrs
+      if(d.type==='text'&&d.html&&d.html.includes('data-list-bullet')){
+        const tmp=document.createElement('div'); tmp.innerHTML=d.html;
+        tmp.querySelectorAll('span[data-list-bullet]').forEach(sp=>{
+          // Keep only the span with attrs, remove heavy SVG innerHTML
+          const iconId=sp.getAttribute('data-icon-id')||'';
+          const iconStyle=sp.getAttribute('data-icon-style')||'stroke';
+          const iconColor=sp.getAttribute('data-icon-color')||'currentColor';
+          const iconSw=sp.getAttribute('data-icon-sw')||'1.8';
+          sp.innerHTML=''; // SVG rebuilt on render
+          sp.setAttribute('data-icon-id',iconId);
+          sp.setAttribute('data-icon-style',iconStyle);
+          sp.setAttribute('data-icon-color',iconColor);
+          sp.setAttribute('data-icon-sw',iconSw);
+        });
+        return {...d, html:tmp.innerHTML};
+      }
+      return d;
+    })
+  }));
   try{localStorage.setItem('sf_v4',JSON.stringify({
-    slides,cur,ar,canvasW,canvasH,globalTrans,transitionDur,autoDelay,ec,
+    slides:slidesClean,cur,ar,canvasW,canvasH,globalTrans,transitionDur,autoDelay,ec,
     appliedThemeIdx,
     title:document.getElementById('pres-title').value,
     pnSettings:_pn
-  }));}catch(e){}
+  }));}catch(e){console.warn('saveState failed:',e);}
 }
 
 // Full commit: flush DOM→data then data→localStorage

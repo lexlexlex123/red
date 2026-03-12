@@ -8,6 +8,7 @@ function startPreview(startIdx){
   const editingCell=document.querySelector('.el[data-editing="true"] td[contenteditable="true"],.el[data-editing="true"] th[contenteditable="true"]');
   if(editingCell){ editingCell.contentEditable='false'; }
   save();pidx=startIdx||0;pTransiting=false;
+
   _shuffleHistory=[pidx];
   // Apply theme accent color to progress bar — prefer appliedThemeIdx (persisted) over selTheme
   {const _ti=typeof appliedThemeIdx!=='undefined'&&appliedThemeIdx>=0?appliedThemeIdx:(typeof selTheme!=='undefined'&&selTheme>=0?selTheme:-1);
@@ -65,6 +66,7 @@ function startPreview(startIdx){
 }
 function stopPreview(){
   clearAutoTimer();
+
   const po=document.getElementById('preview-ov');
   if(po._stageClick){po.removeEventListener('click',po._stageClick);delete po._stageClick;}
   if(window._timerNavHandler){window.removeEventListener('message',window._timerNavHandler);delete window._timerNavHandler;}
@@ -101,9 +103,13 @@ function stopPreview(){
       if(el.dataset.type==='icon'){
         const d=slides[cur].els.find(function(e){return e.id===el.dataset.id;});
         if(!d)return;
-        const ic=typeof ICONS!=='undefined'?ICONS.find(function(x){return x.id===d.iconId;}):null;
-        if(!ic||typeof _buildIconSVG==='undefined')return;
-        const svg=_buildIconSVG(ic,d.iconColor||'#3b82f6',d.iconSw!=null?d.iconSw:1.8,d.iconStyle||'stroke',d.shadow,d.shadowBlur,d.shadowColor);
+        // If icon was fitted (tight viewBox saved in svgContent), use that directly
+        const svg=d.iconFitted&&d.svgContent
+          ? d.svgContent
+          : (()=>{ const ic=typeof ICONS!=='undefined'?ICONS.find(function(x){return x.id===d.iconId;}):null;
+              return (ic&&typeof _buildIconSVG!=='undefined')
+                ?_buildIconSVG(ic,d.iconColor||'#3b82f6',d.iconSw!=null?d.iconSw:1.8,d.iconStyle||'stroke',d.shadow,d.shadowBlur,d.shadowColor)
+                :(d.svgContent||''); })();
         const c=el.querySelector('.ec');
         if(c){c.innerHTML=svg;const s=c.querySelector('svg');if(s){s.style.width='100%';s.style.height='100%';}}
       }
@@ -140,7 +146,7 @@ function gotoPreview(to,dir){
     _a.style.transition='none';_b.style.transition='none';
     pTransiting=false;
   }
-  pTransiting=true;const a=document.getElementById('psa'),b=document.getElementById('psb');buildPSlide(b,to);
+  pTransiting=true;const a=document.getElementById('psa'),b=document.getElementById('psb');buildPSlide(b,to,transitionDur);
   if(trans==='morph')doMorphTransition(a,b,to,()=>{finalizePreview(a,b,to);});
   else animTrans(a,b,trans,dir==='next',transitionDur,()=>{finalizePreview(a,b,to);});
 }
@@ -256,7 +262,8 @@ function updatePUI(){
     (function(idx){d.onclick=()=>{clearAutoTimer();if(!pTransiting)gotoPreview(idx,idx>pidx?'next':'prev');};})(i);dn.appendChild(d);
   }
 }
-function buildPSlide(container,idx){
+function buildPSlide(container,idx,transOffset){
+  transOffset=transOffset||0;
   const s=slides[idx];const sc=pScale();
   container.innerHTML='';container.style.width=canvasW+'px';container.style.height=canvasH+'px';
   container.style.transform='scale('+sc+')';container.style.transformOrigin='top left';
@@ -369,7 +376,9 @@ function buildPSlide(container,idx){
           el.style.background=toRgba2(d.textBg,op2);
         }
       } // Wrap in inner div so mixed text/span nodes don't become separate flex items
-      c.innerHTML='<div style="width:100%;white-space:pre-wrap;">'+(d.html||'')+'</div>';
+      const _pvHtml = (typeof rtMigrateHtml==='function') ? rtMigrateHtml(d.html||'') : (d.html||'');
+      c.innerHTML='<div style="width:100%;white-space:normal;word-break:break-word;">'+_pvHtml+'</div>';
+      // Re-attach bullet click handlers in preview (pointer-events:none on parent, so clicks won't work — that's fine for preview)
       el.appendChild(c);
       // Border for text boxes
       if(d.textBorderW&&+d.textBorderW>0){el.style.border=(d.textBorderW||0)+'px solid '+(d.textBorderColor||'#ffffff');el.style.overflow='hidden';}
@@ -424,13 +433,22 @@ function buildPSlide(container,idx){
       const svgEl=el.querySelector('svg');if(svgEl){svgEl.style.width='100%';svgEl.style.height='100%';}
     }else if(d.type==='icon'){
       el.style.overflow='visible';el.style.display='flex';el.style.alignItems='center';el.style.justifyContent='center';
-      const _pvIc=typeof ICONS!=='undefined'?ICONS.find(function(x){return x.id===d.iconId;}):null;
-      const _pvSvg=(_pvIc&&typeof _buildIconSVG==='function')
-        ?_buildIconSVG(_pvIc,d.iconColor||'#3b82f6',d.iconSw!=null?d.iconSw:1.8,d.iconStyle||'stroke',d.shadow,d.shadowBlur,d.shadowColor)
-        :(d.svgContent||'');
+      const _pvSvg=d.iconFitted&&d.svgContent
+        ? d.svgContent
+        : (()=>{const _pvIc=typeof ICONS!=='undefined'?ICONS.find(function(x){return x.id===d.iconId;}):null;
+            return (_pvIc&&typeof _buildIconSVG==='function')
+              ?_buildIconSVG(_pvIc,d.iconColor||'#3b82f6',d.iconSw!=null?d.iconSw:1.8,d.iconStyle||'stroke',d.shadow,d.shadowBlur,d.shadowColor)
+              :(d.svgContent||'');})();
       el.innerHTML=_pvSvg;
       var svgI=el.querySelector('svg');if(svgI){svgI.style.width='100%';svgI.style.height='100%';}
-        }else if(d.type==='applet'){
+    }else if(d.type==='formula'){
+      el.style.overflow='visible';el.style.display='flex';el.style.alignItems='center';el.style.justifyContent='center';
+      el.style.color=d.formulaColor||'#ffffff';
+      if(d.formulaSvg){el.innerHTML=d.formulaSvg;var _fsvgP=el.querySelector('svg');if(_fsvgP){_fsvgP.style.width='100%';_fsvgP.style.height='100%';}}
+    }else if(d.type==='graph'){
+      el.style.overflow='hidden';el.style.borderRadius='6px';
+      if(d.graphImg){var _gi=document.createElement('img');_gi.src=d.graphImg;_gi.style.cssText='width:100%;height:100%;object-fit:fill;display:block;';el.appendChild(_gi);}
+    }else if(d.type==='applet'){
       var _aRx=(d.rx?d.rx+'px':'0px');
       // el already has position:absolute — must keep it. Remove overflow:hidden so border overlay shows.
       el.style.overflow='visible';
@@ -464,6 +482,8 @@ function buildPSlide(container,idx){
         _bordDiv.style.cssText=_bordCss;
         el.appendChild(_bordDiv);
       }
+    }else if(d.type==='htmlframe'){
+      if(typeof _hfBuildPreview==='function'){_hfBuildPreview(el,d);}
     }else if(d.type==='code'){
       const T=CODE_THEMES[d.codeTheme||'dark']||CODE_THEMES.dark;
       const c=document.createElement('div');
@@ -564,7 +584,7 @@ function buildPSlide(container,idx){
             const dur=(a.duration||600)/1000;
             return `${cssName} ${dur}s ease-out 0s both`;
           }).join(',');
-        }, absDelay);
+        }, absDelay + transOffset);
       });
       Object.entries(groupsEc).forEach(([delayStr,grp])=>{
         const absDelay=+delayStr;
@@ -577,13 +597,13 @@ function buildPSlide(container,idx){
             return `${cssName} ${dur}s ease-out 0s both`;
           }).join(',');
           setTimeout(()=>{ ecEl.style.animation=''; }, Math.max(...grp.map(a=>a.duration||600)) + 50);
-        }, absDelay);
+        }, absDelay + transOffset);
       });
       // Fire motion anims in original order — each needs cumulative offset from previous
       {
         let cumTx=0, cumTy=0;
         motionAnims.forEach(({anim:a,absDelay})=>{
-          fireAnim(el,d,a,idx,absDelay,cumTx,cumTy);
+          fireAnim(el,d,a,idx,absDelay + transOffset,cumTx,cumTy);
           if(a.name==='moveTo'){
             cumTx=a.tx||0; cumTy=a.ty||0;
           } else if(a.name==='orbitTo'){
@@ -596,7 +616,7 @@ function buildPSlide(container,idx){
           }
         });
       }
-      rotateAnims.forEach(({anim:a,absDelay})=>fireAnim(el,d,a,idx,absDelay));
+      rotateAnims.forEach(({anim:a,absDelay})=>fireAnim(el,d,a,idx,absDelay + transOffset));
     }
 
     // Click anims — from global click map + nav triggers
@@ -654,7 +674,191 @@ function buildPSlide(container,idx){
     container.appendChild(el);
   });
 
-  // Sort global click steps by absDelay
+  // ── Draw connectors on top of elements ───────────────────────────────────
+  if (s.connectors && s.connectors.length) {
+    const elMap = {};
+    s.els.forEach(d => { elMap[d.id] = d; });
+
+    function _pAnchor(elId, otherElId, fromEdge, gap) {
+      const d = elMap[elId]; if (!d) return {x:0,y:0};
+      const cx = d.x+d.w/2, cy = d.y+d.h/2;
+      gap = gap || 0;
+      const od = elMap[otherElId];
+      const ox = od ? od.x+od.w/2 : cx, oy = od ? od.y+od.h/2 : cy;
+      const dx = ox-cx, dy = oy-cy;
+      const dist = Math.sqrt(dx*dx+dy*dy)||1;
+      const ux = dx/dist, uy = dy/dist;
+      if (!fromEdge) return {x: cx+ux*gap, y: cy+uy*gap};
+      let ex, ey;
+      if (Math.abs(dx)*d.h > Math.abs(dy)*d.w) { ex = dx>0?d.x+d.w:d.x; ey = cy; }
+      else { ex = cx; ey = dy>0?d.y+d.h:d.y; }
+      return {x: ex+ux*gap, y: ey+uy*gap};
+    }
+
+    function _pMakeMarker(defs, markerId, type, color, atStart) {
+      if (type === 'none') return;
+      const m = document.createElementNS('http://www.w3.org/2000/svg','marker');
+      m.setAttribute('id', markerId);
+      m.setAttribute('markerUnits','strokeWidth');
+      m.setAttribute('orient','auto');
+      m.setAttribute('fill', color);
+      m.setAttribute('stroke', color);
+      if (type === 'arrow') {
+        m.setAttribute('markerWidth','3.1'); m.setAttribute('markerHeight','3.5');
+        m.setAttribute('refX', atStart?'1.386':'1.386'); m.setAttribute('refY','1.6');
+        const poly = document.createElementNS('http://www.w3.org/2000/svg','path');
+        const pathEnd   = 'M2.555,1.475 L2.555,1.475 Q2.771,1.600 2.555,1.725 L0.217,3.075 Q0.000,3.200 0.000,2.950 L0.000,0.250 Q0.000,0.000 0.217,0.125 Z';
+        const pathStart = 'M0.216,1.475 L0.216,1.475 Q0.000,1.600 0.216,1.725 L2.554,3.075 Q2.771,3.200 2.771,2.950 L2.771,0.250 Q2.771,0.000 2.554,0.125 Z';
+        poly.setAttribute('d', atStart ? pathStart : pathEnd);
+        poly.setAttribute('fill', color); poly.setAttribute('stroke', 'none');
+        m.appendChild(poly);
+      } else if (type === 'square') {
+        m.setAttribute('markerWidth','3.4'); m.setAttribute('markerHeight','3.4');
+        m.setAttribute('refX', atStart?'1.7':'1.7'); m.setAttribute('refY','1.7');
+        const r2 = document.createElementNS('http://www.w3.org/2000/svg','rect');
+        r2.setAttribute('x','0.2');r2.setAttribute('y','0.2');r2.setAttribute('width','3.0');r2.setAttribute('height','3.0');
+        r2.setAttribute('rx','0.5');r2.setAttribute('ry','0.5');r2.setAttribute('stroke-width','0');
+        m.appendChild(r2);
+      } else if (type === 'cross') {
+        m.setAttribute('orient','0');
+        m.setAttribute('markerWidth','3.0'); m.setAttribute('markerHeight','3.0');
+        m.setAttribute('refX','1.5'); m.setAttribute('refY','1.5');
+        ['M0.3,0.3 L2.7,2.7','M2.7,0.3 L0.3,2.7'].forEach(d2 => {
+          const ln = document.createElementNS('http://www.w3.org/2000/svg','path');
+          ln.setAttribute('d',d2); ln.setAttribute('stroke',color);
+          ln.setAttribute('stroke-width','1'); ln.setAttribute('stroke-linecap','round'); ln.setAttribute('fill','none');
+          m.appendChild(ln);
+        });
+      }
+      defs.appendChild(m);
+    }
+
+    const psvg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+    psvg.setAttribute('style','position:absolute;left:0;top:0;width:'+canvasW+'px;height:'+canvasH+'px;pointer-events:none;overflow:visible;z-index:1;');
+    psvg.innerHTML = '<defs></defs>';
+    const pdefs = psvg.querySelector('defs');
+
+    // Helper: get edge midpoint anchor from data model, accounting for rotation
+    function _pEdgeMid(elId, sideKey, otherElId, gap) {
+      gap = gap || 0;
+      const d = elMap[elId]; if (!d) return {x:0,y:0};
+      const cx=d.x+d.w/2, cy=d.y+d.h/2;
+      const deg = d.rot || 0;
+      function rot(px, py) {
+        if (!deg) return {x:px, y:py};
+        const rad=deg*Math.PI/180, cos=Math.cos(rad), sin=Math.sin(rad);
+        const rx=px-cx, ry=py-cy;
+        return {x: cx+rx*cos-ry*sin, y: cy+rx*sin+ry*cos};
+      }
+      function rotDir(nx, ny) {
+        if (!deg) return {nx, ny};
+        const rad=deg*Math.PI/180, cos=Math.cos(rad), sin=Math.sin(rad);
+        return {nx: nx*cos-ny*sin, ny: nx*sin+ny*cos};
+      }
+      const raw = {
+        top:    {...rot(cx,      d.y     ), ...rotDir( 0,-1)},
+        right:  {...rot(d.x+d.w, cy      ), ...rotDir( 1, 0)},
+        bottom: {...rot(cx,      d.y+d.h ), ...rotDir( 0, 1)},
+        left:   {...rot(d.x,     cy      ), ...rotDir(-1, 0)},
+      };
+      if (raw[sideKey]) {
+        const pt = raw[sideKey];
+        if (gap) return {x: pt.x + pt.nx*gap, y: pt.y + pt.ny*gap};
+        return pt;
+      }
+      // fallback: closest rotated side toward other element
+      const od=elMap[otherElId];
+      const tx=od?od.x+od.w/2:cx, ty=od?od.y+od.h/2:cy;
+      let best=raw.right, bestD=Infinity;
+      for (const [,pt] of Object.entries(raw)) {
+        const d2=(pt.x-tx)**2+(pt.y-ty)**2;
+        if (d2<bestD){bestD=d2;best=pt;}
+      }
+      if (gap) return {x: best.x + best.nx*gap, y: best.y + best.ny*gap};
+      return best;
+    }
+    // Helper: default bezier control points
+    function _pDefaultCP(p1, p2) {
+      const dx=p2.x-p1.x, dy=p2.y-p1.y;
+      const dist=Math.sqrt(dx*dx+dy*dy), bend=Math.min(dist*0.45,220);
+      const hBias = Math.abs(dx) > Math.abs(dy)*0.6;
+      if (hBias) return {
+        cp1:{x:p1.x+bend*Math.sign(dx||1), y:p1.y},
+        cp2:{x:p2.x-bend*Math.sign(dx||1), y:p2.y},
+      };
+      return {
+        cp1:{x:p1.x, y:p1.y+bend*Math.sign(dy||1)},
+        cp2:{x:p2.x, y:p2.y-bend*Math.sign(dy||1)},
+      };
+    }
+
+    // Side normals for gap offset
+    const _pSideN = { top:{x:0,y:-1}, right:{x:1,y:0}, bottom:{x:0,y:1}, left:{x:-1,y:0} };
+    function _pApplyGap(pt, gap) {
+      if (!gap) return pt;
+      const n = _pSideN[pt.side] || {x:0,y:0};
+      return { ...pt, x: pt.x + n.x * gap, y: pt.y + n.y * gap };
+    }
+
+    s.connectors.forEach(conn => {
+      const gap = conn.gap || 0;
+      const p1 = _pEdgeMid(conn.fromId, conn.fromSide, conn.toId, gap);
+      const p2 = _pEdgeMid(conn.toId,   conn.toSide,   conn.fromId, gap);
+      // Use stored control points if available, else compute defaults
+      const def = _pDefaultCP(p1, p2);
+      const cp1 = conn.cp1 || def.cp1;
+      const cp2 = conn.cp2 || def.cp2;
+
+      const sw = conn.sw || 2;
+      const dash = conn.dash || 'solid';
+      const color = conn.color || '#60a5fa';
+      const fromMk = conn.fromMarker || 'none';
+      const toMk   = conn.toMarker   || (conn.type==='arrow'?'arrow':'none');
+      const animated = !!conn.animated;
+
+      const mkFId = conn.id+'_pmf', mkTId = conn.id+'_pmt';
+      _pMakeMarker(pdefs, mkFId, fromMk, color, true);
+      _pMakeMarker(pdefs, mkTId, toMk,   color, false);
+
+      let dashArr, linecap;
+      if (dash==='dot')  { dashArr=`0 ${sw*4}`; linecap='round'; }
+      else if (dash==='dash') { dashArr=`${sw*5} ${sw*3}`; linecap='round'; }
+      else { dashArr=null; linecap='round'; }
+
+      if (animated && dash !== 'solid') {
+        const style = document.createElementNS('http://www.w3.org/2000/svg','style');
+        const animOff = dash==='dot' ? sw*4 : sw*8;
+        style.textContent = `@keyframes pconn_${conn.id}{from{stroke-dashoffset:${animOff}}to{stroke-dashoffset:0}}`;
+        pdefs.appendChild(style);
+      }
+
+      function pMkDist(t){return t==='arrow'?1.386:t==='square'?1.7:t==='cross'?1.5:0;}
+      function pMkRetract(pt, cpNear, d) {
+        if (!d || sw <= 0) return pt;
+        const tdx=cpNear.x-pt.x, tdy=cpNear.y-pt.y, tl=Math.sqrt(tdx*tdx+tdy*tdy)||1;
+        return {x: pt.x+(tdx/tl)*sw*d, y: pt.y+(tdy/tl)*sw*d};
+      }
+      const rp2=toMk  !=='none' ? pMkRetract(p2, cp2, pMkDist(toMk))   : p2;
+      const rp1=fromMk!=='none' ? pMkRetract(p1, cp1, pMkDist(fromMk)) : p1;
+      const pd = `M${rp1.x.toFixed(1)},${rp1.y.toFixed(1)} C${cp1.x.toFixed(1)},${cp1.y.toFixed(1)} ${cp2.x.toFixed(1)},${cp2.y.toFixed(1)} ${rp2.x.toFixed(1)},${rp2.y.toFixed(1)}`;
+      const line = document.createElementNS('http://www.w3.org/2000/svg','path');
+      line.setAttribute('d', pd);
+      line.setAttribute('fill', 'none');
+      line.setAttribute('stroke', color);
+      line.setAttribute('stroke-width', sw);
+      line.setAttribute('stroke-linecap', (dash === 'dot') ? 'round' : ((fromMk !== 'none' || toMk !== 'none') ? 'butt' : linecap));
+      line.setAttribute('stroke-linejoin', 'round');
+      if (dashArr) {
+        line.setAttribute('stroke-dasharray', dashArr);
+        if (animated) line.style.animation = `pconn_${conn.id} ${dash==='dot'?'1s':'0.8s'} linear infinite`;
+      }
+      if (fromMk !== 'none') line.setAttribute('marker-start', `url(#${mkFId})`);
+      if (toMk   !== 'none') line.setAttribute('marker-end',   `url(#${mkTId})`);
+      psvg.appendChild(line);
+    });
+
+    container.appendChild(psvg);
+  }
   globalClickSteps.sort((a,b)=>(a.absDelay||0)-(b.absDelay||0));
 
   // Group into click-steps: each explicit 'click' starts a new group,

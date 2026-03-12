@@ -292,31 +292,53 @@ window.addEventListener('load', function(){
 // positioned in canvas-space so they're never clipped
 
 function _updateHandlesOverlay(){
+  if(_rotDragging) return;
   const overlay = document.getElementById('handles-overlay');
   if(!overlay) return;
   overlay.innerHTML = '';
-  overlay.style.pointerEvents = 'none';
+  overlay.style.pointerEvents = 'auto';
 
   const el = typeof sel !== 'undefined' ? sel : null;
+  // Restore any previously hidden rh handles
+  document.querySelectorAll('.rh[data-overlay-hidden]').forEach(rh => {
+    rh.style.display = '';
+    delete rh.dataset.overlayHidden;
+  });
   if(!el) return;
 
   const elL = parseInt(el.style.left)||0;
   const elT = parseInt(el.style.top)||0;
   const elW = parseInt(el.style.width)||0;
   const elH = parseInt(el.style.height)||0;
-  const H = 4; // handle half-size (8px / 2)
+  const elRad = (parseFloat(el.dataset.rot)||0) * Math.PI / 180;
+  const cx = elL + elW/2, cy = elT + elH/2;
+  const H = 4;
 
-  // [class suffix, x, y]
+  function rotPt(px, py) {
+    const dx = px-cx, dy = py-cy;
+    return {
+      x: cx + dx*Math.cos(elRad) - dy*Math.sin(elRad) - H,
+      y: cy + dx*Math.sin(elRad) + dy*Math.cos(elRad) - H
+    };
+  }
+
+  // Hide original .rh handles — overlay replaces them
+  el.querySelectorAll('.rh').forEach(rh => {
+    rh.style.display = 'none';
+    rh.dataset.overlayHidden = '1';
+  });
+
+  // 8 handle positions rotated around element centre
   const positions = [
-    ['tl', elL-H,        elT-H],
-    ['tm', elL+elW/2-H,  elT-H],
-    ['tr', elL+elW-H,    elT-H],
-    ['ml', elL-H,        elT+elH/2-H],
-    ['mr', elL+elW-H,    elT+elH/2-H],
-    ['bl', elL-H,        elT+elH-H],
-    ['bm', elL+elW/2-H,  elT+elH-H],
-    ['br', elL+elW-H,    elT+elH-H],
-  ];
+    ['tl', elL,       elT      ],
+    ['tm', elL+elW/2, elT      ],
+    ['tr', elL+elW,   elT      ],
+    ['ml', elL,       elT+elH/2],
+    ['mr', elL+elW,   elT+elH/2],
+    ['bl', elL,       elT+elH  ],
+    ['bm', elL+elW/2, elT+elH  ],
+    ['br', elL+elW,   elT+elH  ],
+  ].map(([cls, px, py]) => { const r=rotPt(px,py); return [cls, r.x, r.y]; });
 
   // Find original rh elements to reuse their mousedown handlers
   const origRhs = {};
@@ -330,7 +352,7 @@ function _updateHandlesOverlay(){
     rh.style.cssText = `position:absolute;left:${x}px;top:${y}px;width:8px;height:8px;
       background:#fff;border:1.5px solid var(--selb);border-radius:50%;
       box-shadow:0 1px 4px rgba(0,0,0,.5);pointer-events:auto;
-      cursor:${_rhCursor(cls)};z-index:9999;`;
+      cursor:${_rhCursor(cls, parseFloat((typeof sel!=='undefined'&&sel)?sel.dataset.rot||0:0))};z-index:9999;`;
     // Forward mousedown to original handle
     rh.addEventListener('mousedown', e=>{
       const orig = origRhs[cls];
@@ -338,19 +360,247 @@ function _updateHandlesOverlay(){
     });
     overlay.appendChild(rh);
   });
-  overlay.style.pointerEvents = 'auto';
+  // Add rotation logic (no extra divs — uses document-level hover detection)
+  _addRotationZones(overlay, el);
+
+  // Callout tail handle
+  if(el.dataset.type==='shape'){
+    const _d=slides[cur]&&slides[cur].els.find(e=>e.id===el.dataset.id);
+    if(_d){
+      const _sh=typeof SHAPES!=='undefined'&&SHAPES.find(s=>s.id===_d.shape);
+      if(_sh&&_sh.special==='callout'){
+        const tipRelX=+(_d.tailX||0);
+        const tipRelY=_d.tailY!==undefined?+_d.tailY:(elH/2+30);
+        const elCx=elL+elW/2, elCy=elT+elH/2;
+        // Rotate tip offset into canvas coords
+        const tipCx=elCx+tipRelX*Math.cos(elRad)-tipRelY*Math.sin(elRad);
+        const tipCy=elCy+tipRelX*Math.sin(elRad)+tipRelY*Math.cos(elRad);
+        const TH=6; // half-handle size
+        const th=document.createElement('div');
+        th.dataset.calloutHandle='1';
+        th.style.cssText=`position:absolute;left:${tipCx-TH}px;top:${tipCy-TH}px;width:12px;height:12px;
+          background:#f59e0b;border:2px solid #fff;border-radius:50%;
+          box-shadow:0 1px 4px rgba(0,0,0,.6);pointer-events:auto;cursor:crosshair;z-index:10000;`;
+        th.addEventListener('mousedown',e=>{
+          e.preventDefault();e.stopPropagation();
+          const startMx=e.clientX, startMy=e.clientY;
+          const startTX=+(_d.tailX||0);
+          const startTY=_d.tailY!==undefined?+_d.tailY:(elH/2+30);
+          const zoom=typeof getZoom==='function'?getZoom():1;
+          const rad=(parseFloat(el.dataset.rot)||0)*Math.PI/180;
+          const _elCx=parseInt(el.style.left)+(parseInt(el.style.width)||0)/2;
+          const _elCy=parseInt(el.style.top)+(parseInt(el.style.height)||0)/2;
+          function onMove(ev){
+            const mdx=(ev.clientX-startMx)/zoom;
+            const mdy=(ev.clientY-startMy)/zoom;
+            // Un-rotate mouse delta into element local coords
+            _d.tailX=startTX+mdx*Math.cos(-rad)-mdy*Math.sin(-rad);
+            _d.tailY=startTY+mdx*Math.sin(-rad)+mdy*Math.cos(-rad);
+            // Persist in dataset
+            el.dataset.tailX=_d.tailX;
+            el.dataset.tailY=_d.tailY;
+            // Redraw shape
+            if(typeof renderShapeEl==='function') renderShapeEl(el,_d);
+            // Move handle directly in canvas coords
+            const nx=_elCx+_d.tailX*Math.cos(rad)-_d.tailY*Math.sin(rad);
+            const ny=_elCy+_d.tailX*Math.sin(rad)+_d.tailY*Math.cos(rad);
+            th.style.left=(nx-TH)+'px';
+            th.style.top=(ny-TH)+'px';
+          }
+          function onUp(){
+            document.removeEventListener('mousemove',onMove);
+            document.removeEventListener('mouseup',onUp);
+            if(typeof save==='function') save();
+            if(typeof drawThumbs==='function') drawThumbs();
+            if(typeof saveState==='function') saveState();
+          }
+          document.addEventListener('mousemove',onMove);
+          document.addEventListener('mouseup',onUp);
+        });
+        overlay.appendChild(th);
+      }
+    }
+  }
 }
 
-function _rhCursor(cls){
-  return {tl:'nw-resize',tm:'n-resize',tr:'ne-resize',ml:'w-resize',mr:'e-resize',bl:'sw-resize',bm:'s-resize',br:'se-resize'}[cls]||'default';
+function _rhCursor(cls, rotDeg){
+  // Base cursor directions at rot=0
+  const base = {tl:'nw-resize',tm:'n-resize',tr:'ne-resize',ml:'w-resize',mr:'e-resize',bl:'sw-resize',bm:'s-resize',br:'se-resize'};
+  if(!rotDeg) return base[cls]||'default';
+  // Base angles (degrees, clockwise from east)
+  const baseAngle = {tl:315,tm:270,tr:45,ml:180,mr:0,bl:225,bm:90,br:135}[cls]||0;
+  const angle = ((baseAngle + rotDeg) % 360 + 360) % 360;
+  const dirs = [
+    [337.5,'e-resize'],[292.5,'ne-resize'],[247.5,'n-resize'],[202.5,'nw-resize'],
+    [157.5,'w-resize'],[112.5,'sw-resize'],[67.5,'s-resize'],[22.5,'se-resize'],[0,'e-resize']
+  ];
+  for(const [thresh, cur] of dirs){ if(angle>=thresh) return cur; }
+  return 'e-resize';
 }
 
-// Patch pick to update overlay
-const _origPick = typeof pick === 'function' ? pick : null;
-// Hook into renderAll / syncProps cycle — update overlay after any selection change
-document.addEventListener('DOMContentLoaded', function(){
-  // Update overlay on mousemove during drag (position changes)
-  document.addEventListener('mousemove', function(){
-    if(typeof sel !== 'undefined' && sel) _updateHandlesOverlay();
+// Single rotation cursor — clean arc with two arrowheads, white with dark outline
+const _rotateCursor = (()=>{
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'>`
+    + `<path d='M3.5 10 A6.5 6.5 0 0 1 16.5 10' stroke='white' stroke-width='2.5' fill='none' stroke-linecap='butt'/>`
+    + `<path d='M3.5 10 A6.5 6.5 0 0 1 16.5 10' stroke='black' stroke-width='1' fill='none' stroke-linecap='butt'/>`
+    + `<polyline points='1.5,7.5 3.5,11 6.5,8' stroke='white' stroke-width='2.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/>`
+    + `<polyline points='1.5,7.5 3.5,11 6.5,8' stroke='black' stroke-width='1' fill='none' stroke-linecap='round' stroke-linejoin='round'/>`
+    + `<polyline points='18.5,7.5 16.5,11 13.5,8' stroke='white' stroke-width='2.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/>`
+    + `<polyline points='18.5,7.5 16.5,11 13.5,8' stroke='black' stroke-width='1' fill='none' stroke-linecap='round' stroke-linejoin='round'/>`
+    + `</svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 10 10, crosshair`;
+})();
+
+let _rotDragging = false;
+
+function _makeCursorForAngle(angleDeg) {
+  const a = angleDeg;
+  // Arc: centre (11,6), r=8, from (5,14) to (17,14)
+  // Left end tangent direction (clockwise): perpendicular to radius (11,6)→(5,14) = (-6,8), rotate 90°CW → (8,6), normalised ≈ (0.8,0.6)
+  // Arrow tip points in tangent direction from arc end
+  // Left: tip at (5,14) going in direction (-0.8,-0.6) = away from arc
+  // tx=-0.8, ty=-0.6 → tip = (5-3.5*0.8, 14-3.5*0.6) = (2.2, 11.9), base perpendicular
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 22 22'>`
+    + `<g transform='rotate(${a} 11 11)'>`
+    + `<path d='M5 14 A8 8 0 0 1 17 14' stroke='black' stroke-width='4' fill='none' stroke-linecap='butt'/>`
+    + `<path d='M5 14 A8 8 0 0 1 17 14' stroke='white' stroke-width='2.5' fill='none' stroke-linecap='butt'/>`
+    // Left arrowhead: tangent at (5,14) going up-left
+    + `<polygon points='0.5,11.5 5,14 3,18' fill='black'/>`
+    + `<polygon points='1.3,12.2 5,14 3.5,17.2' fill='white'/>`
+    // Right arrowhead: tangent at (17,14) going up-right  
+    + `<polygon points='21.5,11.5 17,14 19,18' fill='black'/>`
+    + `<polygon points='20.7,12.2 17,14 18.5,17.2' fill='white'/>`
+    + `</g></svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 11 11, crosshair`;
+}
+
+// Rotation state — listeners attached once to cwrap
+let _rotListenersAttached = false;
+let _rotEl = null; // currently selected element for rotation
+
+function _getRotCorners(el) {
+  const L = parseInt(el.style.left)||0;
+  const T = parseInt(el.style.top)||0;
+  const W = parseInt(el.style.width)||0;
+  const H = parseInt(el.style.height)||0;
+  const deg = parseFloat(el.dataset.rot||0);
+  const rad = deg * Math.PI / 180;
+  const cosr = Math.cos(rad), sinr = Math.sin(rad);
+  const cx = L + W/2, cy = T + H/2;
+
+  function rotCorner(px, py, tangentDeg) {
+    const dx = px-cx, dy = py-cy;
+    return {
+      x: cx + dx*cosr - dy*sinr,
+      y: cy + dx*sinr + dy*cosr,
+      angle: deg + tangentDeg
+    };
+  }
+
+  return [
+    rotCorner(L,   T,   315), // tl
+    rotCorner(L+W, T,   45),  // tr
+    rotCorner(L,   T+H, 225), // bl
+    rotCorner(L+W, T+H, 135), // br
+  ];
+}
+
+function _nearCorner(el, canvasX, canvasY) {
+  const R = 22;
+  for (const c of _getRotCorners(el)) {
+    const dx = canvasX - c.x, dy = canvasY - c.y;
+    if (dx*dx + dy*dy < R*R) return c;
+  }
+  return null;
+}
+
+function _toCanvasCoords(clientX, clientY) {
+  const cwrap = document.getElementById('cwrap');
+  if (!cwrap) return {x:0,y:0};
+  const r = cwrap.getBoundingClientRect();
+  const z = typeof _canvasZoom === 'number' ? _canvasZoom : 1;
+  return {
+    x: (clientX - r.left + cwrap.scrollLeft - ZOOM_PAD) / z,
+    y: (clientY - r.top  + cwrap.scrollTop  - ZOOM_PAD) / z
+  };
+}
+
+function _addRotationZones(overlay, el) {
+  _rotEl = el;
+  if (_rotListenersAttached) return;
+  _rotListenersAttached = true;
+
+  const cwrap = document.getElementById('cwrap');
+  if (!cwrap) return;
+
+  cwrap.addEventListener('mousemove', ev => {
+    if (_rotDragging || !_rotEl) return;
+    if (window._anyDragging) return;
+    if (ev.target.classList && ev.target.classList.contains('rh')) return;
+    const p = _toCanvasCoords(ev.clientX, ev.clientY);
+    const corner = _nearCorner(_rotEl, p.x, p.y);
+    cwrap.style.cursor = corner ? _makeCursorForAngle(corner.angle) : '';
   });
-});
+
+  cwrap.addEventListener('mousedown', ev => {
+    if (ev.button !== 0 || !_rotEl) return;
+    if (window._resizeDragging) return;
+    if (ev.target.classList.contains('rh') || ev.target.closest('.rh')) return;
+    const p = _toCanvasCoords(ev.clientX, ev.clientY);
+    const corner = _nearCorner(_rotEl, p.x, p.y);
+    if (!corner) return;
+
+    ev.preventDefault(); ev.stopPropagation();
+    _rotDragging = true;
+
+    const el = _rotEl;
+    const L = parseInt(el.style.left)||0, T = parseInt(el.style.top)||0;
+    const W = parseInt(el.style.width)||0, H = parseInt(el.style.height)||0;
+    const cx = L + W/2, cy = T + H/2;
+
+    const startAngle = parseFloat(el.dataset.rot || 0);
+    const a0 = Math.atan2(p.y - cy, p.x - cx) * 180 / Math.PI;
+
+    const onMove = e => {
+      const q = _toCanvasCoords(e.clientX, e.clientY);
+      const a = Math.atan2(q.y - cy, q.x - cx) * 180 / Math.PI;
+      let deg = Math.round(startAngle + (a - a0));
+      if (e.shiftKey) deg = Math.round(deg / 15) * 15;
+      el.style.transform = `rotate(${deg}deg)`;
+      el.dataset.rot = deg;
+      const pRot = document.getElementById('p-rot');
+      if (pRot) pRot.value = deg;
+      // Rotate cursor with object — find closest corner angle
+      const nearest = _getRotCorners(el).reduce((best, c) => {
+        const dx = q.x-c.x, dy = q.y-c.y, d = dx*dx+dy*dy;
+        return (!best||d<best.d)?{c,d}:best;
+      }, null);
+      if (nearest) cwrap.style.cursor = _makeCursorForAngle(nearest.c.angle);
+      if (typeof updateConnectorsFor === 'function') updateConnectorsFor(el.dataset.id);
+    };
+
+    const onUp = () => {
+      _rotDragging = false;
+      cwrap.style.cursor = '';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      // Restore selection if it was lost during rotation
+      if (el && typeof pick === 'function') pick(el);
+      if (typeof commitAll === 'function') commitAll();
+      _updateHandlesOverlay();
+    };
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
+// Called externally after pick/deselect
+window._refreshHandlesOverlay = function(){
+  if(typeof sel !== 'undefined' && sel) {
+    _rotEl = sel;
+  } else {
+    _rotEl = null;
+  }
+  _updateHandlesOverlay();
+};

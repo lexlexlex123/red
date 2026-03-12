@@ -1,13 +1,39 @@
 // ══════════════ SHAPES ══════════════
+function _smSyncGalleryColor(color){
+  document.querySelectorAll('#shape-gallery .sg-fill').forEach(el=>el.setAttribute('fill',color));
+}
+function editShapeText(){
+  if(!sel||sel.dataset.type!=='shape')return;
+  const txt=sel.querySelector('.shape-text');
+  if(!txt)return;
+  txt.contentEditable='true';txt.style.pointerEvents='auto';txt.focus();
+  const range=document.createRange();range.selectNodeContents(txt);range.collapse(false);
+  const sel2=window.getSelection();sel2.removeAllRanges();sel2.addRange(range);
+}
+
+function openShapeModalReplace(){
+  if(!sel||sel.dataset.type!=='shape')return;
+  window._shapeReplaceMode=true;
+  openShapeModal();
+}
+
 function openShapeModal(){
   // Pre-fill colors from current theme
+  let fillColor='#3b82f6', strokeColor='#1d4ed8';
   if(appliedThemeIdx>=0&&appliedThemeIdx<THEMES.length){
     const t=THEMES[appliedThemeIdx];
-    const fillEl=document.getElementById('sm-fill');
-    const strokeEl=document.getElementById('sm-stroke');
-    if(fillEl)fillEl.value=t.shapeFill||'#3b82f6';
-    if(strokeEl)strokeEl.value=t.shapeStroke||'#1d4ed8';
+    fillColor=t.shapeFill||fillColor;
+    strokeColor=t.shapeStroke||strokeColor;
   }
+  const fillEl=document.getElementById('sm-fill');
+  const strokeEl=document.getElementById('sm-stroke');
+  if(fillEl)fillEl.value=fillColor;
+  if(strokeEl)strokeEl.value=strokeColor;
+  const fi=document.getElementById('sm-fill-inner');
+  const si=document.getElementById('sm-stroke-inner');
+  if(fi)fi.style.background=fillColor;
+  if(si)si.style.background=strokeColor;
+  buildShapeGallery();
   document.getElementById('shape-modal').classList.add('open');
 }
 function insertShapeSelected(){
@@ -15,15 +41,92 @@ function insertShapeSelected(){
   const fill=document.getElementById('sm-fill').value;
   const stroke=document.getElementById('sm-stroke').value;
   const sw=+document.getElementById('sm-sw').value;
+  // Replace mode — just change shape id on existing element
+  if(window._shapeReplaceMode&&sel&&sel.dataset.type==='shape'){
+    window._shapeReplaceMode=false;
+    pushUndo();
+    const d=slides[cur].els.find(e=>e.id===sel.dataset.id);
+    if(d){
+      d.shape=sh.id;d.fill=fill;d.stroke=stroke;d.sw=sw;
+      const _replIsCallout=sh.special==='callout';
+      if(_replIsCallout&&d.tailX===undefined){d.tailX=0;d.tailY=(d.h||200)/2+30;d.rx=d.rx||12;}
+      sel.dataset.shape=sh.id;
+      const svgDiv=sel.querySelector('.ec>div>div');
+      if(svgDiv)svgDiv.innerHTML=buildShapeSVG(d,d.w,d.h);
+      _applyShapeClipPath(sel,d);
+      save();drawThumbs();saveState();
+    }
+    document.getElementById('shape-modal').classList.remove('open');
+    return;
+  }
+  window._shapeReplaceMode=false;
   pushUndo();
+  const _isCallout=sh.special==='callout';
   const d={id:'e'+(++ec),type:'shape',x:snapV(200),y:snapV(150),w:snapV(200),h:snapV(200),
-    shape:sh.id,fill,stroke,sw,rx:sh.id==='rounded'?15:0,fillOp:1,shadow:false,shadowBlur:8,shadowColor:'#000000',
-    shapeHtml:'',shapeTextCss:'font-size:24px;font-weight:700;color:#ffffff;text-align:center;',rot:0,anims:[]};
+    shape:sh.id,fill,stroke,sw,rx:_isCallout?12:0,fillOp:1,shadow:false,shadowBlur:8,shadowColor:'#000000',
+    shapeHtml:'',shapeTextCss:'font-size:24px;font-weight:700;color:#ffffff;text-align:center;',
+    tailX:_isCallout?0:undefined,tailY:_isCallout?130:undefined,rot:0,anims:[]};
   slides[cur].els.push(d);mkEl(d);save();drawThumbs();saveState();
   document.getElementById('shape-modal').classList.remove('open');
 }
 
 // Build SVG path for shape
+// Generate callout SVG path dynamically
+// tailX/tailY: tip position in element coords (default: bottom-center + offset)
+function _buildCalloutSVGPath(d,w,h,sh,fillAttr,strokeAttr,shadow,margin){
+  const rx=d.rx||0;
+  const sw=d.sw!==undefined?+d.sw:2;
+  const bx=margin,by=margin,bw=Math.max(1,w-margin*2),bh=Math.max(1,h-margin*2);
+  const cx=bx+bw/2, cy=by+bh/2;
+  const L=bx,T=by,R2=bx+bw,B=by+bh;
+  const r=Math.min(rx, bw/2, bh/2);
+  const _=n=>Math.round(n*10)/10;
+
+  const tipX=_(w/2+(d.tailX!==undefined?+d.tailX:0));
+  const tipY=_(h/2+(d.tailY!==undefined?+d.tailY:h/2+30));
+  const ang=Math.atan2(tipY-cy, tipX-cx);
+  const tw=Math.max(16, Math.min(bw,bh)*0.14);
+
+  // Find point on rounded-rect border at given angle from center
+  function borderPt(a){
+    const dx=Math.cos(a), dy=Math.sin(a);
+    let best=null,bestT=Infinity;
+    function tryT(t){if(t>1e-6&&t<bestT){bestT=t;best={x:cx+dx*t,y:cy+dy*t};}}
+    if(Math.abs(dy)>1e-9){tryT((T+r-cy)/dy);tryT((B-r-cy)/dy);}
+    if(Math.abs(dx)>1e-9){tryT((L+r-cx)/dx);tryT((R2-r-cx)/dx);}
+    [{qx:L+r,qy:T+r},{qx:R2-r,qy:T+r},{qx:R2-r,qy:B-r},{qx:L+r,qy:B-r}].forEach(({qx,qy})=>{
+      const fx=cx-qx,fy=cy-qy,a2=dx*dx+dy*dy;
+      const b2=2*(fx*dx+fy*dy),cv=fx*fx+fy*fy-r*r,disc=b2*b2-4*a2*cv;
+      if(disc>=0){const sq=Math.sqrt(disc);[(-b2+sq)/(2*a2),(-b2-sq)/(2*a2)].forEach(tryT);}
+    });
+    return best||{x:cx+dx*bw/2,y:cy+dy*bh/2};
+  }
+
+  // Base center and its distance from element center
+  const baseC=borderPt(ang);
+  const baseDist=Math.sqrt((baseC.x-cx)**2+(baseC.y-cy)**2);
+
+  // Spread b1/b2 by angular offset so arc-length ≈ tw regardless of radius
+  const angOffset=Math.atan2(tw, baseDist);
+  const b1=borderPt(ang+angOffset);
+  const b2=borderPt(ang-angOffset);
+
+  // Push base points slightly inward to cover stroke gap
+  const inset=sw/2+0.5;
+  function pushIn(p){
+    const ddx=cx-p.x,ddy=cy-p.y,len=Math.sqrt(ddx*ddx+ddy*ddy)||1;
+    return{x:_(p.x+ddx/len*inset),y:_(p.y+ddy/len*inset)};
+  }
+  const bi1=pushIn(b1), bi2=pushIn(b2);
+
+  const rectPath=r>0
+    ?`M ${_(L+r)} ${_(T)} H ${_(R2-r)} Q ${_(R2)} ${_(T)} ${_(R2)} ${_(T+r)} V ${_(B-r)} Q ${_(R2)} ${_(B)} ${_(R2-r)} ${_(B)} H ${_(L+r)} Q ${_(L)} ${_(B)} ${_(L)} ${_(B-r)} V ${_(T+r)} Q ${_(L)} ${_(T)} ${_(L+r)} ${_(T)} Z`
+    :`M ${_(L)} ${_(T)} H ${_(R2)} V ${_(B)} H ${_(L)} Z`;
+
+  const tailPath=`M ${_(bi1.x)} ${_(bi1.y)} L ${_(tipX)} ${_(tipY)} L ${_(bi2.x)} ${_(bi2.y)} Z`;
+  return `<g ${shadow}><path d="${rectPath}" ${fillAttr} ${strokeAttr}/><path d="${tailPath}" ${fillAttr} stroke="none"/></g>`;
+}
+
 function buildShapeSVG(d,w,h){
   const sh=SHAPES.find(s=>s.id===d.shape)||SHAPES[0];
   const op=d.fillOp===undefined?1:+d.fillOp;
@@ -36,8 +139,8 @@ function buildShapeSVG(d,w,h){
   const fillAttr=`fill="${fill}" fill-opacity="${op}"`;
   let shapeDef='';
   if(sh.special==='rect')shapeDef=`<rect x="${margin}" y="${margin}" width="${ew}" height="${eh}" rx="${d.rx||0}" ${fillAttr} ${strokeAttr} ${shadow}/>`;
-  else if(sh.special==='rounded')shapeDef=`<rect x="${margin}" y="${margin}" width="${ew}" height="${eh}" rx="${d.rx||15}" ${fillAttr} ${strokeAttr} ${shadow}/>`;
   else if(sh.special==='ellipse')shapeDef=`<ellipse cx="${w/2}" cy="${h/2}" rx="${ew/2}" ry="${eh/2}" ${fillAttr} ${strokeAttr} ${shadow}/>`;
+  else if(sh.special==='callout'){shapeDef=_buildCalloutSVGPath(d,w,h,sh,fillAttr,strokeAttr,shadow,margin);}
   else{
     const sx=ew/90,sy=eh/90;
     const scaledPath=sh.path.replace(/(-?\d+(?:\.\d+)?)/g,(m,v,off,str)=>{
@@ -62,8 +165,8 @@ function _shapeClipPath(d, w, h) {
   const sw = d.sw === undefined ? 2 : +d.sw;
   const m = sw > 0 ? sw : 0;
   if (sh.special === 'rect')    return `inset(${m}px)`;
-  if (sh.special === 'rounded') return `inset(${m}px round ${d.rx || 15}px)`;
   if (sh.special === 'ellipse') return `ellipse(${(w-m*2)/2}px ${(h-m*2)/2}px at 50% 50%)`;
+  if (sh.special === 'callout') return 'none'; // callout uses full bounding box (tail extends outside)
   // Polygon shapes — scale path points from 0-100 space to actual px
   if (sh.path) {
     const ew = Math.max(1, w - m * 2), eh = Math.max(1, h - m * 2);

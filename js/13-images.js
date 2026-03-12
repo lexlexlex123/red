@@ -115,8 +115,13 @@ function mkEl(d){
   if(d.type==='text'){
     c.classList.add('tel');c.contentEditable='false';
     c.setAttribute('style',d.cs||'font-size:48px;font-weight:700;color:#fff;');
+    // Set font size for bullet marker rebuild
+    const _fsM=(d.cs||'').match(/font-size:\s*([\d.]+)px/);
+    if(_fsM&&typeof _lastBulletFontSize!=='undefined') _lastBulletFontSize=parseFloat(_fsM[1]);
     const rawHtml=d.html||'Double-click to edit';
     c.innerHTML=typeof rtMigrateHtml==='function'?rtMigrateHtml(rawHtml):rawHtml;
+    // Re-attach bullet icon click handlers (onclick attr stripped by innerHTML assignment in some browsers)
+    if(typeof _attachBulletClickHandlers==='function') _attachBulletClickHandlers(c);
     c.addEventListener('dblclick',e=>{
       e.stopPropagation();
       c.contentEditable='true';
@@ -126,8 +131,17 @@ function mkEl(d){
     });
     c.addEventListener('blur',()=>{
       if(typeof _toSaveMode==='function') _toSaveMode(c);
-      c.contentEditable='false';delete el.dataset.editing;el.style.cursor='';
+      // Capture HTML BEFORE contentEditable=false — browser collapses BR tags after
+      const vw = c.querySelector('.ec-valign-wrap');
+      const _snap = vw ? vw.innerHTML : c.innerHTML;
+      el.dataset._savedHtml = _snap;
+      c.contentEditable='false'; delete el.dataset.editing; el.style.cursor='';
       commitAll();
+      delete el.dataset._savedHtml;
+      // Restore correct HTML (browser may have normalized it during contentEditable toggle)
+      if(vw) vw.innerHTML = _snap; else c.innerHTML = _snap;
+      // Re-attach bullet click handlers after DOM restore
+      if(typeof _attachBulletClickHandlers==='function') _attachBulletClickHandlers(c);
     });
     c.addEventListener('input',()=>{ if(typeof _rtCommit==='function') _rtCommit(); else save(); });
     c.addEventListener('keydown',e=>{if(e.key==='Escape'){c.contentEditable='false';c.blur();}else e.stopPropagation();});
@@ -202,20 +216,76 @@ function mkEl(d){
         p.addEventListener('mouseleave',()=>el.classList.remove('svg-hovered'));
       });
     }
+    const _sh=typeof SHAPES!=='undefined'&&SHAPES.find(s=>s.id===d.shape);
+    const _isCallout=_sh&&_sh.special==='callout';
     const txt=document.createElement('div');txt.className='shape-text';
-    txt.setAttribute('style',d.shapeTextCss||'font-size:24px;font-weight:700;color:#ffffff;text-align:center;');
+    const _baseTextCss=d.shapeTextCss||'font-size:24px;font-weight:700;color:#ffffff;text-align:center;';
+    txt.setAttribute('style',_baseTextCss);
+    // For callout: constrain text to the rect area, excluding tail zone
+    if(_isCallout){
+      const _sw2=d.sw||2;
+      txt.style.position='absolute';
+      txt.style.inset=_sw2+'px';
+      txt.style.padding='8px';
+      txt.style.display='flex';
+      txt.style.alignItems='center';
+      txt.style.justifyContent='center';
+    }
     txt.innerHTML=d.shapeHtml||'';
-    txt.addEventListener('dblclick',()=>{txt.contentEditable='true';txt.style.pointerEvents='auto';txt.focus();});
-    txt.addEventListener('blur',()=>{txt.contentEditable='false';txt.style.pointerEvents='none';commitAll();});
+    function _activateShapeTxt(){
+      if(txt.contentEditable==='true')return; // already editing
+      el.dataset.editing='true';
+      txt.contentEditable='true';txt.style.pointerEvents='auto';txt.focus();
+      // Move cursor to end
+      const range=document.createRange();range.selectNodeContents(txt);range.collapse(false);
+      const sel2=window.getSelection();sel2.removeAllRanges();sel2.addRange(range);
+    }
+    txt.addEventListener('dblclick',e=>{e.stopPropagation();_activateShapeTxt();});
+    txt.addEventListener('blur',()=>{txt.contentEditable='false';txt.style.pointerEvents='none';el.dataset.editing='false';commitAll();});
     txt.addEventListener('input',save);
+    txt.addEventListener('keydown',e=>{if(e.key==='Escape'){txt.blur();}});
+    // dblclick on wrap (full bounding box) — works regardless of fill opacity
+    wrap.addEventListener('dblclick',e=>{e.stopPropagation();_activateShapeTxt();});
     wrap.append(svgDiv,txt);c.appendChild(wrap);
     el.dataset.shape=d.shape;el.dataset.fill=d.fill||'#3b82f6';el.dataset.stroke=d.stroke||'#1d4ed8';
+    if(d.tailX!==undefined){el.dataset.tailX=d.tailX;el.dataset.tailY=d.tailY;}
     el.dataset.sw=d.sw!=null?d.sw:2;el.dataset.rx=d.rx||0;el.dataset.fillOp=d.fillOp!=null?d.fillOp:1;
     el.dataset.shadow=d.shadow||false;el.dataset.shadowBlur=d.shadowBlur||8;el.dataset.shadowColor=d.shadowColor||'#000000';
     // Apply clip-path so hit area matches shape, not bounding box
     _applyShapeClipPath(el, d);
+  }else if(d.type==='formula'){
+    c.style.cssText='width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:visible;';
+    c.style.color = d.formulaColor || '#ffffff';
+    if(d.formulaSvg){
+      c.innerHTML = d.formulaSvg;
+      const svgEl=c.querySelector('svg');
+      if(svgEl){svgEl.style.width='100%';svgEl.style.height='100%';}
+    } else {
+      c.innerHTML='<span style="opacity:.5;font-size:13px;">формула</span>';
+    }
+    el.dataset.formulaColor = d.formulaColor || '#ffffff';
+    el.addEventListener('dblclick', e => {
+      e.stopPropagation();
+      if(typeof openFormulaEditor==='function') openFormulaEditor(el);
+    });
+  }else if(d.type==='graph'){
+    c.style.cssText='width:100%;height:100%;overflow:hidden;border-radius:6px;position:relative;';
+    if(d.graphImg){
+      const _gi=document.createElement('img');
+      _gi.src=d.graphImg;
+      _gi.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:fill;display:block;pointer-events:none;user-select:none;';
+      c.appendChild(_gi);
+    } else {
+      const _gph=document.createElement('div');
+      _gph.style.cssText='position:absolute;inset:0;display:flex;align-items:center;justify-content:center;opacity:.4;font-size:13px;pointer-events:none;';
+      _gph.textContent='📈';
+      c.appendChild(_gph);
+    }
+    // Transparent hit-area on top so mousedown always reaches el through mkDrag
+    const _ghit=document.createElement('div');
+    _ghit.style.cssText='position:absolute;inset:0;z-index:1;';
+    c.appendChild(_ghit);
   }else if(d.type==='svg'){
-    c.style.cssText='width:100%;height:100%;overflow:visible;';
     // Use DOMParser so SVG SMIL animations (<animate>, <animateTransform>) work correctly.
     // innerHTML uses the HTML parser which drops unknown SVG animation elements.
     const _svgStr=d.svgContent||'';
@@ -238,13 +308,14 @@ function mkEl(d){
     }
   }else if(d.type==='icon'){
     c.style.cssText='width:100%;height:100%;overflow:visible;display:flex;align-items:center;justify-content:center;';
-    // Always rebuild SVG from params so shadow/color/style are always correct
+    // If icon was fitted, use saved svgContent (has tight viewBox); otherwise rebuild
     const _mkIc=typeof ICONS!=='undefined'?ICONS.find(function(x){return x.id===d.iconId;}):null;
-    // Coerce shadow to boolean (may come as string "true"/"false" from dataset or JSON)
     const _mkShadow=d.shadow===true||d.shadow==='true';
-    const _mkSvg=(_mkIc&&typeof _buildIconSVG==='function')
-      ?_buildIconSVG(_mkIc,d.iconColor||'#3b82f6',d.iconSw!=null?d.iconSw:1.8,d.iconStyle||'stroke',_mkShadow,d.shadowBlur,d.shadowColor)
-      :(d.svgContent||'');
+    const _mkSvg=d.iconFitted&&d.svgContent
+      ? d.svgContent
+      : ((_mkIc&&typeof _buildIconSVG==='function')
+          ?_buildIconSVG(_mkIc,d.iconColor||'#3b82f6',d.iconSw!=null?d.iconSw:1.8,d.iconStyle||'stroke',_mkShadow,d.shadowBlur,d.shadowColor)
+          :(d.svgContent||''));
     c.innerHTML=_mkSvg;
     const svgEl2=c.querySelector('svg');
     if(svgEl2){svgEl2.style.width='100%';svgEl2.style.height='100%';}
@@ -255,6 +326,8 @@ function mkEl(d){
     el.dataset.shadow=_mkShadow;
     el.dataset.shadowBlur=d.shadowBlur||8;
     el.dataset.shadowColor=d.shadowColor||'#000000';
+    // Double-click to replace icon
+    el.addEventListener('dblclick',function(e){e.stopPropagation();window._iconReplaceMode=true;if(typeof openIconModal==='function')openIconModal();});
     }else if(d.type==='applet'){
     const wrap=document.createElement('div');wrap.className='applet-el';
     // Layer 1: clip div — clips iframe to border-radius
@@ -382,6 +455,7 @@ function mkEl(d){
   if(d.type==='table'&&d.tableBgBlur>0){
     el.style.backdropFilter=`blur(${d.tableBgBlur}px)`;el.style.webkitBackdropFilter=`blur(${d.tableBgBlur}px)`;}
   if(d.type==='code'){renderCodeEl(el,d);el.addEventListener('dblclick',e=>{e.stopPropagation();if(typeof openCodeEditor==='function')openCodeEditor();});}
+  if(d.type==='htmlframe'){renderHtmlFrameEl(el,d);el.addEventListener('dblclick',e=>{e.stopPropagation();if(typeof openHtmlFrameEditor==='function')openHtmlFrameEditor();});}
   if(d.type==='image')applyImgStyles(el,d);
   if(d.type==='table'&&typeof renderTableEl==='function'){if(typeof _tblSaveToDataset==='function')_tblSaveToDataset(el,d);renderTableEl(el,d);if(typeof _tblAttachResizeObs==='function')_tblAttachResizeObs(el,d);}
   // Restore elOpacity for all element types
@@ -456,6 +530,8 @@ function mkEl(d){
   }
 }
 function pick(el){
+  // Deselect connector synchronously when picking an element
+  if(typeof _deselectConn==='function'&&typeof _selConnId!=='undefined'&&_selConnId) _deselectConn();
   // Exit crop mode if switching away from the cropped image
   if(typeof exitCropModeIfActive==='function'&&_cropEl&&_cropEl!==el)exitCropModeIfActive();
   // Clear table cell selection when leaving a table
@@ -467,6 +543,8 @@ function pick(el){
     delete sel.dataset.editing;sel.style.cursor='';
     commitAll();
   }
+  // Exit shape text editing on previously selected element
+  _blurActiveShapeText();
   const prevSel=sel;
   if(sel)sel.classList.remove('sel');
   sel=el;

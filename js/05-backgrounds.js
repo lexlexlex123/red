@@ -22,30 +22,22 @@ function loadBg(s){
 }
 
 function setSlideBgFromPalette(c, schemeRef){
-  // Store scheme ref so theme switch can remap this bg
   slides[cur].bgScheme = schemeRef || null;
   setCustomBg(c);
-  // Update preview swatch
   const sw = document.getElementById('slide-bg-preview');
   if(sw) sw.style.background = c;
 }
 
 function resetSlideBgToTheme(){
-  // Revert to current theme bg
   const theme = (typeof appliedThemeIdx !== 'undefined' && appliedThemeIdx >= 0) ? THEMES[appliedThemeIdx] : null;
   const bgVal = theme ? theme.bg : '#1a1a2e';
-  // Store as custom so all renderers see it normally
   slides[cur].bg = 'custom';
   slides[cur].bgc = bgVal;
-  // Mark as theme-owned (not user-custom): bgScheme=undefined means "follow theme"
   delete slides[cur].bgScheme;
-  // Apply to canvas immediately
   document.getElementById('cvbg').style.background = bgVal;
   hilBg(null);
-  // Update preview swatch to show the theme gradient/color
   const sw = document.getElementById('slide-bg-preview');
   if(sw){
-    // Show first solid colour extracted from gradient for the swatch
     const hex = bgVal.match(/#[0-9a-fA-F]{6}/);
     sw.style.background = hex ? hex[0] : bgVal;
   }
@@ -56,10 +48,10 @@ function syncSlideBgPreview(){
   const s = slides[cur]; if(!s) return;
   const sw = document.getElementById('slide-bg-preview'); if(!sw) return;
   if(s.bg === 'custom' && s.bgc){
-    // Show solid color if it's a hex
     const hex = s.bgc.match(/#[0-9a-fA-F]{6}/);
     sw.style.background = hex ? hex[0] : (s.bgc.includes('gradient') ? s.bgc : s.bgc);
   } else {
     sw.style.background = '';
   }
 }
+

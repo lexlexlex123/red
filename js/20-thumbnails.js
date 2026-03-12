@@ -67,7 +67,48 @@ function renderThumbCanvas(cnv,s,slideIdx){
     else if(d.type==='markdown')drawThumbMarkdown(ctx,d,scaleX,scaleY);
     else if(d.type==='icon')drawThumbIcon(ctx,d,scaleX,scaleY);
     else if(d.type==='table')drawThumbTable(ctx,d,scaleX,scaleY);
+    else if(d.type==='formula')drawThumbFormula(ctx,d,scaleX,scaleY);
+    else if(d.type==='graph')drawThumbGraph(ctx,d,scaleX,scaleY);
   });
+
+  // Draw connectors
+  if (s.connectors && s.connectors.length) {
+    const elMap = {};
+    s.els.forEach(d => { elMap[d.id] = d; });
+    function _tAnchor(elId, otherId, fromEdge, gap) {
+      const d = elMap[elId]; if (!d) return {x:0,y:0};
+      const cx = d.x+d.w/2, cy = d.y+d.h/2;
+      gap = gap||0;
+      const od = elMap[otherId];
+      const ox = od?od.x+od.w/2:cx, oy = od?od.y+od.h/2:cy;
+      const dx=ox-cx,dy=oy-cy, dist=Math.sqrt(dx*dx+dy*dy)||1;
+      const ux=dx/dist, uy=dy/dist;
+      if (!fromEdge) return {x:cx+ux*gap, y:cy+uy*gap};
+      let ex,ey;
+      if(Math.abs(dx)*d.h>Math.abs(dy)*d.w){ex=dx>0?d.x+d.w:d.x;ey=cy;}
+      else{ex=cx;ey=dy>0?d.y+d.h:d.y;}
+      return {x:ex+ux*gap, y:ey+uy*gap};
+    }
+    s.connectors.forEach(conn => {
+      const gap = conn.gap||0;
+      const p1 = _tAnchor(conn.fromId, conn.toId,   conn.fromAnchor==='edge', gap);
+      const p2 = _tAnchor(conn.toId,   conn.fromId, conn.toAnchor==='edge',   gap);
+      const sw  = (conn.sw||2) * scaleX;
+      const dash = conn.dash||'solid';
+      ctx.save();
+      ctx.strokeStyle = conn.color||'#60a5fa';
+      ctx.lineWidth   = sw;
+      ctx.lineCap     = 'round';
+      if (dash==='dot')  ctx.setLineDash([0, sw*4]);
+      else if (dash==='dash') ctx.setLineDash([sw*5, sw*3]);
+      else ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(p1.x*scaleX, p1.y*scaleY);
+      ctx.lineTo(p2.x*scaleX, p2.y*scaleY);
+      ctx.stroke();
+      ctx.restore();
+    });
+  }
 }
 
 function parseGradientStops(css){
@@ -116,16 +157,23 @@ function drawThumbText(ctx,d,sx,sy){
   ctx.fillStyle=col;
   ctx.globalAlpha=d.elOpacity!=null?+d.elOpacity:1;
 
-  // Extract plain text from html
+  // Extract lines from html, preserving list markers as text prefixes
   const tmp=document.createElement('div');tmp.innerHTML=d.html||'';
-  const txt=tmp.textContent||tmp.innerText||'';
+  // Replace list markers with text equivalents before extracting text
+  tmp.querySelectorAll('span[data-list-num]').forEach((sp,i)=>{sp.textContent=sp.textContent||((i+1)+'.');});
+  tmp.querySelectorAll('span[data-list-bullet]').forEach(sp=>{sp.textContent='•';});
+  // Split by BR into lines
+  const rawHtml=(d.html||'').replace(/<br\s*\/?>/gi,'\n');
+  const tmp2=document.createElement('div');tmp2.innerHTML=rawHtml;
+  tmp2.querySelectorAll('span[data-list-num]').forEach((sp,i)=>{sp.textContent=sp.textContent||((i+1)+'.');});
+  tmp2.querySelectorAll('span[data-list-bullet]').forEach(sp=>{sp.textContent='•';});
+  const fullTxt=tmp2.textContent||tmp2.innerText||'';
   const isUppercase=cs.includes('uppercase');
-  const displayTxt=isUppercase?txt.toUpperCase():txt;
+  const rawLines=fullTxt.split('\n');
 
   // Word-wrap simplified
   const lineH=fs*1.3;
-  const words=displayTxt.split(/\s+/).filter(Boolean);
-  let line='',lineY=y+lineH;
+  let lineY=y+lineH;
   const valign=d.valign||'top';
   if(valign==='middle')lineY=y+(h-lineH)/2+lineH*.6;
   else if(valign==='bottom')lineY=y+h-8*sy;
@@ -134,15 +182,20 @@ function drawThumbText(ctx,d,sx,sy){
   ctx.textAlign=ta==='center'?'center':ta==='right'?'right':'left';
   const tx=ta==='center'?x+w/2:ta==='right'?x+w-4*sx:x+6*sx;
 
-  for(const word of words){
-    const test=line?line+' '+word:word;
-    if(ctx.measureText(test).width>w-8*sx&&line){
-      ctx.fillText(line,tx,lineY);
-      line=word;lineY+=lineH;
-      if(lineY>y+h)break;
-    } else line=test;
+  for(const rawLine of rawLines){
+    const displayLine=isUppercase?rawLine.toUpperCase():rawLine;
+    const words=displayLine.split(/\s+/).filter(Boolean);
+    let line='';
+    for(const word of words){
+      const test=line?line+' '+word:word;
+      if(ctx.measureText(test).width>w-8*sx&&line){
+        ctx.fillText(line,tx,lineY); line=word; lineY+=lineH;
+        if(lineY>y+h)break;
+      } else line=test;
+    }
+    if(line&&lineY<=y+h){ctx.fillText(line,tx,lineY); lineY+=lineH;}
+    if(lineY>y+h)break;
   }
-  if(line&&lineY<=y+h)ctx.fillText(line,tx,lineY);
   ctx.restore();
 }
 
@@ -264,31 +317,39 @@ function drawThumbIcon(ctx,d,sx,sy){
   const x=d.x*sx,y=d.y*sy,w=d.w*sx,h=d.h*sy;
   ctx.save();
   if(d.rot){ctx.translate(x+w/2,y+h/2);ctx.rotate(d.rot*Math.PI/180);ctx.translate(-(x+w/2),-(y+h/2));}
-  if(d.svgContent){
-    const key=d.svgContent;
+
+  // Build SVG with explicit pixel dimensions so browser scales it correctly
+  // (SVGs without width/height may render at native viewBox size, causing wrong scale)
+  const ic=typeof ICONS!=='undefined'?ICONS.find(function(e){return e.id===d.iconId;}):null;
+  let svgStr=d.svgContent||'';
+  if(ic&&typeof _buildIconSVG==='function'){
+    svgStr=_buildIconSVG(ic,d.iconColor||'#3b82f6',d.iconSw!=null?d.iconSw:1.8,d.iconStyle||'stroke',d.shadow===true||d.shadow==='true',d.shadowBlur,d.shadowColor);
+  }
+  // Replace style="width:100%;height:100%..." with explicit pixel size
+  const pw=Math.round(w), ph=Math.round(h);
+  const svgSized=svgStr.replace(/<svg /,'<svg width="'+pw+'" height="'+ph+'" ');
+
+  if(svgSized){
+    const key=svgSized;
     if(_thumbIconCache[key]){
-      // Already loaded — draw directly, no drawThumbs() call
       ctx.drawImage(_thumbIconCache[key],x,y,w,h);
     } else if(_thumbIconCache[key]!==null){
-      // Not yet loaded — start loading once, mark as pending with null
       _thumbIconCache[key]=null;
-      const blob=new Blob([d.svgContent],{type:'image/svg+xml'});
+      const blob=new Blob([svgSized],{type:'image/svg+xml'});
       const url=URL.createObjectURL(blob);
       const img=new Image();
       img.onload=()=>{
         _thumbIconCache[key]=img;
         URL.revokeObjectURL(url);
-        // Redraw only the specific thumb canvases that use this icon
         document.querySelectorAll('#slide-list .sthumb canvas').forEach((cnv,i)=>{
           const s=slides[i];
-          if(s&&s.els&&s.els.some(e=>e.type==='icon'&&e.svgContent===key)){
+          if(s&&s.els&&s.els.some(e=>e.type==='icon'&&e.id===d.id)){
             renderThumbCanvas(cnv,s,i);
           }
         });
       };
       img.onerror=()=>{URL.revokeObjectURL(url); delete _thumbIconCache[key];};
       img.src=url;
-      // Draw fallback dot while loading
       ctx.fillStyle=d.iconColor||'#3b82f6';
       ctx.globalAlpha=0.6;
       ctx.beginPath();ctx.arc(x+w/2,y+h/2,Math.min(w,h)*0.3,0,Math.PI*2);ctx.fill();
@@ -370,3 +431,45 @@ function reorder(from,to){
   if(from===to)return;save();pushUndo();const[r]=slides.splice(from,1);slides.splice(to,0,r);cur=to;renderAll();saveState();
 }
 function renderAll(){drawThumbs();load();}
+
+// ── Formula thumbnail via SVG→Image ─────────────────────────────────────────
+const _thumbFormulaCache={};
+function drawThumbFormula(ctx,d,sx,sy){
+  if(!d.formulaSvg)return;
+  const key='formula_'+d.id+'_'+(d.formulaColor||'');
+  const x=d.x*sx,y=d.y*sy,w=d.w*sx,h=d.h*sy;
+  const color=d.formulaColor||'#ffffff';
+  // Inject color into SVG for canvas rendering
+  const coloredSvg=d.formulaSvg.replace(/currentColor/g,color);
+  const svgBlob=`<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(w)}" height="${Math.round(h)}">`+
+    `<foreignObject width="100%" height="100%">`+
+    `<div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:${color};">`+
+    coloredSvg+`</div></foreignObject></svg>`;
+  if(_thumbFormulaCache[key]){
+    ctx.drawImage(_thumbFormulaCache[key],x,y,w,h);return;
+  }
+  const blob=new Blob([svgBlob],{type:'image/svg+xml'});
+  const url=URL.createObjectURL(blob);
+  const img=new Image();
+  img.onload=()=>{_thumbFormulaCache[key]=img;URL.revokeObjectURL(url);drawThumbs();};
+  img.onerror=()=>{URL.revokeObjectURL(url);
+    // fallback: draw colored rect
+    ctx.save();ctx.globalAlpha=0.4;ctx.fillStyle=color;
+    ctx.fillRect(x,y,w,h);ctx.restore();
+  };
+  img.src=url;
+}
+
+// ── Graph thumbnail via stored dataURL ──────────────────────────────────────
+const _thumbGraphCache={};
+function drawThumbGraph(ctx,d,sx,sy){
+  if(!d.graphImg)return;
+  const x=d.x*sx,y=d.y*sy,w=d.w*sx,h=d.h*sy;
+  const key='graph_'+d.id+'_'+(d.graphColor||'')+'_'+(d.graphBg||'');
+  if(_thumbGraphCache[key]){ctx.drawImage(_thumbGraphCache[key],x,y,w,h);return;}
+  // Invalidate old cache entries for this element
+  Object.keys(_thumbGraphCache).forEach(k=>{ if(k.startsWith('graph_'+d.id+'_')) delete _thumbGraphCache[k]; });
+  const img=new Image();
+  img.onload=()=>{_thumbGraphCache[key]=img;drawThumbs();};
+  img.src=d.graphImg;
+}

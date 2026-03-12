@@ -43,9 +43,11 @@ function save(){
     };
     if(el.dataset.link)d.link=el.dataset.link;if(el.dataset.linkt)d.linkt=el.dataset.linkt;
     if(d.type==='text'){const c=el.querySelector('.ec');
-      // Strip valign wrapper — it's a DOM-only helper, not part of saved content
+      // If blur just fired, use pre-normalization HTML stored in dataset
       const vw=c.querySelector('.ec-valign-wrap');
-      d.html=vw?vw.innerHTML:c.innerHTML;
+      d.html = el.dataset._savedHtml != null
+        ? el.dataset._savedHtml
+        : (vw ? vw.innerHTML : c.innerHTML);
       // Strip layout/background props from cs (stored separately or computed dynamically)
       let cs=c.getAttribute('style')||'';
       cs=cs.replace(/\bbackground\s*:[^;]+;?/gi,'')
@@ -131,11 +133,21 @@ function save(){
       d.shadow=el.dataset.shadow==='true';d.shadowBlur=+(el.dataset.shadowBlur||8);d.shadowColor=el.dataset.shadowColor||'#000000';
       if(el.dataset.shapeBlur>0) d.shapeBlur=+el.dataset.shapeBlur;
       else if(_ods&&_ods.shapeBlur>0) d.shapeBlur=_ods.shapeBlur;
+      // Callout tail position - read from dataset (most reliable) or _ods
+      if(el.dataset.tailX!==undefined&&el.dataset.tailX!=='undefined'){d.tailX=+el.dataset.tailX;d.tailY=+el.dataset.tailY;}
+      else if(_ods&&_ods.tailX!==undefined){d.tailX=_ods.tailX;d.tailY=_ods.tailY;}
       const st=el.querySelector('.shape-text');d.shapeHtml=st?st.innerHTML:'';
       d.shapeTextCss=st?st.getAttribute('style')||'':'';
     }
     else if(d.type==='svg')d.svgContent=el.querySelector('.ec').innerHTML;
-    else if(d.type==='code'){const dd=oldElsById[d.id];if(dd){d.codeLang=dd.codeLang;d.codeTheme=dd.codeTheme;d.codeRaw=dd.codeRaw;d.codeHtml=dd.codeHtml;d.codeFs=dd.codeFs;d.codeBg=dd.codeBg;}}
+    else if(d.type==='formula'){const dd=oldElsById[d.id];if(dd){d.formulaRaw=dd.formulaRaw;d.formulaLines=dd.formulaLines;d.formulaSvg=dd.formulaSvg;d.formulaColorScheme=dd.formulaColorScheme;}d.formulaColor=el.dataset.formulaColor||'#ffffff';}
+    else if(d.type==='graph'){const dd=oldElsById[d.id];if(dd){d.linkedFormulaId=dd.linkedFormulaId;d.graphExpr=dd.graphExpr;d.graphLatex=dd.graphLatex;d.graphExprs=dd.graphExprs;d.graphLines=dd.graphLines;d.graphLineColors=dd.graphLineColors;d.graphImg=dd.graphImg;d.graphColor=dd.graphColor;d.graphBg=dd.graphBg;d.graphDark=dd.graphDark;d.graphXMin=dd.graphXMin;d.graphXMax=dd.graphXMax;d.graphYMin=dd.graphYMin;d.graphYMax=dd.graphYMax;d.graphStep=dd.graphStep;}}
+    else if(d.type==='code'){const dd=oldElsById[d.id];if(dd){d.codeLang=dd.codeLang;d.codeTheme=dd.codeTheme;d.codeRaw=dd.codeRaw;d.codeHtml=dd.codeHtml;d.codeFs=dd.codeFs;d.codeBg=dd.codeBg;if(dd.hfParentId)d.hfParentId=dd.hfParentId;}}
+    else if(d.type==='htmlframe'){
+      d.hfSrc=el.dataset.hfSrc||'';
+      d.hfScroll=el.dataset.hfScroll==='1';
+      d.hfLinkedCodeId=el.dataset.hfLinkedCodeId||null;
+    }
     else if(d.type==='markdown'){const dd=oldElsById[d.id];if(dd){d.mdRaw=dd.mdRaw;d.mdHtml=dd.mdHtml;d.mdFs=dd.mdFs;d.mdColor=dd.mdColor||'#ffffff';d.mdColorScheme=dd.mdColorScheme!==undefined?dd.mdColorScheme:{col:7,row:0};}
       if(el.dataset.textBg)d.textBg=el.dataset.textBg;
       if(el.dataset.textBg||el.dataset.textBgGrad==='1'){d.textBgOp=el.dataset.textBgOp!=null?+el.dataset.textBgOp:1;}
@@ -147,6 +159,8 @@ function save(){
       if(el.dataset.textBorderW&&+el.dataset.textBorderW>0){d.textBorderW=+el.dataset.textBorderW;d.textBorderColor=el.dataset.textBorderColor||'#ffffff';}
       if(el.dataset.rx_tl||el.dataset.rx_tr||el.dataset.rx_bl||el.dataset.rx_br){d.rx_tl=+(el.dataset.rx_tl||0);d.rx_tr=+(el.dataset.rx_tr||0);d.rx_bl=+(el.dataset.rx_bl||0);d.rx_br=+(el.dataset.rx_br||0);}
       const _odmd=oldElsById[d.id];if(_odmd){if(_odmd.textBgScheme!==undefined)d.textBgScheme=_odmd.textBgScheme;if(_odmd.borderScheme!==undefined)d.borderScheme=_odmd.borderScheme;}
+    }
+    else if(d.type==='icon'){
       d.iconId=el.dataset.iconId||'';
       d.iconColor=el.dataset.iconColor||'#3b82f6';
       d.iconSw=el.dataset.iconSw!=null?+el.dataset.iconSw:1.8;
@@ -154,12 +168,25 @@ function save(){
       d.shadow=el.dataset.shadow==='true'||el.dataset.shadow===true;
       d.shadowBlur=+(el.dataset.shadowBlur||8);
       d.shadowColor=el.dataset.shadowColor||'#000000';
-      // Rebuild svgContent so it's always up to date
-      const _ic=typeof ICONS!=='undefined'?ICONS.find(function(x){return x.id===d.iconId;}):null;
-      if(_ic&&typeof _buildIconSVG==='function'){
-        d.svgContent=_buildIconSVG(_ic,d.iconColor,d.iconSw,d.iconStyle,d.shadow,d.shadowBlur,d.shadowColor);
-      }else{
-        d.svgContent=el.querySelector('.ec').innerHTML;
+      // Always read svgContent from DOM — it contains the tight viewBox after fit
+      const _ecInner=el.querySelector('.ec');
+      const _domSvg=_ecInner?_ecInner.querySelector('svg'):null;
+      const _oldIcon=oldElsById[d.id];
+      if(_domSvg){
+        d.svgContent=_domSvg.outerHTML;
+        // Preserve flags from previous data
+        if(_oldIcon&&_oldIcon.iconFitted) d.iconFitted=true;
+        if(_oldIcon&&_oldIcon.iconColorCustom) d.iconColorCustom=true;
+      } else if(_oldIcon&&_oldIcon.iconFitted&&_oldIcon.svgContent){
+        d.svgContent=_oldIcon.svgContent;
+        d.iconFitted=true;
+      } else {
+        const _ic=typeof ICONS!=='undefined'?ICONS.find(function(x){return x.id===d.iconId;}):null;
+        if(_ic&&typeof _buildIconSVG==='function'){
+          d.svgContent=_buildIconSVG(_ic,d.iconColor,d.iconSw,d.iconStyle,d.shadow,d.shadowBlur,d.shadowColor);
+        }else if(_ecInner){
+          d.svgContent=_ecInner.innerHTML;
+        }
       }
     }
     else if(d.type==='applet'){
@@ -197,7 +224,9 @@ function save(){
   });
 }
 function load(){
-  clearMultiSel();sel=null;clearGuides();
+  clearMultiSel();sel=null;_rotEl=null;clearGuides();
+  const _ov=document.getElementById('handles-overlay');if(_ov)_ov.innerHTML='';
+  document.querySelectorAll('.rh[data-overlay-hidden]').forEach(rh=>{rh.style.display='';delete rh.dataset.overlayHidden;});
   const canvas=document.getElementById('canvas');canvas.querySelectorAll('.el').forEach(e=>e.remove());
   const s=slides[cur];loadBg(s);s.els.forEach(mkEl);
   document.getElementById('p-st').value=s.title;

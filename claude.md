@@ -5,7 +5,7 @@
 **«Слайды»** — презентационный редактор, работающий в одном HTML-файле (или модульно).
 Не требует сервера, сборки или интернета. Открывается напрямую в браузере.
 
-- **Версия:** v5.2
+- **Версия:** v5.3
 - **Автор:** Некрасов Александр
 - **Стек:** Vanilla JS + HTML + CSS, без фреймворков
 - **Зависимости:** JSZip (офлайн), QRCode (офлайн), системные шрифты
@@ -21,7 +21,9 @@ project/
 │   └── styles.css          # Все стили приложения
 ├── libs/
 │   ├── jszip.min.js        # Импорт PPTX
-│   └── qrcode.min.js       # QR-аплет
+│   ├── qrcode.min.js       # QR-аплет
+│   └── mathjax/
+│       └── tex-svg.js      # MathJax 3 (офлайн). Скачать: https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js
 └── js/
     ├── 00-i18n.js          # Локализация RU/EN, APP_VERSION, APP_NAME
     ├── 00-icons.js         # Базовые SVG-иконки
@@ -61,6 +63,8 @@ project/
     ├── 32-scrubber.js      # Скруббер временной шкалы
     ├── 33-objects.js       # Управление объектами
     └── 33-pagenum.js       # Нумерация страниц, pnSettings, pnApplyAll()
+    ├── 36-formula.js       # Формулы LaTeX: addFormula(), openFormulaEditor(), syncFormulaProps(), setFormulaColor()
+    └── 37-graph.js         # Графики формул: buildFormulaGraph(), refreshAllGraphs(theme)
 ```
 
 ---
@@ -196,6 +200,7 @@ closeColorPanel(panelId)
 | `cp-border-slot` | Граница текстового блока |
 | `cp-slidebg-slot` | Фон слайда |
 | `cp-md-color-slot` | Цвет текста markdown-блока |
+| `cp-formula-color-slot` | Цвет формулы |
 
 ---
 
@@ -207,7 +212,7 @@ closeColorPanel(panelId)
 | `null` | Кастомный цвет | Не трогается |
 | `undefined` | Легаси | Применяется дефолт |
 
-Поля: `textColorScheme`, `textBgScheme`, `borderScheme`, `fillScheme`, `strokeScheme`, `mdColorScheme`, `slides[i].bgScheme`.
+Поля: `textColorScheme`, `textBgScheme`, `borderScheme`, `fillScheme`, `strokeScheme`, `mdColorScheme`, `formulaColorScheme`, `slides[i].bgScheme`.
 
 ---
 
@@ -281,7 +286,72 @@ d.imgCropL, d.imgCropT, d.imgCropR, d.imgCropB  // px обрезанных с к
 
 ---
 
-## Модальные окна тем и макетов
+## Формулы LaTeX (`js/36-formula.js`)
+
+### Тип элемента: `formula`
+
+| Поле | Смысл |
+|------|-------|
+| `d.formulaRaw` | Исходный LaTeX |
+| `d.formulaSvg` | Нейтральный SVG (без цвета, `currentColor`) |
+| `d.formulaColor` | Текущий hex цвет |
+| `d.formulaColorScheme` | `{col,row}` — позиция в палитре; `null` — кастомный; `undefined` — legacy |
+
+### Ключевые функции
+
+```js
+addFormula()                     // открыть редактор для нового элемента
+openFormulaEditor(el)            // открыть редактор для существующего
+syncFormulaProps()               // обновить панель свойств (swatch, hex, preview)
+setFormulaColor(color, schemeRef) // изменить цвет из панели свойств
+```
+
+### SVG нейтральный — цвет только через CSS
+
+`_renderFormula(latex, cb)` возвращает SVG без хардкодных цветов — все пути используют `fill="currentColor"`. Цвет задаётся исключительно через `ec.style.color` на контейнере `.ec`. Это позволяет независимо управлять цветом в разных контекстах:
+
+- **Холст:** `ec.style.color = d.formulaColor`
+- **Панель свойств (fp-preview):** наследует `var(--text)` от панели
+- **Редактор формул:** `preview.style.color = initColor` (цвет из схемы слайда)
+
+### Порядок в `setFormulaColor`
+
+⚠️ **Важно:** `pushUndo()` вызывает `save()` который читает `el.dataset.formulaColor`. Поэтому обновление DOM и данных должно быть **до** `pushUndo()`:
+
+```js
+liveEl.dataset.formulaColor = color;  // 1. DOM dataset
+ec.style.color = color;               // 2. CSS
+d.formulaColor = color;               // 3. data object
+d.formulaColorScheme = schemeRef;     // 4. scheme ref
+pushUndo();                           // 5. ТОЛЬКО ПОТОМ undo
+```
+
+---
+
+## Графики формул (`js/37-graph.js`)
+
+### Тип элемента: `graph`
+
+| Поле | Смысл |
+|------|-------|
+| `d.linkedFormulaId` | id формулы-источника |
+| `d.graphExpr` | JS-выражение для вычисления |
+| `d.graphLatex` | Оригинальный LaTeX (для подписи) |
+| `d.graphImg` | dataURL PNG-рисунка |
+| `d.graphColor` | Цвет кривой (из `theme.colors[0]`) |
+| `d.graphBg` | Цвет фона |
+| `d.graphDark` | `true/false` — была ли тёмная тема при рендере |
+
+### Ключевые функции
+
+```js
+buildFormulaGraph(formulaEl)   // создать/обновить граф под формулой
+refreshAllGraphs(theme)        // перерисовать все графики при смене темы
+```
+
+`refreshAllGraphs` вызывается из `applyTheme` перед `renderAll()`.
+
+---
 
 **Цветовая схема:** клик по карточке — применяет без закрытия; «Применить ко всем» — применяет + закрывает.
 
@@ -330,6 +400,8 @@ pnSyncUI()    // синхронизирует UI
 7. **`pnApplyAll()`** — вызывать после любого `load()` если нумерация включена.
 8. **Code blocks** — `refreshAllCodeBlocks()` при смене схемы.
 9. **Глобальные хелперы** — `_addImageToCanvas` объявлена глобально в `21-keyboard.js`, доступна из любого модуля.
+10. **Формулы** — SVG хранится нейтральным (`currentColor`). Цвет всегда через `ec.style.color`. Обновлять dataset **до** `pushUndo()` — иначе `save()` зафиксирует старый цвет.
+11. **Графики** — вызывать `refreshAllGraphs(theme)` из `applyTheme` перед `renderAll()` при смене темы.
 
 ---
 
@@ -337,6 +409,7 @@ pnSyncUI()    // синхронизирует UI
 
 | Версия | Ключевые изменения |
 |--------|-------------------|
+| **v5.3** | Элемент «Формула» (LaTeX через MathJax 3): редактор с палитрой символов по группам, нейтральный SVG через `currentColor`, цвет из палитры схемы с адаптацией при смене темы. Элемент «График»: парсер LaTeX→JS, рендер через Canvas API, подпись вдоль кривой, автообновление при смене схемы. Превью формул и графиков в миниатюрах слайдов. |
 | **v5.2** | Drag-and-drop импорт файлов (PPTX/PPT/ODP/HTML/JSON/изображения) с оверлеем. Центрирование канваса по каждой оси независимо. Авто-перецентрирование при ресайзе окна/браузерном зуме. `_addImageToCanvas` вынесена в глобальный скоуп. |
 | **v5.1** | Нейтральная колонка палитры: тёмная row0=белый, светлая row0=чёрный. Дефолт надписей `{col:7,row:0}` через `_resolveSchemeColor`. Markdown: `mdColorScheme`, `--md-c`, палитра в панели. Dblclick открывает markdown/code редакторы. Модалка тем: применять без закрытия. «Без декора» — крестик. Градиент фона текстового блока с 8 направлениями. |
 | v5.0 | Панель анимаций в правой панели (4 колонки), кроп изображений с persist через dataset, `clickNav=off`, markdown на светлой теме через CSS-переменные |
@@ -413,3 +486,126 @@ function orbitVals(rx, ry, rotDeg, cx, cy, phase, n){
 }
 // n=48 для плавности, calcMode="linear"
 ```
+
+---
+
+## Принцип построения анимированных декор-фонов (тип Aurora)
+
+### Ключевой принцип
+
+**Анимация живёт ТОЛЬКО в SVG-декоре** — элементе типа `type:'svg'` с флагом `_isDecor:true`.  
+Фон слайда (`cvbg`, поле `s.bgc`) остаётся **статичным** CSS-градиентом — он не анимируется.  
+Движение, переливание, мерцание — всё через нативные SVG элементы `<animate>` и `<animateTransform>`.
+
+### Структура анимированного layout
+
+```js
+{
+  name: 'МоёНазвание', nameEn: 'MyName',
+  desc: '...', descEn: '...',
+  animated: true,   // ← ОБЯЗАТЕЛЬНО для включения doAnimate
+
+  _build: (w, h, a1, a2, isTitle, doAnimate) => {
+    const uid = 'pfx' + Math.random().toString(36).slice(2,7); // уникальный префикс ID
+
+    // 1. Строим статичные элементы (звёзды, фон, базовые формы)
+    // 2. Строим анимированные элементы — оборачиваем в if(doAnimate){} else{}
+    // 3. Все id фильтров/градиентов через uid во избежание коллизий
+
+    const defs = `<defs>
+      <filter id="${uid}blur" ...><feGaussianBlur stdDeviation="28"/></filter>
+    </defs>`;
+
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+      ${defs}${staticElements}${animatedElements}
+    </svg>`;
+  },
+
+  titleSvg(w, h, a1, a2, doAnimate) { return this._build(w,h,a1,a2,true,  doAnimate!==false); },
+  contentSvg(w, h, a1, a2, doAnimate){ return this._build(w,h,a1,a2,false, doAnimate!==false); },
+}
+```
+
+### Паттерн плавающего цветового блоба (Aurora-стиль)
+
+Большой размытый эллипс плавно смещает свой центр туда-обратно:
+
+```js
+// Данные блоба: позиция, смещение, цвет, период
+const blob = {cx: w*.2, cy: h*.3, rx: w*.5, ry: h*.4, fill: a1,
+               op: 0.20, dcx: w*.07, dcy: h*.1, dur: 14};
+
+// Статичная версия (doAnimate=false):
+`<ellipse cx="${blob.cx}" cy="${blob.cy}" rx="${blob.rx}" ry="${blob.ry}"
+  fill="${blob.fill}" opacity="${blob.op}" filter="url(#${uid}blur)"/>`
+
+// Анимированная версия (doAnimate=true):
+const cx0 = blob.cx.toFixed(1), cx1 = (blob.cx + blob.dcx).toFixed(1);
+const cy0 = blob.cy.toFixed(1), cy1 = (blob.cy + blob.dcy).toFixed(1);
+const op0 = blob.op.toFixed(2),  op1 = (blob.op * 0.5).toFixed(2);
+`<ellipse cx="${cx0}" cy="${cy0}" rx="${blob.rx}" ry="${blob.ry}"
+  fill="${blob.fill}" opacity="${op0}" filter="url(#${uid}blur)">
+  <animate attributeName="cx"      values="${cx0};${cx1};${cx0}"
+    dur="${blob.dur}s" begin="Xs" repeatCount="indefinite"
+    calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>
+  <animate attributeName="cy"      values="${cy0};${cy1};${cy0}"
+    dur="${blob.dur * 1.13}s" begin="Xs" repeatCount="indefinite"
+    calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>
+  <animate attributeName="opacity" values="${op0};${op1};${op0}"
+    dur="${blob.dur * 0.8}s" begin="Xs" repeatCount="indefinite"
+    calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>
+</ellipse>`
+```
+
+**Правила для блобов:**
+- `begin="Xs"` — разные у каждого блоба (например `i * 3.1`), чтобы они не двигались синхронно
+- `dur` на cx, cy, opacity — разные, чтобы движение выглядело случайным
+- `calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"` — ease-in-out, не линейное
+- Размытие через `feGaussianBlur` со `stdDeviation` ≥ 20 для мягкости
+- `opacity` не выше 0.28 на главном слайде, 0.13 на контентных — чтобы не рябило
+- Несколько цветов (`a1`, `a2`, `#67e8f9`, `#f472b6`...) на главном слайде, 2 на контентных
+
+### Паттерн пульсирующей световой дуги
+
+```js
+const arc = {
+  d: `M-10,${(h*.22).toFixed(0)} Q${(w*.3).toFixed(0)},${(h*.08).toFixed(0)} ...`,
+  sw: h*.055, op: 0.10, col: a1, dur: 12
+};
+// Анимация — только opacity:
+`<path d="${arc.d}" fill="none" stroke="${arc.col}"
+  stroke-width="${arc.sw}" stroke-linecap="round" opacity="${arc.op}"
+  filter="url(#${uid}arc)">
+  <animate attributeName="opacity"
+    values="${arc.op};${(arc.op*0.3).toFixed(3)};${arc.op}"
+    dur="${arc.dur}s" begin="${i*4.5}s" repeatCount="indefinite"
+    calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>
+</path>`
+```
+
+### Различие titleSvg и contentSvg в Aurora-стиле
+
+| Параметр | titleSvg (главный) | contentSvg (контентный) |
+|----------|--------------------|-------------------------|
+| Блобов | 5 | 3 |
+| Opacity блобов | 0.18–0.22 | 0.07–0.11 |
+| Световых дуг | 2 | 1 |
+| Звёзд | 80 | 45 |
+| Blur | stdDeviation=32 | stdDeviation=24 |
+| Цветов | 5 (a1, a2, cyan, pink, indigo) | 2 (a1, a2) |
+
+### Статичный fallback
+
+Когда `doAnimate=false` (экспорт, миниатюры, превью без анимации):
+- Все `<animate>` убираются
+- Эллипсы/дуги рисуются в начальной позиции (`cx0`, `cy0`, `op0`)
+- Визуально похоже на анимированную версию, но статично
+
+### Почему НЕ CSS @keyframes в фоне
+
+CSS-анимация на `cvbg` (`background-position`, CSS классы) не работает в системе макетов:
+- Фон задаётся строкой в `s.bgc` и применяется как `el.style.background`
+- При каждом `load()` строка перезаписывается — анимация сбрасывается
+- Экспорт, миниатюры, превью не получат анимацию
+- **Правильный путь всегда:** SVG `<animate>` в декор-слое
+
