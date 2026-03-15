@@ -277,6 +277,20 @@ function applyTheme(){
     const ec=el.querySelector('.ec');
     if(ec){ec.innerHTML=d.svgContent||'';}
   });
+  // Восстановить паузу если анимация выключена (force-update заменил SVG через innerHTML)
+  if(typeof _layoutAnimated!=='undefined' && !_layoutAnimated){
+    requestAnimationFrame(function(){ requestAnimationFrame(function(){
+      document.querySelectorAll('.decor-el svg').forEach(function(svg){
+        try{
+          if(typeof _decorPausedAt!=='undefined' && typeof _decorSvgSlideIndex==='function'){
+            const _si=_decorSvgSlideIndex(svg);
+            if(_decorPausedAt.has(_si)) svg.setCurrentTime(_decorPausedAt.get(_si));
+          }
+          svg.pauseAnimations();
+        }catch(e){}
+      });
+    }); });
+  }
   // Force-sync textBg to DOM dataset for current slide
   slides[cur].els.forEach(d=>{
     if(d.type!=='text')return;

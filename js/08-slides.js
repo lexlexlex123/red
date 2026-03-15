@@ -7,13 +7,16 @@ function addSlide(tmpl){
   const inheritBgc=curSlide?curSlide.bgc:null;
   const s={title:'Slide '+(slides.length+1),bg:inheritBg,bgc:inheritBgc,ar,trans:'',auto:0,els:[]};
   if(tmpl){const t=JSON.parse(JSON.stringify(tmpl));s.bg=t.bg;s.bgc=t.bgc;s.els=t.els;s.trans=t.trans||'';}
-  slides.push(s);
+  // Вставляем ПОСЛЕ текущего слайда, а не в конец
+  const insertAt = slides.length > 0 ? cur + 1 : 0;
+  slides.splice(insertAt, 0, s);
+  cur = insertAt;
   // Apply active layout decor to the new slide (content style, not title)
   if(typeof makeDecorEl==='function'&&typeof selLayout!=='undefined'&&selLayout>=0){
-    const d=makeDecorEl(slides.length-1);
+    const d=makeDecorEl(cur);
     if(d)s.els.unshift(d);
   }
-  cur=slides.length-1;renderAll();saveState();
+  renderAll();saveState();
 }
 function dupSlide(){if(slides.length)addSlide(slides[cur]);}
 function delSlide(){

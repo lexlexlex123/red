@@ -2,6 +2,8 @@
 function mkDrag(el,c){
   let ox,oy,ol,ot,on=false,groupStart=null;
   el.addEventListener('mousedown',e=>{
+    // В режиме соединения объектов — не выбираем элемент, клик обработает 38-connectors.js
+    if (typeof window._connectorModeActive === 'function' && window._connectorModeActive()) return;
     const cn=e.target.className||'';
     // Exit text editing when clicking any element (different or same, outside the .tel)
     const clickedInsideTel = e.target && e.target.closest && e.target.closest('.tel');
@@ -110,7 +112,7 @@ function mkResize(el,rh,cfg){
       if(cfg.ax)el.style.left=(sl+sw-nw)+'px';if(cfg.ay)el.style.top=(st+sh-nh)+'px';
       const d=slides[cur]&&slides[cur].els.find(x=>x.id===el.dataset.id);
       if(d&&el.dataset.type==='shape')renderShapeEl(el,d);
-      if(d&&el.dataset.type==='table'){d.w=nw;d.h=nh;if(typeof renderTableEl==='function')renderTableEl(el,d);}
+      if(d&&el.dataset.type==='table'){d.w=nw;d.h=nh;if(typeof renderTableEl==='function'){if(d.showChart){const sv=el.querySelector('.ec svg');if(sv){sv.setAttribute('width',nw);sv.setAttribute('height',nh);sv.setAttribute('viewBox','0 0 '+nw+' '+nh);}}else{renderTableEl(el,d);}}}
       // For image side-handle drag: show stretch in real time
       if(el.dataset.type==='image'&&(cfg.dx===0||cfg.dy===0)){
         const img=el.querySelector('img');if(img)img.style.objectFit='fill';
@@ -133,6 +135,8 @@ function mkResize(el,rh,cfg){
       if(el.dataset.type==='text'&&el.dataset.valign&&typeof applyTextVAlign==='function'){
         applyTextVAlign(el,el.dataset.valign);
       }
+      // Full re-render chart/table after resize (chart viewBox was only adjusted during drag)
+      if(el.dataset.type==='table'&&typeof renderTableEl==='function'){const dmu=slides[cur]&&slides[cur].els.find(x=>x.id===el.dataset.id);if(dmu)renderTableEl(el,dmu);}
       commitAll();
     };
     document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);

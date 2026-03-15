@@ -194,6 +194,12 @@
               const ny = oy + sty + Math.round((ev.clientY-sy)/scale);
               ghost.style.left = handle.style.left = nx+'px';
               ghost.style.top  = handle.style.top  = ny+'px';
+              // Обновляем коннекторы чтобы следовали за ghost
+              if(typeof updateConnectorsFor==='function'){
+                const _curTx = stx + Math.round((ev.clientX-sx)/scale);
+                const _curTy = sty + Math.round((ev.clientY-sy)/scale);
+                updateConnectorsFor(d.id, _curTx, _curTy);
+              }
             };
             const onUp = ev=>{
               document.removeEventListener('mousemove',onMove);

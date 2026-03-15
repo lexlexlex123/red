@@ -50,7 +50,7 @@ function addTable(rows, cols) {
 }
 
 
-const _TBL_FIELDS=['cells','colWidths','rowHeights','rows','cols','borderW','borderColor','headerRow','rx','fs','textColor','headerBg','cellBg','altBg','tableBgOp','tableBgBlur'];
+const _TBL_FIELDS=['cells','colWidths','rowHeights','rows','cols','borderW','borderColor','headerRow','rx','fs','textColor','headerBg','cellBg','altBg','tableBgOp','tableBgBlur','showChart','chartType','chartLegend','chartLabels'];
 function _tblSaveToDataset(el, d){
   const data={};
   _TBL_FIELDS.forEach(k=>{ if(d[k]!==undefined) data[k]=d[k]; });
@@ -142,6 +142,15 @@ function renderTableEl(el, d) {
   const _blurLayer=_tblBlur>0
     ?`<div style="position:absolute;inset:0;border-radius:${rx}px;backdrop-filter:blur(${_tblBlur}px);-webkit-backdrop-filter:blur(${_tblBlur}px);z-index:0;pointer-events:none;"></div>`
     :'';
+
+  // ── Chart mode ──
+  if(d.showChart){
+    const chartSvg = typeof _buildChartSvg==='function' ? _buildChartSvg(d) : '';
+    ecEl.innerHTML=`<div style="position:relative;width:${W}px;height:${H}px;">${chartSvg}</div>`;
+    _tblSaveToDataset(el, d);
+    return;
+  }
+
   ecEl.innerHTML=`<div style="position:relative;width:${W}px;height:${H}px;">${_blurLayer}<div class="tbl-wrap" style="position:relative;width:${W}px;height:${H}px;border-radius:${rx}px;overflow:hidden;z-index:1;">${t}</div></div>`;
 
   // Persist full table data on DOM element so save() can always recover it
@@ -324,6 +333,7 @@ function _tblDragBorder(el, d, ecEl){
         el.style.left=nx+'px'; el.style.top=ny+'px';
         if(typeof showGuides==='function') showGuides(el);
         if(typeof syncPos==='function') syncPos();
+        if(typeof _updateHandlesOverlay==='function') _updateHandlesOverlay();
       };
       const mu=()=>{
         document.removeEventListener('mousemove',mm);
@@ -609,6 +619,33 @@ function syncTableProps(){
   sw('tbl-cbg-swatch',d.cellBg||'#1e293b');     sv('tbl-cbg-hex',d.cellBg||'#1e293b');
   sc('tbl-hrow',d.headerRow!==false); sc('tbl-alt',!!d.altBg);
 
+  // ── Chart props sync ──
+  try{
+    const chkEl=document.getElementById('tbl-chart-on');
+    if(chkEl) chkEl.checked=!!d.showChart;
+    // Подсвечиваем активный лейбл в шапке
+    const _lblT=document.getElementById('tbl-mode-lbl-table');
+    const _lblC=document.getElementById('tbl-mode-lbl-chart');
+    if(_lblT) _lblT.style.color=d.showChart?'var(--text3)':'var(--text)';
+    if(_lblC) _lblC.style.color=d.showChart?'var(--text)':'var(--text3)';
+    const chartPanel=document.getElementById('tbl-chart-panel');
+    if(chartPanel) chartPanel.style.display=d.showChart?'flex':'none';
+    const tableSettings=document.getElementById('tbl-table-settings');
+    if(tableSettings) tableSettings.style.display=d.showChart?'none':'';
+    const ctSel=document.getElementById('tbl-chart-type');
+    if(ctSel) ctSel.value=d.chartType||'bar';
+    // Highlight active chart type button
+    const _ct=d.chartType||'bar';
+    ['bar','hbar','line','pie','donut'].forEach(function(t){
+      const b=document.getElementById('ct-'+t);
+      if(b) b.classList.toggle('active', t===_ct||(_ct==='horizontalBar'&&t==='hbar'));
+    });
+    const clSel=document.getElementById('tbl-chart-legend');
+    if(clSel) clSel.value=d.chartLegend||'row';
+    const clbSel=document.getElementById('tbl-chart-labels');
+    if(clbSel) clbSel.value=d.chartLabels||'none';
+  }catch(e){}
+
   const hasSel=_tblSel&&_tblSel.elId===d.id&&_tblSelSet.size>0;
   const cp=document.getElementById('tbl-cell-panel');
   if(cp)cp.style.display=hasSel?'flex':'none';
@@ -740,3 +777,353 @@ function _tblAttachResizeObs(el, d){
   ro.observe(el);
   el._tblRO=ro;
 }
+
+// ══════════════════════════════════════════════════════════════════
+// CHART RENDERING  (bar | pie | line | donut | horizontalBar)
+// ══════════════════════════════════════════════════════════════════
+
+// Palette for series / slices — uses theme accent colours + fallbacks
+function _chartPalette(n, ac1, ac2) {
+  const base = [
+    ac1  || '#6366f1',
+    ac2  || '#818cf8',
+    '#22d3ee','#f59e0b','#10b981','#f43f5e',
+    '#a78bfa','#fb923c','#34d399','#60a5fa',
+    '#e879f9','#fbbf24','#4ade80','#38bdf8',
+  ];
+  const out = [];
+  for (let i = 0; i < n; i++) out.push(base[i % base.length]);
+  return out;
+}
+
+// Parse plain-text cell content to a number (strip HTML tags)
+function _cellNum(html) {
+  const t = (html || '').replace(/<[^>]*>/g, '').replace(/\s/g, '').replace(',', '.');
+  const n = parseFloat(t);
+  return isNaN(n) ? null : n;
+}
+
+// Extract chart data from table data object d
+// Returns { series:[{label,values:[]}], categories:[], hasHeader }
+function _chartExtract(d) {
+  const legendOnRow = (d.chartLegend || 'row') === 'row'; // first ROW = series labels
+  const rows = d.rows, cols = d.cols;
+  const cells = d.cells;
+  const get = (r, c) => cells[r * cols + c] ? (cells[r * cols + c].html || '') : '';
+  const getNum = (r, c) => _cellNum(get(r, c));
+
+  if (legendOnRow) {
+    // First row = series labels, first col = category labels (optional)
+    const hasHeader = d.headerRow !== false;
+    const dataStartR = hasHeader ? 1 : 0;
+    const dataStartC = 1; // first col = categories
+    const categories = [];
+    for (let r = dataStartR; r < rows; r++) categories.push(get(r, 0).replace(/<[^>]*>/g, '') || ('R' + r));
+    const series = [];
+    for (let c = dataStartC; c < cols; c++) {
+      const label = hasHeader ? get(0, c).replace(/<[^>]*>/g, '') : ('S' + c);
+      const values = [];
+      for (let r = dataStartR; r < rows; r++) values.push(getNum(r, c));
+      series.push({ label, values });
+    }
+    return { series, categories, legendOnRow };
+  } else {
+    // First col = series labels, first row = category labels (optional)
+    const hasHeader = d.headerRow !== false;
+    const dataStartC = hasHeader ? 1 : 0;
+    const dataStartR = 1; // first row = categories
+    const categories = [];
+    for (let c = dataStartC; c < cols; c++) categories.push(get(0, c).replace(/<[^>]*>/g, '') || ('C' + c));
+    const series = [];
+    for (let r = dataStartR; r < rows; r++) {
+      const label = get(r, 0).replace(/<[^>]*>/g, '') || ('S' + r);
+      const values = [];
+      for (let c = dataStartC; c < cols; c++) values.push(getNum(r, c));
+      series.push({ label, values });
+    }
+    return { series, categories, legendOnRow };
+  }
+}
+
+// Format label string based on chartLabels setting
+function _fmtLabel(val, total, mode) {
+  if (!mode || mode === 'none' || val === null) return '';
+  const num = (typeof val === 'number') ? val : 0;
+  const pct = total > 0 ? ((num / total) * 100).toFixed(1) + '%' : '';
+  const numStr = Number.isInteger(num) ? String(num) : num.toFixed(2).replace(/\.?0+$/, '');
+  if (mode === 'value')   return numStr;
+  if (mode === 'percent') return pct;
+  if (mode === 'both')    return `${numStr} (${pct})`;
+  return '';
+}
+
+// Build SVG string for chart
+function _buildChartSvg(d) {
+  const W = d.w || 600, H = d.h || 400;
+  const type = d.chartType || 'bar';
+  const labelMode = d.chartLabels || 'none';
+  const { series, categories } = _chartExtract(d);
+  if (!series.length) return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><text x="${W/2}" y="${H/2}" text-anchor="middle" fill="#888" font-size="14">Нет данных</text></svg>`;
+
+  const th = getThemeAccents ? getThemeAccents() : {};
+  const palette = _chartPalette(series.length, th.ac1, th.ac2);
+  const textCol = d.textColor || '#ffffff';
+  const fs = Math.max(9, Math.min(14, (d.fs || 13) * 0.85));
+
+  // Legend
+  const legendH = 22;
+  const legendY = H - legendH;
+  let legendSvg = '';
+  const itemW = Math.min(120, (W - 20) / series.length);
+  series.forEach((s, i) => {
+    const lx = 10 + i * itemW;
+    legendSvg += `<rect x="${lx}" y="${legendY + 4}" width="12" height="12" rx="3" fill="${palette[i]}"/>`;
+    legendSvg += `<text x="${lx + 16}" y="${legendY + 14}" font-size="${fs}" fill="${textCol}" font-family="sans-serif" dominant-baseline="middle">${_escHTML(s.label)}</text>`;
+  });
+
+  const plotH = legendY - 30; // space above legend
+  const plotY = 10;
+  const plotX = 40;
+  const plotW = W - plotX - 10;
+
+  if (type === 'pie' || type === 'donut') {
+    return _buildPieChart(d, W, H, series, palette, textCol, fs, labelMode, type === 'donut');
+  }
+  if (type === 'line') {
+    return _buildLineChart(d, W, H, series, categories, palette, textCol, fs, labelMode, plotX, plotY, plotW, plotH, legendSvg);
+  }
+  if (type === 'horizontalBar') {
+    return _buildHBarChart(d, W, H, series, categories, palette, textCol, fs, labelMode, plotX, plotY, plotW, plotH, legendSvg);
+  }
+  // default: bar
+  return _buildBarChart(d, W, H, series, categories, palette, textCol, fs, labelMode, plotX, plotY, plotW, plotH, legendSvg);
+}
+
+function _buildBarChart(d, W, H, series, categories, palette, textCol, fs, labelMode, plotX, plotY, plotW, plotH, legendSvg) {
+  const catCount = categories.length || 1;
+  const serCount = series.length;
+  const groupW = plotW / catCount;
+  const barW = Math.max(4, groupW / (serCount + 1));
+  const gap = (groupW - barW * serCount) / 2;
+
+  // Find max value for scale
+  let maxVal = 0;
+  series.forEach(s => s.values.forEach(v => { if (v !== null && v > maxVal) maxVal = v; }));
+  if (maxVal === 0) maxVal = 1;
+
+  // Y gridlines
+  const gridLines = 5;
+  let gridSvg = '';
+  for (let i = 0; i <= gridLines; i++) {
+    const gy = plotY + plotH - (i / gridLines) * plotH;
+    const val = (maxVal * i / gridLines);
+    const valStr = Number.isInteger(val) ? val : val.toFixed(1);
+    gridSvg += `<line x1="${plotX}" y1="${gy}" x2="${plotX + plotW}" y2="${gy}" stroke="${textCol}22" stroke-width="1"/>`;
+    gridSvg += `<text x="${plotX - 4}" y="${gy}" text-anchor="end" dominant-baseline="middle" font-size="${fs - 1}" fill="${textCol}88" font-family="sans-serif">${valStr}</text>`;
+  }
+
+  // Bars + labels
+  let barsSvg = '';
+  const totalPerCat = categories.map((_, ci) => series.reduce((s, sr) => s + (sr.values[ci] || 0), 0));
+  series.forEach((s, si) => {
+    categories.forEach((cat, ci) => {
+      const val = s.values[ci];
+      if (val === null) return;
+      const bh = Math.max(2, (val / maxVal) * plotH);
+      const bx = plotX + ci * groupW + gap + si * barW;
+      const by = plotY + plotH - bh;
+      barsSvg += `<rect x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${barW.toFixed(1)}" height="${bh.toFixed(1)}" rx="2" fill="${palette[si]}"/>`;
+      const lbl = _fmtLabel(val, totalPerCat[ci], labelMode);
+      if (lbl) {
+        const inside = bh > fs * 1.8;
+        barsSvg += `<text x="${(bx + barW/2).toFixed(1)}" y="${inside ? (by + bh/2).toFixed(1) : (by - 4).toFixed(1)}" text-anchor="middle" dominant-baseline="${inside ? 'middle' : 'auto'}" font-size="${fs - 1}" fill="${inside ? '#fff' : textCol}" font-family="sans-serif">${_escHTML(lbl)}</text>`;
+      }
+    });
+  });
+
+  // Category labels
+  let catSvg = '';
+  categories.forEach((cat, ci) => {
+    const cx = plotX + ci * groupW + groupW / 2;
+    catSvg += `<text x="${cx.toFixed(1)}" y="${(plotY + plotH + 14).toFixed(1)}" text-anchor="middle" font-size="${fs}" fill="${textCol}cc" font-family="sans-serif">${_escHTML(cat)}</text>`;
+  });
+
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${gridSvg}${barsSvg}${catSvg}${legendSvg}</svg>`;
+}
+
+function _buildHBarChart(d, W, H, series, categories, palette, textCol, fs, labelMode, plotX, plotY, plotW, plotH, legendSvg) {
+  const catCount = categories.length || 1;
+  const serCount = series.length;
+  const groupH = plotH / catCount;
+  const barH = Math.max(4, groupH / (serCount + 1));
+  const gap = (groupH - barH * serCount) / 2;
+
+  let maxVal = 0;
+  series.forEach(s => s.values.forEach(v => { if (v !== null && v > maxVal) maxVal = v; }));
+  if (maxVal === 0) maxVal = 1;
+
+  const labelColW = 60;
+  const bplotX = plotX + labelColW;
+  const bplotW = plotW - labelColW;
+
+  let gridSvg = '';
+  for (let i = 0; i <= 4; i++) {
+    const gx = bplotX + (i / 4) * bplotW;
+    const val = (maxVal * i / 4);
+    const valStr = Number.isInteger(val) ? val : val.toFixed(1);
+    gridSvg += `<line x1="${gx}" y1="${plotY}" x2="${gx}" y2="${plotY + plotH}" stroke="${textCol}22" stroke-width="1"/>`;
+    gridSvg += `<text x="${gx}" y="${plotY + plotH + 14}" text-anchor="middle" font-size="${fs - 1}" fill="${textCol}88" font-family="sans-serif">${valStr}</text>`;
+  }
+
+  const totalPerCat = categories.map((_, ci) => series.reduce((s, sr) => s + (sr.values[ci] || 0), 0));
+  let barsSvg = '';
+  series.forEach((s, si) => {
+    categories.forEach((cat, ci) => {
+      const val = s.values[ci];
+      if (val === null) return;
+      const bw = Math.max(2, (val / maxVal) * bplotW);
+      const bx = bplotX;
+      const by = plotY + ci * groupH + gap + si * barH;
+      barsSvg += `<rect x="${bx}" y="${by.toFixed(1)}" width="${bw.toFixed(1)}" height="${barH.toFixed(1)}" rx="2" fill="${palette[si]}"/>`;
+      const lbl = _fmtLabel(val, totalPerCat[ci], labelMode);
+      if (lbl) {
+        const inside = bw > 40;
+        barsSvg += `<text x="${inside ? (bx + bw - 4).toFixed(1) : (bx + bw + 4).toFixed(1)}" y="${(by + barH/2).toFixed(1)}" text-anchor="${inside ? 'end' : 'start'}" dominant-baseline="middle" font-size="${fs - 1}" fill="${inside ? '#fff' : textCol}" font-family="sans-serif">${_escHTML(lbl)}</text>`;
+      }
+    });
+  });
+
+  let catSvg = '';
+  categories.forEach((cat, ci) => {
+    const cy = plotY + ci * groupH + groupH / 2;
+    catSvg += `<text x="${plotX + labelColW - 6}" y="${cy.toFixed(1)}" text-anchor="end" dominant-baseline="middle" font-size="${fs}" fill="${textCol}cc" font-family="sans-serif">${_escHTML(cat)}</text>`;
+  });
+
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${gridSvg}${barsSvg}${catSvg}${legendSvg}</svg>`;
+}
+
+function _buildLineChart(d, W, H, series, categories, palette, textCol, fs, labelMode, plotX, plotY, plotW, plotH, legendSvg) {
+  const catCount = Math.max(categories.length, 2);
+
+  let maxVal = 0, minVal = 0;
+  series.forEach(s => s.values.forEach(v => { if (v !== null) { if (v > maxVal) maxVal = v; if (v < minVal) minVal = v; } }));
+  if (maxVal === minVal) maxVal = minVal + 1;
+
+  const toX = i => plotX + (i / (catCount - 1)) * plotW;
+  const toY = v => plotY + plotH - ((v - minVal) / (maxVal - minVal)) * plotH;
+
+  let gridSvg = '';
+  for (let i = 0; i <= 5; i++) {
+    const gy = plotY + plotH - (i / 5) * plotH;
+    const val = minVal + (maxVal - minVal) * i / 5;
+    const valStr = Number.isInteger(val) ? val : val.toFixed(1);
+    gridSvg += `<line x1="${plotX}" y1="${gy.toFixed(1)}" x2="${plotX + plotW}" y2="${gy.toFixed(1)}" stroke="${textCol}22" stroke-width="1"/>`;
+    gridSvg += `<text x="${plotX - 4}" y="${gy.toFixed(1)}" text-anchor="end" dominant-baseline="middle" font-size="${fs - 1}" fill="${textCol}88" font-family="sans-serif">${valStr}</text>`;
+  }
+
+  const totalPerCat = categories.map((_, ci) => series.reduce((s, sr) => s + (sr.values[ci] || 0), 0));
+  let linesSvg = '';
+  series.forEach((s, si) => {
+    const pts = s.values.map((v, i) => v !== null ? `${toX(i).toFixed(1)},${toY(v).toFixed(1)}` : null).filter(Boolean);
+    if (pts.length < 2) return;
+    linesSvg += `<polyline points="${pts.join(' ')}" fill="none" stroke="${palette[si]}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+    s.values.forEach((v, i) => {
+      if (v === null) return;
+      const cx = toX(i), cy = toY(v);
+      linesSvg += `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4" fill="${palette[si]}" stroke="${textCol}44" stroke-width="1"/>`;
+      const lbl = _fmtLabel(v, totalPerCat[i], labelMode);
+      if (lbl) linesSvg += `<text x="${cx.toFixed(1)}" y="${(cy - 8).toFixed(1)}" text-anchor="middle" font-size="${fs - 1}" fill="${textCol}" font-family="sans-serif">${_escHTML(lbl)}</text>`;
+    });
+  });
+
+  let catSvg = '';
+  categories.forEach((cat, i) => {
+    catSvg += `<text x="${toX(i).toFixed(1)}" y="${(plotY + plotH + 14).toFixed(1)}" text-anchor="middle" font-size="${fs}" fill="${textCol}cc" font-family="sans-serif">${_escHTML(cat)}</text>`;
+  });
+
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${gridSvg}${linesSvg}${catSvg}${legendSvg}</svg>`;
+}
+
+function _buildPieChart(d, W, H, series, palette, textCol, fs, labelMode, isDonut) {
+  // For pie/donut: single series = slice per category; multiple series = first series only
+  // Use first series, its values = slices; categories = series labels
+  const { categories } = _chartExtract(d);
+  // Flatten: if multiple series use all series summed per category, or first series
+  const sliceData = series[0] ? series[0].values.map((v, i) => ({
+    val: v || 0,
+    label: categories[i] || series[0].label,
+    color: palette[i % palette.length]
+  })) : [];
+
+  const total = sliceData.reduce((s, sl) => s + sl.val, 0);
+  if (total === 0) return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><text x="${W/2}" y="${H/2}" text-anchor="middle" fill="#888" font-size="14">Нет данных</text></svg>`;
+
+  const legendH = 22;
+  const cx = W / 2, cy = (H - legendH) / 2;
+  const R = Math.min(cx - 10, cy - 10);
+  const r = isDonut ? R * 0.52 : 0;
+
+  const deg = v => (v / total) * Math.PI * 2;
+  const px = (angle, radius) => cx + radius * Math.cos(angle - Math.PI / 2);
+  const py = (angle, radius) => cy + radius * Math.sin(angle - Math.PI / 2);
+  const arc = (r1, r2, a1, a2) => {
+    const large = (a2 - a1) > Math.PI ? 1 : 0;
+    if (isDonut) {
+      return `M ${px(a1,r2).toFixed(2)} ${py(a1,r2).toFixed(2)} A ${r2} ${r2} 0 ${large} 1 ${px(a2,r2).toFixed(2)} ${py(a2,r2).toFixed(2)} L ${px(a2,r1).toFixed(2)} ${py(a2,r1).toFixed(2)} A ${r1} ${r1} 0 ${large} 0 ${px(a1,r1).toFixed(2)} ${py(a1,r1).toFixed(2)} Z`;
+    }
+    return `M ${cx} ${cy} L ${px(a1,r2).toFixed(2)} ${py(a1,r2).toFixed(2)} A ${r2} ${r2} 0 ${large} 1 ${px(a2,r2).toFixed(2)} ${py(a2,r2).toFixed(2)} Z`;
+  };
+
+  let slicesSvg = '', labelsSvg = '', legendSvg = '';
+  let angle = 0;
+  const itemW = Math.min(110, (W - 20) / Math.max(sliceData.length, 1));
+  sliceData.forEach((sl, i) => {
+    if (sl.val <= 0) { angle += deg(sl.val); return; }
+    const a1 = angle, a2 = angle + deg(sl.val);
+    slicesSvg += `<path d="${arc(r, R, a1, a2)}" fill="${sl.color}" stroke="${textCol}22" stroke-width="1"/>`;
+    const mid = (a1 + a2) / 2;
+    const lr = isDonut ? (r + R) / 2 : R * 0.65;
+    const lbl = _fmtLabel(sl.val, total, labelMode);
+    if (lbl) labelsSvg += `<text x="${px(mid,lr).toFixed(1)}" y="${py(mid,lr).toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="${fs - 1}" fill="#fff" font-family="sans-serif" font-weight="600">${_escHTML(lbl)}</text>`;
+    const lx = 10 + i * itemW;
+    const legendY = H - legendH;
+    legendSvg += `<rect x="${lx}" y="${legendY + 4}" width="12" height="12" rx="3" fill="${sl.color}"/>`;
+    legendSvg += `<text x="${lx + 16}" y="${legendY + 14}" font-size="${fs}" fill="${textCol}" font-family="sans-serif" dominant-baseline="middle">${_escHTML(sl.label)}</text>`;
+    angle = a2;
+  });
+
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${slicesSvg}${labelsSvg}${legendSvg}</svg>`;
+}
+
+// Toggle between table and chart view
+window.tblToggleChart = function(on) {
+  if(!sel) return;
+  const d = tblData(); if(!d) return;
+  d.showChart = !!on;
+  const el = document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
+  if(el) renderTableEl(el, d);
+  // Немедленно показываем/скрываем панель диаграммы без ожидания syncTableProps
+  const _cp = document.getElementById('tbl-chart-panel');
+  if(_cp) _cp.style.display = on ? 'flex' : 'none';
+  const _lblT=document.getElementById('tbl-mode-lbl-table');
+  const _lblC=document.getElementById('tbl-mode-lbl-chart');
+  if(_lblT) _lblT.style.color=on?'var(--text3)':'var(--text)';
+  if(_lblC) _lblC.style.color=on?'var(--text)':'var(--text3)';
+  // Скрываем/показываем стандартные настройки таблицы
+  const _tp = document.getElementById('tbl-table-settings');
+  if(_tp) _tp.style.display = on ? 'none' : '';
+  save(); drawThumbs(); saveState();
+  syncTableProps();
+};
+
+window.tblSetChart = function(prop, val) {
+  if(!sel) return;
+  const d = tblData(); if(!d) return;
+  d[prop] = val;
+  if(d.showChart) {
+    const el = document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
+    if(el) renderTableEl(el, d);
+    save(); drawThumbs(); saveState();
+  }
+  syncTableProps();
+};

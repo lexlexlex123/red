@@ -88,6 +88,9 @@ function boot(){
     _applyThemeByIdx(0);
   }
   renderAll();
+  // Sync animation toggle UI state after restore
+  if(typeof _syncAnimToggleBtns==='function') _syncAnimToggleBtns();
+  if(typeof _updateAnimToggleVisibility==='function') _updateAnimToggleVisibility();
   // Restore page numbering UI after everything is rendered
   if(typeof pnSyncUI==='function') pnSyncUI();
   if(typeof pnApplyAll==='function') pnApplyAll();

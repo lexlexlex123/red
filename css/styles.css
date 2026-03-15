@@ -275,6 +275,8 @@ input[type=color]{caret-color:transparent;}
 .anim-cat-title.entrance{color:#22c55e;}
 .anim-cat-title.emphasis{color:#f59e0b;}
 .anim-cat-title.exit{color:#ec4899;}
+.anim-cat-title.live{color:#a78bfa;}
+.anim-cat-title.motion{color:#38bdf8;}
 .anim-cat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;}
 #anim-add-btn{margin:6px;padding:6px 8px;background:var(--accent);border:none;color:#fff;border-radius:5px;cursor:pointer;font-size:10px;font-family:inherit;font-weight:600;transition:.12s;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 #anim-add-btn:hover:not(:disabled){background:var(--accent-h);}
@@ -358,7 +360,7 @@ input[type=color]{caret-color:transparent;}
 .applet-card .ac-name{font-size:10px;font-weight:600;color:var(--text);}
 .applet-card .ac-desc{font-size:9px;color:var(--text2);}
 /* MODALS */
-.modal-ov{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:500;display:none;align-items:center;justify-content:center;backdrop-filter:blur(6px);}
+.modal-ov{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:500;display:none;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;backdrop-filter:blur(6px);}
 .modal-ov.open{display:flex;}
 .modal{background:var(--surface);border:1px solid var(--border2);border-radius:12px;padding:22px;min-width:360px;max-width:540px;width:90%;box-shadow:0 24px 80px rgba(0,0,0,.7);}
 .modal h3{font-size:14px;font-weight:600;margin-bottom:14px;color:var(--text);}
@@ -432,6 +434,19 @@ input[type=color]:focus{outline:none;box-shadow:none;}
 @keyframes el-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
 @keyframes el-shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}}
 @keyframes el-flash{0%,50%,100%{opacity:1}25%,75%{opacity:0}}
+/* ── Live / "Живая" анимация — танец ── */
+@keyframes el-dance{
+  0%   { transform: scaleX(1)    scaleY(1)    rotate(0deg);   }
+  12%  { transform: scaleX(1.12) scaleY(0.82) rotate(-2deg);  }
+  28%  { transform: scaleX(0.9)  scaleY(1.1)  rotate( 1.5deg);}
+  44%  { transform: scaleX(1.1)  scaleY(0.85) rotate(-1.5deg);}
+  60%  { transform: scaleX(0.92) scaleY(1.08) rotate( 2deg);  }
+  76%  { transform: scaleX(1.06) scaleY(0.9)  rotate(-1deg);  }
+  90%  { transform: scaleX(0.97) scaleY(1.03) rotate( 0.5deg);}
+  100% { transform: scaleX(1)    scaleY(1)    rotate(0deg);   }
+}
+
+
 
 /* ── TABLE ELEMENT ── */
 .tbl-ec{overflow:visible!important;}

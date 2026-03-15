@@ -28,16 +28,14 @@ function syncProps(){
     if(multiSel.size > 1 || (typeof _justClearedMulti!=='undefined' && _justClearedMulti)){
       ns.style.display='none';
       if(sp)sp.style.display='none';
-      if(spn)spn.style.display='none';
       return;
     }
     ns.style.display='block';
     if(sp)sp.style.display='block';
-    if(spn)spn.style.display='block';
+    if(typeof _syncSlidePropsAnimRow==='function')_syncSlidePropsAnimRow();
     return;
   }
   if(sp)sp.style.display='none';
-  if(spn)spn.style.display='none';
   ep.style.display='flex';ep.style.flexDirection='column';ns.style.display='none';
   if(hp)hp.style.display='flex';if(hp)hp.style.flexDirection='column';
   syncPos();

@@ -324,15 +324,30 @@ function buildPSlide(container,idx,transOffset){
       if(eff === 'auto' || eff === 'withPrev') {
         const relDelay = a.delay||0;
         let absDelay;
+        const _isLive = typeof ANIM_INFO!=='undefined'&&ANIM_INFO[a.name]&&ANIM_INFO[a.name].cat==='live';
         if(gPrevStart===0 && gPrevDur===0){
+          absDelay = relDelay;
+        } else if(_isLive && a.name!=='typewriter'){
+          // live (dance и др.) стартует немедленно — только явная задержка пользователя
           absDelay = relDelay;
         } else if((a.trigger||'auto')==='withPrev'){
           absDelay = gPrevStart + relDelay;
         } else {
           absDelay = gPrevStart + gPrevDur + relDelay;
         }
-        gPrevStart = absDelay;
-        gPrevDur = a.duration||600;
+        // live не сдвигает цепочку — gPrevStart/gPrevDur остаются от non-live анимации
+        // Исключение: typewriter — считаем его реальную длительность
+        if(a.name==='typewriter'){
+          const _fromLen = (a.fromHtml||'').replace(/<[^>]*>/g,'').length;
+          const _toLen   = (a.toHtml  ||'').replace(/<[^>]*>/g,'').length;
+          const _cd = a.charDelay||40;
+          const _twDur = (_fromLen + _toLen) * _cd;
+          gPrevStart = absDelay;
+          gPrevDur   = _twDur;
+        } else if(!_isLive){
+          gPrevStart = absDelay;
+          gPrevDur = a.duration||600;
+        }
         const arr = globalAutoMap.get(d.id) || [];
         arr.push({anim:a, absDelay});
         globalAutoMap.set(d.id, arr);
@@ -430,7 +445,26 @@ function buildPSlide(container,idx,transOffset){
       el.style.overflow='visible';
       const _svgStr2=d.svgContent||'';
       try{const _dp2=new DOMParser();const _doc2=_dp2.parseFromString(_svgStr2,'image/svg+xml');const _p2=_doc2.documentElement;if(_p2&&_p2.tagName!=='parsererror'){el.appendChild(document.adoptNode(_p2));}else{el.innerHTML=_svgStr2;}}catch(e){el.innerHTML=_svgStr2;}
-      const svgEl=el.querySelector('svg');if(svgEl){svgEl.style.width='100%';svgEl.style.height='100%';}
+      const svgEl=el.querySelector('svg');if(svgEl){svgEl.style.width='100%';svgEl.style.height='100%';
+        // Синхронизируем состояние анимации с редактором
+        if(d._isDecor){
+          requestAnimationFrame(function(){
+            try{
+              // Берём сохранённый кадр из _decorPausedAt (точное время паузы)
+              const _pvSi = typeof _decorSvgSlideIndex==='function'
+                ? (() => { const _pvIdx = slides ? slides.indexOf(slides[pidx]) : -1; return _pvIdx; })()
+                : pidx;
+              const _pvT = (typeof _decorPausedAt!=='undefined' && _decorPausedAt.has(_pvSi))
+                ? _decorPausedAt.get(_pvSi)
+                : null;
+              if(_pvT !== null) svgEl.setCurrentTime(_pvT);
+              if(typeof _layoutAnimated!=='undefined' && !_layoutAnimated){
+                svgEl.pauseAnimations();
+              }
+            }catch(e){}
+          });
+        }
+      }
     }else if(d.type==='icon'){
       el.style.overflow='visible';el.style.display='flex';el.style.alignItems='center';el.style.justifyContent='center';
       const _pvSvg=d.iconFitted&&d.svgContent
@@ -491,6 +525,15 @@ function buildPSlide(container,idx,transOffset){
       c.innerHTML=`<div style="font-size:9px;color:${T.cmt};margin-bottom:8px;text-transform:uppercase;letter-spacing:.8px">${d.codeLang||''}</div><pre style="margin:0;white-space:pre;overflow:visible">${d.codeHtml||''}</pre>`;
       el.appendChild(c);
     }else if(d.type==='table'){
+      // ── Chart mode in preview ──
+      if(d.showChart && typeof _buildChartSvg==='function'){
+        const _chartDiv=document.createElement('div');
+        _chartDiv.style.cssText='width:100%;height:100%;overflow:visible;position:relative;';
+        _chartDiv.innerHTML=_buildChartSvg(d);
+        const _chartSvg=_chartDiv.querySelector('svg');
+        if(_chartSvg){_chartSvg.style.width='100%';_chartSvg.style.height='100%';}
+        el.appendChild(_chartDiv);
+      } else {
       const v=document.createElement('div');v.style.cssText='width:100%;height:100%;overflow:visible;position:relative;';
       const bw2=d.borderW||1,bc2=d.borderColor||'#3b82f680',rx2=d.rx||0,fs2=d.fs||15;
       const _pvOp=d.tableBgOp!=null?+d.tableBgOp:1;
@@ -526,6 +569,7 @@ function buildPSlide(container,idx,transOffset){
       const _pvBlurLayer=_pvBlur>0?'<div style="position:absolute;inset:0;border-radius:'+rx2+'px;backdrop-filter:blur('+_pvBlur+'px);-webkit-backdrop-filter:blur('+_pvBlur+'px);z-index:0;pointer-events:none;"></div>':'';
       v.innerHTML=_pvBlurLayer+'<div style="position:relative;width:100%;height:100%;border-radius:'+rx2+'px;overflow:hidden;z-index:1;">'+t2+'</div>';
       el.appendChild(v);
+      } // end else (table mode)
     }else if(d.type==='markdown'){
       const c=document.createElement('div');
       c.style.cssText=`width:100%;height:100%;overflow:auto;padding:14px 16px;box-sizing:border-box;line-height:1.65;font-size:${d.mdFs||16}px;color:${d.mdColor||'#ffffff'};`;
@@ -551,7 +595,9 @@ function buildPSlide(container,idx,transOffset){
     // Auto anims — from global map (already classified)
     const autoTimed = globalAutoMap.get(d.id) || [];
     if(autoTimed.length>0){
-      const cssAnims    = autoTimed.filter(({anim:a})=>a.name!=='moveTo'&&a.name!=='orbitTo'&&a.name!=='rotate');
+      const cssAnims    = autoTimed.filter(({anim:a})=>a.name!=='moveTo'&&a.name!=='orbitTo'&&a.name!=='rotate'&&a.name!=='typewriter'&&(typeof ANIM_INFO==='undefined'||!ANIM_INFO[a.name]||ANIM_INFO[a.name].cat!=='live'));
+      const liveAnims   = autoTimed.filter(({anim:a})=>typeof ANIM_INFO!=='undefined'&&ANIM_INFO[a.name]&&ANIM_INFO[a.name].cat==='live'&&a.name!=='typewriter');
+      const twAnims     = autoTimed.filter(({anim:a})=>a.name==='typewriter');
       const motionAnims = autoTimed.filter(({anim:a})=>a.name==='moveTo'||a.name==='orbitTo');
       const rotateAnims = autoTimed.filter(({anim:a})=>a.name==='rotate');
 
@@ -599,6 +645,9 @@ function buildPSlide(container,idx,transOffset){
           setTimeout(()=>{ ecEl.style.animation=''; }, Math.max(...grp.map(a=>a.duration||600)) + 50);
         }, absDelay + transOffset);
       });
+      // live: сохраняем для запуска ПОСЛЕ appendChild (нужен живой DOM)
+      el._pendingLiveAnims = liveAnims;
+      el._pendingTwAnims = twAnims;
       // Fire motion anims in original order — each needs cumulative offset from previous
       {
         let cumTx=0, cumTy=0;
@@ -672,6 +721,45 @@ function buildPSlide(container,idx,transOffset){
     }
 
     container.appendChild(el);
+    // Запускаем live-анимации сразу после добавления в DOM
+    if(el._pendingLiveAnims && el._pendingLiveAnims.length){
+      const _ecLive = el.querySelector('.ec')||null;
+      el._pendingLiveAnims.forEach(({anim:a})=>{
+        if(a.name==='typewriter'){ fireAnim(el,d,a,idx); return; } // typewriter обрабатывается отдельно
+        const _tgtL = _ecLive||el;
+        if(el._liveAnims){ el._liveAnims.forEach(an=>{try{an.cancel();}catch(e){};}); el._liveAnims=[]; }
+        const _animL = _tgtL.animate(
+          [{transform:'scaleX(1) scaleY(1) rotate(0deg)',easing:'cubic-bezier(.42,0,.3,1.4)'},
+           {transform:'scaleX(1.12) scaleY(0.82) rotate(-2deg)',easing:'cubic-bezier(.6,0,.4,1.3)'},
+           {transform:'scaleX(0.9) scaleY(1.1) rotate(1.5deg)',easing:'cubic-bezier(.42,0,.3,1.4)'},
+           {transform:'scaleX(1.1) scaleY(0.85) rotate(-1.5deg)',easing:'cubic-bezier(.6,0,.4,1.3)'},
+           {transform:'scaleX(0.92) scaleY(1.08) rotate(2deg)',easing:'cubic-bezier(.42,0,.3,1.4)'},
+           {transform:'scaleX(1.06) scaleY(0.9) rotate(-1deg)',easing:'cubic-bezier(.5,0,.35,1.3)'},
+           {transform:'scaleX(0.97) scaleY(1.03) rotate(0.5deg)',easing:'cubic-bezier(.4,0,.6,1)'},
+           {transform:'scaleX(1) scaleY(1) rotate(0deg)'}],
+          {duration:a.duration||1200, iterations:Infinity, fill:'none', composite:_ecLive?'replace':'add'}
+        );
+        if(!el._liveAnims) el._liveAnims=[];
+        el._liveAnims.push(_animL);
+        // stopAfter: остановить когда начнётся следующая non-live
+        if(a.stopAfter){
+          const _autoT = (typeof globalAutoMap!=='undefined'?globalAutoMap:new Map()).get(d.id)||[];
+          const _nextNL = _autoT.find(({anim:na,absDelay:nd})=>nd>0&&na.cat!=='live');
+          if(_nextNL){
+            setTimeout(()=>{
+              if(el._liveAnims){el._liveAnims.forEach(an=>{try{an.cancel();}catch(e){};}); el._liveAnims=[];}
+              _tgtL.style.transform='';
+            }, _nextNL.absDelay + transOffset);
+          }
+        }
+      });
+      delete el._pendingLiveAnims;
+    }
+    // Запускаем typewriter после appendChild (независимо от наличия других live-анимаций)
+    if(el._pendingTwAnims && el._pendingTwAnims.length){
+      el._pendingTwAnims.forEach(({anim:a,absDelay})=>fireAnim(el,d,a,idx,absDelay+(typeof transOffset!=='undefined'?transOffset:0)));
+      delete el._pendingTwAnims;
+    }
   });
 
   // ── Draw connectors on top of elements ───────────────────────────────────
@@ -854,10 +942,65 @@ function buildPSlide(container,idx,transOffset){
       }
       if (fromMk !== 'none') line.setAttribute('marker-start', `url(#${mkFId})`);
       if (toMk   !== 'none') line.setAttribute('marker-end',   `url(#${mkTId})`);
+      line.setAttribute('data-pconn-id', conn.id);
       psvg.appendChild(line);
     });
 
     container.appendChild(psvg);
+
+    // Функция обновления коннекторов при анимации перемещения объекта
+    // motionOffsets: {elId: {tx, ty}} — смещения от исходной позиции
+    const _motionOffsets = {};
+    window._pUpdateConnForMotion = function(elId, tx, ty) {
+      _motionOffsets[elId] = {tx, ty};
+      // Перерисовываем только линии связанные с этим объектом
+      if (!s.connectors) return;
+      s.connectors.forEach(conn => {
+        if (conn.fromId !== elId && conn.toId !== elId) return;
+        const line = psvg.querySelector(`[data-pconn-id="${conn.id}"]`);
+        if (!line) return;
+        // Вычисляем позиции с учётом смещения
+        function _offsetMid(did, otherDid, side) {
+          const base = elMap[did]; if (!base) return {x:0,y:0};
+          const off = _motionOffsets[did] || {tx:0,ty:0};
+          const bx = base.x + off.tx, by = base.y + off.ty;
+          const cx = bx+base.w/2, cy = by+base.h/2;
+          const deg = base.rot || 0;
+          function rot(px,py){
+            if(!deg)return{x:px,y:py};
+            const rad=deg*Math.PI/180,cos=Math.cos(rad),sin=Math.sin(rad);
+            return{x:cx+(px-cx)*cos-(py-cy)*sin, y:cy+(px-cx)*sin+(py-cy)*cos};
+          }
+          const sides = {
+            top:    rot(cx, by),
+            right:  rot(bx+base.w, cy),
+            bottom: rot(cx, by+base.h),
+            left:   rot(bx, cy),
+          };
+          if (sides[side]) return sides[side];
+          // fallback: closest to other
+          const od = elMap[otherDid];
+          const offO = _motionOffsets[otherDid]||{tx:0,ty:0};
+          const tx2 = od ? od.x+offO.tx+od.w/2 : cx;
+          const ty2 = od ? od.y+offO.ty+od.h/2 : cy;
+          let best=sides.right, bestD=Infinity;
+          for(const [,pt] of Object.entries(sides)){
+            const d2=(pt.x-tx2)**2+(pt.y-ty2)**2;
+            if(d2<bestD){bestD=d2;best=pt;}
+          }
+          return best;
+        }
+        const p1 = _offsetMid(conn.fromId, conn.toId, conn.fromSide);
+        const p2 = _offsetMid(conn.toId, conn.fromId, conn.toSide);
+        const dx=p2.x-p1.x, dy=p2.y-p1.y;
+        const dist=Math.sqrt(dx*dx+dy*dy), bend=Math.min(dist*0.45,220);
+        const hBias=Math.abs(dx)>Math.abs(dy)*0.6;
+        const cp1 = hBias ? {x:p1.x+bend*Math.sign(dx||1),y:p1.y} : {x:p1.x,y:p1.y+bend*Math.sign(dy||1)};
+        const cp2 = hBias ? {x:p2.x-bend*Math.sign(dx||1),y:p2.y} : {x:p2.x,y:p2.y-bend*Math.sign(dy||1)};
+        line.setAttribute('d',
+          `M${p1.x.toFixed(1)},${p1.y.toFixed(1)} C${cp1.x.toFixed(1)},${cp1.y.toFixed(1)} ${cp2.x.toFixed(1)},${cp2.y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`);
+      });
+    };
   }
   globalClickSteps.sort((a,b)=>(a.absDelay||0)-(b.absDelay||0));
 
@@ -890,7 +1033,11 @@ function buildPSlide(container,idx,transOffset){
     });
     // auto-fire autoAfter items after click group ends
     let autoDelay = 0;
-    group.items.forEach(({a,absDelay})=>{ autoDelay = Math.max(autoDelay, ((absDelay||0)-baseDelay)+(a.duration||600)); });
+    group.items.forEach(({a,absDelay})=>{
+      // live-анимации бесконечны — не участвуют в расчёте autoDelay
+      if(typeof ANIM_INFO!=='undefined'&&ANIM_INFO[a.name]&&ANIM_INFO[a.name].cat==='live') return;
+      autoDelay = Math.max(autoDelay, ((absDelay||0)-baseDelay)+(a.duration||600));
+    });
     group.autoAfter.forEach(({el,d,a,wasHidden})=>{
       const t=autoDelay; autoDelay+=a.duration||600;
       setTimeout(()=>{ if(wasHidden)el.style.visibility='visible'; fireAnim(el,d,a,idx,0); }, t);
@@ -905,27 +1052,46 @@ function fireAnim(el,d,a,idx,overrideDelay,_cumTx,_cumTy){
   if(a.name==='moveTo'){
     const dur=(a.duration||600);
     const delay=typeof overrideDelay==='number' ? overrideDelay : (a.delay||0);
-    // tx/ty are absolute offsets from original element position (stored in data model)
-    // but when chaining after orbitTo we need to jump from cumulative position
     const baseTx = typeof _cumTx==='number' ? _cumTx : 0;
     const baseTy = typeof _cumTy==='number' ? _cumTy : 0;
     const tx=a.tx||0, ty=a.ty||0;
+    // Сохраняем поворот объекта — не перезаписываем rotate при translate
+    const _elRot = d.rot || 0;
+    const _rotStr = _elRot ? ` rotate(${_elRot}deg)` : '';
     setTimeout(()=>{
       if(el.animate){
-        // Set final in style + start animation atomically in same rAF
-        // fill:'none' means Web Anim overrides style during playback, style holds after finish
         requestAnimationFrame(()=>{
-          el.style.transform = `translate(${tx}px,${ty}px)`;
-          el.animate(
-            [{transform:`translate(${baseTx.toFixed(2)}px,${baseTy.toFixed(2)}px)`},
-             {transform:`translate(${tx.toFixed(2)}px,${ty.toFixed(2)}px)`}],
+          el.style.transform = `translate(${tx}px,${ty}px)${_rotStr}`;
+          const _anim = el.animate(
+            [{transform:`translate(${baseTx.toFixed(2)}px,${baseTy.toFixed(2)}px)${_rotStr}`},
+             {transform:`translate(${tx.toFixed(2)}px,${ty.toFixed(2)}px)${_rotStr}`}],
             {duration:dur, easing:'cubic-bezier(0.4,0,0.2,1)', fill:'none', composite:'replace'}
           );
+          // Обновляем коннекторы — парсим реальный transform каждый кадр
+          if(typeof window._pUpdateConnForMotion==='function'){
+            let _running = true;
+            function _tick(){
+              if(!_running) return;
+              try{
+                // getComputedStyle во время Web Animation возвращает интерполированное значение
+                const _ts = getComputedStyle(el).transform;
+                if(_ts && _ts !== 'none'){
+                  const _m = new DOMMatrix(_ts);
+                  window._pUpdateConnForMotion(d.id, _m.e, _m.f);
+                } else {
+                  window._pUpdateConnForMotion(d.id, baseTx, baseTy);
+                }
+              }catch(e){}
+              requestAnimationFrame(_tick);
+            }
+            setTimeout(()=>{ requestAnimationFrame(_tick); }, delay);
+            setTimeout(()=>{ _running=false; window._pUpdateConnForMotion(d.id, tx, ty); }, delay+dur+32);
+          }
         });
       } else {
         requestAnimationFrame(()=>{
           el.style.transition=`transform ${dur}ms cubic-bezier(0.4,0,0.2,1)`;
-          el.style.transform=`translate(${tx}px,${ty}px)`;
+          el.style.transform=`translate(${tx}px,${ty}px)${_rotStr}`;
         });
       }
     }, delay);
@@ -956,8 +1122,11 @@ function fireAnim(el,d,a,idx,overrideDelay,_cumTx,_cumTy){
     setTimeout(()=>{
       if(el.animate){
         requestAnimationFrame(()=>{
-          el.style.transform = `translate(${endTx.toFixed(2)}px,${endTy.toFixed(2)}px)`;
-          el.animate(frames, {duration:dur, easing:'linear', fill:'none', composite:'replace'});
+          const _oRot = d.rot||0;
+          const _oRotStr = _oRot ? ` rotate(${_oRot}deg)` : '';
+          el.style.transform = `translate(${endTx.toFixed(2)}px,${endTy.toFixed(2)}px)${_oRotStr}`;
+          const _orbitFrames = frames.map(f=>({transform:f.transform+_oRotStr}));
+          el.animate(_orbitFrames, {duration:dur, easing:'linear', fill:'none', composite:'replace'});
         });
       }
     }, delay);
@@ -985,6 +1154,136 @@ function fireAnim(el,d,a,idx,overrideDelay,_cumTx,_cumTy){
         );
         anim.onfinish = ()=>{ try{ anim.commitStyles(); }catch(e){} anim.cancel(); };
       }
+    }, delay);
+    return;
+  }
+  // ── LIVE (infinite) анимации — через Web Animations API с iterations:Infinity ──
+  // ── typewriter: стираем старый текст посимвольно, печатаем новый ─────────
+  if(a.name==='typewriter'){
+    const dur   = a.duration || 600; // не используется напрямую — скорость через charDelay
+    const delay = typeof overrideDelay==='number' ? overrideDelay : (a.delay||0);
+    const charDelay = a.charDelay || 40; // мс на символ
+
+
+    // Получаем plaintext из HTML (сохраняем теги минимально — только br)
+    function _htmlToChars(html){
+      // Возвращаем массив «символов» — либо текст либо HTML-тег
+      const res = [];
+      const re = /(<[^>]+>)|([^<]+)/g;
+      let m;
+      while((m = re.exec(html)) !== null){
+        if(m[1]){ res.push({type:'tag', val:m[1]}); }
+        else { for(const ch of m[2]) res.push({type:'char', val:ch}); }
+      }
+      return res;
+    }
+
+    function _charsToHtml(chars){ return chars.map(c=>c.val).join(''); }
+
+    const fromHtml = a.fromHtml || '';
+    const toHtml   = a.toHtml   || '';
+
+    // Находим текстовый контейнер (в preview нет .tel — ищем по типу и структуре)
+    let _tel = null;
+    if(d.type==='text'){
+      // psel > div(flex) > div(innerHTML) — нам нужен внутренний div
+      const _outer = el.querySelector('div');
+      _tel = _outer ? (_outer.querySelector('div') || _outer) : null;
+    } else if(d.type==='shape'){
+      _tel = el.querySelector('.shape-text');
+    } else {
+      // иконка, htmlframe и др. — ищем любой текстовый контейнер
+      _tel = el.querySelector('.shape-text') || el.querySelector('div');
+    }
+    if(!_tel){ console.warn('[typewriter] no text container found for type:', d.type); return; }
+
+    const fromChars = _htmlToChars(fromHtml);
+    const toChars   = _htmlToChars(toHtml);
+
+    // Только текстовые символы (не теги) — их стираем/печатаем
+    const fromTextChars = fromChars.filter(c=>c.type==='char');
+    const toTextChars   = toChars.filter(c=>c.type==='char');
+
+    let _twTimer = null;
+    let _twRunning = true;
+
+    setTimeout(()=>{
+      if(!_twRunning) return;
+
+      // Шаг 1: стираем fromHtml посимвольно с конца
+      let curFrom = fromChars.slice(); // копия
+      let textIdxs = []; // индексы текстовых символов в curFrom
+      curFrom.forEach((c,i)=>{ if(c.type==='char') textIdxs.push(i); });
+
+      let deleteStep = 0;
+      const totalDelete = textIdxs.length;
+
+      function doDelete(){
+        if(!_twRunning) return;
+        if(deleteStep >= totalDelete){
+          // Стёрли всё — начинаем печатать
+          _tel.innerHTML = '';
+          requestAnimationFrame(doPrint.bind(null, 0, []));
+          return;
+        }
+        // Удаляем последний текстовый символ
+        const removeIdx = textIdxs[totalDelete - 1 - deleteStep];
+        curFrom[removeIdx] = {type:'char', val:''};
+        _tel.innerHTML = _charsToHtml(curFrom);
+        deleteStep++;
+        _twTimer = setTimeout(doDelete, charDelay);
+      }
+
+      // Шаг 2: печатаем toHtml посимвольно
+      function doPrint(step, builtChars){
+        if(!_twRunning) return;
+        if(step >= toChars.length){
+          _tel.innerHTML = toHtml; // финальный вариант с полными тегами
+          return;
+        }
+        builtChars.push(toChars[step]);
+        _tel.innerHTML = _charsToHtml(builtChars);
+        const isTag = toChars[step].type === 'tag';
+        _twTimer = setTimeout(()=>doPrint(step+1, builtChars), isTag ? 0 : charDelay);
+      }
+
+      doDelete();
+
+    }, delay);
+
+    // Сохраняем ссылку для остановки
+    if(!el._liveAnims) el._liveAnims = [];
+    el._liveAnims.push({ cancel: ()=>{ _twRunning=false; if(_twTimer) clearTimeout(_twTimer); } });
+    return;
+  }
+
+  if(a.cat==='live'||ANIM_INFO[a.name]&&ANIM_INFO[a.name].cat==='live'){
+    const dur  = a.duration||1200;
+    const delay= typeof overrideDelay==='number' ? overrideDelay : (a.delay||0);
+    const ecEl = el.querySelector('.ec')||null;
+    const target = ecEl||el;
+    setTimeout(()=>{
+      // Останавливаем предыдущую live-анимацию на том же target
+      if(el._liveAnims){ el._liveAnims.forEach(an=>{try{an.cancel();}catch(e){};}); el._liveAnims=[]; }
+      // Применяем на .ec если есть — тогда transform от moveTo (на el) не конфликтует
+      // Если .ec нет — используем composite:'add' чтобы складываться с translate от moveTo
+      const _liveOnEc = !!ecEl;
+      const anim = target.animate(
+        [
+          {transform:'scaleX(1)    scaleY(1)    rotate(0deg)',   easing:'cubic-bezier(.42,0,.3,1.4)'},
+          {transform:'scaleX(1.12) scaleY(0.82) rotate(-2deg)',  easing:'cubic-bezier(.6,0,.4,1.3)'},
+          {transform:'scaleX(0.9)  scaleY(1.1)  rotate(1.5deg)', easing:'cubic-bezier(.42,0,.3,1.4)'},
+          {transform:'scaleX(1.1)  scaleY(0.85) rotate(-1.5deg)',easing:'cubic-bezier(.6,0,.4,1.3)'},
+          {transform:'scaleX(0.92) scaleY(1.08) rotate(2deg)',   easing:'cubic-bezier(.42,0,.3,1.4)'},
+          {transform:'scaleX(1.06) scaleY(0.9)  rotate(-1deg)',  easing:'cubic-bezier(.5,0,.35,1.3)'},
+          {transform:'scaleX(0.97) scaleY(1.03) rotate(0.5deg)', easing:'cubic-bezier(.4,0,.6,1)'},
+          {transform:'scaleX(1)    scaleY(1)    rotate(0deg)'}
+        ],
+        {duration:dur, iterations:Infinity, fill:'none', composite: _liveOnEc ? 'replace' : 'add'}
+      );
+      // Сохраняем ссылку для возможной остановки
+      if(!el._liveAnims) el._liveAnims=[];
+      el._liveAnims.push(anim);
     }, delay);
     return;
   }

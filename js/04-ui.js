@@ -21,9 +21,14 @@ function switchTab(name,btn){
   if(objSec){
     const isObj=name==='objects';
     objSec.style.display=isObj?'block':'none';
-    if(slidePr)slidePr.style.display=isObj?'none':'';
     if(elPr)elPr.style.display=isObj?'none':'';
-    if(isObj&&typeof renderObjectsPanel==='function')renderObjectsPanel();
+    if(isObj){
+      if(slidePr)slidePr.style.display='none';
+      if(typeof renderObjectsPanel==='function')renderObjectsPanel();
+    } else {
+      // Восстанавливаем корректное состояние панели через syncProps
+      if(typeof syncProps==='function') syncProps();
+    }
   }
 }
 

@@ -39,6 +39,7 @@ const LANG_DATA = {
 
     // Slide buttons
     btnNewSlide: 'New Slide',
+    btnDupSlide: 'Duplicate',
     btnDelete: 'Delete',
     btnUndo: 'Undo',
     btnRedo: 'Redo',
@@ -215,6 +216,7 @@ const LANG_DATA = {
 
     // Additional props labels
     propSlideBg: 'Slide Background',
+    propLayoutAnim: 'Bg Animation',
     propDimW: 'W',
     propDimH: 'H',
     propFillOpacity: 'Opacity',
@@ -292,6 +294,7 @@ const LANG_DATA = {
 
     // Slide buttons
     btnNewSlide: 'Новый слайд',
+    btnDupSlide: 'Дублировать',
     btnDelete: 'Удалить',
     btnUndo: 'Отменить',
     btnRedo: 'Повторить',
@@ -468,6 +471,7 @@ const LANG_DATA = {
 
     // Additional props labels
     propSlideBg: 'Фон слайда',
+    propLayoutAnim: 'Анимация фона',
     propDimW: 'Ш',
     propDimH: 'В',
     propFillOpacity: 'Прозрачность',

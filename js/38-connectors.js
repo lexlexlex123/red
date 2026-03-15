@@ -8,6 +8,13 @@ let _connMode = null;
 let _connStep = 0;
 let _connFrom = null;
 let _connectors = [];
+// Временные смещения от motion-анимации: {elId:{tx,ty}}
+const _motionOffsets = {};
+window._connSetMotionOffset = function(elId, tx, ty){
+  if(tx===0&&ty===0) delete _motionOffsets[elId];
+  else _motionOffsets[elId]={tx,ty};
+};
+window._connClearMotionOffsets = function(){ Object.keys(_motionOffsets).forEach(k=>delete _motionOffsets[k]); };
 
 const SVG_LAYER_ID = 'conn-svg-layer';
 
@@ -41,7 +48,9 @@ function _connId() { return 'cn' + Date.now().toString(36) + Math.random().toStr
 function _edgeMidpoints(elId) {
   const el = document.querySelector(`.el[data-id="${elId}"]`);
   if (!el) return null;
-  const x = parseInt(el.style.left), y = parseInt(el.style.top);
+  const _moff = _motionOffsets[elId] || {tx:0,ty:0};
+  const x = parseInt(el.style.left) + _moff.tx;
+  const y = parseInt(el.style.top)  + _moff.ty;
   const w = parseInt(el.style.width), h = parseInt(el.style.height);
   const cx = x + w / 2, cy = y + h / 2;
   const deg = parseFloat(el.dataset.rot) || 0;
@@ -621,7 +630,11 @@ function renderConnectors() {
 }
 
 // ── Update connectors when element moves ──────────────────────────────────
-function updateConnectorsFor(elId) {
+function updateConnectorsFor(elId, tx, ty) {
+  // Если переданы смещения — временно применяем их для пересчёта якорей
+  if(tx !== undefined && ty !== undefined){
+    _motionOffsets[elId] = {tx: tx||0, ty: ty||0};
+  }
   if (!slides || !slides[cur]) return;
   const conns = (slides[cur].connectors || []).filter(c => c.fromId === elId || c.toId === elId);
   if (!conns.length) return;
@@ -696,6 +709,8 @@ function _startObserver() {
 }
 
 // ── Connect mode ──────────────────────────────────────────────────────────
+window._connectorModeActive = function() { return _connStep > 0; };
+
 window.startConnectorMode = function(type) {
   if (_connStep > 0 && _connMode === type) { _cancelConnMode(); return; }
   _connMode = type; _connStep = 1; _connFrom = null;
@@ -780,6 +795,22 @@ function _defaultColorAndScheme() {
 function _addConnector(fromId, toId, type) {
   if (!slides[cur]) return;
   if (!slides[cur].connectors) slides[cur].connectors = [];
+  // Если связь между этими объектами уже есть — удаляем её
+  const existing = slides[cur].connectors.findIndex(
+    c => (c.fromId === fromId && c.toId === toId) ||
+         (c.fromId === toId   && c.toId === fromId)
+  );
+  if (existing >= 0) {
+    const removedId = slides[cur].connectors[existing].id;
+    slides[cur].connectors.splice(existing, 1);
+    const svg = document.getElementById(SVG_LAYER_ID);
+    if (svg) svg.querySelector(`[data-conn-id="${removedId}"]`)?.remove();
+    _connectors = slides[cur].connectors;
+    renderConnectors();
+    commitAll();
+    toast('Связь удалена');
+    return;
+  }
   const { color, colorScheme } = _defaultColorAndScheme();
   const fromSide = _getAnchorSide(fromId, toId).side;
   const toSide   = _getAnchorSide(toId, fromId).side;
@@ -908,6 +939,12 @@ window.cpDelete = function() {
     svg.querySelector('#conn-tangents')?.remove();
   }
   _deselectConn();
+  // Сбрасываем sel чтобы 21-keyboard.js не удалил объект вместе с линией
+  if (typeof sel !== 'undefined' && sel) {
+    sel.classList.remove('sel');
+    sel = null;
+    if (typeof syncProps === 'function') syncProps();
+  }
   commitAll();
 };
 
@@ -963,8 +1000,12 @@ window.updateConnectorsFor = updateConnectorsFor;
 
 document.addEventListener('keydown', e => {
   if (!_selConnId) return;
-  if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); window.cpDelete(); }
-});
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    e.preventDefault();
+    e.stopPropagation(); // не даём 21-keyboard.js удалить объект
+    window.cpDelete();
+  }
+}, true); // capture=true — срабатываем раньше других
 
 // ── Marker button UI ──────────────────────────────────────────────────────
 

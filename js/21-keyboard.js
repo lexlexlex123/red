@@ -11,9 +11,41 @@ function onKey(e){
   const inPreview=document.getElementById('preview-ov').classList.contains('active');
   const lk=latinKey(e);
   if(inPreview){
-    if(e.key==='Escape'){if(typeof pidx!=='undefined')cur=pidx;stopPreview();}
+    if(e.key==='Escape'||e.key==='F5'){
+      e.preventDefault();
+      if(typeof pidx!=='undefined') cur=pidx;
+      if(typeof stopPreview==='function') stopPreview();
+    }
     else if(['ArrowRight','ArrowDown',' '].includes(e.key)){e.preventDefault();nextPreview();}
     else if(['ArrowLeft','ArrowUp'].includes(e.key)){e.preventDefault();prevPreview();}
+    return;
+  }
+  if(e.key==='F5'){
+    e.preventDefault();
+    // If preview is active, stop it and return to the slide where it paused
+    const po=document.getElementById('preview-ov');
+    if(po&&po.classList.contains('active')){
+      if(typeof pidx!=='undefined') cur=pidx;
+      if(typeof stopPreview==='function') stopPreview();
+    } else {
+      // Сбрасываем фокус с любого инпута/триггера перед запуском —
+      // иначе браузер может перехватить F5 как обновление страницы
+      if(document.activeElement&&document.activeElement!==document.body){
+        document.activeElement.blur();
+      }
+      // Сохраняем все данные (включая состояние незафиксированных полей)
+      if(typeof save==='function') save();
+      // Снимаем текущий кадр декора для синхронизации в просмотре
+      if(typeof _layoutAnimated!=='undefined' && _layoutAnimated && typeof _decorPausedAt!=='undefined'){
+        document.querySelectorAll('.decor-el svg').forEach(function(svg){
+          try{
+            const _ksi = typeof _decorSvgSlideIndex==='function' ? _decorSvgSlideIndex(svg) : -1;
+            if(_ksi >= 0) _decorPausedAt.set(_ksi, svg.getCurrentTime());
+          }catch(e){}
+        });
+      }
+      if(typeof startPreview==='function') startPreview(cur);
+    }
     return;
   }
   if(e.key==='Escape'){if(pipetteMode){cancelPipetteMode();return;}if(typeof exitCropModeIfActive==='function'&&typeof _cropEl!=='undefined'&&_cropEl){exitCropModeIfActive();return;}clearMultiSel();desel();}
@@ -60,18 +92,7 @@ function onKey(e){
     // No element selected — Delete removes current slide
     if(e.key==='Delete'){e.preventDefault();delSlide();return;}
   }
-  if(e.key==='F5'){
-    e.preventDefault();
-    // If preview is active, stop it and return to the slide where it paused
-    const po=document.getElementById('preview-ov');
-    if(po&&po.classList.contains('active')){
-      if(typeof pidx!=='undefined') cur=pidx;
-      if(typeof stopPreview==='function') stopPreview();
-    } else {
-      if(typeof startPreview==='function') startPreview(cur);
-    }
-    return;
-  }
+
 }
 function copyEl(){
   if(!sel)return;

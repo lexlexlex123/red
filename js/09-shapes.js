@@ -14,7 +14,28 @@ function editShapeText(){
 function openShapeModalReplace(){
   if(!sel||sel.dataset.type!=='shape')return;
   window._shapeReplaceMode=true;
+  // Предзаполняем модалку настройками текущей фигуры
+  const _d=slides[cur].els.find(e=>e.id===sel.dataset.id);
+  if(_d){
+    window._shapeReplaceSource={
+      fill:_d.fill, stroke:_d.stroke, sw:_d.sw,
+      fillOp:_d.fillOp, shadow:_d.shadow, shadowBlur:_d.shadowBlur, shadowColor:_d.shadowColor,
+      shapeHtml:_d.shapeHtml, shapeTextCss:_d.shapeTextCss,
+      rx:_d.rx, rot:_d.rot, anims:_d.anims,
+      x:_d.x, y:_d.y, w:_d.w, h:_d.h,
+      elOpacity:_d.elOpacity, shadow2:_d.shadow2,
+    };
+  }
   openShapeModal();
+  // Перезаписываем цвета в модалке — из текущей фигуры
+  if(_d){
+    const fillEl=document.getElementById('sm-fill');
+    const strokeEl=document.getElementById('sm-stroke');
+    const swEl=document.getElementById('sm-sw');
+    if(fillEl){fillEl.value=_d.fill||fillEl.value;document.getElementById('sm-fill-inner').style.background=_d.fill||'';}
+    if(strokeEl){strokeEl.value=_d.stroke||strokeEl.value;document.getElementById('sm-stroke-inner').style.background=_d.stroke||'';}
+    if(swEl&&_d.sw!==undefined)swEl.value=_d.sw;
+  }
 }
 
 function openShapeModal(){
@@ -47,13 +68,27 @@ function insertShapeSelected(){
     pushUndo();
     const d=slides[cur].els.find(e=>e.id===sel.dataset.id);
     if(d){
-      d.shape=sh.id;d.fill=fill;d.stroke=stroke;d.sw=sw;
+      // Наследуем все настройки из источника, меняем только форму
+      const src=window._shapeReplaceSource||{};
+      d.shape=sh.id;
+      // Цвета: из модалки если пользователь их менял, иначе из оригинала
+      d.fill=fill; d.stroke=stroke; d.sw=sw;
+      // Все остальные свойства — из оригинала
+      if(src.fillOp!==undefined)d.fillOp=src.fillOp;
+      if(src.shadow!==undefined)d.shadow=src.shadow;
+      if(src.shadowBlur!==undefined)d.shadowBlur=src.shadowBlur;
+      if(src.shadowColor!==undefined)d.shadowColor=src.shadowColor;
+      if(src.shapeHtml!==undefined)d.shapeHtml=src.shapeHtml;
+      if(src.shapeTextCss!==undefined)d.shapeTextCss=src.shapeTextCss;
+      if(src.elOpacity!==undefined)d.elOpacity=src.elOpacity;
+      // Для callout — добавляем хвост если нет
       const _replIsCallout=sh.special==='callout';
       if(_replIsCallout&&d.tailX===undefined){d.tailX=0;d.tailY=(d.h||200)/2+30;d.rx=d.rx||12;}
       sel.dataset.shape=sh.id;
       const svgDiv=sel.querySelector('.ec>div>div');
       if(svgDiv)svgDiv.innerHTML=buildShapeSVG(d,d.w,d.h);
       _applyShapeClipPath(sel,d);
+      window._shapeReplaceSource=null;
       save();drawThumbs();saveState();
     }
     document.getElementById('shape-modal').classList.remove('open');

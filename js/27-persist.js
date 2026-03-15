@@ -37,6 +37,9 @@ function saveState(){
   try{localStorage.setItem('sf_v4',JSON.stringify({
     slides:slidesClean,cur,ar,canvasW,canvasH,globalTrans,transitionDur,autoDelay,ec,
     appliedThemeIdx,
+    selLayout:(typeof selLayout!=='undefined'?selLayout:-1),
+    layoutAnimated:(typeof _layoutAnimated!=='undefined'?_layoutAnimated:true),
+    decorPausedAt:(typeof _decorPausedAt!=='undefined'?Array.from(_decorPausedAt.entries()):[]),
     title:document.getElementById('pres-title').value,
     pnSettings:_pn
   }));}catch(e){console.warn('saveState failed:',e);}
@@ -62,6 +65,15 @@ function loadState(){
     document.querySelectorAll('.ar-btn').forEach(b=>b.classList.toggle('active',b.textContent===ar));
     if(s.title)document.getElementById('pres-title').value=s.title;
     if(s.appliedThemeIdx!=null)appliedThemeIdx=s.appliedThemeIdx;
+    if(s.selLayout!=null&&typeof selLayout!=='undefined')selLayout=s.selLayout;
+    if(s.layoutAnimated!=null&&typeof setLayoutAnimated==='function'){
+      // Восстанавливаем флаг анимации декора без перерисовки (рендер произойдёт позже в boot)
+      if(typeof _layoutAnimated!=='undefined') _layoutAnimated=s.layoutAnimated;
+    }
+    if(s.decorPausedAt&&typeof _decorPausedAt!=='undefined'){
+      _decorPausedAt.clear();
+      s.decorPausedAt.forEach(function(e){_decorPausedAt.set(e[0],e[1]);});
+    }
     if(typeof pnGetSettings==='function'&&s.pnSettings){
       const defaults=pnGetSettings();
       pnSettings=Object.assign({},defaults,s.pnSettings);

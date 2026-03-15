@@ -4,6 +4,7 @@ const ANIM_CSS={
   zoomIn:'el-zoomin',spinIn:'el-spin',bounceIn:'el-bounce',
   fadeOut:'el-fadeout',slideOut:'el-slideout',zoomOut:'el-zoomout',
   pulse:'el-pulse',shake:'el-shake',flash:'el-flash',
+  dance:'el-dance',
 };
 
 const ANIM_CATS = [
@@ -42,6 +43,13 @@ const ANIM_CATS = [
     items: [
       {name:'moveTo',   label:'Переместить', icon:'↗'},
       {name:'orbitTo',  label:'По окружности', icon:'⭕'},
+    ]
+  },
+  {
+    cat: 'live', label: 'Живая',
+    items: [
+      {name:'dance',      label:'Танец',        icon:'💃'},
+      {name:'typewriter', label:'Смена текста',  icon:'⌨'},
     ]
   },
 ];
@@ -116,17 +124,22 @@ let _animPreviewTimer = null;
       const trigger = a.trigger || 'auto';
       const relDelay = a.delay || 0;
       let absDelay;
+      const _isLive = typeof ANIM_INFO!=='undefined' && ANIM_INFO[a.name] && ANIM_INFO[a.name].cat==='live';
       if(i === 0){
         absDelay = relDelay;
+      } else if(_isLive){
+        // live стартует немедленно (absDelay = только явная задержка пользователя)
+        absDelay = relDelay;
       } else if(trigger === 'withPrev'){
-        // Start at same time as previous + relative offset
         absDelay = prevStart + relDelay;
       } else {
-        // auto/afterPrev: start after previous ends + relative offset
         absDelay = prevStart + prevDur + relDelay;
       }
-      prevStart = absDelay;
-      prevDur = a.duration || 600;
+      // live не сдвигает цепочку
+      if(!_isLive){
+        prevStart = absDelay;
+        prevDur = a.duration || 600;
+      }
       return {anim: a, absDelay};
     });
   };
@@ -144,6 +157,21 @@ let _animPreviewTimer = null;
       // For orbitTo: default radius, direction, degrees
       if(animName==='orbitTo'){ anim.orbitR=120; anim.orbitDir='cw'; anim.orbitDeg=360; anim.orbitCx=0; anim.orbitCy=0; }
       if(animName==='rotate'){ anim.rotateDir='cw'; anim.rotateDeg=360; }
+      if(animName==='typewriter'){
+        anim.charDelay = 40;
+        // Если уже есть typewriter-анимации — fromHtml = toHtml последней из них
+        const _prevTw = d.anims.filter(x => x.name==='typewriter');
+        if(_prevTw.length > 0){
+          anim.fromHtml = _prevTw[_prevTw.length-1].toHtml || '';
+          anim.toHtml   = _prevTw[_prevTw.length-1].toHtml || '';
+        } else {
+          // Первая typewriter — берём текущий текст из DOM
+          const _domEl = el;
+          const _tel = _domEl.querySelector('.tel') || _domEl.querySelector('.shape-text') || _domEl.querySelector('.ec');
+          anim.fromHtml = _tel ? _tel.innerHTML : '';
+          anim.toHtml   = _tel ? _tel.innerHTML : '';
+        }
+      }
       d.anims.push(anim);
       el.dataset.anims=JSON.stringify(d.anims);
       _save(); renderAnimPanel(); _saveState();
@@ -177,7 +205,7 @@ let _animPreviewTimer = null;
       const s=_slides()[_cur()]; if(!s) return;
       const d=s.els.find(x=>x.id===elId); if(!d||!d.anims||!d.anims[animIdx]) return;
       if(val === undefined){ delete d.anims[animIdx][prop]; }
-      else if(prop==='duration'||prop==='delay'||prop==='navTarget') d.anims[animIdx][prop]=+val;
+      else if(prop==='duration'||prop==='delay'||prop==='navTarget'||prop==='charDelay'||prop==='tx'||prop==='ty'||prop==='orbitR'||prop==='orbitDeg'||prop==='rotateDeg') d.anims[animIdx][prop]=+val;
       else d.anims[animIdx][prop]=val;
       const domEl=document.getElementById('canvas').querySelector('[data-id="'+elId+'"]');
       if(domEl) domEl.dataset.anims=JSON.stringify(d.anims);
@@ -337,7 +365,7 @@ let _animPreviewTimer = null;
 
     allAnims.forEach(({d, a, ai, elName}, flatIdx) => {
       const info = ANIM_INFO[a.name] || {label:a.name, cat:'entrance'};
-      const catLabel = info.cat==='entrance'?'Вход':info.cat==='exit'?'Выход':info.cat==='motion'?'Движение':'Акцент';
+      const catLabel = info.cat==='entrance'?'Вход':info.cat==='exit'?'Выход':info.cat==='motion'?'Движение':info.cat==='live'?'Живая':'Акцент';
       const trigger = a.trigger || 'auto';
       const isSelected = selEl && selEl.dataset.id === d.id;
 
@@ -461,6 +489,92 @@ let _animPreviewTimer = null;
         hint.style.cssText='font-size:8px;color:var(--text3);margin-top:5px;line-height:1.4;';
         hint.textContent='↗ Перетащите бледную копию объекта чтобы задать точку назначения';
         props.appendChild(hint);
+      }
+
+      // typewriter: from/to text + confirm button + charDelay
+      if(a.name === 'typewriter'){
+        const twWrap = document.createElement('div');
+        twWrap.style.cssText = 'margin-top:6px;display:flex;flex-direction:column;gap:6px;';
+
+        // charDelay slider
+        const speedRow = document.createElement('div');
+        speedRow.className = 'anim-row-props';
+        speedRow.style.marginTop = '0';
+        speedRow.innerHTML = `<label style="grid-column:1/-1">Скорость (мс/символ)<input type="number" value="${a.charDelay||40}" min="5" max="500" step="5" oninput="updateAnimProp('${d.id}',${ai},'charDelay',+this.value)" onchange="updateAnimProp('${d.id}',${ai},'charDelay',+this.value)"></label>`;
+        twWrap.appendChild(speedRow);
+
+        // Текущий «новый» текст (toHtml)
+        const toLabel = document.createElement('div');
+        toLabel.style.cssText = 'font-size:9px;color:var(--text3);margin-bottom:2px;';
+        toLabel.textContent = '📝 Новый текст (редактируйте прямо в объекте, затем нажмите ↓)';
+        twWrap.appendChild(toLabel);
+
+        const confirmBtn = document.createElement('button');
+        confirmBtn.textContent = '✓ Подтвердить новый текст';
+        confirmBtn.style.cssText = 'width:100%;padding:5px 8px;font-size:10px;font-family:inherit;border-radius:4px;cursor:pointer;border:1px solid var(--accent);background:var(--accent);color:#fff;font-weight:600;';
+        confirmBtn.addEventListener('mousedown', e => e.preventDefault());
+        confirmBtn.addEventListener('click', () => {
+          // Читаем текущий текст из DOM-элемента
+          const _domEl2 = document.querySelector('#canvas .el[data-id="' + d.id + '"]');
+          if(!_domEl2) return;
+          const _tel2 = _domEl2.querySelector('.tel') || _domEl2.querySelector('.shape-text') || _domEl2.querySelector('.ec');
+          if(!_tel2) return;
+          const newHtml = _tel2.innerHTML;
+          if(typeof pushUndo==='function') pushUndo();
+          const _s = slides[cur]; if(!_s) return;
+          const _d2 = _s.els.find(x=>x.id===d.id); if(!_d2||!_d2.anims) return;
+          const _a2 = _d2.anims[ai]; if(!_a2) return;
+          _a2.toHtml = newHtml;
+          // Если есть следующая typewriter — обновляем её fromHtml
+          const _nextTw = _d2.anims[ai+1];
+          if(_nextTw && _nextTw.name==='typewriter'){
+            _nextTw.fromHtml = newHtml;
+          }
+          // Восстанавливаем САМЫЙ ПЕРВЫЙ fromHtml — то что было до всех typewriter-анимаций
+          const _firstTw = _d2.anims.find(x => x.name==='typewriter');
+          const _origHtml = _firstTw ? (_firstTw.fromHtml || '') : (_a2.fromHtml || '');
+          _tel2.innerHTML = _origHtml;
+          _d2.html = _origHtml;
+          _domEl2.dataset.anims = JSON.stringify(_d2.anims);
+          if(typeof save==='function') save();
+          if(typeof saveState==='function') saveState();
+          if(typeof renderAnimPanel==='function') renderAnimPanel();
+          if(typeof toast==='function') toast('✓ Новый текст сохранён', 'ok');
+        });
+        twWrap.appendChild(confirmBtn);
+
+        // Показываем fromHtml и toHtml кратко
+        const infoDiv = document.createElement('div');
+        infoDiv.style.cssText = 'font-size:8px;color:var(--text3);line-height:1.5;';
+        const _fromTxt = (a.fromHtml||'').replace(/<[^>]*>/g,'').slice(0,40) || '(пусто)';
+        const _toTxt   = (a.toHtml  ||'').replace(/<[^>]*>/g,'').slice(0,40) || '(не задан)';
+        infoDiv.innerHTML = `<b>Исходный:</b> ${_fromTxt}<br><b>Новый:</b> ${_toTxt}`;
+        twWrap.appendChild(infoDiv);
+
+        const hint3 = document.createElement('div');
+        hint3.style.cssText = 'font-size:8px;color:var(--text3);margin-top:2px;line-height:1.4;';
+        hint3.textContent = '⌨ Отредактируйте текст в объекте на слайде, затем нажмите «Подтвердить»';
+        twWrap.appendChild(hint3);
+
+        props.appendChild(twWrap);
+      }
+
+      // dance: stopAfter checkbox
+      if(a.name === 'dance'){
+        const liveGrid = document.createElement('div');
+        liveGrid.className = 'anim-row-props';
+        liveGrid.style.marginTop = '4px';
+        const stopLabel = document.createElement('label');
+        stopLabel.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer;grid-column:1/-1;font-size:9px;color:var(--text2);';
+        const stopChk = document.createElement('input');
+        stopChk.type = 'checkbox';
+        stopChk.checked = !!a.stopAfter;
+        stopChk.addEventListener('mousedown', e=>e.stopPropagation());
+        stopChk.addEventListener('change', ()=>updateAnimProp(d.id, ai, 'stopAfter', stopChk.checked));
+        stopLabel.appendChild(stopChk);
+        stopLabel.appendChild(document.createTextNode('Остановить танец в конце потока'));
+        liveGrid.appendChild(stopLabel);
+        props.appendChild(liveGrid);
       }
 
       // orbitTo: radius, direction, degrees

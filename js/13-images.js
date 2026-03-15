@@ -305,6 +305,7 @@ function mkEl(d){
       el.style.zIndex='0';
       el.style.cursor='default';
       el.classList.add('decor-el');
+
     }
   }else if(d.type==='icon'){
     c.style.cssText='width:100%;height:100%;overflow:visible;display:flex;align-items:center;justify-content:center;';
@@ -437,6 +438,23 @@ function mkEl(d){
     });
   }
   el.append(c,lb,trigBadge);cv.appendChild(el);
+  // Применяем паузу: двойной rAF — первый даёт браузеру запустить анимацию, второй замораживает
+  if(d._isDecor && typeof _layoutAnimated!=='undefined' && !_layoutAnimated){
+    requestAnimationFrame(function(){
+      requestAnimationFrame(function(){
+        const _dsvg=el.querySelector('svg');
+        if(_dsvg&&_dsvg.pauseAnimations){
+          try{
+            if(typeof _decorPausedAt!=='undefined'){
+              const _si=slides.indexOf(slides[cur]);
+              if(_decorPausedAt.has(_si)){_dsvg.setCurrentTime(_decorPausedAt.get(_si));}
+            }
+            _dsvg.pauseAnimations();
+          }catch(e){}
+        }
+      });
+    });
+  }
   // Restore text background here — after el.append(c) so .ec is queryable
   if(d.type==='text'){
     if(d.textBg){el.dataset.textBg=d.textBg;}
