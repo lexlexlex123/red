@@ -12,7 +12,8 @@ function boot(){
   buildThemeGrid();buildShapeGallery();buildAppletGallery();
   buildPalette('cp-text-palette','text');
   buildPalette('cp-fill-palette','fill');
-  drawGrid();
+  // drawGrid после двух rAF — гарантирует что layout завершён и clientWidth корректен
+  requestAnimationFrame(()=>requestAnimationFrame(()=>drawGrid()));
   // Sync click-nav checkboxes
   // Close any open modal when clicking the overlay (outside .modal content)
   document.addEventListener('mousedown', e => {
@@ -181,6 +182,12 @@ function buildThemeGrid(){
       // Background fill
       const bg=document.createElement('div');
       bg.style.cssText='position:absolute;inset:0;background:'+t.bg+';';
+      // Start birds animation if theme has bgAnim
+      if(t.bgAnim==='birds' && typeof _birdsThemeStart==='function'){
+        setTimeout(()=>_birdsThemeStart(bg.parentElement||bg),50);
+      } else if(typeof _birdsThemeStop==='function' && _birdsThemeActive && _birdsThemeActive()){
+        _birdsThemeStop();
+      }
 
       // Mini slide content mockup
       const mock=document.createElement('div');
@@ -345,34 +352,337 @@ function openColorPanel(panelId, mode, onPick) {
     slot.appendChild(grid);
   }
 
-  // ── Custom color row ──────────────────────────────────────────
+  // ── Custom color picker toggle ───────────────────────────────
   const sep = document.createElement('div');
-  sep.style.cssText = 'height:1px;background:var(--border);margin:2px 0 7px;';
+  sep.style.cssText = 'height:1px;background:var(--border);margin:4px 0 6px;';
   slot.appendChild(sep);
 
+  // Toggle button row
   const customRow = document.createElement('div');
-  customRow.style.cssText = 'display:flex;align-items:center;gap:7px;position:relative;';
+  customRow.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer;padding:2px 0;';
   const customLbl = document.createElement('span');
-  customLbl.style.cssText = 'font-size:10px;color:var(--text2);flex:1;cursor:pointer;';
-  customLbl.textContent = 'Выбрать свой цвет';
-  const customInput = document.createElement('input');
-  customInput.type = 'color';
-  customInput.value = '#3b82f6';
-  customInput.style.cssText = 'position:absolute;right:0;bottom:28px;width:0;height:0;opacity:0;pointer-events:none;';
-  customInput.onmousedown = e => e.stopPropagation();
-  customInput.onchange = e => { onPick(e.target.value, null); closeColorPanel(panelId); };
-  customInput.oninput = e => { onPick(e.target.value, null); };
-  const customBtn = document.createElement('div');
-  customBtn.style.cssText = 'width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;background:conic-gradient(red,yellow,lime,cyan,blue,magenta,red);';
-  customBtn.title = 'Выбрать свой цвет';
-  customBtn.onmousedown = e => { e.preventDefault(); e.stopPropagation(); window._cpNativeOpen = true; customInput.click(); requestAnimationFrame(()=>{ window._cpNativeOpen = false; }); };
+  customLbl.style.cssText = 'font-size:10px;color:var(--text2);flex:1;';
+  customLbl.textContent = 'Свой цвет';
+  const customSwatch = document.createElement('div');
+  customSwatch.id = panelId + '-swatch';
+  customSwatch.style.cssText = 'width:22px;height:14px;border-radius:3px;border:1px solid var(--border2);background:#3b82f6;flex-shrink:0;';
+  const customArrow = document.createElement('span');
+  customArrow.textContent = '▸';
+  customArrow.style.cssText = 'font-size:9px;color:var(--text3);transition:transform .15s;';
   customRow.appendChild(customLbl);
-  customRow.appendChild(customInput);
-  customRow.appendChild(customBtn);
+  customRow.appendChild(customSwatch);
+  customRow.appendChild(customArrow);
   slot.appendChild(customRow);
+
+  // Photoshop-style picker container (hidden by default)
+  const pickerWrap = document.createElement('div');
+  pickerWrap.style.cssText = 'display:none;margin-top:8px;';
+  slot.appendChild(pickerWrap);
+
+  let pickerOpen = false;
+  customRow.onmousedown = e => {
+    e.preventDefault(); e.stopPropagation();
+    pickerOpen = !pickerOpen;
+    pickerWrap.style.display = pickerOpen ? 'block' : 'none';
+    customArrow.style.transform = pickerOpen ? 'rotate(90deg)' : '';
+    if (pickerOpen) _cpBuildPhotoshopPicker(pickerWrap, customSwatch, onPick, panelId);
+  };
+}
+
+// ── Photoshop-style HSV colour picker ────────────────────────────────
+function _cpBuildPhotoshopPicker(container, swatchEl, onPick, panelId) {
+  container.innerHTML = '';
+
+  // ── Размеры ──
+  const SIZE = 180, RING = 15;
+  const cx = SIZE / 2, cy = SIZE / 2;
+  const Ro = SIZE / 2 - 2;   // внешний радиус кольца
+  const Ri = Ro - RING;      // внутренний радиус кольца
+  const Tr = Ri - 5;         // радиус описанной окружности треугольника
+
+  // ── Canvas ──
+  const cv = document.createElement('canvas');
+  cv.width = SIZE; cv.height = SIZE;
+  cv.style.cssText = 'display:block;margin:0 auto;cursor:crosshair;touch-action:none;border-radius:50%;';
+  container.appendChild(cv);
+  const ctx = cv.getContext('2d');
+
+  // ── Hex-поле ──
+  const hexRow = document.createElement('div');
+  hexRow.style.cssText = 'display:flex;align-items:center;gap:5px;margin-top:8px;';
+  const hexHash = document.createElement('span');
+  hexHash.textContent = '#';
+  hexHash.style.cssText = 'font-size:12px;color:var(--text3);font-family:monospace;font-weight:600;';
+  const hexInp = document.createElement('input');
+  hexInp.type = 'text'; hexInp.maxLength = 6; hexInp.spellcheck = false;
+  hexInp.style.cssText = 'flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 7px;font-size:12px;font-family:monospace;letter-spacing:1px;';
+  hexInp.placeholder = 'RRGGBB';
+  hexRow.appendChild(hexHash);
+  hexRow.appendChild(hexInp);
+  container.appendChild(hexRow);
+
+  // ── State ──
+  let hue = 210, sat = 0.65, val = 0.9;
+
+  // ── Vertices: v0=white(top), v1=black(bottom-left), v2=hue(bottom-right) ──
+  // Fixed orientation: white at top, rotated with hue
+  function triVerts() {
+    const a0 = (hue - 90) * Math.PI / 180;
+    return [0, 1, 2].map(i => {
+      const a = a0 + i * 2 * Math.PI / 3;
+      return [cx + Tr * Math.cos(a), cy + Tr * Math.sin(a)];
+    });
+  }
+
+  // ── HSV ↔ RGB ──
+  function hsv2rgb(h, s, v) {
+    const i = Math.floor(h / 60) % 6;
+    const f = h / 60 - Math.floor(h / 60);
+    const p = v * (1 - s), q = v * (1 - f * s), t = v * (1 - (1 - f) * s);
+    return [[v,t,p],[q,v,p],[p,v,t],[p,q,v],[t,p,v],[v,p,q]][i].map(c => Math.round(c * 255));
+  }
+  function rgb2hex(r, g, b) {
+    return '#' + [r,g,b].map(c => c.toString(16).padStart(2,'0')).join('');
+  }
+  function hex2hsv(hex) {
+    const r = parseInt(hex.slice(1,3),16)/255, g = parseInt(hex.slice(3,5),16)/255, b = parseInt(hex.slice(5,7),16)/255;
+    const mx = Math.max(r,g,b), mn = Math.min(r,g,b), d = mx - mn;
+    let h = 0;
+    if (d > 0) {
+      if (mx === r) h = ((g - b) / d + 6) % 6;
+      else if (mx === g) h = (b - r) / d + 2;
+      else h = (r - g) / d + 4;
+      h *= 60;
+    }
+    return [h, mx ? d / mx : 0, mx];
+  }
+
+  // ── Draw hue ring via ImageData (плавный, без полосок) ──
+  function drawRing() {
+    const img = ctx.createImageData(SIZE, SIZE);
+    const data = img.data;
+    for (let y = 0; y < SIZE; y++) {
+      for (let x = 0; x < SIZE; x++) {
+        const dx = x - cx, dy = y - cy;
+        const d = Math.sqrt(dx*dx + dy*dy);
+        if (d < Ri - 0.5 || d > Ro + 0.5) continue;
+        const h = ((Math.atan2(dy, dx) * 180 / Math.PI) + 90 + 360) % 360;
+        // Anti-alias at edges
+        let alpha = 1;
+        if (d < Ri + 0.5) alpha = d - (Ri - 0.5);
+        else if (d > Ro - 0.5) alpha = Ro + 0.5 - d;
+        alpha = Math.max(0, Math.min(1, alpha));
+        const [r,g,b] = hsv2rgb(h, 1, 1);
+        const idx = (y * SIZE + x) * 4;
+        data[idx]   = r;
+        data[idx+1] = g;
+        data[idx+2] = b;
+        data[idx+3] = Math.round(alpha * 255);
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+
+  // ── Draw triangle via canvas gradients (надёжно, без артефактов) ──
+  function drawTriangle() {
+    const [v0, v1, v2] = triVerts(); // v0=white, v1=black, v2=hue
+    const [hr, hg, hb] = hsv2rgb(hue, 1, 1);
+    const hueColor = `rgb(${hr},${hg},${hb})`;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(v0[0], v0[1]);
+    ctx.lineTo(v1[0], v1[1]);
+    ctx.lineTo(v2[0], v2[1]);
+    ctx.closePath();
+    ctx.clip();
+
+    // Слой 1: градиент от белого (v0) до чистого оттенка (v2)
+    const g1 = ctx.createLinearGradient(v0[0], v0[1], v2[0], v2[1]);
+    g1.addColorStop(0, '#ffffff');
+    g1.addColorStop(1, hueColor);
+    ctx.fillStyle = g1;
+    ctx.fillRect(0, 0, SIZE, SIZE);
+
+    // Слой 2: градиент от прозрачного (v0) до чёрного (v1), перпендикулярно
+    const g2 = ctx.createLinearGradient(v0[0], v0[1], v1[0], v1[1]);
+    g2.addColorStop(0, 'rgba(0,0,0,0)');
+    g2.addColorStop(1, 'rgba(0,0,0,1)');
+    ctx.fillStyle = g2;
+    ctx.fillRect(0, 0, SIZE, SIZE);
+
+    ctx.restore();
+  }
+
+  // ── Draw indicators ──
+  function drawHueIndicator() {
+    const ha = (hue - 90) * Math.PI / 180;
+    const hx = cx + (Ri + RING/2) * Math.cos(ha);
+    const hy = cy + (Ri + RING/2) * Math.sin(ha);
+    const r = RING / 2 - 1;
+    ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI*2);
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI*2);
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+  }
+
+  function drawSVIndicator() {
+    const [v0,v1,v2] = triVerts(); // v0=white, v1=black, v2=hue
+    // Позиция = линейная интерполяция барицентрических весов:
+    // b0=white=(1-sat)*val, b1=black=(1-sat)*(1-val), b2=hue=sat
+    // b2=sat, b0=val-sat, b1=1-val
+    const b2 = sat;
+    const b0 = val - sat;
+    const b1 = 1 - val;
+    const px = b0*v0[0] + b1*v1[0] + b2*v2[0];
+    const py = b0*v0[1] + b1*v1[1] + b2*v2[1];
+
+    // Тень
+    ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI*2);
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 3; ctx.stroke();
+    // Белый круг
+    ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI*2);
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+    // Цветная точка
+    const [r,g,b] = hsv2rgb(hue, sat, val);
+    ctx.beginPath(); ctx.arc(px, py, 3.5, 0, Math.PI*2);
+    ctx.fillStyle = rgb2hex(r,g,b); ctx.fill();
+  }
+
+  // ── Full redraw — кольцо кэшируем, треугольник перерисовываем ──
+  let ringCache = null;
+  function draw() {
+    ctx.clearRect(0, 0, SIZE, SIZE);
+    if (!ringCache) {
+      // Рисуем кольцо один раз в offscreen canvas
+      const off = document.createElement('canvas');
+      off.width = SIZE; off.height = SIZE;
+      const offCtx = off.getContext('2d');
+      const img = offCtx.createImageData(SIZE, SIZE);
+      const data = img.data;
+      for (let y = 0; y < SIZE; y++) {
+        for (let x = 0; x < SIZE; x++) {
+          const dx = x-cx, dy = y-cy, d = Math.sqrt(dx*dx+dy*dy);
+          if (d < Ri-0.5 || d > Ro+0.5) continue;
+          const h = ((Math.atan2(dy,dx)*180/Math.PI)+90+360)%360;
+          let alpha = 1;
+          if (d < Ri+0.5) alpha = d-(Ri-0.5);
+          else if (d > Ro-0.5) alpha = Ro+0.5-d;
+          alpha = Math.max(0,Math.min(1,alpha));
+          const [r,g,b] = hsv2rgb(h,1,1);
+          const idx=(y*SIZE+x)*4;
+          data[idx]=r; data[idx+1]=g; data[idx+2]=b; data[idx+3]=Math.round(alpha*255);
+        }
+      }
+      offCtx.putImageData(img,0,0);
+      ringCache = off;
+    }
+    ctx.drawImage(ringCache, 0, 0);
+    drawTriangle();
+    drawHueIndicator();
+    drawSVIndicator();
+  }
+
+  // ── Emit colour ──
+  function emit() {
+    const [r,g,b] = hsv2rgb(hue, sat, val);
+    const hex = rgb2hex(r,g,b);
+    hexInp.value = hex.slice(1).toUpperCase();
+    if (swatchEl) swatchEl.style.background = hex;
+    onPick(hex, null);
+  }
+
+  // ── Hit testing ──
+  function ptInRing(x,y){ const d=Math.hypot(x-cx,y-cy); return d>=Ri-1&&d<=Ro+1; }
+  function ptInTri(x,y){
+    // Используем те же барицентрики — точка в треугольнике если все b>=0
+    const [v0,v1,v2]=triVerts();
+    const d=(v1[1]-v2[1])*(v0[0]-v2[0])+(v2[0]-v1[0])*(v0[1]-v2[1]);
+    if(Math.abs(d)<0.001) return false;
+    const b0=((v1[1]-v2[1])*(x-v2[0])+(v2[0]-v1[0])*(y-v2[1]))/d;
+    const b1=((v2[1]-v0[1])*(x-v2[0])+(v0[0]-v2[0])*(y-v2[1]))/d;
+    const b2=1-b0-b1;
+    return b0>=-0.02&&b1>=-0.02&&b2>=-0.02; // чуть шире для удобства
+  }
+  function applyRing(x,y){ hue=((Math.atan2(y-cy,x-cx)*180/Math.PI)+90+360)%360; }
+  function applyTri(x,y){
+    const [v0,v1,v2]=triVerts(); // v0=white, v1=black, v2=hue
+    // Барицентрические координаты через систему уравнений
+    const d=(v1[1]-v2[1])*(v0[0]-v2[0])+(v2[0]-v1[0])*(v0[1]-v2[1]);
+    if(Math.abs(d)<0.001) return;
+    let b0=((v1[1]-v2[1])*(x-v2[0])+(v2[0]-v1[0])*(y-v2[1]))/d;
+    let b1=((v2[1]-v0[1])*(x-v2[0])+(v0[0]-v2[0])*(y-v2[1]))/d;
+    let b2=1-b0-b1;
+    // Зажимаем внутрь треугольника: нормализуем отрицательные веса
+    b0=Math.max(0,b0); b1=Math.max(0,b1); b2=Math.max(0,b2);
+    const sum=b0+b1+b2;
+    if(sum<0.0001) return;
+    b0/=sum; b1/=sum; b2/=sum;
+    // v0=white(sat=0,val=1), v1=black(sat=0,val=0), v2=hue(sat=1,val=1)
+    // sat = b2,  val = b0 + b2
+    sat = Math.max(0, Math.min(1, b2));
+    val = Math.max(0, Math.min(1, b0 + b2));
+  }
+
+  // ── Pointer events с RAF ──
+  let dragging = null, rafId = null;
+  function getPos(e){ const r=cv.getBoundingClientRect(); const s=e.touches?e.touches[0]:e; return [s.clientX-r.left,s.clientY-r.top]; }
+
+  cv.addEventListener('mousedown', e=>{
+    e.preventDefault(); e.stopPropagation();
+    const [x,y]=getPos(e);
+    if(ptInRing(x,y)) dragging='ring';
+    else if(ptInTri(x,y)) dragging='tri';
+    else return;
+    if(dragging==='ring') applyRing(x,y); else applyTri(x,y);
+    if(rafId) cancelAnimationFrame(rafId);
+    rafId=requestAnimationFrame(()=>{ draw(); emit(); rafId=null; });
+  });
+
+  const onMove = e=>{
+    if(!dragging) return;
+    const [x,y]=getPos(e);
+    if(dragging==='ring') applyRing(x,y); else applyTri(x,y);
+    if(!rafId) rafId=requestAnimationFrame(()=>{ draw(); emit(); rafId=null; });
+  };
+  const onUp = ()=>{ dragging=null; };
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
+
+  // Cleanup при закрытии панели
+  const origClose = window._cpCleanup;
+  window._cpCleanup = ()=>{
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup', onUp);
+    if(rafId) cancelAnimationFrame(rafId);
+    if(origClose) origClose();
+    window._cpCleanup = origClose;
+  };
+
+  // ── Hex input ──
+  hexInp.addEventListener('keydown', e=>e.stopPropagation());
+  hexInp.addEventListener('mousedown', e=>e.stopPropagation());
+  hexInp.addEventListener('input', e=>{
+    let v=e.target.value.replace(/[^0-9a-fA-F]/g,'');
+    if(v.length>6) v=v.slice(0,6);
+    e.target.value=v;
+    if(v.length===6){
+      [hue,sat,val]=hex2hsv('#'+v);
+      if(rafId) cancelAnimationFrame(rafId);
+      rafId=requestAnimationFrame(()=>{ draw(); emit(); rafId=null; });
+    }
+  });
+
+  // ── Init ──
+  if(swatchEl){
+    const bg=swatchEl.style.background;
+    if(bg&&bg.match(/^#[0-9a-fA-F]{6}$/)) [hue,sat,val]=hex2hsv(bg);
+  }
+  draw(); emit();
 }
 
 function closeColorPanel(panelId) {
+  if (typeof window._cpCleanup === 'function') { window._cpCleanup(); }
   const slot = document.getElementById(panelId || _cpActivePanelId);
   if (slot) { slot.innerHTML = ''; slot.style.display = 'none'; }
   if (!panelId || panelId === _cpActivePanelId) _cpActivePanelId = null;
@@ -409,10 +719,15 @@ function addRecentColor(c){
 }
 function applyTextColor(c, schemeRef){
   if(!sel||sel.dataset.type!=='text')return;
-  // Store scheme ref on data element
   const d = slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
-  if(d) d.textColorScheme = schemeRef || null;
-  // Pass schemeRef directly to rtColor so per-char spans get data-scheme
+  // Check if there's an active fragment selection
+  const _wSel = window.getSelection();
+  const _hasFragSel = _wSel && !_wSel.isCollapsed && _wSel.toString().length > 0;
+  const _hasSavedSel = typeof _savedSelIdx !== 'undefined' && !!_savedSelIdx;
+  const _isFragment = _hasFragSel || _hasSavedSel;
+  // Only update element-level textColorScheme when coloring the whole element
+  // When coloring a fragment, per-char data-scheme handles it
+  if(d && !_isFragment) d.textColorScheme = schemeRef || null;
   if(typeof rtColor==='function'){
     if(typeof _rtColorPickInProgress!=='undefined') _rtColorPickInProgress=true;
     rtColor(c, schemeRef || null);

@@ -190,6 +190,19 @@ function applyTheme(){
         el.altBg=tc+'12';
         el.borderColor=tc+'80';
         el.textColor=textC;
+        // Remap chart bg/stroke scheme colors
+        if(el.chartBgScheme!=null && el.chartBgScheme!==undefined){
+          const resolved=_resolveSchemeColor(el.chartBgScheme,theme);
+          if(resolved) el.chartBg=resolved;
+        }
+        if(el.chartStrokeScheme!=null && el.chartStrokeScheme!==undefined){
+          const resolved=_resolveSchemeColor(el.chartStrokeScheme,theme);
+          if(resolved) el.chartStroke=resolved;
+        }
+        if(el.chartLabelColorScheme!=null && el.chartLabelColorScheme!==undefined){
+          const resolved=_resolveSchemeColor(el.chartLabelColorScheme,theme);
+          if(resolved) el.chartLabelColor=resolved;
+        }
       }
       if(el.type==='icon'){
         if(!el.iconColorCustom){
@@ -202,7 +215,7 @@ function applyTheme(){
             const _newSvg=_buildIconSVG(ic,newColor,el.iconSw!=null?el.iconSw:1.8,el.iconStyle||'stroke',el.shadow,el.shadowBlur,el.shadowColor);
             // Re-fit viewBox after color change to preserve tight bounds
             try{
-              const _pm=[..._newSvg.matchAll(/d="([^"]+)"/g)].map(m=>m[1]);
+              const _pm=[..._newSvg.matchAll(/(?<=[\s<])d="([^"]+)"/g)].map(m=>m[1]);
               if(_pm.length>0){
                 const _wr=document.createElement('div');_wr.style.cssText='position:fixed;left:-9999px;top:-9999px;width:200px;height:200px;';
                 const _ts=document.createElementNS('http://www.w3.org/2000/svg','svg');_ts.setAttribute('viewBox','0 0 24 24');_ts.style.cssText='width:200px;height:200px;';
@@ -277,20 +290,21 @@ function applyTheme(){
     const ec=el.querySelector('.ec');
     if(ec){ec.innerHTML=d.svgContent||'';}
   });
-  // Восстановить паузу если анимация выключена (force-update заменил SVG через innerHTML)
-  if(typeof _layoutAnimated!=='undefined' && !_layoutAnimated){
-    requestAnimationFrame(function(){ requestAnimationFrame(function(){
-      document.querySelectorAll('.decor-el svg').forEach(function(svg){
-        try{
+  // После force-update — применяем правильное состояние анимации
+  setTimeout(function(){
+    document.querySelectorAll('.decor-el svg').forEach(function(svg){
+      try{
+        if(typeof _layoutAnimated!=='undefined' && !_layoutAnimated){
           if(typeof _decorPausedAt!=='undefined' && typeof _decorSvgSlideIndex==='function'){
             const _si=_decorSvgSlideIndex(svg);
             if(_decorPausedAt.has(_si)) svg.setCurrentTime(_decorPausedAt.get(_si));
           }
           svg.pauseAnimations();
-        }catch(e){}
-      });
-    }); });
-  }
+        }
+        // _layoutAnimated=true: браузер запускает сам после innerHTML
+      }catch(e){}
+    });
+  }, 100);
   // Force-sync textBg to DOM dataset for current slide
   slides[cur].els.forEach(d=>{
     if(d.type!=='text')return;

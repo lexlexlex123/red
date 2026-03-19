@@ -345,23 +345,79 @@ const LAYOUTS=[
   // ── 9. WAVE STACK ── слои волн, глубина
   {
     name:'Слои',nameEn:'Layers',
-    desc:'Параллельные волны, глубина слоёв',descEn:'Layered wave planes, depth',
-    titleSvg:(w,h,a1,a2)=>`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
-      <defs><filter id="lf"><feGaussianBlur stdDeviation="15"/></filter></defs>
-      <path d="M0,${h*.38} C${w*.12},${h*.28} ${w*.28},${h*.44} ${w*.44},${h*.35} C${w*.6},${h*.26} ${w*.76},${h*.42} ${w},${h*.32} L${w},0 L0,0 Z" fill="${a1}" opacity="0.10"/>
-      <path d="M0,${h*.52} C${w*.15},${h*.42} ${w*.32},${h*.58} ${w*.5},${h*.48} C${w*.68},${h*.38} ${w*.82},${h*.55} ${w},${h*.46} L${w},0 L0,0 Z" fill="${a2}" opacity="0.08"/>
-      <path d="M0,${h*.38} C${w*.12},${h*.28} ${w*.28},${h*.44} ${w*.44},${h*.35} C${w*.6},${h*.26} ${w*.76},${h*.42} ${w},${h*.32}" fill="none" stroke="${a1}" stroke-width="1.5" opacity="0.4"/>
-      <path d="M0,${h*.52} C${w*.15},${h*.42} ${w*.32},${h*.58} ${w*.5},${h*.48} C${w*.68},${h*.38} ${w*.82},${h*.55} ${w},${h*.46}" fill="none" stroke="${a2}" stroke-width="1" opacity="0.3"/>
-      <path d="M0,${h*.66} C${w*.18},${h*.56} ${w*.36},${h*.72} ${w*.56},${h*.62} C${w*.74},${h*.52} ${w*.88},${h*.68} ${w},${h*.6}" fill="none" stroke="${a1}" stroke-width="0.8" opacity="0.2"/>
-      <path d="M0,${h*.78} C${w*.2},${h*.7} ${w*.42},${h*.84} ${w*.62},${h*.76} C${w*.8},${h*.68} ${w*.92},${h*.8} ${w},${h*.74}" fill="none" stroke="${a2}" stroke-width="0.6" opacity="0.15"/>
-      <ellipse cx="${w*.85}" cy="${h*.25}" rx="${w*.2}" ry="${h*.2}" fill="${a1}" opacity="0.06" filter="url(#lf)"/>
-    </svg>`,
-    contentSvg:(w,h,a1,a2)=>`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
-      <path d="M0,0 C${w*.15},${h*.12} ${w*.35},${h*.02} ${w*.55},${h*.1} C${w*.75},${h*.18} ${w*.88},${h*.06} ${w},${h*.12} L${w},0 Z" fill="${a1}" opacity="0.16"/>
-      <path d="M0,0 C${w*.18},${h*.2} ${w*.4},${h*.08} ${w*.6},${h*.18} C${w*.78},${h*.26} ${w*.92},${h*.12} ${w},${h*.2} L${w},0 Z" fill="${a2}" opacity="0.10"/>
-      <path d="M0,${h} C${w*.18},${h*.82} ${w*.4},${h*.92} ${w*.62},${h*.85} C${w*.8},${h*.78} ${w*.92},${h*.88} ${w},${h*.84} L${w},${h} Z" fill="${a1}" opacity="0.12"/>
-      <path d="M0,0 C${w*.15},${h*.12} ${w*.35},${h*.02} ${w*.55},${h*.1} C${w*.75},${h*.18} ${w*.88},${h*.06} ${w},${h*.12}" fill="none" stroke="${a1}" stroke-width="1.2" opacity="0.35"/>
-    </svg>`,
+    desc:'Переливающиеся волны, эффект бархата',descEn:'Velvet wave layers, shimmering depth',
+    animated: true,
+
+    _wpts(yb,amp,per,W,steps){
+      // Ширина: 3W (от -W до 2W) — достаточно для translate -W без пустот
+      const p=[];
+      for(let i=0;i<=steps;i++){
+        const x = -W + W*3*i/steps;
+        const phase = (x+W)/W * per;
+        const y = yb + amp*Math.sin(phase*Math.PI*2);
+        p.push(x.toFixed(2)+','+y.toFixed(2));
+      }
+      return p.join(' ');
+    },
+
+    _layer(w,h,yb,amp,per,topEdge,hDur,vDur,dy,col,opF,opS,sw,doAnim){
+      const S=160; // много шагов = плавная волна
+      const pts=this._wpts(yb,amp,per,w,S);
+      const isTop=(topEdge===0);
+      // fill: от края (top или bottom) до волны
+      // Ключ: закрываем контур через дальний угол чтобы не было видимой прямой
+      const fill = isTop
+        ? `M${-w},${-h} ${-w},${topEdge} ${pts} ${w*2},${topEdge} ${w*2},${-h} Z`
+        : `M${-w},${h*2} ${-w},${topEdge} ${pts} ${w*2},${topEdge} ${w*2},${h*2} Z`;
+      const line=`M${pts}`;
+
+      if(!doAnim){
+        return `<path d="${fill}" fill="${col}" opacity="${opF}"/>`+
+               `<path d="${line}" fill="none" stroke="${col}" stroke-width="${sw}" opacity="${opS}"/>`;
+      }
+      const hAn=`<animateTransform attributeName="transform" type="translate" values="0,0;${-w},0" dur="${hDur}s" begin="0s" repeatCount="indefinite" calcMode="linear"/>`;
+      const vAn=`<animateTransform attributeName="transform" type="translate" additive="sum" values="0,0;0,${dy};0,0" dur="${vDur}s" begin="0s" repeatCount="indefinite" calcMode="spline" keySplines="0.4,0,0.6,1;0.4,0,0.6,1" keyTimes="0;0.5;1"/>`;
+      return `<path d="${fill}" fill="${col}" opacity="${opF}">${hAn}${vAn}</path>`+
+             `<path d="${line}" fill="none" stroke="${col}" stroke-width="${sw}" opacity="${opS}">${hAn}${vAn}</path>`;
+    },
+
+    _layerDefs(a1,a2){
+      return [
+        {yf:.10,af:.050,per:2,op_f:.26,op_s:.68,sw:1.9,col:a1,hd:12,vd:6.5,dy:18},
+        {yf:.20,af:.042,per:2,op_f:.20,op_s:.50,sw:1.5,col:a2,hd:16,vd:8.2,dy:22},
+        {yf:.30,af:.035,per:3,op_f:.14,op_s:.36,sw:1.2,col:a1,hd:21,vd:5.8,dy:16},
+        {yf:.39,af:.028,per:2,op_f:.10,op_s:.27,sw:0.9,col:a2,hd:27,vd:9.4,dy:20},
+        {yf:.47,af:.022,per:3,op_f:.07,op_s:.19,sw:0.7,col:a1,hd:34,vd:7.1,dy:14},
+        {yf:.54,af:.017,per:2,op_f:.05,op_s:.13,sw:0.5,col:a2,hd:43,vd:11.0,dy:18},
+        {yf:.60,af:.013,per:3,op_f:.03,op_s:.08,sw:0.4,col:a1,hd:55,vd:8.8,dy:12},
+      ];
+    },
+
+    titleSvg(w,h,a1,a2,doAnimate){
+      const uid='lyt'+Math.random().toString(36).slice(2,7);
+      const gId=uid+'g';
+      const defs=`<defs><radialGradient id="${gId}" cx="80%" cy="22%" r="50%"><stop offset="0%" stop-color="${a1}" stop-opacity="0.11"/><stop offset="100%" stop-color="${a1}" stop-opacity="0"/></radialGradient></defs>`;
+      let body=`<rect width="${w}" height="${h}" fill="url(#${gId})"/>`;
+      const doAnim=doAnimate!==false;
+      this._layerDefs(a1,a2).forEach(lv=>{
+        body+=this._layer(w,h,lv.yf*h,lv.af*h,lv.per,0,lv.hd,lv.vd,lv.dy,lv.col,lv.op_f,lv.op_s,lv.sw,doAnim);
+      });
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden">${defs}${body}</svg>`;
+    },
+
+    contentSvg(w,h,a1,a2,doAnimate){
+      const uid='lyc'+Math.random().toString(36).slice(2,7);
+      const gId=uid+'g';
+      const defs=`<defs><radialGradient id="${gId}" cx="50%" cy="50%" r="55%"><stop offset="0%" stop-color="${a1}" stop-opacity="0.05"/><stop offset="100%" stop-color="${a1}" stop-opacity="0"/></radialGradient></defs>`;
+      let body=`<rect width="${w}" height="${h}" fill="url(#${gId})"/>`;
+      const doAnim=doAnimate!==false;
+      this._layerDefs(a1,a2).forEach(lv=>{
+        const ampH=lv.af*h;
+        body+=this._layer(w,h,lv.yf*h-300,ampH,lv.per,0,lv.hd,lv.vd,lv.dy,lv.col,lv.op_f,lv.op_s,lv.sw,doAnim);
+        body+=this._layer(w,h,h*(1-lv.yf)+300,ampH,lv.per,h,Math.round(lv.hd*1.18),lv.vd*0.88,lv.dy,lv.col,lv.op_f,lv.op_s,lv.sw,doAnim);
+      });
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden">${defs}${body}</svg>`;
+    },
   },
 
   // ── 10. DIAMOND ── кристалл, огранка
@@ -1216,6 +1272,8 @@ M-29,-2.5 L-47,-19 L-44,0 L-47,19 L-29,2.5 Z"/>
     },
   },
 
+
+  // ── BIRDS ──
 ];
 
 // ══════════════ LAYOUT ENGINE ══════════════
@@ -1282,7 +1340,7 @@ function refreshDecorColors(ac1, ac2, skipRender){
       if(typeof fn!=='function')return;
       // SVG генерируется с учётом текущего флага анимации — чтобы экспорт/просмотр работали корректно
       const doAnim = L.animated && _layoutAnimated;
-      let svg=fn.call(L, canvasW, canvasH, _oa1, _oa2, doAnim)||';;'
+          let svg=fn.call(L, canvasW, canvasH, _oa1, _oa2, doAnim)||';;'
       const uid='u'+(++_svgUidCounter);
       svg=svg.replace(/\bid="([^"]+)"/g, (_,id)=>`id="${uid}_${id}"`);
       svg=svg.replace(/url\(#([^)]+)\)/g, (_,id)=>`url(#${uid}_${id})`);
@@ -1354,12 +1412,8 @@ function buildLayoutGrid(){
 }
 
 function _updateAnimToggleVisibility(){
-  const wrap = document.getElementById('layout-anim-toggle-wrap');
-  if(!wrap) return;
-  const L = selLayout>=0 ? LAYOUTS[selLayout] : null;
-  const show = !!(L && L.animated);
-  wrap.style.display = show ? '' : 'none';
-  if(show) _syncAnimToggleBtns();
+  // Toggle wrap removed from modal — handled by slide properties panel
+  _syncAnimToggleBtns();
 }
 
 function _syncAnimToggleBtns(){
@@ -1374,9 +1428,9 @@ function _syncAnimToggleBtns(){
       off.style.opacity='1';      on.style.opacity='0.55';
     }
   }
-  // Синхронизируем tog-чекбокс в панели свойств слайда
+  // Синхронизируем tog-чекбокс — ставим флаг чтобы onchange не сработал
   const chk = document.getElementById('slide-layout-anim-chk');
-  if(chk) chk.checked = _layoutAnimated;
+  if(chk){ chk._syncing = true; chk.checked = _layoutAnimated; chk._syncing = false; }
 }
 
 // Показать/скрыть строку анимации в slide-props в зависимости от активного макета
@@ -1436,6 +1490,13 @@ function applyLayout(idx,btn){
 
   const [a1,a2]=_decorAccents();
   const L=LAYOUTS[idx];
+
+  // Если макет анимированный — включаем анимацию по умолчанию
+  if(L && L.animated && !_layoutAnimated){
+    _layoutAnimated = true;
+    _syncAnimToggleBtns();
+    if(typeof saveState==='function') saveState();
+  }
 
   // Apply to every slide: replace or add decor
   slides.forEach((s,si)=>{

@@ -337,7 +337,7 @@ function mkEl(d){
     const iframe=document.createElement('iframe');iframe.srcdoc=d.appletHtml||'<p>Applet</p>';
     iframe.style.cssText='width:100%;height:100%;border:none;background:transparent;';
     iframe.setAttribute('allowtransparency','true');
-    iframe.sandbox = (d.appletId==='timer') ? 'allow-scripts allow-same-origin' : 'allow-scripts';
+    iframe.sandbox = 'allow-scripts'; // allow-same-origin removed — postMessage works with '*' targetOrigin
     clip.appendChild(iframe);
     // Layer 2: border overlay div — sits ON TOP of clip, pointer-events:none, never clipped
     const bord=document.createElement('div');bord.className='applet-border-overlay';
@@ -410,6 +410,27 @@ function mkEl(d){
         if(typeof refreshTimerEl==='function') refreshTimerEl(d.id);
       });
     }
+    if(d.appletId==='clock'){
+      el.dataset.genFontSize    = d.genFontSize    !== undefined ? d.genFontSize    : 48;
+      el.dataset.genColor       = d.genColor       || '';
+      el.dataset.genBg          = d.genBg          || '';
+      el.dataset.genBgBlur      = d.genBgBlur      !== undefined ? d.genBgBlur      : 0;
+      el.dataset.genBorderColor = d.genBorderColor || '';
+      el.dataset.genBorderWidth = d.genBorderWidth !== undefined ? d.genBorderWidth : 0;
+      el.dataset.genBgOp        = d.genBgOp        !== undefined ? d.genBgOp        : 1;
+      el.dataset.genShadowOn    = d.genShadowOn    !== undefined ? (d.genShadowOn ? 'true' : 'false') : 'true';
+      el.dataset.genShadowBlur  = d.genShadowBlur  !== undefined ? d.genShadowBlur  : 8;
+      el.dataset.genShadowColor = d.genShadowColor || '';
+      el.dataset.genBold        = d.genBold ? 'true' : 'false';
+      el.dataset.genAlign       = d.genAlign       || 'center';
+      el.dataset.genVAlign      = d.genVAlign      || 'middle';
+      el.dataset.genColorScheme  = d.genColorScheme  ? JSON.stringify(d.genColorScheme)  : '';
+      el.dataset.genBgScheme     = d.genBgScheme     ? JSON.stringify(d.genBgScheme)     : '';
+      el.dataset.genBorderScheme = d.genBorderScheme ? JSON.stringify(d.genBorderScheme) : '';
+      requestAnimationFrame(function(){
+        if(typeof refreshClockEl==='function') refreshClockEl(d.id);
+      });
+    }
   }else if(d.type==='pagenum'){
     c.style.cssText='width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:visible;pointer-events:none;';
     c.innerHTML=d.html||'';
@@ -438,22 +459,23 @@ function mkEl(d){
     });
   }
   el.append(c,lb,trigBadge);cv.appendChild(el);
-  // Применяем паузу: двойной rAF — первый даёт браузеру запустить анимацию, второй замораживает
-  if(d._isDecor && typeof _layoutAnimated!=='undefined' && !_layoutAnimated){
-    requestAnimationFrame(function(){
-      requestAnimationFrame(function(){
-        const _dsvg=el.querySelector('svg');
-        if(_dsvg&&_dsvg.pauseAnimations){
-          try{
-            if(typeof _decorPausedAt!=='undefined'){
-              const _si=slides.indexOf(slides[cur]);
-              if(_decorPausedAt.has(_si)){_dsvg.setCurrentTime(_decorPausedAt.get(_si));}
-            }
-            _dsvg.pauseAnimations();
-          }catch(e){}
+  // Управляем анимацией декора после вставки в DOM
+  if(d._isDecor){
+    setTimeout(function(){
+      const _dsvg=el.querySelector('svg');
+      if(!_dsvg) return;
+      try{
+        if(typeof _layoutAnimated!=='undefined' && !_layoutAnimated){
+          if(typeof _decorPausedAt!=='undefined' && typeof _decorSvgSlideIndex==='function'){
+            const _si=_decorSvgSlideIndex(_dsvg);
+            if(_decorPausedAt.has(_si)) _dsvg.setCurrentTime(_decorPausedAt.get(_si));
+          }
+          _dsvg.pauseAnimations();
+        } else {
+          _dsvg.unpauseAnimations();
         }
-      });
-    });
+      }catch(e){}
+    }, 50);
   }
   // Restore text background here — after el.append(c) so .ec is queryable
   if(d.type==='text'){
@@ -472,6 +494,7 @@ function mkEl(d){
   if(d.valign&&d.type==='text'&&typeof applyTextVAlign==='function')applyTextVAlign(el,d.valign);
   if(d.type==='table'&&d.tableBgBlur>0){
     el.style.backdropFilter=`blur(${d.tableBgBlur}px)`;el.style.webkitBackdropFilter=`blur(${d.tableBgBlur}px)`;}
+  if(d.type==='svg'){el.addEventListener('dblclick',e=>{e.stopPropagation();if(typeof openSVGModalEdit==='function')openSVGModalEdit();});}
   if(d.type==='code'){renderCodeEl(el,d);el.addEventListener('dblclick',e=>{e.stopPropagation();if(typeof openCodeEditor==='function')openCodeEditor();});}
   if(d.type==='htmlframe'){renderHtmlFrameEl(el,d);el.addEventListener('dblclick',e=>{e.stopPropagation();if(typeof openHtmlFrameEditor==='function')openHtmlFrameEditor();});}
   if(d.type==='image')applyImgStyles(el,d);

@@ -50,7 +50,7 @@ function addTable(rows, cols) {
 }
 
 
-const _TBL_FIELDS=['cells','colWidths','rowHeights','rows','cols','borderW','borderColor','headerRow','rx','fs','textColor','headerBg','cellBg','altBg','tableBgOp','tableBgBlur','showChart','chartType','chartLegend','chartLabels'];
+const _TBL_FIELDS=['cells','colWidths','rowHeights','rows','cols','borderW','borderColor','headerRow','rx','fs','textColor','headerBg','cellBg','altBg','tableBgOp','tableBgBlur','showChart','chartType','chartLegend','chartLegendPos','chartLabels','chartLabelOffset','chartBg','chartBgScheme','chartBgOp','chartBgBlur','chartStroke','chartStrokeScheme','chartSw','chartRx','chartLabelColor','chartLabelColorScheme','chartLabelFs','chartSliceGap','chartSliceRadius'];
 function _tblSaveToDataset(el, d){
   const data={};
   _TBL_FIELDS.forEach(k=>{ if(d[k]!==undefined) data[k]=d[k]; });
@@ -146,8 +146,29 @@ function renderTableEl(el, d) {
   // ── Chart mode ──
   if(d.showChart){
     const chartSvg = typeof _buildChartSvg==='function' ? _buildChartSvg(d) : '';
-    ecEl.innerHTML=`<div style="position:relative;width:${W}px;height:${H}px;">${chartSvg}</div>`;
+    // Обновляем только SVG без замены контейнера — убирает мигание при ресайзе
+    let chartWrap = ecEl.querySelector('.chart-wrap');
+    const _cBg = d.chartBg||'';
+    const _cOp = d.chartBgOp!=null?+d.chartBgOp:1;
+    const _cBlur = d.chartBgBlur||0;
+    const _cSw = d.chartSw!=null?+d.chartSw:0;
+    const _cStroke = d.chartStroke||'';
+    const _cRx = d.chartRx||0;
+    // Build HTML style for wrap: backdrop-filter + bg color + outline border (draws outward)
+    let _wrapStyle = `position:relative;width:${W}px;height:${H}px;border-radius:${_cRx}px;overflow:visible;box-sizing:border-box;`;
+    if(_cBlur>0) _wrapStyle+=`backdrop-filter:blur(${_cBlur}px);-webkit-backdrop-filter:blur(${_cBlur}px);`;
+    if(_cBg) _wrapStyle+=`background:${_cBg};`;
+    // Use outline (draws outside element) so border doesn't overlap content
+    if(_cSw>0&&_cStroke) _wrapStyle+=`outline:${_cSw}px solid ${_cStroke};outline-offset:0px;border-radius:${_cRx}px;`;
+    if(!chartWrap){
+      ecEl.innerHTML=`<div class="chart-wrap" style="${_wrapStyle}"></div>`;
+      chartWrap = ecEl.querySelector('.chart-wrap');
+    } else {
+      chartWrap.style.cssText = _wrapStyle;
+    }
+    chartWrap.innerHTML = chartSvg;
     _tblSaveToDataset(el, d);
+    _tblAttachResizeObs(el, d);
     return;
   }
 
@@ -636,14 +657,43 @@ function syncTableProps(){
     if(ctSel) ctSel.value=d.chartType||'bar';
     // Highlight active chart type button
     const _ct=d.chartType||'bar';
-    ['bar','hbar','line','pie','donut'].forEach(function(t){
+    ['bar','hbar','line','pie','donut','explodedPie','explodedDonut'].forEach(function(t){
       const b=document.getElementById('ct-'+t);
       if(b) b.classList.toggle('active', t===_ct||(_ct==='horizontalBar'&&t==='hbar'));
     });
+    // Show/hide explode options
+    const _explodeOpts=document.getElementById('chart-explode-opts');
+    if(_explodeOpts){
+      const _isExploded=_ct==='explodedPie'||_ct==='explodedDonut';
+      _explodeOpts.style.display=_isExploded?'grid':'none';
+      if(_isExploded){
+        try{document.getElementById('ch-slice-gap').value=d.chartSliceGap!=null?d.chartSliceGap:6;}catch(e){}
+        try{document.getElementById('ch-slice-rx').value=d.chartSliceRadius!=null?d.chartSliceRadius:8;}catch(e){}
+      }
+    }
     const clSel=document.getElementById('tbl-chart-legend');
     if(clSel) clSel.value=d.chartLegend||'row';
     const clbSel=document.getElementById('tbl-chart-labels');
     if(clbSel) clbSel.value=d.chartLabels||'none';
+    const cloEl=document.getElementById('tbl-chart-label-offset');
+    if(cloEl) cloEl.value=d.chartLabelOffset!=null?d.chartLabelOffset:0;
+    // Legend position buttons
+    const _lgpos=d.chartLegendPos||'bottom-left';
+    document.querySelectorAll('.chart-lgpos-btn').forEach(b=>b.classList.toggle('active',b.id==='lgpos-'+_lgpos));
+    // Chart bg/stroke
+    const _chBg=d.chartBg||'';
+    const chBgPrev=document.getElementById('ch-bg-preview');
+    if(chBgPrev) chBgPrev.style.cssText=_chBg?'width:100%;height:100%;background:'+_chBg:'width:100%;height:100%;background:transparent;background-image:linear-gradient(45deg,#444 25%,transparent 25%,transparent 75%,#444 75%),linear-gradient(45deg,#444 25%,transparent 25%,transparent 75%,#444 75%);background-size:6px 6px;background-position:0 0,3px 3px;';
+    try{document.getElementById('ch-bg-op').value=d.chartBgOp!=null?d.chartBgOp:1;}catch(e){}
+    try{document.getElementById('ch-bg-blur').value=d.chartBgBlur||0;}catch(e){}
+    const chStrkPrev=document.getElementById('ch-stroke-preview');
+    if(chStrkPrev) chStrkPrev.style.background=d.chartStroke||'#3b82f6';
+    try{document.getElementById('ch-sw').value=d.chartSw!=null?d.chartSw:0;}catch(e){}
+    try{document.getElementById('ch-rx').value=d.chartRx||0;}catch(e){}
+    // Label color + size
+    const chLblPrev=document.getElementById('ch-lbl-preview');
+    if(chLblPrev) chLblPrev.style.background=d.chartLabelColor||'#ffffff';
+    try{document.getElementById('ch-lbl-fs').value=d.chartLabelFs||11;}catch(e){}
   }catch(e){}
 
   const hasSel=_tblSel&&_tblSel.elId===d.id&&_tblSelSet.size>0;
@@ -784,15 +834,34 @@ function _tblAttachResizeObs(el, d){
 
 // Palette for series / slices — uses theme accent colours + fallbacks
 function _chartPalette(n, ac1, ac2) {
-  const base = [
-    ac1  || '#6366f1',
-    ac2  || '#818cf8',
-    '#22d3ee','#f59e0b','#10b981','#f43f5e',
-    '#a78bfa','#fb923c','#34d399','#60a5fa',
-    '#e879f9','#fbbf24','#4ade80','#38bdf8',
-  ];
+  // Use theme colors[] array if available — first 7 accent colors of current scheme
+  let base;
+  if (typeof THEMES !== 'undefined' && typeof appliedThemeIdx !== 'undefined' && appliedThemeIdx >= 0) {
+    const t = THEMES[appliedThemeIdx];
+    if (t && t.colors && t.colors.length >= 7) {
+      base = t.colors.slice(0, 7); // первые 7 акцентных цветов темы
+    }
+  }
+  if (!base) {
+    // Fallback: high-contrast defaults
+    base = [
+      ac1 || '#6366f1', '#f43f5e', '#22d3ee', '#f59e0b',
+      ac2 || '#818cf8', '#10b981', '#fb923c',
+    ];
+  }
   const out = [];
-  for (let i = 0; i < n; i++) out.push(base[i % base.length]);
+  const len = base.length; // 7
+  if (n <= 2) {
+    // For 2 slices/series: use index 0 and 3 (maximally distant in palette)
+    const picks = [0, 3, 1, 4, 2, 5, 6];
+    for (let i = 0; i < n; i++) out.push(base[picks[i % picks.length]]);
+  } else if (n <= 4) {
+    // Spread evenly: 0, 2, 4, 6
+    const step = Math.floor(len / n);
+    for (let i = 0; i < n; i++) out.push(base[(i * step) % len]);
+  } else {
+    for (let i = 0; i < n; i++) out.push(base[i % len]);
+  }
   return out;
 }
 
@@ -858,6 +927,62 @@ function _fmtLabel(val, total, mode) {
 }
 
 // Build SVG string for chart
+function _chartLegendSvg(series, palette, textCol, fs, W, H, pos) {
+  // Scale legend proportionally to diagram size
+  const scale = Math.max(0.5, Math.min(2, W / 400));
+  const sqSize = Math.round(10 * scale);
+  const lgFs = Math.max(8, Math.min(18, fs * scale));
+  const lgItemW = Math.min(Math.round(110 * scale), (W - 20) / Math.max(series.length, 1));
+  const lgH = Math.round(20 * scale);
+  const gap = sqSize + 4;
+  let svg = '';
+  if (!pos || pos === 'bottom-left' || pos === 'bottom-center' || pos === 'bottom-right') {
+    const y = H - lgH;
+    const totalW = series.length * lgItemW;
+    const startX = pos === 'bottom-right' ? W - totalW - 4
+                 : pos === 'bottom-center' ? (W - totalW) / 2
+                 : 6;
+    series.forEach((s, i) => {
+      const lx = startX + i * lgItemW;
+      svg += `<rect x="${lx.toFixed(1)}" y="${(y + (lgH - sqSize)/2).toFixed(1)}" width="${sqSize}" height="${sqSize}" rx="${Math.round(sqSize*0.2)}" fill="${palette[i]}"/>`;
+      svg += `<text x="${(lx + gap).toFixed(1)}" y="${(y + lgH/2).toFixed(1)}" font-size="${lgFs}" fill="${textCol}" font-family="sans-serif" dominant-baseline="middle">${_escHTML(s.label)}</text>`;
+    });
+  } else if (pos === 'left' || pos === 'right') {
+    const itemH = Math.min(Math.round(26 * scale), (H - 20) / Math.max(series.length, 1));
+    const startY = (H - series.length * itemH) / 2;
+    const sideW = Math.round(110 * scale);
+    const x = pos === 'left' ? 4 : W - sideW;
+    series.forEach((s, i) => {
+      const ly = startY + i * itemH + itemH / 2;
+      svg += `<rect x="${x}" y="${(ly - sqSize/2).toFixed(1)}" width="${sqSize}" height="${sqSize}" rx="${Math.round(sqSize*0.2)}" fill="${palette[i]}"/>`;
+      svg += `<text x="${(x + gap).toFixed(1)}" y="${ly.toFixed(1)}" font-size="${lgFs}" fill="${textCol}" font-family="sans-serif" dominant-baseline="middle">${_escHTML(s.label)}</text>`;
+    });
+  }
+  return svg;
+}
+
+function _chartBgSvg(d, W, H) {
+  // Background rect + border for chart
+  const bg = d.chartBg || '';
+  const op = d.chartBgOp != null ? +d.chartBgOp : 1;
+  const blur = d.chartBgBlur || 0;
+  const stroke = d.chartStroke || '';
+  const sw = d.chartSw != null ? +d.chartSw : 0;
+  const rx = d.chartRx || 0;
+  if (!bg && !sw) return { defs: '', bg: '' };
+  let defs = '';
+  let bgSvg = '';
+  if (blur > 0) {
+    const fid = 'cbf_' + (d.id || 'x');
+    defs = `<filter id="${fid}" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur stdDeviation="${blur}"/></filter>`;
+    bgSvg += `<rect x="0" y="0" width="${W}" height="${H}" rx="${rx}" filter="url(#${fid})" fill="${bg||'transparent'}" fill-opacity="${op}"/>`;
+  } else if (bg) {
+    bgSvg += `<rect x="0" y="0" width="${W}" height="${H}" rx="${rx}" fill="${bg}" fill-opacity="${op}"/>`;
+  }
+  // Border is drawn via CSS outline on .chart-wrap — not in SVG to avoid duplication
+  return { defs, bg: bgSvg };
+}
+
 function _buildChartSvg(d) {
   const W = d.w || 600, H = d.h || 400;
   const type = d.chartType || 'bar';
@@ -869,37 +994,40 @@ function _buildChartSvg(d) {
   const palette = _chartPalette(series.length, th.ac1, th.ac2);
   const textCol = d.textColor || '#ffffff';
   const fs = Math.max(9, Math.min(14, (d.fs || 13) * 0.85));
+  const lblColor = d.chartLabelColor || textCol;
+  const lblFs = d.chartLabelFs ? +d.chartLabelFs : Math.max(8, fs - 1);
+  const lgPos = d.chartLegendPos || 'bottom-left';
 
-  // Legend
-  const legendH = 22;
-  const legendY = H - legendH;
-  let legendSvg = '';
-  const itemW = Math.min(120, (W - 20) / series.length);
-  series.forEach((s, i) => {
-    const lx = 10 + i * itemW;
-    legendSvg += `<rect x="${lx}" y="${legendY + 4}" width="12" height="12" rx="3" fill="${palette[i]}"/>`;
-    legendSvg += `<text x="${lx + 16}" y="${legendY + 14}" font-size="${fs}" fill="${textCol}" font-family="sans-serif" dominant-baseline="middle">${_escHTML(s.label)}</text>`;
-  });
+  // Reserve space based on legend position
+  const lgReserveBottom = (!lgPos || lgPos.startsWith('bottom')) ? 22 : 0;
+  const lgReserveSide   = (lgPos === 'left' || lgPos === 'right') ? 114 : 0;
 
-  const plotH = legendY - 30; // space above legend
-  const plotY = 10;
-  const plotX = 40;
-  const plotW = W - plotX - 10;
+  const legendSvg = _chartLegendSvg(series, palette, textCol, fs, W, H, lgPos);
+  const { defs: bgDefs, bg: bgSvg } = _chartBgSvg(d, W, H);
 
-  if (type === 'pie' || type === 'donut') {
-    return _buildPieChart(d, W, H, series, palette, textCol, fs, labelMode, type === 'donut');
+  const plotY = 28; // space above plot for labels above tallest bar
+  const plotH = H - lgReserveBottom - 28 - 20;
+  const plotX = (lgPos === 'left' ? lgReserveSide : 0) + 40;
+  const plotW = W - plotX - (lgPos === 'right' ? lgReserveSide : 0) - 10;
+
+  if (type === 'pie' || type === 'donut' || type === 'explodedPie' || type === 'explodedDonut') {
+    return _buildPieChart(d, W, H, series, palette, textCol, fs, labelMode,
+      type === 'donut' || type === 'explodedDonut',
+      legendSvg, bgDefs, bgSvg, lblColor, lblFs,
+      type === 'explodedPie' || type === 'explodedDonut');
   }
   if (type === 'line') {
-    return _buildLineChart(d, W, H, series, categories, palette, textCol, fs, labelMode, plotX, plotY, plotW, plotH, legendSvg);
+    return _buildLineChart(d, W, H, series, categories, palette, textCol, fs, labelMode, plotX, plotY, plotW, plotH, legendSvg, bgDefs, bgSvg, lblColor, lblFs);
   }
   if (type === 'horizontalBar') {
-    return _buildHBarChart(d, W, H, series, categories, palette, textCol, fs, labelMode, plotX, plotY, plotW, plotH, legendSvg);
+    return _buildHBarChart(d, W, H, series, categories, palette, textCol, fs, labelMode, plotX, plotY, plotW, plotH, legendSvg, bgDefs, bgSvg, lblColor, lblFs);
   }
   // default: bar
-  return _buildBarChart(d, W, H, series, categories, palette, textCol, fs, labelMode, plotX, plotY, plotW, plotH, legendSvg);
+  return _buildBarChart(d, W, H, series, categories, palette, textCol, fs, labelMode, plotX, plotY, plotW, plotH, legendSvg, bgDefs, bgSvg, lblColor, lblFs);
 }
 
-function _buildBarChart(d, W, H, series, categories, palette, textCol, fs, labelMode, plotX, plotY, plotW, plotH, legendSvg) {
+function _buildBarChart(d, W, H, series, categories, palette, textCol, fs, labelMode, plotX, plotY, plotW, plotH, legendSvg, bgDefs, bgSvg, lblColor, lblFs) {
+  bgDefs = bgDefs||""; bgSvg = bgSvg||""; lblColor = lblColor||textCol; lblFs = lblFs||(Math.max(8,fs-1));
   const catCount = categories.length || 1;
   const serCount = series.length;
   const groupW = plotW / catCount;
@@ -935,8 +1063,12 @@ function _buildBarChart(d, W, H, series, categories, palette, textCol, fs, label
       barsSvg += `<rect x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${barW.toFixed(1)}" height="${bh.toFixed(1)}" rx="2" fill="${palette[si]}"/>`;
       const lbl = _fmtLabel(val, totalPerCat[ci], labelMode);
       if (lbl) {
-        const inside = bh > fs * 1.8;
-        barsSvg += `<text x="${(bx + barW/2).toFixed(1)}" y="${inside ? (by + bh/2).toFixed(1) : (by - 4).toFixed(1)}" text-anchor="middle" dominant-baseline="${inside ? 'middle' : 'auto'}" font-size="${fs - 1}" fill="${inside ? '#fff' : textCol}" font-family="sans-serif">${_escHTML(lbl)}</text>`;
+        const offset = d.chartLabelOffset != null ? +d.chartLabelOffset : 0;
+        const inside = offset === 0 ? (bh > fs * 1.8) : (offset < 0);
+        const lblYRaw = inside ? (by + bh/2) : (by - 4 - offset);
+        const lblY = lblYRaw; // no clamp — SVG overflow:visible allows labels outside plot
+        const lblFill = inside ? '#fff' : lblColor;
+        barsSvg += `<text x="${(bx + barW/2).toFixed(1)}" y="${lblY.toFixed(1)}" text-anchor="middle" dominant-baseline="${inside ? 'middle' : 'auto'}" font-size="${lblFs}" fill="${lblFill}" font-family="sans-serif">${_escHTML(lbl)}</text>`;
       }
     });
   });
@@ -948,10 +1080,13 @@ function _buildBarChart(d, W, H, series, categories, palette, textCol, fs, label
     catSvg += `<text x="${cx.toFixed(1)}" y="${(plotY + plotH + 14).toFixed(1)}" text-anchor="middle" font-size="${fs}" fill="${textCol}cc" font-family="sans-serif">${_escHTML(cat)}</text>`;
   });
 
-  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${gridSvg}${barsSvg}${catSvg}${legendSvg}</svg>`;
+  const PAD_TOP = 28;
+  const PAD_BOTTOM = Math.ceil(fs + 30); // space for category labels + legend below plot
+  return `<svg viewBox="0 ${-PAD_TOP} ${W} ${H + PAD_BOTTOM}" xmlns="http://www.w3.org/2000/svg">${bgDefs?`<defs>${bgDefs}</defs>`:""}`+bgSvg+`${gridSvg}${barsSvg}${catSvg}${legendSvg}</svg>`;
 }
 
-function _buildHBarChart(d, W, H, series, categories, palette, textCol, fs, labelMode, plotX, plotY, plotW, plotH, legendSvg) {
+function _buildHBarChart(d, W, H, series, categories, palette, textCol, fs, labelMode, plotX, plotY, plotW, plotH, legendSvg, bgDefs, bgSvg, lblColor, lblFs) {
+  bgDefs = bgDefs||""; bgSvg = bgSvg||""; lblColor = lblColor||textCol; lblFs = lblFs||(Math.max(8,fs-1));
   const catCount = categories.length || 1;
   const serCount = series.length;
   const groupH = plotH / catCount;
@@ -963,8 +1098,9 @@ function _buildHBarChart(d, W, H, series, categories, palette, textCol, fs, labe
   if (maxVal === 0) maxVal = 1;
 
   const labelColW = 60;
+  const PAD_RIGHT = 32; // extra space right of longest bar for outside labels
   const bplotX = plotX + labelColW;
-  const bplotW = plotW - labelColW;
+  const bplotW = plotW - labelColW - PAD_RIGHT;
 
   let gridSvg = '';
   for (let i = 0; i <= 4; i++) {
@@ -987,8 +1123,11 @@ function _buildHBarChart(d, W, H, series, categories, palette, textCol, fs, labe
       barsSvg += `<rect x="${bx}" y="${by.toFixed(1)}" width="${bw.toFixed(1)}" height="${barH.toFixed(1)}" rx="2" fill="${palette[si]}"/>`;
       const lbl = _fmtLabel(val, totalPerCat[ci], labelMode);
       if (lbl) {
-        const inside = bw > 40;
-        barsSvg += `<text x="${inside ? (bx + bw - 4).toFixed(1) : (bx + bw + 4).toFixed(1)}" y="${(by + barH/2).toFixed(1)}" text-anchor="${inside ? 'end' : 'start'}" dominant-baseline="middle" font-size="${fs - 1}" fill="${inside ? '#fff' : textCol}" font-family="sans-serif">${_escHTML(lbl)}</text>`;
+        const offset = d.chartLabelOffset != null ? +d.chartLabelOffset : 0;
+        const inside = offset === 0 ? (bw > 40) : (offset < 0);
+        const lblX = inside ? (bx + bw - 4 + offset) : (bx + bw + 4 + offset);
+        const lblFill = inside ? '#fff' : lblColor;
+        barsSvg += `<text x="${lblX.toFixed(1)}" y="${(by + barH/2).toFixed(1)}" text-anchor="${inside ? 'end' : 'start'}" dominant-baseline="middle" font-size="${lblFs}" fill="${lblFill}" font-family="sans-serif">${_escHTML(lbl)}</text>`;
       }
     });
   });
@@ -999,10 +1138,11 @@ function _buildHBarChart(d, W, H, series, categories, palette, textCol, fs, labe
     catSvg += `<text x="${plotX + labelColW - 6}" y="${cy.toFixed(1)}" text-anchor="end" dominant-baseline="middle" font-size="${fs}" fill="${textCol}cc" font-family="sans-serif">${_escHTML(cat)}</text>`;
   });
 
-  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${gridSvg}${barsSvg}${catSvg}${legendSvg}</svg>`;
+  return `<svg viewBox="0 0 ${W + PAD_RIGHT} ${H}" xmlns="http://www.w3.org/2000/svg">${bgDefs?`<defs>${bgDefs}</defs>`:""}`+bgSvg+`${gridSvg}${barsSvg}${catSvg}${legendSvg}</svg>`;
 }
 
-function _buildLineChart(d, W, H, series, categories, palette, textCol, fs, labelMode, plotX, plotY, plotW, plotH, legendSvg) {
+function _buildLineChart(d, W, H, series, categories, palette, textCol, fs, labelMode, plotX, plotY, plotW, plotH, legendSvg, bgDefs, bgSvg, lblColor, lblFs) {
+  bgDefs = bgDefs||""; bgSvg = bgSvg||""; lblColor = lblColor||textCol; lblFs = lblFs||(Math.max(8,fs-1));
   const catCount = Math.max(categories.length, 2);
 
   let maxVal = 0, minVal = 0;
@@ -1032,7 +1172,7 @@ function _buildLineChart(d, W, H, series, categories, palette, textCol, fs, labe
       const cx = toX(i), cy = toY(v);
       linesSvg += `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4" fill="${palette[si]}" stroke="${textCol}44" stroke-width="1"/>`;
       const lbl = _fmtLabel(v, totalPerCat[i], labelMode);
-      if (lbl) linesSvg += `<text x="${cx.toFixed(1)}" y="${(cy - 8).toFixed(1)}" text-anchor="middle" font-size="${fs - 1}" fill="${textCol}" font-family="sans-serif">${_escHTML(lbl)}</text>`;
+      if (lbl) linesSvg += `<text x="${cx.toFixed(1)}" y="${(cy - 8).toFixed(1)}" text-anchor="middle" font-size="${lblFs}" fill="${lblColor}" font-family="sans-serif">${_escHTML(lbl)}</text>`;
     });
   });
 
@@ -1041,26 +1181,49 @@ function _buildLineChart(d, W, H, series, categories, palette, textCol, fs, labe
     catSvg += `<text x="${toX(i).toFixed(1)}" y="${(plotY + plotH + 14).toFixed(1)}" text-anchor="middle" font-size="${fs}" fill="${textCol}cc" font-family="sans-serif">${_escHTML(cat)}</text>`;
   });
 
-  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${gridSvg}${linesSvg}${catSvg}${legendSvg}</svg>`;
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${bgDefs?`<defs>${bgDefs}</defs>`:""}`+bgSvg+`${gridSvg}${linesSvg}${catSvg}${legendSvg}</svg>`;
 }
 
-function _buildPieChart(d, W, H, series, palette, textCol, fs, labelMode, isDonut) {
-  // For pie/donut: single series = slice per category; multiple series = first series only
-  // Use first series, its values = slices; categories = series labels
-  const { categories } = _chartExtract(d);
-  // Flatten: if multiple series use all series summed per category, or first series
-  const sliceData = series[0] ? series[0].values.map((v, i) => ({
-    val: v || 0,
-    label: categories[i] || series[0].label,
-    color: palette[i % palette.length]
-  })) : [];
+function _buildPieChart(d, W, H, series, palette, textCol, fs, labelMode, isDonut, legendSvg, bgDefs, bgSvg, lblColor, lblFs, isExploded) {
+  legendSvg = legendSvg||""; bgDefs = bgDefs||""; bgSvg = bgSvg||""; lblColor = lblColor||'#fff'; lblFs = lblFs||(Math.max(8,fs-1));
+  const sliceGap = isExploded ? (d.chartSliceGap != null ? +d.chartSliceGap : 6) : 0;
+  const sliceRx  = 0; // скругление убрано — только отступ секторов
+  const { categories, legendOnRow } = _chartExtract(d);
+  // Pie/donut: interpret data based on legend orientation
+  // legendOnRow=true: first row = series labels (C, D...), data rows below
+  //   → each SERIES (column) becomes a slice, value = sum of that column across all data rows
+  // legendOnRow=false: first col = series labels, data cols to right
+  //   → each SERIES (row) becomes a slice, value = sum of that row across all data cols
+  let sliceData;
+  if (legendOnRow !== false) {
+    // Columns as slices: series[i] = one slice, value = sum of all rows in that series
+    sliceData = series.map((s, i) => ({
+      val: s.values.reduce((sum, v) => sum + (v || 0), 0),
+      label: s.label,
+      color: palette[i % palette.length]
+    }));
+  } else {
+    // Rows as slices: categories[i] = one slice, value = sum across all series for that category index
+    sliceData = categories.map((cat, i) => ({
+      val: series.reduce((sum, s) => sum + (s.values[i] || 0), 0),
+      label: cat,
+      color: palette[i % palette.length]
+    }));
+  }
+  sliceData = sliceData.filter(sl => sl.val > 0);
 
   const total = sliceData.reduce((s, sl) => s + sl.val, 0);
   if (total === 0) return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><text x="${W/2}" y="${H/2}" text-anchor="middle" fill="#888" font-size="14">Нет данных</text></svg>`;
 
-  const legendH = 22;
-  const cx = W / 2, cy = (H - legendH) / 2;
-  const R = Math.min(cx - 10, cy - 10);
+  const lgPos = d.chartLegendPos || 'bottom-left';
+  const legendH = lgPos.startsWith('bottom') ? 22 : 0;
+  const lgSideW  = (lgPos === 'left' || lgPos === 'right') ? 114 : 0;
+  // Center and radius adjusted for legend position
+  const plotX = lgPos === 'left'  ? lgSideW : 0;
+  const plotW = W - lgSideW;
+  const cx = plotX + plotW / 2;
+  const cy = (H - legendH) / 2;
+  const R = Math.min(plotW / 2 - 10, cy - 10);
   const r = isDonut ? R * 0.52 : 0;
 
   const deg = v => (v / total) * Math.PI * 2;
@@ -1074,28 +1237,97 @@ function _buildPieChart(d, W, H, series, palette, textCol, fs, labelMode, isDonu
     return `M ${cx} ${cy} L ${px(a1,r2).toFixed(2)} ${py(a1,r2).toFixed(2)} A ${r2} ${r2} 0 ${large} 1 ${px(a2,r2).toFixed(2)} ${py(a2,r2).toFixed(2)} Z`;
   };
 
-  let slicesSvg = '', labelsSvg = '', legendSvg = '';
+  let slicesSvg = '', labelsSvg = '';
   let angle = 0;
-  const itemW = Math.min(110, (W - 20) / Math.max(sliceData.length, 1));
+
+  // Helper: rounded corner arc between two points using a small circle of radius rr
+  // Moves along direction dir at point p, turns toward point q
+  function _roundCorner(p1x, p1y, p2x, p2y, rr) {
+    // Arc from p1 to p2 with radius rr (approximate rounded corner)
+    return `A ${rr.toFixed(2)} ${rr.toFixed(2)} 0 0 1 ${p2x.toFixed(2)} ${p2y.toFixed(2)}`;
+  }
+
   sliceData.forEach((sl, i) => {
     if (sl.val <= 0) { angle += deg(sl.val); return; }
     const a1 = angle, a2 = angle + deg(sl.val);
-    slicesSvg += `<path d="${arc(r, R, a1, a2)}" fill="${sl.color}" stroke="${textCol}22" stroke-width="1"/>`;
+    const midAngle = (a1 + a2) / 2;
+    const spanAngle = a2 - a1;
+
+    // Explode: shift slice outward from center
+    const ex = sliceGap > 0 ? sliceGap * Math.cos(midAngle - Math.PI/2) : 0;
+    const ey = sliceGap > 0 ? sliceGap * Math.sin(midAngle - Math.PI/2) : 0;
+    const transform = (ex || ey) ? ` transform="translate(${ex.toFixed(2)},${ey.toFixed(2)})"` : '';
+
+    let pathD;
+    const rx0 = sliceRx; // corner radius
+    // Only round if sector is large enough
+    const canRound = rx0 > 0 && spanAngle > 0.15 && R > rx0 * 2;
+
+    if (!canRound) {
+      pathD = arc(r, R, a1, a2);
+    } else if (isDonut) {
+      // Donut: rounded outer corners + rounded inner corners
+      // clamp rx so it never exceeds half the ring thickness or causes overlap
+      const ringW = R - r;
+      const rxClamped = Math.min(rx0, ringW * 0.45, R * (spanAngle / 4));
+      const dOuter = rxClamped / R;
+      const dInner = rxClamped / r;
+      // Clamp so arcs don't overlap: max offset = spanAngle/2 - small epsilon
+      const maxOff = spanAngle / 2 - 0.01;
+      const dO = Math.min(dOuter, maxOff);
+      const dI = Math.min(dInner, maxOff);
+      const large = (a2 - dO - (a1 + dO)) > Math.PI ? 1 : 0;
+      const Ox1 = px(a1 + dO, R), Oy1 = py(a1 + dO, R);
+      const Ox2 = px(a2 - dO, R), Oy2 = py(a2 - dO, R);
+      const Ix1 = px(a2 - dI, r), Iy1 = py(a2 - dI, r);
+      const Ix2 = px(a1 + dI, r), Iy2 = py(a1 + dI, r);
+      pathD = `M ${Ix2.toFixed(2)} ${Iy2.toFixed(2)} ` +
+              `A ${rxClamped.toFixed(2)} ${rxClamped.toFixed(2)} 0 0 1 ${Ox1.toFixed(2)} ${Oy1.toFixed(2)} ` +
+              `A ${R} ${R} 0 ${large} 1 ${Ox2.toFixed(2)} ${Oy2.toFixed(2)} ` +
+              `A ${rxClamped.toFixed(2)} ${rxClamped.toFixed(2)} 0 0 1 ${Ix1.toFixed(2)} ${Iy1.toFixed(2)} ` +
+              `A ${r} ${r} 0 ${large} 0 ${Ix2.toFixed(2)} ${Iy2.toFixed(2)} Z`;
+    } else {
+      // Pie: rounded outer corners only (center is a point — no rounding there)
+      const rxClamped = Math.min(rx0, R * (spanAngle / 4));
+      const dOuter = Math.min(rxClamped / R, spanAngle / 2 - 0.01);
+      const large = (spanAngle - 2 * dOuter) > Math.PI ? 1 : 0;
+      const Ox1 = px(a1 + dOuter, R), Oy1 = py(a1 + dOuter, R);
+      const Ox2 = px(a2 - dOuter, R), Oy2 = py(a2 - dOuter, R);
+      pathD = `M ${cx.toFixed(2)} ${cy.toFixed(2)} ` +
+              `L ${Ox1.toFixed(2)} ${Oy1.toFixed(2)} ` +
+              `A ${R} ${R} 0 ${large} 1 ${Ox2.toFixed(2)} ${Oy2.toFixed(2)} ` +
+              `A ${rxClamped.toFixed(2)} ${rxClamped.toFixed(2)} 0 0 1 ${cx.toFixed(2)} ${cy.toFixed(2)} Z`;
+    }
+
+    slicesSvg += `<path d="${pathD}"${transform} fill="${sl.color}" stroke="none"/>`;
     const mid = (a1 + a2) / 2;
-    const lr = isDonut ? (r + R) / 2 : R * 0.65;
+    const lrBase = isDonut ? (r + R) / 2 : R * 0.65;
+    const lr = lrBase + (d.chartLabelOffset != null ? +d.chartLabelOffset : 0);
     const lbl = _fmtLabel(sl.val, total, labelMode);
-    if (lbl) labelsSvg += `<text x="${px(mid,lr).toFixed(1)}" y="${py(mid,lr).toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="${fs - 1}" fill="#fff" font-family="sans-serif" font-weight="600">${_escHTML(lbl)}</text>`;
-    const lx = 10 + i * itemW;
-    const legendY = H - legendH;
-    legendSvg += `<rect x="${lx}" y="${legendY + 4}" width="12" height="12" rx="3" fill="${sl.color}"/>`;
-    legendSvg += `<text x="${lx + 16}" y="${legendY + 14}" font-size="${fs}" fill="${textCol}" font-family="sans-serif" dominant-baseline="middle">${_escHTML(sl.label)}</text>`;
+    if (lbl) {
+      const lblOutside = lr > R;
+      const lblFill = lblOutside ? textCol : '#fff';
+      const pieLblFill = lblOutside ? lblColor : (lblColor !== '#fff' ? lblColor : '#fff');
+      labelsSvg += `<text x="${px(mid,lr).toFixed(1)}" y="${py(mid,lr).toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="${lblFs}" fill="${pieLblFill}" font-family="sans-serif" font-weight="600">${_escHTML(lbl)}</text>`;
+    }
     angle = a2;
   });
 
-  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${slicesSvg}${labelsSvg}${legendSvg}</svg>`;
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${bgDefs?`<defs>${bgDefs}</defs>`:""}`+bgSvg+`${slicesSvg}${labelsSvg}${legendSvg}</svg>`;
 }
 
 // Toggle between table and chart view
+window.tblSetChartColor = function(prop, schemeProp, val, schemeRef) {
+  const d = tblData(); if(!d) return;
+  d[prop] = val;
+  d[schemeProp] = (schemeRef !== undefined ? (schemeRef || null) : d[schemeProp]);
+  if(d.showChart) {
+    const el = document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
+    if(el) renderTableEl(el, d);
+  }
+  save(); drawThumbs(); saveState();
+};
+
 window.tblToggleChart = function(on) {
   if(!sel) return;
   const d = tblData(); if(!d) return;

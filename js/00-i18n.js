@@ -82,6 +82,7 @@ const LANG_DATA = {
     btnTheme: 'Color Scheme',
     btnLayout: 'Theme',
     btnAddAnim: 'Add Animation',
+    btnClearAnims: 'Clear',
     btnApplyToAll: 'Apply to All',
 
     // Present
@@ -303,6 +304,7 @@ const LANG_DATA = {
     resetFormat: 'Сбросить',
     btnDuplicate: 'Дублировать',
     // Анимации
+    btnClearAnims: 'Очистить',
     animFadeIn: 'Появление', animSlideUp: 'Подъём', animZoomIn: 'Масштаб',
     animBounce: 'Отскок', animSpin: 'Вращение', animFadeOut: 'Исчезновение',
     animSlideOut: 'Выезд', animZoomOut: 'Уменьшение', animPulse: 'Пульс',

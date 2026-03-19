@@ -133,7 +133,62 @@ function cc(){cv='0';pv='';o='';nr=false;d();}
 <\/script>`;
 }
 
-function getClockHTML(){return `<style>*{margin:0;padding:0;box-sizing:border-box;}body{background:#0d0d1a;display:flex;justify-content:center;align-items:center;height:100vh;font-family:'JetBrains Mono',monospace;}.wrap{text-align:center;}.time{font-size:clamp(18px,8vw,48px);color:#06b6d4;font-weight:700;letter-spacing:2px;text-shadow:0 0 20px rgba(6,182,212,.5);}.date{font-size:clamp(9px,3vw,14px);color:#64748b;margin-top:6px;letter-spacing:1px;}</style><div class="wrap"><div class="time" id="t"></div><div class="date" id="d"></div></div><script>function u(){const n=new Date();document.getElementById('t').textContent=n.toLocaleTimeString();document.getElementById('d').textContent=n.toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'});}u();setInterval(u,1000);<\/script>`;}
+function getClockHTML(cfg){
+  cfg = cfg || {};
+  const fs     = cfg.genFontSize !== undefined ? +cfg.genFontSize : 48;
+  const bold   = cfg.genBold ? 900 : 700;
+  const align  = cfg.genAlign  || 'center';
+  const va     = cfg.genVAlign || 'middle';
+  const bgBlur = cfg.genBgBlur !== undefined ? +cfg.genBgBlur : 0;
+  const bgOp   = cfg.genBgOp   !== undefined ? +cfg.genBgOp   : 1;
+  const shOn   = cfg.genShadowOn !== undefined ? !!cfg.genShadowOn : true;
+  const shBlur = cfg.genShadowBlur !== undefined ? +cfg.genShadowBlur : 8;
+  const shColorR = cfg.genShadowColor && cfg.genShadowColor !== '' ? cfg.genShadowColor : '#000000';
+  const p = cfg.palette || _appletTheme();
+  function hexRGB(h){h=(h||'#6366f1').replace('#','');if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];return[parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];}
+  function rgba(hex,a){try{const[r,g,b]=hexRGB(hex);return`rgba(${r},${g},${b},${a})`;}catch(e){return hex;}}
+  const numClr  = cfg.genColor && cfg.genColor !== '' ? cfg.genColor : (p.head || p.ac1);
+  const rawBg   = cfg.genBg && cfg.genBg !== '' ? cfg.genBg : 'transparent';
+  const bgClr   = rawBg !== 'transparent' && bgOp < 1 && rawBg.startsWith('#') ? rawBg + Math.round(bgOp*255).toString(16).padStart(2,'0') : rawBg;
+  const shStyle = shOn && shBlur>0 ? `0 2px ${shBlur}px ${rgba(shColorR,0.75)},0 0 30px ${rgba(p.ac1,0.35)}` : `0 0 30px ${rgba(p.ac1,0.3)}`;
+  const brdColor = cfg.genBorderColor && cfg.genBorderColor !== '' ? cfg.genBorderColor : rgba(p.ac1, 0.22);
+  const brdWidth = cfg.genBorderWidth !== undefined ? +cfg.genBorderWidth : 0;
+  const jc = va==='top' ? 'flex-start' : va==='bottom' ? 'flex-end' : 'center';
+  const ai = align==='left' ? 'flex-start' : align==='right' ? 'flex-end' : 'center';
+  const dateFs = Math.max(11, Math.round(fs * 0.28));
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,sans-serif;user-select:none;-webkit-user-select:none;}
+html,body{width:100%;height:100%;background:transparent;overflow:hidden;}
+.wrap{position:relative;width:100%;height:100%;display:flex;flex-direction:column;align-items:${ai};justify-content:${jc};padding:clamp(8px,4%,20px);box-sizing:border-box;}
+.wrap-bg{position:absolute;inset:0;background:${bgClr};${bgBlur > 0 ? `backdrop-filter:blur(${bgBlur}px);-webkit-backdrop-filter:blur(${bgBlur}px);` : ''}z-index:0;}
+.num{position:relative;z-index:1;font-size:${fs}px;font-weight:${bold};color:${numClr};font-variant-numeric:tabular-nums;letter-spacing:-0.02em;line-height:1.1;text-align:${align};text-shadow:${shStyle};width:100%;}
+.date{position:relative;z-index:1;font-size:${dateFs}px;color:${numClr};opacity:0.6;margin-top:6px;text-align:${align};width:100%;letter-spacing:0.5px;text-shadow:${shStyle};}
+</style></head><body>
+<div class="wrap" id="wrap">
+  <div class="wrap-bg" id="wrapbg"></div>
+  <div class="num" id="num"></div>
+  <div class="date" id="dat"></div>
+</div>
+<script>
+function u(){var n=new Date();document.getElementById('num').textContent=n.toLocaleTimeString();document.getElementById('dat').textContent=n.toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'});}
+u();setInterval(u,1000);
+window.addEventListener('message',function(e){
+  var d=e.data;if(!d)return;
+  if(d.type==='genUpdate'){
+    var num=document.getElementById('num'),wrap=document.getElementById('wrap'),wb=document.getElementById('wrapbg');
+    if(d.fs!==undefined){num.style.fontSize=d.fs+'px';document.getElementById('dat').style.fontSize=Math.max(11,Math.round(d.fs*0.28))+'px';}
+    if(d.bold!==undefined)num.style.fontWeight=d.bold?900:700;
+    if(d.color!==undefined){num.style.color=d.color;document.getElementById('dat').style.color=d.color;}
+    if(d.align!==undefined){num.style.textAlign=d.align;document.getElementById('dat').style.textAlign=d.align;wrap.style.alignItems=d.ai;}
+    if(d.jc!==undefined)wrap.style.justifyContent=d.jc;
+    if(d.bg!==undefined&&wb)wb.style.background=d.bg;
+    if(d.blur!==undefined&&wb){wb.style.backdropFilter=d.blur>0?'blur('+d.blur+'px)':'none';wb.style.webkitBackdropFilter=d.blur>0?'blur('+d.blur+'px)':'none';}
+    if(d.shadow!==undefined){num.style.textShadow=d.shadow;document.getElementById('dat').style.textShadow=d.shadow;}
+  }
+});
+<\/script></body></html>`;
+}
 function getTimerHTML(cfg){
   cfg = cfg || {};
   const tmMin    = cfg.tmMin    !== undefined ? +cfg.tmMin    : 5;
@@ -155,8 +210,8 @@ function getTimerHTML(cfg){
   function rgba(hex,a){try{const[r,g,b]=hexRGB(hex);return`rgba(${r},${g},${b},${a})`;}catch(e){return hex;}}
 
   const numClr  = cfg.genColor && cfg.genColor !== '' ? cfg.genColor : (p.head || p.ac1);
-  const rawBg   = cfg.genBg && cfg.genBg !== '' ? cfg.genBg : rgba(p.ac1, 0.12);
-  const bgClr   = (bgOp < 1 && rawBg.startsWith('#')) ? rawBg + Math.round(bgOp*255).toString(16).padStart(2,'0') : rawBg;
+  const rawBg   = cfg.genBg && cfg.genBg !== '' ? cfg.genBg : 'transparent';
+  const bgClr   = rawBg !== 'transparent' && bgOp < 1 && rawBg.startsWith('#') ? rawBg + Math.round(bgOp*255).toString(16).padStart(2,'0') : rawBg;
   const shStyle = shOn && shBlur>0 ? `0 2px ${shBlur}px ${rgba(shColorR,0.75)},0 0 30px ${rgba(p.ac1,0.35)}` : `0 0 30px ${rgba(p.ac1,0.3)}`;
   const brdColor = cfg.genBorderColor && cfg.genBorderColor !== '' ? cfg.genBorderColor : rgba(p.ac1, 0.22);
   const brdWidth = cfg.genBorderWidth !== undefined ? +cfg.genBorderWidth : 0;
@@ -248,8 +303,8 @@ function getGeneratorHTML(cfg){
   function rgba(hex,a){try{const[r,g,b]=hexRGB(hex);return`rgba(${r},${g},${b},${a})`;}catch(e){return hex;}}
 
   const numClr   = cfg.genColor && cfg.genColor!=='' ? cfg.genColor : (p.head || p.ac1);
-  const rawBg    = cfg.genBg && cfg.genBg!=='' ? cfg.genBg : rgba(p.ac1, 0.12);
-  const bgClr    = (bgOp < 1 && rawBg.startsWith('#')) ? rawBg + Math.round(bgOp*255).toString(16).padStart(2,'0') : rawBg;
+  const rawBg    = cfg.genBg && cfg.genBg!=='' ? cfg.genBg : 'transparent';
+  const bgClr    = rawBg !== 'transparent' && bgOp < 1 && rawBg.startsWith('#') ? rawBg + Math.round(bgOp*255).toString(16).padStart(2,'0') : rawBg;
   const shStyle  = shOn && shBlur>0 ? `0 2px ${shBlur}px ${rgba(shColorR,0.75)},0 0 30px ${rgba(p.ac1,0.35)}` : `0 0 30px ${rgba(p.ac1,0.3)}`;
   const brdColor = cfg.genBorderColor && cfg.genBorderColor!=='' ? cfg.genBorderColor : rgba(p.ac1, 0.22);
   const brdWidth = cfg.genBorderWidth !== undefined ? +cfg.genBorderWidth : 0;
@@ -308,7 +363,7 @@ function getQRHTML(){return `<style>*{margin:0;padding:0;box-sizing:border-box;}
 // Each applet can optionally have a htmlFn(palette) for theme-aware rendering
 const APPLETS=[
   {id:'calculator', name:'Calculator', desc:'Basic calculator',   icon:'⌨', htmlFn:getCalcHTML,  aspectRatio:3/4},
-  {id:'clock',      name:'Clock',      desc:'Live digital clock', icon:'🕐', html:getClockHTML(),  aspectRatio:null},
+  {id:'clock', name:'Clock', desc:'Live digital clock', icon:'🕐', htmlFn:(p,cfg)=>getClockHTML(cfg), aspectRatio:null, hasProps:true},
   {id:'timer',      name:'Timer',      desc:'Countdown timer',    icon:'⏱', htmlFn:(p,cfg)=>getTimerHTML(cfg), aspectRatio:null, hasProps:true},
   {id:'notes',      name:'Notes',      desc:'Sticky note',        icon:'📝', html:getNotesHTML(),  aspectRatio:null},
   {id:'qr',         name:'QR Code',    desc:'Generate QR code',   icon:'▦', html:getQRHTML(),     aspectRatio:null},
@@ -344,6 +399,7 @@ function insertApplet(a){
     // Generator-specific data
     ...(a.id==='generator' ? {genMin:1,genMax:100,genStep:1, genFontSize:64, genColor:'', genBg:(_appletTheme().ac1||'#6366f1'), genBgOp:0.2, genBgScheme:{col:0,row:0}, genBgBlur:0, genBorderColor:'', genBorderWidth:0, genAlign:'center', genVAlign:'middle', genBold:false, genShadowBlur:8, genShadowY:2, genShadowColor:'#000000'} : {}),
     ...(a.id==='timer'     ? {tmMin:5, tmSec:0, genFontSize:72, genColor:'', genBg:(_appletTheme().ac1||'#6366f1'), genBgOp:0.2, genBgScheme:{col:0,row:0}, genBgBlur:0, genBorderColor:'', genBorderWidth:0, genAlign:'center', genVAlign:'middle', genBold:false, genShadowBlur:8, genShadowColor:'#000000', genShadowOn:true} : {}),
+    ...(a.id==='clock'     ? {genFontSize:48, genColor:'', genBg:(_appletTheme().ac1||'#6366f1'), genBgOp:0.2, genBgScheme:{col:0,row:0}, genBgBlur:0, genBorderColor:'', genBorderWidth:0, genAlign:'center', genVAlign:'middle', genBold:false, genShadowBlur:8, genShadowColor:'#000000', genShadowOn:true} : {}),
   };
   slides[cur].els.push(d);
   mkEl(d);
@@ -367,8 +423,8 @@ window.refreshGeneratorEl = function(elId){
   const bgBlur   = d.genBgBlur   !== undefined ? +d.genBgBlur   : 0;
   const bgOp     = d.genBgOp     !== undefined ? +d.genBgOp     : 1;
   const numClr   = d.genColor    && d.genColor!==''    ? d.genColor    : (p.head || p.ac1);
-  const rawBg    = d.genBg && d.genBg!=='' ? d.genBg : rgba(p.ac1, 0.12);
-  const bgClr    = (bgOp < 1 && rawBg.startsWith('#')) ? rawBg + Math.round(bgOp*255).toString(16).padStart(2,'0') : rawBg;
+  const rawBg    = d.genBg && d.genBg!=='' ? d.genBg : 'transparent';
+  const bgClr    = rawBg !== 'transparent' && bgOp < 1 && rawBg.startsWith('#') ? rawBg + Math.round(bgOp*255).toString(16).padStart(2,'0') : rawBg;
   const brdColor = d.genBorderColor && d.genBorderColor!=='' ? d.genBorderColor : rgba(p.ac1, 0.22);
   const brdWidth = d.genBorderWidth !== undefined ? +d.genBorderWidth : 0;
   const shOn     = d.genShadowOn !== undefined ? !!d.genShadowOn : true;
@@ -452,8 +508,8 @@ window.refreshTimerEl = function(elId){
   const bgBlur   = d.genBgBlur   !== undefined ? +d.genBgBlur   : 0;
   const bgOp     = d.genBgOp     !== undefined ? +d.genBgOp     : 1;
   const numClr   = d.genColor && d.genColor !== '' ? d.genColor : (p.head || p.ac1);
-  const rawBg    = d.genBg && d.genBg !== '' ? d.genBg : rgba(p.ac1, 0.12);
-  const bgClr    = (bgOp < 1 && rawBg.startsWith('#')) ? rawBg + Math.round(bgOp*255).toString(16).padStart(2,'0') : rawBg;
+  const rawBg    = d.genBg && d.genBg !== '' ? d.genBg : 'transparent';
+  const bgClr    = rawBg !== 'transparent' && bgOp < 1 && rawBg.startsWith('#') ? rawBg + Math.round(bgOp*255).toString(16).padStart(2,'0') : rawBg;
   const shOn     = d.genShadowOn !== undefined ? !!d.genShadowOn : true;
   const shBlur   = d.genShadowBlur !== undefined ? +d.genShadowBlur : 8;
   const shColor  = d.genShadowColor && d.genShadowColor !== '' ? d.genShadowColor : '#000000';
@@ -526,6 +582,62 @@ window.refreshTimerEl = function(elId){
 };
 
 
+// Refresh clock iframe styles (same as timer but without timer-specific fields)
+window.refreshClockEl = function(elId){
+  const s = slides[cur]; if(!s) return;
+  const d = s.els.find(x=>x.id===elId);
+  if(!d||d.appletId!=='clock') return;
+  const p = _appletTheme();
+  function hexRGB(h){h=(h||'#6366f1').replace('#','');if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];return[parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];}
+  function rgba(hex,a){try{const[r,g,b]=hexRGB(hex);return`rgba(${r},${g},${b},${a})`;}catch(e){return hex;}}
+  const fs     = d.genFontSize !== undefined ? +d.genFontSize : 48;
+  const align  = d.genAlign    || 'center';
+  const va     = d.genVAlign   || 'middle';
+  const bgBlur = d.genBgBlur   !== undefined ? +d.genBgBlur   : 0;
+  const bgOp   = d.genBgOp     !== undefined ? +d.genBgOp     : 1;
+  const numClr = d.genColor && d.genColor !== '' ? d.genColor : (p.head || p.ac1);
+  const rawBg  = d.genBg && d.genBg !== '' ? d.genBg : 'transparent';
+  const bgClr  = rawBg !== 'transparent' && bgOp < 1 && rawBg.startsWith('#') ? rawBg + Math.round(bgOp*255).toString(16).padStart(2,'0') : rawBg;
+  const shOn   = d.genShadowOn !== undefined ? !!d.genShadowOn : true;
+  const shBlur = d.genShadowBlur !== undefined ? +d.genShadowBlur : 8;
+  const shColorR = d.genShadowColor && d.genShadowColor !== '' ? d.genShadowColor : '#000000';
+  const shStyle = shOn && shBlur>0 ? `0 2px ${shBlur}px ${rgba(shColorR,0.75)},0 0 30px ${rgba(p.ac1,0.35)}` : `0 0 30px ${rgba(p.ac1,0.3)}`;
+  const jc = va==='top' ? 'flex-start' : va==='bottom' ? 'flex-end' : 'center';
+  const ai = align==='left' ? 'flex-start' : align==='right' ? 'flex-end' : 'center';
+  const domEl = document.getElementById('canvas').querySelector('[data-id="'+elId+'"]');
+  if(!domEl) return;
+  // Sync dataset
+  domEl.dataset.genFontSize    = fs;
+  domEl.dataset.genColor       = d.genColor       || '';
+  domEl.dataset.genBg          = d.genBg          || '';
+  domEl.dataset.genBgBlur      = bgBlur;
+  domEl.dataset.genBorderColor = d.genBorderColor || '';
+  domEl.dataset.genBorderWidth = d.genBorderWidth !== undefined ? d.genBorderWidth : 0;
+  domEl.dataset.genBgOp        = bgOp;
+  domEl.dataset.genShadowOn    = shOn ? 'true' : 'false';
+  domEl.dataset.genShadowBlur  = shBlur;
+  domEl.dataset.genShadowColor = d.genShadowColor || '';
+  domEl.dataset.genBold        = d.genBold ? 'true' : 'false';
+  domEl.dataset.genAlign       = align;
+  domEl.dataset.genVAlign      = va;
+  domEl.dataset.genColorScheme  = d.genColorScheme  ? JSON.stringify(d.genColorScheme)  : '';
+  domEl.dataset.genBgScheme     = d.genBgScheme     ? JSON.stringify(d.genBgScheme)     : '';
+  domEl.dataset.genBorderScheme = d.genBorderScheme ? JSON.stringify(d.genBorderScheme) : '';
+  // Border overlay
+  const bordOverlay = domEl.querySelector('.applet-border-overlay');
+  if(bordOverlay){ const brdWidth=d.genBorderWidth!==undefined?+d.genBorderWidth:0; bordOverlay.style.border=brdWidth>0?brdWidth+'px solid '+(d.genBorderColor||rgba(p.ac1,0.22)):''; }
+  // Send live update
+  const iframe = domEl.querySelector('iframe');
+  if(iframe && iframe.contentWindow){
+    iframe.contentWindow.postMessage({type:'genUpdate',fs,bold:d.genBold||false,color:numClr,align,ai,jc,bg:bgClr,blur:bgBlur,shadow:shStyle},'*');
+  }
+  // Update persisted HTML
+  const cfg2 = {genFontSize:d.genFontSize,genColor:d.genColor,genBg:d.genBg,genBgBlur:d.genBgBlur,genBorderColor:d.genBorderColor,genBorderWidth:d.genBorderWidth,genBold:d.genBold,genAlign:d.genAlign,genVAlign:d.genVAlign,genBgOp:d.genBgOp,genShadowOn:d.genShadowOn,genShadowBlur:d.genShadowBlur,genShadowColor:d.genShadowColor,palette:p};
+  d.appletHtml = getClockHTML(cfg2);
+  domEl.dataset.appletHtml = d.appletHtml;
+  if(typeof saveState==='function') saveState();
+};
+
 // Remap scheme-bound colors to new theme palette
 function _remapSchemeColors(d, p){
   const ti=(typeof appliedThemeIdx!=='undefined'&&appliedThemeIdx>=0)?appliedThemeIdx:-1;
@@ -563,10 +675,11 @@ function refreshAppletThemes(){
     (s.els||[]).forEach(d=>{
       if(d.type!=='applet')return;
       // Generator: use refreshGeneratorEl — it re-resolves colors from d (already remapped by theme) via postMessage
-      if(d.appletId==='timer'||d.appletId==='generator'){
+      if(d.appletId==='timer'||d.appletId==='generator'||d.appletId==='clock'){
         // Remap scheme-bound colors to new theme
         _remapSchemeColors(d, p);
         const domEl=document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
+        if((d.appletId==='clock')&&domEl&&typeof refreshClockEl==='function'){requestAnimationFrame(()=>{refreshClockEl(d.id);});return;}
         if(d.appletId==='timer'&&domEl&&typeof refreshTimerEl==='function'){
           requestAnimationFrame(()=>{
             refreshTimerEl(d.id);

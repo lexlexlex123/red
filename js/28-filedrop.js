@@ -105,6 +105,22 @@
       return;
     }
 
+    // SVG — вставляем как вектор, не как растр
+    if(ext === 'svg' || file.type === 'image/svg+xml'){
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const svgCode = ev.target.result;
+        if(!svgCode.includes('<svg')) return;
+        pushUndo();
+        const d = {id:'e'+(++ec),type:'svg',x:snapV(80),y:snapV(80),w:snapV(300),h:snapV(300),svgContent:svgCode,rot:0,anims:[]};
+        slides[cur].els.push(d); mkEl(d);
+        if(typeof _svgRecentAdd === 'function') _svgRecentAdd(file.name.replace(/\.svg$/i,''), svgCode);
+        save(); drawThumbs(); saveState();
+        if(typeof toast === 'function') toast('SVG вставлен','ok');
+      };
+      reader.readAsText(file);
+      return;
+    }
     // Image
     if(file.type.startsWith('image/')){
       const reader = new FileReader();

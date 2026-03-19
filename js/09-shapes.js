@@ -349,18 +349,127 @@ function updateShapeTextStyle(prop,val){
 }
 
 // ══════════════ SVG ══════════════
-function openSVGModal(){document.getElementById('svg-modal').classList.add('open');}
-function loadSVGFile(e){
-  const f=e.target.files[0];if(!f)return;
-  const r=new FileReader();r.onload=ev=>{document.getElementById('svg-code').value=ev.target.result;};
-  r.readAsText(f);
+// ── SVG Recent ────────────────────────────────────────────────────
+const _SVG_RECENT_KEY = 'sf_svg_recent';
+const _SVG_RECENT_MAX = 12;
+
+function _svgRecentLoad() {
+  try { return JSON.parse(localStorage.getItem(_SVG_RECENT_KEY) || '[]'); } catch(e) { return []; }
 }
-function insertSVG(){
-  const code=document.getElementById('svg-code').value.trim();if(!code)return toast('Paste SVG code');
-  if(!code.includes('<svg'))return toast('Invalid SVG');
-  pushUndo();
-  const d={id:'e'+(++ec),type:'svg',x:snapV(100),y:snapV(100),w:snapV(300),h:snapV(300),svgContent:code,rot:0,anims:[]};
-  slides[cur].els.push(d);mkEl(d);save();drawThumbs();saveState();
+function _svgRecentSave(items) {
+  try { localStorage.setItem(_SVG_RECENT_KEY, JSON.stringify(items)); } catch(e) {}
+}
+function _svgRecentAdd(name, code) {
+  const items = _svgRecentLoad().filter(it => it.code !== code);
+  items.unshift({ name: name || 'SVG', code });
+  _svgRecentSave(items.slice(0, _SVG_RECENT_MAX));
+}
+function _svgRecentClear() {
+  _svgRecentSave([]);
+  _svgRecentRender();
+}
+function _svgRecentRender() {
+  const items = _svgRecentLoad();
+  const wrap = document.getElementById('svg-recent-wrap');
+  const grid = document.getElementById('svg-recent-grid');
+  if (!wrap || !grid) return;
+  if (!items.length) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+  grid.innerHTML = '';
+  items.forEach((it, i) => {
+    const cell = document.createElement('div');
+    cell.title = it.name;
+    cell.style.cssText = 'aspect-ratio:1;border:1.5px solid var(--border);border-radius:6px;cursor:pointer;overflow:hidden;background:var(--surface2);display:flex;align-items:center;justify-content:center;padding:4px;box-sizing:border-box;transition:border-color .15s';
+    cell.innerHTML = it.code;
+    const svgEl = cell.querySelector('svg');
+    if (svgEl) { svgEl.style.cssText = 'width:100%;height:100%;pointer-events:none'; }
+    cell.addEventListener('mouseenter', () => cell.style.borderColor = 'var(--selb)');
+    cell.addEventListener('mouseleave', () => cell.style.borderColor = 'var(--border)');
+    cell.addEventListener('click', () => {
+      document.getElementById('svg-code').value = it.code;
+      // Highlight selected
+      grid.querySelectorAll('div').forEach(c => c.style.borderColor = 'var(--border)');
+      cell.style.borderColor = 'var(--selb)';
+    });
+    grid.appendChild(cell);
+  });
+}
+
+// Edit mode: double-click on existing SVG element
+let _svgEditMode = false;
+function openSVGModalEdit() {
+  _svgEditMode = true;
+  const d = sel && slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (!d) return;
+  document.getElementById('svg-code').value = d.svgContent || '';
+  document.getElementById('svg-modal-title').textContent = '⬡ Редактировать SVG';
+  document.getElementById('svg-modal-btn').textContent = 'Применить';
+  _svgRecentRender();
+  document.getElementById('svg-modal').classList.add('open');
+}
+function openSVGModal() {
+  _svgEditMode = false;
+  document.getElementById('svg-code').value = '';
+  const title = document.getElementById('svg-modal-title');
+  const btn = document.getElementById('svg-modal-btn');
+  if (title) title.textContent = '⬡ Вставить SVG';
+  if (btn) btn.textContent = 'Вставить';
+  _svgRecentRender();
+  document.getElementById('svg-modal').classList.add('open');
+}
+function _closeSvgModal() {
   document.getElementById('svg-modal').classList.remove('open');
-  document.getElementById('svg-code').value='';
+  document.getElementById('svg-code').value = '';
+  _svgEditMode = false;
+}
+function loadSVGFile(e) {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => {
+    const code = ev.target.result;
+    document.getElementById('svg-code').value = code;
+    // Save to recent with filename
+    _svgRecentAdd(f.name.replace(/\.svg$/i, ''), code);
+    _svgRecentRender();
+  };
+  r.readAsText(f);
+  e.target.value = '';
+}
+function insertSVG() {
+  const code = document.getElementById('svg-code').value.trim();
+  if (!code) return toast('Paste SVG code');
+  if (!code.includes('<svg')) return toast('Invalid SVG');
+
+  if (_svgEditMode && sel) {
+    // Edit existing SVG element
+    const d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
+    if (d) {
+      pushUndo();
+      d.svgContent = code;
+      // Re-render element
+      const el = document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
+      if (el) {
+        const c = el.querySelector('.ec') || el;
+        c.innerHTML = '';
+        try {
+          const _dp = new DOMParser();
+          const _doc = _dp.parseFromString(code, 'image/svg+xml');
+          const _p = _doc.documentElement;
+          if (_p && _p.tagName !== 'parsererror') { c.appendChild(document.adoptNode(_p)); }
+          else { c.innerHTML = code; }
+        } catch(err) { c.innerHTML = code; }
+        const svgEl = c.querySelector('svg');
+        if (svgEl) { svgEl.style.width='100%'; svgEl.style.height='100%'; }
+      }
+      save(); drawThumbs(); saveState();
+      _svgRecentAdd('edited', code);
+    }
+  } else {
+    // Insert new SVG element
+    pushUndo();
+    const d = {id:'e'+(++ec),type:'svg',x:snapV(100),y:snapV(100),w:snapV(300),h:snapV(300),svgContent:code,rot:0,anims:[]};
+    slides[cur].els.push(d); mkEl(d); save(); drawThumbs(); saveState();
+    _svgRecentAdd('SVG', code);
+  }
+  _closeSvgModal();
 }

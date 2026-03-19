@@ -33,6 +33,7 @@ function _setGroqKey(val){
 
 // Загружаем ключ из ai-config.json если есть
 (function _loadConfigKey(){
+  if(location.protocol === 'file:') return;
   fetch('./ai-config.json?_=' + Date.now())
     .then(r => r.ok ? r.json() : null)
     .then(cfg => {

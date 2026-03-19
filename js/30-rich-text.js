@@ -336,9 +336,12 @@ function _restoreSelToDOM(idx, el) {
 
 // ─── Panel mousedown ──────────────────────────────────────────────
 function _rtOnPanelMousedown(e) {
+  // Called on mousedown — selection still exists at this point
+  // Save it so rtColor can use it even after the click removes the selection
   if (!_rtEl) return;
   const live = _readSelFromDOM(_rtEl);
   if (live) _savedSelIdx = live;
+  // Don't clear here — only clear when we know it's a whole-element operation
 }
 
 // ─── Attach ───────────────────────────────────────────────────────
@@ -486,7 +489,7 @@ function _clearCharColors() {
   const c = sel.querySelector('.ec'); if (!c) return;
   const chars = _toCharObjs(c.innerHTML);
   if (!chars.length) return;
-  chars.forEach(ch => { delete ch.style.color; });
+  chars.forEach(ch => { delete ch.style.color; delete ch.style._schemeRef; });
   const newHtml = _charObjsToHtml(chars);
   c.innerHTML = newHtml;
   d.html = newHtml;
@@ -578,6 +581,7 @@ function rtColor(color, schemeRef) {
     saveState();
   } else {
     if (!sel || sel.dataset.type !== 'text') return;
+    _savedSelIdx = null; // whole-element color — clear any saved fragment selection
     _setTSWhole('color', color);
   }
   try { const _sw=document.getElementById('p-col-preview');if(_sw)_sw.style.background=color; document.getElementById('p-hex').value=color; } catch(e) {}

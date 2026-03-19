@@ -85,7 +85,9 @@ function onKey(e){
         else if(e.key==='ArrowUp')el.style.top=(parseInt(el.style.top)-step)+'px';
         else if(e.key==='ArrowDown')el.style.top=(parseInt(el.style.top)+step)+'px';
       });
-      syncPos();save();return;
+      syncPos();
+      if(typeof _updateHandlesOverlay==='function') _updateHandlesOverlay();
+      save();return;
     }
     if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();deleteSelected();return;}
   } else {

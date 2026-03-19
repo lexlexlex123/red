@@ -1,9 +1,32 @@
+
+// ══════════════ RIBBON COLLAPSE ══════════════
+function toggleRibbonCollapse(){
+  const ribbon = document.getElementById('ribbon');
+  const collapsed = ribbon.classList.toggle('collapsed');
+  try{ localStorage.setItem('sf_ribbon_collapsed', collapsed ? '1' : '0'); }catch(e){}
+  drawGrid(); // пересчитываем сетку точек после изменения высоты
+}
+
+(function(){
+  try{
+    if(localStorage.getItem('sf_ribbon_collapsed')==='1'){
+      const ribbon=document.getElementById('ribbon');
+      if(ribbon) ribbon.classList.add('collapsed');
+    }
+  }catch(e){}
+})();
+
 // ══════════════ GRID ══════════════
 function drawGrid(){
   const gc=document.getElementById('grid-canvas');const wrap=document.getElementById('cwrap');
-  const W=wrap.clientWidth||800,H=wrap.clientHeight||600;
-  gc.width=W;gc.height=H;gc.style.width=W+'px';gc.style.height=H+'px';
-  const ctx=gc.getContext('2d');ctx.clearRect(0,0,W,H);
+  if(!gc||!wrap)return;
+  // Sticky canvas — покрываем только видимую область cwrap
+  const W=wrap.clientWidth||800;
+  const H=wrap.clientHeight||600;
+  // Принудительный сброс canvas — присвоение width сбрасывает содержимое и контекст
+  gc.width=0; gc.width=W; gc.height=H;
+  gc.style.width=W+'px';gc.style.height=H+'px';
+  const ctx=gc.getContext('2d');
   const _isLight=document.documentElement.classList.contains('light');ctx.fillStyle=_isLight?'rgba(80,80,120,0.25)':'rgba(180,180,200,0.18)';
   for(let x=0;x<W;x+=SNAP)for(let y=0;y<H;y+=SNAP)ctx.fillRect(x,y,1,1);
 }
@@ -150,7 +173,7 @@ function _zoomTick(){
     cwrap.scrollTop  = canvasY * newZ + ZOOM_PAD - vy;
   }
 
-  if(done){ _zoomRafId=null; }
+  if(done){ _zoomRafId=null; if(typeof drawGrid==='function') drawGrid(); }
   else     { _zoomRafId = requestAnimationFrame(_zoomTick); }
 }
 
@@ -258,8 +281,8 @@ function _applyCanvasZoom(){
 
   const lbl = document.getElementById('zoom-label-btn');
   if(lbl) lbl.textContent = Math.round(z * 100) + '%';
-  if(typeof drawGrid === 'function') drawGrid();
 }
+// drawGrid вызывается отдельно — не в каждом zoom tick во избежание тряски
 
 // Init on load
 window.addEventListener('load', function(){

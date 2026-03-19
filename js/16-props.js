@@ -56,8 +56,8 @@ function syncProps(){
   if(gmp){gmp.style.display=t==='graph'?'block':'none';if(t==='graph'&&typeof syncGraphProps==='function')syncGraphProps();}
   if(tblp){tblp.style.display=t==='table'?'flex':'none';tblp.style.flexDirection='column';if(t==='table')syncTableProps();}
   const isGen   = t==='applet' && sel.dataset.appletId==='generator';
-  const isTimer = t==='applet' && sel.dataset.appletId==='timer';
-  if(genp){genp.style.display=(isGen||isTimer)?'flex':'none';genp.style.flexDirection='column';if(isGen)syncGenProps();if(isTimer)syncTimerProps();}
+  const isTimer = t==='applet' && (sel.dataset.appletId==='timer'||sel.dataset.appletId==='clock');
+  if(genp){genp.style.display=(isGen||isTimer)?'flex':'none';genp.style.flexDirection='column';if(isGen)syncGenProps();if(isTimer&&sel.dataset.appletId==='clock'&&typeof syncClockProps==='function')syncClockProps();else if(isTimer&&typeof syncTimerProps==='function')syncTimerProps();}
   if(icp){
     icp.style.display=t==='icon'?'flex':'none';icp.style.flexDirection='column';
     if(t==='icon'){
@@ -132,7 +132,7 @@ function syncProps(){
     const role=sel.dataset.textRole||'body';
     try{document.getElementById('role-body').classList.toggle('active',role==='body');document.getElementById('role-heading').classList.toggle('active',role==='heading');}catch(e){}
     // Border
-    try{const _brd=document.getElementById('p-border-preview');if(_brd)_brd.style.background=sel.dataset.textBorderColor||'#ffffff';document.getElementById('p-border-hex').value=sel.dataset.textBorderColor||'';document.getElementById('p-border-w').value=sel.dataset.textBorderW||0;}catch(e){}
+    try{const _brd=document.getElementById('p-border-preview');if(_brd)_brd.style.background=sel.dataset.textBorderColor||'#ffffff';document.getElementById('p-border-w').value=sel.dataset.textBorderW||0;}catch(e){}
     // Opacity
     try{const op=parseFloat(sel.dataset.elOpacity!=null?sel.dataset.elOpacity:1);document.getElementById('p-el-op').value=op;}catch(e){}
     // Padding - parse 4-sided
@@ -551,12 +551,11 @@ function syncGenProps(){
   try{document.getElementById('gen-bg-op').value = _bgOp;}catch(e){}
   try{document.getElementById('gen-sh-enable').checked = d.genShadowOn !== undefined ? !!d.genShadowOn : true;}catch(e){}
   try{document.getElementById('gen-sh-blur').value = d.genShadowBlur !== undefined ? d.genShadowBlur : 8;}catch(e){}
-  try{const sc=d.genShadowColor||'#000000';document.getElementById('gen-sh-preview').style.background=sc;document.getElementById('gen-sh-hex').value=sc;}catch(e){}
+  try{const sc=d.genShadowColor||'#000000';document.getElementById('gen-sh-preview').style.background=sc;}catch(e){}
   try{
     const bc = d.genBorderColor || '#ffffff';
     const bw = d.genBorderWidth !== undefined ? d.genBorderWidth : 0;
-    document.getElementById('gen-border-hex').value = d.genBorderColor || '';
-    document.getElementById('gen-border-preview').style.background = bc;
+    document.getElementById('gen-border-preview').style.background = bc || '';
     document.getElementById('gen-border-w').value = bw;
   }catch(e){}
   try{document.getElementById('gen-op').value = sel.style.opacity||1;}catch(e){}
@@ -565,6 +564,40 @@ function syncGenProps(){
 
 // Map from gen color prop → its scheme key
 const _genSchemeKeys = {genColor:'genColorScheme', genBg:'genBgScheme', genBorderColor:'genBorderScheme'};
+
+function syncClockProps(){
+  if(!sel) return;
+  const d_= slides[cur] && slides[cur].els.find(x=>x.id===sel.dataset.id);
+  if(!d_) return;
+  const ph = document.querySelector('#genprops .ph');
+  if(ph) ph.textContent = '🕐 Часы';
+  const rangeRow = document.getElementById('gen-range-row');
+  const timerRow = document.getElementById('tm-row');
+  const oer = document.getElementById('tm-onend-row');
+  if(rangeRow) rangeRow.style.display = 'none';
+  if(timerRow) timerRow.style.display = 'none';
+  if(oer) oer.style.display = 'none';
+  // Sync shared visual props (same as timer)
+  try{document.getElementById('gen-fs').value = d_.genFontSize !== undefined ? d_.genFontSize : 48;}catch(e){}
+  try{document.getElementById('gen-bold').classList.toggle('active', !!d_.genBold);}catch(e){}
+  try{document.getElementById('gen-al').classList.toggle('active', (d_.genAlign||'center')==='left');}catch(e){}
+  try{document.getElementById('gen-ac').classList.toggle('active', (d_.genAlign||'center')==='center');}catch(e){}
+  try{document.getElementById('gen-ar').classList.toggle('active', (d_.genAlign||'center')==='right');}catch(e){}
+  try{document.getElementById('gen-vt').classList.toggle('active', (d_.genVAlign||'middle')==='top');}catch(e){}
+  try{document.getElementById('gen-vm').classList.toggle('active', (d_.genVAlign||'middle')==='middle');}catch(e){}
+  try{document.getElementById('gen-vb').classList.toggle('active', (d_.genVAlign||'middle')==='bottom');}catch(e){}
+  const _pct=typeof _appletTheme==='function'?_appletTheme():{ac1:'#6366f1',head:'#a5b4fc'};
+  const tc=d_.genColor||''; const _tcDisp=tc||_pct.head||_pct.ac1;
+  try{document.getElementById('gen-color-preview').style.background=_tcDisp;document.getElementById('gen-color-hex').value=tc;}catch(e){}
+  const _pt=typeof _appletTheme==='function'?_appletTheme():{ac1:'#6366f1'};
+  const bg=d_.genBg||''; const _bgHexT=bg||(_pt.ac1||'#6366f1');
+  const _bgOpT=d_.genBgOp!==undefined?d_.genBgOp:(bg?1:0.2);
+  try{document.getElementById('gen-bg-swatch').style.background=_bgHexT;document.getElementById('gen-bg-hex').value=bg;}catch(e){}
+  try{document.getElementById('gen-bg-op').value=_bgOpT;}catch(e){}
+  try{document.getElementById('gen-bg-blur').value=d_.genBgBlur!==undefined?d_.genBgBlur:0;}catch(e){}
+  try{document.getElementById('gen-shad').classList.toggle('active',d_.genShadowOn!==false);}catch(e){}
+  const brd=d_.genBorderColor||''; try{document.getElementById('gen-border-swatch').style.background=brd||_pt.ac1;document.getElementById('gen-border-w').value=d_.genBorderWidth!==undefined?d_.genBorderWidth:0;}catch(e){}
+}
 
 function syncTimerProps(){
   if(!sel) return;
@@ -662,7 +695,8 @@ window.setTimerOnEnd = function(val){
       }
     }
   }catch(e){}
-  if(typeof refreshTimerEl==='function') refreshTimerEl(elId);
+  if(d.appletId==='clock' && typeof refreshClockEl==='function') refreshClockEl(elId);
+  else if(typeof refreshTimerEl==='function') refreshTimerEl(elId);
   if(typeof save==='function') save();
   if(typeof saveState==='function') saveState();
 };
@@ -673,6 +707,7 @@ window.setTimerOnEnd = function(val){
 function _refreshAppletEl(d){
   if(!d) return;
   if(d.appletId==='timer'     && typeof refreshTimerEl    ==='function') refreshTimerEl(d.id);
+  if(d.appletId==='clock'     && typeof refreshClockEl     ==='function') refreshClockEl(d.id);
   if(d.appletId==='generator' && typeof refreshGeneratorEl==='function') refreshGeneratorEl(d.id);
 }
 

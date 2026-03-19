@@ -155,7 +155,7 @@ let _animPreviewTimer = null;
       // For moveTo: default offset = 100px right, initial ghost visible
       if(animName==='moveTo'){ anim.tx=100; anim.ty=0; }
       // For orbitTo: default radius, direction, degrees
-      if(animName==='orbitTo'){ anim.orbitR=120; anim.orbitDir='cw'; anim.orbitDeg=360; anim.orbitCx=0; anim.orbitCy=0; }
+      if(animName==='orbitTo'){ anim.orbitR=120; anim.orbitDir='cw'; anim.orbitDeg=360; anim.orbitCx=0; anim.orbitCy=-120; }
       if(animName==='rotate'){ anim.rotateDir='cw'; anim.rotateDeg=360; }
       if(animName==='typewriter'){
         anim.charDelay = 40;
@@ -215,13 +215,19 @@ let _animPreviewTimer = null;
 
   window.clearAllAnims = function(){
     try{
-      _pushUndo();
-      const s=_slides()[_cur()]; if(!s) return;
-      s.els.forEach(d=>{d.anims=[];});
-      document.getElementById('canvas').querySelectorAll('.el').forEach(el=>{el.dataset.anims='[]';});
-      _save(); renderAnimPanel(); _saveState();
-      _toast('Все анимации удалены','ok');
-    }catch(e){}
+      if(!sel) return;
+      pushUndo();
+      // Удаляем только у выбранного объекта (не всего слайда)
+      const d=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+      if(!d) return;
+      d.anims=[];
+      sel.dataset.anims='[]';
+      // Убираем overlay сразу
+      if(typeof renderMotionOverlay==='function') renderMotionOverlay();
+      save(); saveState(); drawThumbs();
+      renderAnimPanel();
+      if(typeof syncProps==='function') syncProps();
+    }catch(e){ console.error('clearAllAnims:',e); }
   };
 
   // Play single animation on element without accumulated delay

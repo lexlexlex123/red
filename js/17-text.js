@@ -6,7 +6,6 @@ function setTextBorder(prop,val,schemeRef){
     // Store scheme ref on data
     const d=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
     if(d) d.borderScheme = (schemeRef !== undefined ? (schemeRef || null) : d.borderScheme);
-    try{document.getElementById('p-border-hex').value=val;}catch(e){}
   }
   if(prop==='width'){sel.dataset.textBorderW=val;}
   applyTextBorderStyle(sel);
@@ -15,8 +14,8 @@ function setTextBorder(prop,val,schemeRef){
 function applyTextBorderStyle(el){
   const w=+(el.dataset.textBorderW||0);
   const c=el.dataset.textBorderColor||'#ffffff';
-  if(w>0){el.style.border=w+'px solid '+c;el.style.overflow='hidden';}
-  else{el.style.border='';}
+  if(w>0){el.style.outline=w+'px solid '+c;el.style.outlineOffset='0px';}
+  else{el.style.outline='';}
 }
 function setTextElOpacity(op){
   if(!sel||sel.dataset.type!=='text')return;

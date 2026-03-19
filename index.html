@@ -25,13 +25,13 @@
   <div id="ribbon-left">
   <div id="ribbon-tabs">
     <button class="rtab" onclick="openSettings()" data-i18n-title="settingsTitle" style="padding:5px 10px;font-size:14px;">⚙</button>
-    <button class="rtab active" onclick="switchTab('home',this)"><span data-i18n="tabHome">Главная</span></button>
-    <button class="rtab" onclick="switchTab('insert',this)"><span data-i18n="tabInsert">Вставка</span></button>
-    <button class="rtab" id="objects-tab-btn" onclick="switchTab('objects',this);renderObjectsPanel()"><span>Объекты</span></button>
-    <button class="rtab" onclick="switchTab('design',this)"><span data-i18n="tabDesign">Дизайн</span></button>
-    <button class="rtab" onclick="switchTab('anim',this)"><span data-i18n="tabAnim">Анимации</span></button>
-    <button class="rtab" onclick="switchTab('transitions',this)"><span data-i18n="tabTransitions">Переходы</span></button>
-    <button class="rtab" onclick="switchTab('slideshow',this)"><span data-i18n="tabSlideshow">Показ</span></button>
+    <button class="rtab active" onclick="switchTab('home',this)" ondblclick="toggleRibbonCollapse()"><span data-i18n="tabHome">Главная</span></button>
+    <button class="rtab" onclick="switchTab('insert',this)" ondblclick="toggleRibbonCollapse()"><span data-i18n="tabInsert">Вставка</span></button>
+    <button class="rtab" id="objects-tab-btn" onclick="switchTab('objects',this);renderObjectsPanel()" ondblclick="toggleRibbonCollapse()"><span>Объекты</span></button>
+    <button class="rtab" onclick="switchTab('design',this)" ondblclick="toggleRibbonCollapse()"><span data-i18n="tabDesign">Дизайн</span></button>
+    <button class="rtab" onclick="switchTab('anim',this)" ondblclick="toggleRibbonCollapse()"><span data-i18n="tabAnim">Анимации</span></button>
+    <button class="rtab" onclick="switchTab('transitions',this)" ondblclick="toggleRibbonCollapse()"><span data-i18n="tabTransitions">Переходы</span></button>
+    <button class="rtab" onclick="switchTab('slideshow',this)" ondblclick="toggleRibbonCollapse()"><span data-i18n="tabSlideshow">Показ</span></button>
   </div>
   <div id="ribbon-body">
     <!-- HOME -->
@@ -93,45 +93,11 @@
     </div>
     <!-- ANIMATIONS -->
     <div class="rg" data-tab="anim" style="display:none">
-      <div style="display:flex;flex-direction:column;gap:3px;justify-content:center">
-        <span style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px" data-i18n="btnAddAnim">Добавить анимацию</span>
-        <div style="display:flex;gap:3px;align-items:center;position:relative">
-          <button class="tbtn2" style="color:#22c55e" onclick="addAnim('fadeIn','entrance')" data-i18n="animFadeIn">Появление</button>
-          <button class="tbtn2" style="color:#22c55e" onclick="addAnim('slideUp','entrance')" data-i18n="animSlideUp">Подъём</button>
-          <button class="tbtn2" style="color:#22c55e" onclick="addAnim('zoomIn','entrance')" data-i18n="animZoomIn">Масштаб</button>
-          <button class="tbtn2" style="color:#ec4899" onclick="addAnim('fadeOut','exit')" data-i18n="animFadeOut">Исчезновение</button>
-          <button class="tbtn2" style="color:#ec4899" onclick="addAnim('slideOut','exit')" data-i18n="animSlideOut">Выезд</button>
-          <button class="tbtn2" style="color:#f59e0b" onclick="addAnim('pulse','emphasis')" data-i18n="animPulse">Пульс</button>
-          <button class="tbtn2" title="Ещё эффекты" onclick="(function(btn){var m=document.getElementById('anim-more-menu');if(m.style.display==='block'){m.style.display='none';}else{var r=btn.getBoundingClientRect();m.style.left=r.left+'px';m.style.top=r.bottom+'px';m.style.display='block';}})(this)" style="padding:2px 5px;font-size:10px">▾</button>
-          <div id="anim-more-menu" style="display:none;position:fixed;z-index:9999;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:5px;box-shadow:0 6px 20px rgba(0,0,0,.4);flex-direction:column;gap:3px;min-width:130px">
-            <button class="tbtn2" style="color:#22c55e;width:100%;text-align:left" onclick="addAnim('bounceIn','entrance');document.getElementById('anim-more-menu').style.display='none'" data-i18n="animBounce">Отскок</button>
-            <button class="tbtn2" style="color:#22c55e;width:100%;text-align:left" onclick="addAnim('spinIn','entrance');document.getElementById('anim-more-menu').style.display='none'" data-i18n="animSpin">Вращение</button>
-            <button class="tbtn2" style="color:#ec4899;width:100%;text-align:left" onclick="addAnim('zoomOut','exit');document.getElementById('anim-more-menu').style.display='none'" data-i18n="animZoomOut">Уменьшение</button>
-            <button class="tbtn2" style="color:#f59e0b;width:100%;text-align:left" onclick="addAnim('shake','emphasis');document.getElementById('anim-more-menu').style.display='none'" data-i18n="animShake">Дрожание</button>
-            <button class="tbtn2" style="color:#f59e0b;width:100%;text-align:left" onclick="addAnim('flash','emphasis');document.getElementById('anim-more-menu').style.display='none'" data-i18n="animFlash">Мигание</button>
-          </div>
-        </div>
-      </div>
+      <button class="rb" onclick="clearAllAnims()" title="Очистить анимации выбранного объекта">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        <span class="rbl" data-i18n="btnClearAnims">Очистить</span>
+      </button>
       <div class="rglbl"><span data-i18n="grpAnimations">Анимации</span></div>
-    </div>
-    <div class="rg" data-tab="anim" style="display:none">
-      <div style="display:flex;flex-direction:column;gap:3px;justify-content:center">
-        <span style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px" data-i18n="grpTiming">Тайминг</span>
-        <div style="display:flex;gap:8px;align-items:flex-end">
-          <div class="pr" style="margin:0">
-            <label data-i18n="animDelay">Задержка, с</label>
-            <input type="number" id="anim-delay" value="0" min="0" max="10" step="0.1" oninput="updateAnimTiming()">
-          </div>
-          <div class="pr" style="margin:0">
-            <label data-i18n="animDuration">Длительность, с</label>
-            <input type="number" id="anim-dur" value="0.5" min="0.1" max="5" step="0.1" oninput="updateAnimTiming()">
-          </div>
-          <label style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text2);padding-bottom:4px">
-            <label class="tog"><input type="checkbox" id="anim-click"><span class="tog-track"></span><span class="tog-thumb"></span></label> <span data-i18n="animOnClick">По клику</span>
-          </label>
-        </div>
-      </div>
-      <div class="rglbl"><span data-i18n="grpTiming">Тайминг</span></div>
     </div>
     <!-- TRANSITIONS -->
     <div class="rg" data-tab="transitions" style="display:none">
@@ -172,24 +138,28 @@
     </div>
     <div class="rg" data-tab="slideshow" style="display:none">
       <div style="display:flex;flex-direction:column;gap:3px;justify-content:center">
-        <label style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Auto Advance</label>
+        <span style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px" data-i18n="grpAutoAdvance">Авто-переход</span>
         <div style="display:flex;align-items:center;gap:6px">
           <label class="tog"><input type="checkbox" id="auto-adv-chk" onchange="toggleAutoAdv(this.checked)"><span class="tog-track"></span><span class="tog-thumb"></span></label>
-          <label for="auto-adv-chk" style="font-size:11px;color:var(--text2);cursor:pointer">Enabled</label>
-          <label style="font-size:10px;color:var(--text2)">Delay:</label>
+          <label for="auto-adv-chk" style="font-size:11px;color:var(--text2);cursor:pointer" >Вкл</label>
+          <label style="font-size:10px;color:var(--text2)" >Задержка:</label>
           <input type="number" id="auto-delay" value="5" min="1" max="60" style="width:48px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:2px 5px;font-size:10px;font-family:inherit" oninput="autoDelay=+this.value">
-          <span style="font-size:10px;color:var(--text2)">sec</span>
+          <span style="font-size:10px;color:var(--text2)" >сек</span>
           <button class="tbtn2" onclick="applyAutoToAll()" style="font-size:10px;white-space:nowrap"><span data-i18n="btnApplyAll">Применить ко всем</span></button>
         </div>
       </div>
       <div class="rglbl"><span data-i18n="grpAutoAdvance">Авто-переход</span></div>
     </div>
-    <!-- FILE -->
+    <!-- PLAYBACK -->
     <div class="rg" data-tab="slideshow" style="display:none">
-      <div style="display:flex;gap:4px;align-items:center;justify-content:center">
-        <button id="p-loop-btn" class="tbtn2" onclick="togglePresLoop()" style="min-width:72px">↺ Loop</button>
-        <button id="p-shuffle-btn" class="tbtn2" onclick="togglePresShuffle()" style="min-width:72px">⇄ Shuffle</button>
-      </div>
+      <button id="p-loop-btn" class="rb" onclick="togglePresLoop()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
+        <span class="rbl" >Цикл</span>
+      </button>
+      <button id="p-shuffle-btn" class="rb" onclick="togglePresShuffle()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/></svg>
+        <span class="rbl" >Случайно</span>
+      </button>
       <div class="rglbl"><span data-i18n="grpPlayback">Воспроизведение</span></div>
     </div>
   </div>
@@ -277,7 +247,7 @@
         </div>
         <div id="slide-layout-anim-row" class="pr" style="display:none">
           <label data-i18n="propLayoutAnim">Анимация фона</label>
-          <label class="tog"><input type="checkbox" id="slide-layout-anim-chk" onchange="setLayoutAnimated(this.checked)"><span class="tog-track"></span><span class="tog-thumb"></span></label>
+          <label class="tog"><input type="checkbox" id="slide-layout-anim-chk" onchange="if(!this._syncing)setLayoutAnimated(this.checked)"><span class="tog-track"></span><span class="tog-thumb"></span></label>
         </div>
         <div class="pr"><label data-i18n="slideTransition">Переход слайда</label></div>
         <div id="slide-trans-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin:0 0 4px">
@@ -507,7 +477,7 @@
           <!-- Border -->
           <div class="pr"><label data-i18n="propBorder">Border</label>
             <div style="display:flex;gap:4px;align-items:center">
-              <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;overflow:hidden;flex-shrink:0" onmousedown="openColorPanel('cp-border-slot','border',function(c,sr){document.getElementById('p-border-hex').value=c;document.getElementById('p-border-preview').style.background=c;setTextBorder('color',c,sr);})"><div id="p-border-preview" style="width:100%;height:100%;background:#ffffff;"></div></div>
+              <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;overflow:hidden;flex-shrink:0" onmousedown="openColorPanel('cp-border-slot','border',function(c,sr){document.getElementById('p-border-preview').style.background=c;setTextBorder('color',c,sr);})"><div id="p-border-preview" style="width:100%;height:100%;background:#ffffff;"></div></div>
               
               <input type="number" id="p-border-w" min="0" max="20" step="0.5" value="0" placeholder="px" style="width:52px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;box-sizing:border-box" oninput="setTextBorder('width',+this.value)">
               <button title="Сбросить" onmousedown="event.preventDefault()" onclick="document.getElementById('p-border-w').value=0;setTextBorder('width',0);" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;line-height:1" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">✕</button>
@@ -561,18 +531,18 @@
           <!-- Color -->
           <div class="pr" style="margin-bottom:6px"><label data-i18n="propTextColor">Цвет числа</label>
             <div style="display:flex;gap:4px;align-items:center">
-              <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;" onmousedown="openColorPanel('cp-gen-color-slot','gen-color',function(c,sr){document.getElementById('gen-color-hex').value=c;document.getElementById('gen-color-preview').style.background=c;setGenProp('genColor',c,sr);})"><div id="gen-color-preview" style="width:100%;height:100%;background:var(--accent);pointer-events:none;"></div></div>
+              <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;" onmousedown="openColorPanel('cp-gen-color-slot','gen-color',function(c,sr){document.getElementById('gen-color-preview').style.background=c;setGenProp('genColor',c,sr);})"><div id="gen-color-preview" style="width:100%;height:100%;background:var(--accent);pointer-events:none;"></div></div>
               
-              <button onclick="setGenProp('genColor','');document.getElementById('gen-color-hex').value='';document.getElementById('gen-color-preview').style.background='var(--accent)';" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:2px 6px;cursor:pointer;font-size:10px;white-space:nowrap">✕</button>
+              <button onclick="setGenProp('genColor','');document.getElementById('gen-color-preview').style.background='var(--accent)';" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:2px 6px;cursor:pointer;font-size:10px;white-space:nowrap">✕</button>
             </div>
           </div>
           <div id="cp-gen-color-slot" class="cp-slot" style="display:none;margin-bottom:6px" onmousedown="event.preventDefault()"></div>
           <!-- BG Color -->
           <div class="pr" style="margin-bottom:6px"><label data-i18n="propBgColor">Фон</label>
             <div style="display:flex;gap:4px;align-items:center">
-              <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;background:repeating-conic-gradient(#aaa 0% 25%,#fff 0% 50%) 0 0/8px 8px;" onmousedown="openColorPanel('cp-gen-bg-slot','gen-bg',function(c,sr){document.getElementById('gen-bg-hex').value=c;document.getElementById('gen-bg-swatch').style.background=c;setGenProp('genBg',c,sr);})"><div id="gen-bg-swatch" style="width:100%;height:100%;"></div></div>
+              <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;background:repeating-conic-gradient(#aaa 0% 25%,#fff 0% 50%) 0 0/8px 8px;" onmousedown="openColorPanel('cp-gen-bg-slot','gen-bg',function(c,sr){document.getElementById('gen-bg-swatch').style.background=c;setGenProp('genBg',c,sr);})"><div id="gen-bg-swatch" style="width:100%;height:100%;"></div></div>
               
-              <button onclick="setGenProp('genBg','');document.getElementById('gen-bg-hex').value='';document.getElementById('gen-bg-swatch').style.background='';" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:2px 6px;cursor:pointer;font-size:10px;white-space:nowrap">✕</button>
+              <button onclick="setGenProp('genBg','');document.getElementById('gen-bg-swatch').style.background='';" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:2px 6px;cursor:pointer;font-size:10px;white-space:nowrap">✕</button>
             </div>
           </div>
           <div id="cp-gen-bg-slot" class="cp-slot" style="display:none;margin-bottom:6px" onmousedown="event.preventDefault()"></div>
@@ -587,7 +557,7 @@
             <span style="font-size:11px;color:var(--text2)">Тень текста</span>
           </div>
           <div id="gen-sh-opts" style="display:flex;gap:4px;align-items:center;margin-bottom:4px">
-            <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;" onmousedown="openColorPanel('cp-gen-sh-slot','gen-sh',function(c,sr){document.getElementById('gen-sh-hex').value=c;document.getElementById('gen-sh-preview').style.background=c;setGenProp('genShadowColor',c,sr);})"><div id="gen-sh-preview" style="width:100%;height:100%;background:#000000;pointer-events:none;"></div></div>
+            <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;" onmousedown="openColorPanel('cp-gen-sh-slot','gen-sh',function(c,sr){document.getElementById('gen-sh-preview').style.background=c;setGenProp('genShadowColor',c,sr);})"><div id="gen-sh-preview" style="width:100%;height:100%;background:#000000;pointer-events:none;"></div></div>
             
             <input type="number" id="gen-sh-blur" min="0" max="60" step="1" value="8" placeholder="blur" style="width:52px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;box-sizing:border-box" oninput="setGenProp('genShadowBlur',+this.value)">
           </div>
@@ -595,7 +565,7 @@
           <!-- Border -->
           <div class="pr" style="margin-bottom:6px"><label data-i18n="propBorder">Граница</label>
             <div style="display:flex;gap:4px;align-items:center">
-              <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;overflow:hidden;flex-shrink:0" onmousedown="openColorPanel('cp-gen-border-slot','gen-border',function(c,sr){document.getElementById('gen-border-hex').value=c;document.getElementById('gen-border-preview').style.background=c;setGenProp('genBorderColor',c,sr);})"><div id="gen-border-preview" style="width:100%;height:100%;background:#ffffff;"></div></div>
+              <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;overflow:hidden;flex-shrink:0" onmousedown="openColorPanel('cp-gen-border-slot','gen-border',function(c,sr){document.getElementById('gen-border-preview').style.background=c;setGenProp('genBorderColor',c,sr);})"><div id="gen-border-preview" style="width:100%;height:100%;background:#ffffff;"></div></div>
               
               <input type="number" id="gen-border-w" min="0" max="20" step="0.5" value="0" placeholder="px" style="width:52px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;box-sizing:border-box" oninput="setGenProp('genBorderWidth',+this.value)">
               <button title="Сбросить" onclick="setGenProp('genBorderWidth',0);document.getElementById('gen-border-w').value=0;" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;line-height:1">✕</button>
@@ -1048,7 +1018,7 @@
               <!-- Chart type -->
               <div class="pr" style="margin:0">
                 <label style="font-size:10px;color:var(--text3)">Тип диаграммы</label>
-                <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:3px;margin-top:3px">
+                <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-top:3px">
                   <button class="tbtn2" title="Столбцы" chart-type-btn onmousedown="event.preventDefault()"
                     onclick="tblSetChart('chartType','bar');document.querySelectorAll('.chart-type-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')" id="ct-bar">
                     <svg width="16" height="14" viewBox="0 0 16 14"><rect x="1" y="4" width="3" height="10" rx="1" fill="currentColor"/><rect x="6" y="1" width="3" height="13" rx="1" fill="currentColor"/><rect x="11" y="6" width="3" height="8" rx="1" fill="currentColor"/></svg>
@@ -1069,6 +1039,18 @@
                     onclick="tblSetChart('chartType','donut');document.querySelectorAll('.chart-type-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')" id="ct-donut">
                     <svg width="16" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="currentColor" stroke-width="4" stroke-dasharray="14 6" stroke-dashoffset="3"/><circle cx="7" cy="7" r="2.5" fill="var(--surface)"/></svg>
                   </button>
+                  <button class="tbtn2" title="Взрывная круговая" chart-type-btn onmousedown="event.preventDefault()"
+                    onclick="tblSetChart('chartType','explodedPie');document.querySelectorAll('.chart-type-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')" id="ct-explodedPie">
+                    <svg width="16" height="14" viewBox="0 0 16 14"><path d="M8 7 L8 1.5 A5.5 5.5 0 0 1 13 7 Z" fill="currentColor" opacity="0.9" transform="translate(1,0)"/><path d="M8 7 L13 7 A5.5 5.5 0 0 1 4 12 Z" fill="currentColor" opacity="0.6" transform="translate(0.5,0.5)"/><path d="M8 7 L4 12 A5.5 5.5 0 0 1 8 1.5 Z" fill="currentColor" opacity="0.35" transform="translate(-0.5,0)"/></svg>
+                  </button>
+                  <button class="tbtn2" title="Взрывная кольцевая" chart-type-btn onmousedown="event.preventDefault()"
+                    onclick="tblSetChart('chartType','explodedDonut');document.querySelectorAll('.chart-type-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')" id="ct-explodedDonut">
+                    <svg width="16" height="14" viewBox="0 0 16 14"><circle cx="8" cy="7" r="5.5" fill="none" stroke="currentColor" stroke-width="3.5" stroke-dasharray="10 4" stroke-dashoffset="2" opacity="0.9"/><circle cx="8" cy="7" r="2.5" fill="var(--surface)"/></svg>
+                  </button>
+                </div>
+                <!-- Slice gap — shown only for exploded types -->
+                <div id="chart-explode-opts" style="display:none;margin-top:4px">
+                  <div class="pr" style="margin:0"><label style="font-size:10px;color:var(--text3)">Отступ секторов</label><input type="number" id="ch-slice-gap" min="0" max="40" step="1" value="6" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="tblSetChart('chartSliceGap',+this.value)"></div>
                 </div>
               </div>
 
@@ -1082,6 +1064,33 @@
                 </select>
               </div>
 
+              <!-- Legend position -->
+              <div class="pr" style="margin:0">
+                <label style="font-size:10px;color:var(--text3)">Расположение легенды</label>
+                <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:3px;margin-top:3px">
+                  <button class="tbtn2 chart-lgpos-btn active" id="lgpos-bottom-left" title="Снизу слева" onmousedown="event.preventDefault()"
+                    onclick="tblSetChart('chartLegendPos','bottom-left');document.querySelectorAll('.chart-lgpos-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')">
+                    <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1" y="9" width="4" height="2" rx="1" fill="currentColor" opacity="0.5"/><rect x="1" y="12" width="6" height="2" rx="1" fill="currentColor"/><line x1="1" y1="7" x2="13" y2="7" stroke="currentColor" stroke-width="1" stroke-dasharray="2 1" opacity="0.3"/></svg>
+                  </button>
+                  <button class="tbtn2 chart-lgpos-btn" id="lgpos-bottom-center" title="Снизу по центру" onmousedown="event.preventDefault()"
+                    onclick="tblSetChart('chartLegendPos','bottom-center');document.querySelectorAll('.chart-lgpos-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')">
+                    <svg width="14" height="14" viewBox="0 0 14 14"><rect x="4" y="9" width="4" height="2" rx="1" fill="currentColor" opacity="0.5"/><rect x="3" y="12" width="8" height="2" rx="1" fill="currentColor"/><line x1="1" y1="7" x2="13" y2="7" stroke="currentColor" stroke-width="1" stroke-dasharray="2 1" opacity="0.3"/></svg>
+                  </button>
+                  <button class="tbtn2 chart-lgpos-btn" id="lgpos-bottom-right" title="Снизу справа" onmousedown="event.preventDefault()"
+                    onclick="tblSetChart('chartLegendPos','bottom-right');document.querySelectorAll('.chart-lgpos-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')">
+                    <svg width="14" height="14" viewBox="0 0 14 14"><rect x="9" y="9" width="4" height="2" rx="1" fill="currentColor" opacity="0.5"/><rect x="7" y="12" width="6" height="2" rx="1" fill="currentColor"/><line x1="1" y1="7" x2="13" y2="7" stroke="currentColor" stroke-width="1" stroke-dasharray="2 1" opacity="0.3"/></svg>
+                  </button>
+                  <button class="tbtn2 chart-lgpos-btn" id="lgpos-left" title="Слева по вертикали" onmousedown="event.preventDefault()"
+                    onclick="tblSetChart('chartLegendPos','left');document.querySelectorAll('.chart-lgpos-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')">
+                    <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1" y="2" width="2" height="10" rx="1" fill="currentColor" opacity="0.3"/><rect x="1" y="3" width="3" height="2" rx="1" fill="currentColor"/><rect x="1" y="7" width="4" height="2" rx="1" fill="currentColor"/><rect x="1" y="11" width="3" height="2" rx="1" fill="currentColor" opacity="0.6"/></svg>
+                  </button>
+                  <button class="tbtn2 chart-lgpos-btn" id="lgpos-right" title="Справа по вертикали" onmousedown="event.preventDefault()"
+                    onclick="tblSetChart('chartLegendPos','right');document.querySelectorAll('.chart-lgpos-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')">
+                    <svg width="14" height="14" viewBox="0 0 14 14"><rect x="11" y="2" width="2" height="10" rx="1" fill="currentColor" opacity="0.3"/><rect x="10" y="3" width="3" height="2" rx="1" fill="currentColor"/><rect x="9" y="7" width="4" height="2" rx="1" fill="currentColor"/><rect x="10" y="11" width="3" height="2" rx="1" fill="currentColor" opacity="0.6"/></svg>
+                  </button>
+                </div>
+              </div>
+
               <!-- Data labels -->
               <div class="pr" style="margin:0">
                 <label style="font-size:10px;color:var(--text3)">Подписи данных</label>
@@ -1092,6 +1101,48 @@
                   <option value="percent">Процент</option>
                   <option value="both">Значение и процент</option>
                 </select>
+              </div>
+
+              <!-- Label color + size + offset -->
+              <div class="pr" style="margin:0">
+                <label style="font-size:10px;color:var(--text3)">Настройки подписей</label>
+                <div style="display:flex;gap:4px;align-items:center;margin:3px 0 4px">
+                  <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;overflow:hidden;flex-shrink:0" onmousedown="openColorPanel('cp-chart-lbl-slot','fill',function(c,sr){document.getElementById('ch-lbl-preview').style.background=c;tblSetChartColor('chartLabelColor','chartLabelColorScheme',c,sr);})" title="Цвет подписей"><div id="ch-lbl-preview" style="width:100%;height:100%;background:#ffffff;"></div></div>
+                  <button title="Сбросить цвет подписей" onmousedown="event.preventDefault()" onclick="tblSetChartColor('chartLabelColor','chartLabelColorScheme','',null);document.getElementById('ch-lbl-preview').style.background='#ffffff';" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;line-height:1" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">✕</button>
+                </div>
+                <div id="cp-chart-lbl-slot" class="cp-slot" style="display:none;margin-bottom:4px" onmousedown="event.preventDefault()"></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                  <div class="pr" style="margin:0"><label style="font-size:10px;color:var(--text3)">Размер шрифта</label><input type="number" id="ch-lbl-fs" min="6" max="48" step="1" value="11" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="tblSetChart('chartLabelFs',+this.value)"></div>
+                  <div class="pr" style="margin:0"><label style="font-size:10px;color:var(--text3)">Отступ подписей</label><input type="number" id="tbl-chart-label-offset" min="-200" max="200" step="1" value="0" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="tblSetChart('chartLabelOffset',+this.value)"></div>
+                </div>
+              </div>
+
+              <!-- Chart background -->
+              <div class="pr" style="margin:0">
+                <label style="font-size:10px;color:var(--text3)">Фон диаграммы</label>
+                <div style="display:flex;gap:4px;align-items:center;margin:3px 0 4px">
+                  <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;" onmousedown="openColorPanel('cp-chart-bg-slot','fill',function(c,sr){document.getElementById('ch-bg-preview').style.background=c;tblSetChartColor('chartBg','chartBgScheme',c,sr);})" title="Цвет фона"><div id="ch-bg-preview" style="width:100%;height:100%;background:transparent;background-image:linear-gradient(45deg,#444 25%,transparent 25%,transparent 75%,#444 75%),linear-gradient(45deg,#444 25%,transparent 25%,transparent 75%,#444 75%);background-size:6px 6px;background-position:0 0,3px 3px;"></div></div>
+                  <button title="Сбросить фон" onmousedown="event.preventDefault()" onclick="tblSetChartColor('chartBg','chartBgScheme','',null);document.getElementById('ch-bg-preview').style.cssText='width:100%;height:100%;background:transparent;background-image:linear-gradient(45deg,#444 25%,transparent 25%,transparent 75%,#444 75%),linear-gradient(45deg,#444 25%,transparent 25%,transparent 75%,#444 75%);background-size:6px 6px;background-position:0 0,3px 3px;'" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;line-height:1" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">✕</button>
+                </div>
+                <div id="cp-chart-bg-slot" class="cp-slot" style="display:none;margin-bottom:4px" onmousedown="event.preventDefault()"></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                  <div class="pr" style="margin:0"><label style="font-size:10px;color:var(--text3)">Прозрачность</label><input type="number" id="ch-bg-op" min="0" max="1" step="0.05" value="1" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="tblSetChart('chartBgOp',+this.value)"></div>
+                  <div class="pr" style="margin:0"><label style="font-size:10px;color:var(--text3)">Размытие фона</label><input type="number" id="ch-bg-blur" min="0" max="40" step="1" value="0" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="tblSetChart('chartBgBlur',+this.value)"></div>
+                </div>
+              </div>
+
+              <!-- Chart stroke -->
+              <div class="pr" style="margin:0">
+                <label style="font-size:10px;color:var(--text3)">Обводка диаграммы</label>
+                <div style="display:flex;gap:4px;align-items:center;margin:3px 0 4px">
+                  <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;overflow:hidden;flex-shrink:0" onmousedown="openColorPanel('cp-chart-stroke-slot','stroke',function(c,sr){document.getElementById('ch-stroke-preview').style.background=c;tblSetChartColor('chartStroke','chartStrokeScheme',c,sr);})"><div id="ch-stroke-preview" style="width:100%;height:100%;background:#3b82f6;"></div></div>
+                  <button title="Убрать обводку" onmousedown="event.preventDefault()" onclick="tblSetChart('chartSw',0);document.getElementById('ch-sw').value=0;" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;line-height:1" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">✕</button>
+                </div>
+                <div id="cp-chart-stroke-slot" class="cp-slot" style="display:none;margin-bottom:4px" onmousedown="event.preventDefault()"></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                  <div class="pr" style="margin:0"><label style="font-size:10px;color:var(--text3)">Толщина обводки</label><input type="number" id="ch-sw" min="0" max="20" value="0" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="tblSetChart('chartSw',+this.value)"></div>
+                  <div class="pr" style="margin:0"><label style="font-size:10px;color:var(--text3)">Скругление</label><input type="number" id="ch-rx" min="0" max="100" value="0" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="tblSetChart('chartRx',+this.value)"></div>
+                </div>
               </div>
 
             </div>
@@ -1361,14 +1412,7 @@
   <div class="modal" style="max-width:700px;width:96vw;max-height:88vh;display:flex;flex-direction:column;padding-bottom:0;overflow:hidden">
     <h3 data-i18n="modalLayout">Декоратор макета</h3>
     <p style="font-size:11px;color:var(--text2);margin-bottom:8px" data-i18n="layoutDesc">Декоративный стиль для всех слайдов. Использует цвета текущей темы.</p>
-    <!-- Animation toggle — shown only for animated layouts -->
-    <div id="layout-anim-toggle-wrap" style="display:none;margin-bottom:10px;padding:8px 12px;background:var(--surface2);border-radius:8px;border:1px solid var(--border)">
-      <div style="font-size:11px;color:var(--text2);margin-bottom:6px">✦ Этот макет поддерживает анимацию</div>
-      <div style="display:flex;gap:6px">
-        <button id="layout-anim-btn-on"  class="mbtn-sm pri"  onclick="setLayoutAnimated(true)"  style="flex:1;padding:5px 0;font-size:11px">▶ Анимированный</button>
-        <button id="layout-anim-btn-off" class="mbtn-sm"      onclick="setLayoutAnimated(false)" style="flex:1;padding:5px 0;font-size:11px">⬛ Статичный</button>
-      </div>
-    </div>
+    <!-- Animation toggle removed — controlled via slide properties panel -->
     <div id="layout-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;overflow-y:auto;overflow-x:hidden;flex:1;padding:4px 6px 12px"></div>
     <div class="mfooter" style="justify-content:center;border-top:1px solid var(--border);padding:12px 0;margin:0;flex-shrink:0">
       <button class="mbtn" onclick="closeLayoutModal()"><span data-i18n="btnCancel">Отмена</span></button>
@@ -1453,14 +1497,24 @@
 </div>
 <!-- SVG MODAL -->
 <div class="modal-ov" id="svg-modal">
-  <div class="modal" style="max-width:520px">
-    <h3 data-i18n="modalSvg">⬡ Вставить SVG</h3>
-    <p style="font-size:11px;color:var(--text2);margin-bottom:10px" data-i18n="modalSvgPaste">Вставьте SVG-код или загрузите SVG-файл</p>
-    <div class="pr"><label data-i18n="propSvgCode">SVG Code</label><textarea id="svg-code" rows="8" style="font-family:monospace;font-size:10px;resize:vertical" placeholder="<svg viewBox=&quot;0 0 100 100&quot;>...</svg>"></textarea></div>
-    <div style="margin-bottom:8px"><input type="file" id="svg-file" accept=".svg,image/svg+xml" style="display:none" onchange="loadSVGFile(event)"><button class="mbtn-sm" onclick="document.getElementById('svg-file').click()" data-i18n="modalUploadSvg">Загрузить SVG-файл</button></div>
+  <div class="modal" style="max-width:560px">
+    <h3 id="svg-modal-title">⬡ Вставить SVG</h3>
+    <p style="font-size:11px;color:var(--text2);margin-bottom:10px">Вставьте SVG-код, загрузите файл или выберите из недавних</p>
+
+    <!-- Recent SVGs gallery -->
+    <div id="svg-recent-wrap" style="display:none;margin-bottom:10px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <label style="font-size:10px;color:var(--text3)">Недавние</label>
+        <button class="mbtn-sm" onclick="_svgRecentClear()" style="font-size:9px;padding:2px 6px">Очистить</button>
+      </div>
+      <div id="svg-recent-grid" style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px;max-height:120px;overflow-y:auto"></div>
+    </div>
+
+    <div class="pr"><label>SVG Code</label><textarea id="svg-code" rows="6" style="font-family:monospace;font-size:10px;resize:vertical" placeholder="<svg viewBox=&quot;0 0 100 100&quot;>...</svg>"></textarea></div>
+    <div style="margin-bottom:8px"><input type="file" id="svg-file" accept=".svg,image/svg+xml" style="display:none" onchange="loadSVGFile(event)"><button class="mbtn-sm" onclick="document.getElementById('svg-file').click()">Загрузить SVG-файл</button></div>
     <div class="mfooter">
-      <button class="mbtn" onclick="document.getElementById('svg-modal').classList.remove('open')"><span data-i18n="btnCancel">Отмена</span></button>
-      <button class="mbtn pri" onclick="insertSVG()"><span data-i18n="btnInsert">Вставить</span></button>
+      <button class="mbtn" onclick="_closeSvgModal()">Отмена</button>
+      <button class="mbtn pri" id="svg-modal-btn" onclick="insertSVG()">Вставить</button>
     </div>
   </div>
 </div>

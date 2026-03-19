@@ -188,15 +188,15 @@ let presShuffle=false,presLoop=false,_shuffleHistory=[];
 function togglePresShuffle(){
   presShuffle=!presShuffle;
   const btn=document.getElementById('p-shuffle-btn');
-  if(btn)btn.classList.toggle('active',presShuffle);
+  if(btn){btn.classList.toggle('on',presShuffle);btn.classList.toggle('active',presShuffle);}
   if(presShuffle){_shuffleHistory=[pidx];}
-  updatePUI(); // refresh next/prev button states
+  updatePUI();
 }
 function togglePresLoop(){
   presLoop=!presLoop;
   const btn=document.getElementById('p-loop-btn');
-  if(btn)btn.classList.toggle('active',presLoop);
-  updatePUI(); // refresh next/prev button states
+  if(btn){btn.classList.toggle('on',presLoop);btn.classList.toggle('active',presLoop);}
+  updatePUI();
 }
 
 function nextPreview(){
@@ -332,9 +332,9 @@ function buildPSlide(container,idx,transOffset){
           absDelay = relDelay;
         } else if((a.trigger||'auto')==='withPrev'){
           absDelay = gPrevStart + relDelay;
-        } else {
+              } else {
           absDelay = gPrevStart + gPrevDur + relDelay;
-        }
+              }
         // live не сдвигает цепочку — gPrevStart/gPrevDur остаются от non-live анимации
         // Исключение: typewriter — считаем его реальную длительность
         if(a.name==='typewriter'){
@@ -348,7 +348,7 @@ function buildPSlide(container,idx,transOffset){
           gPrevStart = absDelay;
           gPrevDur = a.duration||600;
         }
-        const arr = globalAutoMap.get(d.id) || [];
+            const arr = globalAutoMap.get(d.id) || [];
         arr.push({anim:a, absDelay});
         globalAutoMap.set(d.id, arr);
       } else if(eff === 'click' || eff === 'autoAfter') {
@@ -380,23 +380,27 @@ function buildPSlide(container,idx,transOffset){
       const jc=d.valign==='middle'?'center':d.valign==='bottom'?'flex-end':'flex-start';
       const c=document.createElement('div');
       const csStr=(d.cs||'').trim();
-      c.style.cssText=(csStr?(csStr.endsWith(';')?csStr:csStr+';'):'')+'width:100%;height:100%;overflow:hidden;padding:6px 8px;display:flex;flex-direction:column;justify-content:'+jc+';pointer-events:none;user-select:none;';
+      c.style.cssText=(csStr?(csStr.endsWith(';')?csStr:csStr+';'):'')+'width:100%;height:100%;overflow:hidden;padding:6px 8px;display:flex;flex-direction:column;justify-content:'+jc+';pointer-events:none;user-select:none;position:relative;z-index:1;';
       if(d.textBg||d.textBgGrad){
         const op2=d.textBgOp!=null?d.textBgOp:1;
         const toRgba2=(hex,a)=>{if(!hex)return`rgba(0,0,0,0)`;const rv=parseInt(hex.slice(1,3),16),gv=parseInt(hex.slice(3,5),16),bv=parseInt(hex.slice(5,7),16);return`rgba(${rv},${gv},${bv},${a})`;};
+        // Используем отдельный bg-слой — как в канвасе — чтобы backdropFilter не влиял на фон
+        const _pvBgLayer=document.createElement('div');
+        _pvBgLayer.style.cssText='position:absolute;inset:0;z-index:0;pointer-events:none;border-radius:inherit;';
         if(d.textBgGrad){
           const dir2=d.textBgDir!=null?d.textBgDir:90;
-          el.style.background=`linear-gradient(${dir2}deg,${toRgba2(d.textBg,op2)},${toRgba2(d.textBgCol2,op2)})`;
+          _pvBgLayer.style.background=`linear-gradient(${dir2}deg,${toRgba2(d.textBg,op2)},${toRgba2(d.textBgCol2,op2)})`;
         } else {
-          el.style.background=toRgba2(d.textBg,op2);
+          _pvBgLayer.style.background=toRgba2(d.textBg,op2);
         }
+        el.insertBefore(_pvBgLayer, el.firstChild);
       } // Wrap in inner div so mixed text/span nodes don't become separate flex items
       const _pvHtml = (typeof rtMigrateHtml==='function') ? rtMigrateHtml(d.html||'') : (d.html||'');
       c.innerHTML='<div style="width:100%;white-space:normal;word-break:break-word;">'+_pvHtml+'</div>';
       // Re-attach bullet click handlers in preview (pointer-events:none on parent, so clicks won't work — that's fine for preview)
       el.appendChild(c);
       // Border for text boxes
-      if(d.textBorderW&&+d.textBorderW>0){el.style.border=(d.textBorderW||0)+'px solid '+(d.textBorderColor||'#ffffff');el.style.overflow='hidden';}
+      if(d.textBorderW&&+d.textBorderW>0){el.style.outline=(d.textBorderW||0)+'px solid '+(d.textBorderColor||'#ffffff');el.style.outlineOffset='0px';}
     }else if(d.type==='image'){
       const img=document.createElement('img');img.src=d.src;
       const cL=d.imgCropL||0,cT=d.imgCropT||0,cR=d.imgCropR||0,cB=d.imgCropB||0;
@@ -494,7 +498,7 @@ function buildPSlide(container,idx,transOffset){
       var _pvPE = (d.appletId==='generator'||d.appletId==='timer') ? 'none' : 'auto';
       iframe.style.cssText='width:100%;height:100%;border:none;background:transparent;pointer-events:'+_pvPE+';user-select:none;';
       iframe.setAttribute('allowtransparency','true');
-      iframe.sandbox = (d.appletId==='timer') ? 'allow-scripts allow-same-origin' : 'allow-scripts';
+      iframe.sandbox = 'allow-scripts';
       if(d.appletId==='timer'){
         iframe.addEventListener('load', function(){
           try{ iframe.contentWindow.postMessage({type:'timerStart'}, '*'); }catch(e){}
@@ -621,7 +625,7 @@ function buildPSlide(container,idx,transOffset){
       });
       Object.entries(groupsEl).forEach(([delayStr,grp])=>{
         const absDelay=+delayStr;
-        setTimeout(()=>{
+            setTimeout(()=>{
           el.style.visibility='';
           el.style.animation='none';
           void el.offsetWidth;
@@ -656,7 +660,8 @@ function buildPSlide(container,idx,transOffset){
           if(a.name==='moveTo'){
             cumTx=a.tx||0; cumTy=a.ty||0;
           } else if(a.name==='orbitTo'){
-            const r=a.orbitR||120, ocx=a.orbitCx||0, ocy=a.orbitCy||0;
+            const ocx=a.orbitCx||0, ocy=a.orbitCy||0;
+            const r=Math.sqrt(ocx*ocx+ocy*ocy)||(a.orbitR||120);
             const dir=(a.orbitDir||'cw')==='cw'?1:-1;
             const deg=(a.orbitDeg!=null?a.orbitDeg:360)*dir;
             const sa=Math.atan2(-ocy,-ocx), ea=sa+deg*Math.PI/180;
@@ -664,6 +669,8 @@ function buildPSlide(container,idx,transOffset){
             cumTy+=(ocy+r*Math.sin(ea))-(ocy+r*Math.sin(sa));
           }
         });
+        // Сохраняем финальный translate для восстановления после остановки live-анимаций
+        el._finalTx = cumTx; el._finalTy = cumTy;
       }
       rotateAnims.forEach(({anim:a,absDelay})=>fireAnim(el,d,a,idx,absDelay + transOffset));
     }
@@ -741,15 +748,29 @@ function buildPSlide(container,idx,transOffset){
         );
         if(!el._liveAnims) el._liveAnims=[];
         el._liveAnims.push(_animL);
-        // stopAfter: остановить когда начнётся следующая non-live
+        // stopAfter: остановить после завершения всех non-live анимаций на этом элементе
         if(a.stopAfter){
           const _autoT = (typeof globalAutoMap!=='undefined'?globalAutoMap:new Map()).get(d.id)||[];
-          const _nextNL = _autoT.find(({anim:na,absDelay:nd})=>nd>0&&na.cat!=='live');
-          if(_nextNL){
+          const _nonLive = _autoT.filter(({anim:na})=>na.cat!=='live'&&na.name!=='typewriter');
+          if(_nonLive.length){
+            // Вычисляем когда завершится последняя non-live анимация
+            const _stopAt = Math.max(..._nonLive.map(({anim:na,absDelay:nd})=>(nd||0)+(na.duration||600)));
             setTimeout(()=>{
               if(el._liveAnims){el._liveAnims.forEach(an=>{try{an.cancel();}catch(e){};}); el._liveAnims=[];}
-              _tgtL.style.transform='';
-            }, _nextNL.absDelay + transOffset);
+              const _rot=d.rot||0;
+              const _ftx=el._finalTx||0, _fty=el._finalTy||0;
+              const _tr=(_ftx||_fty)?`translate(${_ftx}px,${_fty}px) `:'';
+              _tgtL.style.transform=_tr+(_rot?`rotate(${_rot}deg)`:'');
+            }, _stopAt + transOffset);
+          } else {
+            // Нет других анимаций — остановить через одну итерацию
+            setTimeout(()=>{
+              if(el._liveAnims){el._liveAnims.forEach(an=>{try{an.cancel();}catch(e){};}); el._liveAnims=[];}
+              const _rot=d.rot||0;
+              const _ftx=el._finalTx||0, _fty=el._finalTy||0;
+              const _tr=(_ftx||_fty)?`translate(${_ftx}px,${_fty}px) `:'';
+              _tgtL.style.transform=_tr+(_rot?`rotate(${_rot}deg)`:'');
+            }, (a.duration||1200) + transOffset);
           }
         }
       });
@@ -1065,7 +1086,7 @@ function fireAnim(el,d,a,idx,overrideDelay,_cumTx,_cumTy){
           const _anim = el.animate(
             [{transform:`translate(${baseTx.toFixed(2)}px,${baseTy.toFixed(2)}px)${_rotStr}`},
              {transform:`translate(${tx.toFixed(2)}px,${ty.toFixed(2)}px)${_rotStr}`}],
-            {duration:dur, easing:'cubic-bezier(0.4,0,0.2,1)', fill:'none', composite:'replace'}
+            {duration:dur, easing:'cubic-bezier(0.4,0,0.2,1)', fill:'forwards', composite:'add'}
           );
           // Обновляем коннекторы — парсим реальный transform каждый кадр
           if(typeof window._pUpdateConnForMotion==='function'){
@@ -1100,11 +1121,12 @@ function fireAnim(el,d,a,idx,overrideDelay,_cumTx,_cumTy){
   if(a.name==='orbitTo'){
     const dur = a.duration||1200;
     const delay = typeof overrideDelay==='number' ? overrideDelay : (a.delay||0);
-    const r = a.orbitR || 120;
     const dir = (a.orbitDir||'cw')==='cw' ? 1 : -1;
     const totalDeg = (a.orbitDeg != null ? a.orbitDeg : 360) * dir;
     const ocx = (a.orbitCx||0);
     const ocy = (a.orbitCy||0);
+    // Реальный радиус = расстояние от центра орбиты до объекта — гарантирует старт без прыжка
+    const r = Math.sqrt(ocx*ocx + ocy*ocy) || (a.orbitR||120);
     const baseTx = typeof _cumTx==='number' ? _cumTx : 0;
     const baseTy = typeof _cumTy==='number' ? _cumTy : 0;
     const startAngle = Math.atan2(-ocy, -ocx);
@@ -1126,7 +1148,9 @@ function fireAnim(el,d,a,idx,overrideDelay,_cumTx,_cumTy){
           const _oRotStr = _oRot ? ` rotate(${_oRot}deg)` : '';
           el.style.transform = `translate(${endTx.toFixed(2)}px,${endTy.toFixed(2)}px)${_oRotStr}`;
           const _orbitFrames = frames.map(f=>({transform:f.transform+_oRotStr}));
-          el.animate(_orbitFrames, {duration:dur, easing:'linear', fill:'none', composite:'replace'});
+          // composite:'add' позволяет rotate (на том же el) работать одновременно
+          const _orbitAnim = el.animate(_orbitFrames, {duration:dur, easing:'linear', fill:'forwards', composite:'add'});
+          _orbitAnim.onfinish = ()=>{ try{ _orbitAnim.commitStyles(); }catch(e){} _orbitAnim.cancel(); };
         });
       }
     }, delay);
@@ -1137,20 +1161,15 @@ function fireAnim(el,d,a,idx,overrideDelay,_cumTx,_cumTy){
     const delay = typeof overrideDelay==='number' ? overrideDelay : (a.delay||0);
     const dir = (a.rotateDir||'cw')==='cw' ? 1 : -1;
     const deg = (a.rotateDeg!=null ? a.rotateDeg : 360) * dir;
-    // Use composite:'add' so rotate stacks on top of existing translate (from moveTo/orbitTo)
-    // Apply on inner .ec if available, otherwise on el itself with composite
+    // Rotate на .ec (shape) или на el с composite:'add' (стекается поверх translate от orbit/move)
     const ecEl = el.querySelector('.ec') || null;
+    const rotTarget = ecEl || el;
+    const rotComposite = ecEl ? 'replace' : 'add';
     setTimeout(()=>{
-      if(ecEl && ecEl.animate){
-        const anim = ecEl.animate(
+      if(rotTarget.animate){
+        const anim = rotTarget.animate(
           [{transform:'rotate(0deg)'},{transform:`rotate(${deg}deg)`}],
-          {duration:dur, easing:'linear', fill:'forwards'}
-        );
-        anim.onfinish = ()=>{ try{ anim.commitStyles(); }catch(e){} anim.cancel(); };
-      } else if(el.animate){
-        const anim = el.animate(
-          [{transform:'rotate(0deg)'},{transform:`rotate(${deg}deg)`}],
-          {duration:dur, easing:'linear', fill:'forwards', composite:'add'}
+          {duration:dur, easing:'linear', fill:'forwards', composite:rotComposite}
         );
         anim.onfinish = ()=>{ try{ anim.commitStyles(); }catch(e){} anim.cancel(); };
       }

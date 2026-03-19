@@ -157,7 +157,7 @@ function setMdBorder(prop, val, schemeRef){
 function _applyMdBorder(el){
   const w=+(el.dataset.textBorderW||0);
   const c=el.dataset.textBorderColor||'#ffffff';
-  if(w>0){ el.style.border=w+'px solid '+c; }
-  else { el.style.border=''; }
+  if(w>0){ el.style.outline=w+'px solid '+c; el.style.outlineOffset='0px'; }
+  else { el.style.outline=''; }
 }
 
