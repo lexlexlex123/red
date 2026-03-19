@@ -5,7 +5,7 @@
 **«Слайды»** — презентационный редактор, работающий в одном HTML-файле (или модульно).
 Не требует сервера, сборки или интернета. Открывается напрямую в браузере.
 
-- **Версия:** v5.3
+- **Версия:** v5.5
 - **Автор:** Некрасов Александр
 - **Стек:** Vanilla JS + HTML + CSS, без фреймворков
 - **Зависимости:** JSZip (офлайн), QRCode (офлайн), системные шрифты
@@ -37,11 +37,12 @@ project/
     ├── 07-transitions.js   # Переходы между слайдами
     ├── 08-slides.js        # CRUD слайдов, save(), load()
     ├── 09-shapes.js        # Фигуры и SVG, updateShapeStyleScheme()
-    ├── 10-animations.js    # Анимации элементов
+    ├── 10-animations.js    # Анимации: ANIM_CATS, ANIM_CSS, addAnimToSel(), playAnimOnEl()
     ├── 11-elements.js      # Создание/рендер элементов, addText(), code blocks
     ├── 12-markdown.js      # Markdown-блоки: updateMdFontSize(), updateMdColor()
-    ├── 13-images.js        # Изображения, mkEl(), stopTextEditing()
+    ├── 13-images.js        # Изображения, mkEl(), flipImg(), applyImgStyles()
     ├── 13b-imgcrop.js      # Кроп изображений, applyImgCrop(), _exitCropMode()
+    ├── 18-motion.js        # Overlay moveTo/orbitTo/swing, renderMotionOverlay()
     ├── 14-drag.js          # Перетаскивание и ресайз
     ├── 15-align.js         # Выравнивание и распределение элементов
     ├── 16-props.js         # Панель свойств, syncProps(), setTextBg(), applyTextBg()
@@ -65,6 +66,7 @@ project/
     └── 33-pagenum.js       # Нумерация страниц, pnSettings, pnApplyAll()
     ├── 36-formula.js       # Формулы LaTeX: addFormula(), openFormulaEditor(), syncFormulaProps(), setFormulaColor()
     └── 37-graph.js         # Графики формул: buildFormulaGraph(), refreshAllGraphs(theme)
+    ├── 40-images-modal.js  # Галерея изображений: openImageModal(), IMAGE_CATS, IMAGE_REGISTRY
 ```
 
 ---
@@ -389,6 +391,75 @@ pnSyncUI()    // синхронизирует UI
 
 ---
 
+
+---
+
+## Галерея изображений (`js/40-images-modal.js`)
+
+```js
+openImageModal(replaceMode)  // открыть модал (replaceMode=true — заменить src выбранного)
+closeImageModal()            // закрыть
+filterImages(val)            // поиск по названию
+```
+
+### Реестр изображений (`images/image-index.js`)
+
+Формат записи (минимальный — path строится автоматически):
+```js
+{id:'img1', cat:'birds', file:'eagle.jpg', name:'Орёл'}
+// SVG со встроенным контентом:
+{id:'img2', cat:'abstract', file:'wave.svg', name:'Волна', svgContent:`<svg...>`}
+```
+
+`_refreshRegistry()` вызывается при каждом `openImageModal()` — нормализует записи, строит `path` из `cat+file`, определяет `isSvg` по расширению.
+
+### Генератор реестра (`images/build-index.js`)
+
+Запуск: `node images/build-index.js` или `update-gallery.bat`.  
+Сканирует папки категорий, встраивает SVG-контент как `svgContent`, генерирует `image-index.js`.
+
+---
+
+## Отражение изображений (`js/13-images.js`)
+
+```js
+flipImg(axis)  // axis='h' или 'v' — переключает d.imgFlipH / d.imgFlipV
+```
+
+Флип применяется на `.iel` контейнере через `transform: scale(-1,1)` / `scale(1,-1)` с `transform-origin:center`. Не влияет на `el.style.transform` (rotate + translate анимаций).
+
+Поля данных: `d.imgFlipH`, `d.imgFlipV` (boolean). Сохраняются в `dataset.imgFlipH/V`.  
+Читаются в `08-slides.js`, применяются в `applyImgStyles()`, `24-preview.js`, `26-export.js`.
+
+---
+
+## Анимация «Качение» — swing
+
+### Поля анимации
+```js
+{
+  name: 'swing',
+  cat: 'live',
+  duration: 2000,       // мс на один цикл
+  swingOx: 0,           // смещение центра качения X от центра объекта (px)
+  swingOy: height/2,    // смещение Y (по умолчанию — низ объекта)
+  swingCount: 1,        // 1–9 конечных, ≥10 = Infinity
+}
+```
+
+### Архитектура
+Swing запускается на **дочернем элементе** (`.ec`, `.iel`, `.psel-txt` или `._swing_wrap`) — не на `el`. Это позволяет одновременно работать с `moveTo` (translate на `el`) без конфликта composite.
+
+`._swing_wrap` создаётся динамически если нет подходящего дочернего элемента — переносит всё содержимое `el` в `position:absolute;inset:0` обёртку.
+
+Элемент с swing получает класс `.has-swing` и `overflow:visible` — чтобы не обрезаться при качении.
+
+### Центр качения в overlay (`js/18-motion.js`)
+Фиолетовая точка рисуется в `renderMotionOverlay()` через `gc` (ghost container, `z-index:10001`). Перетаскивание обновляет `a.swingOx/swingOy`. Snap к 9 точкам объекта с порогом 16px экранных.
+
+### Совместимость с withPrev
+`absDelay` для live-анимаций с `trigger='withPrev'` вычисляется через цепочку `gPrevStart + relDelay` — не `0`. Live-анимации с `trigger='auto'` по-прежнему стартуют немедленно.
+
 ## Советы при разработке
 
 1. **Порядок загрузки JS важен** — файлы пронумерованы.
@@ -400,6 +471,9 @@ pnSyncUI()    // синхронизирует UI
 7. **`pnApplyAll()`** — вызывать после любого `load()` если нумерация включена.
 8. **Code blocks** — `refreshAllCodeBlocks()` при смене схемы.
 9. **Глобальные хелперы** — `_addImageToCanvas` объявлена глобально в `21-keyboard.js`, доступна из любого модуля.
+12. **Flip изображений** — применять только на `.iel`, не на `el` — иначе ломаются анимации движения.
+13. **Swing анимация** — запускать на дочернем элементе, не на `el`. Элемент должен иметь класс `.has-swing` и `overflow:visible`.
+14. **image-index.js** — `path` не обязателен (строится из `cat+file`). `isSvg` определяется по расширению автоматически.
 10. **Формулы** — SVG хранится нейтральным (`currentColor`). Цвет всегда через `ec.style.color`. Обновлять dataset **до** `pushUndo()` — иначе `save()` зафиксирует старый цвет.
 11. **Графики** — вызывать `refreshAllGraphs(theme)` из `applyTheme` перед `renderAll()` при смене темы.
 
@@ -409,6 +483,8 @@ pnSyncUI()    // синхронизирует UI
 
 | Версия | Ключевые изменения |
 |--------|-------------------|
+| **v5.5** | Галерея изображений (40-images-modal.js) с категориями, поиском, генератором реестра (build-index.js). Отражение изображений flip H/V — flipImg() в 13-images.js, поддержка в preview и export. Анимация «Качение» (swing) — живая анимация с перетаскиваемым центром качения, snap к 9 точкам объекта, количество повторений. Совместимость swing с moveTo через withPrev (исправлена логика composite на дочернем элементе). Двойной клик по эффекту в панели — мгновенное добавление. |
+| **v5.4** | htmlframe, Layers декор. |
 | **v5.3** | Элемент «Формула» (LaTeX через MathJax 3): редактор с палитрой символов по группам, нейтральный SVG через `currentColor`, цвет из палитры схемы с адаптацией при смене темы. Элемент «График»: парсер LaTeX→JS, рендер через Canvas API, подпись вдоль кривой, автообновление при смене схемы. Превью формул и графиков в миниатюрах слайдов. |
 | **v5.2** | Drag-and-drop импорт файлов (PPTX/PPT/ODP/HTML/JSON/изображения) с оверлеем. Центрирование канваса по каждой оси независимо. Авто-перецентрирование при ресайзе окна/браузерном зуме. `_addImageToCanvas` вынесена в глобальный скоуп. |
 | **v5.1** | Нейтральная колонка палитры: тёмная row0=белый, светлая row0=чёрный. Дефолт надписей `{col:7,row:0}` через `_resolveSchemeColor`. Markdown: `mdColorScheme`, `--md-c`, палитра в панели. Dblclick открывает markdown/code редакторы. Модалка тем: применять без закрытия. «Без декора» — крестик. Градиент фона текстового блока с 8 направлениями. |

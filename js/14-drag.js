@@ -65,6 +65,38 @@ function mkDrag(el,c){
     const mu=()=>{on=false;window._anyDragging=false;groupStart=null;clearGuides();document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);commitAll();};
     document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
   });
+
+  // Двойной клик на выбранном объекте — добавить emphasis анимацию и проиграть
+  el.addEventListener('dblclick', e => {
+    // Пропускаем если клик попал на интерактивные дочерние элементы
+    if(e.target.closest && (
+      e.target.closest('.tel') ||
+      e.target.closest('.shape-text') ||
+      e.target.closest('.rh') ||
+      e.target.closest('.tbl-drag-border') ||
+      e.target.tagName === 'TD' || e.target.tagName === 'TH'
+    )) return;
+    // Только если элемент уже выбран
+    if(!el.classList.contains('sel')) return;
+    const _emphasisAnims = ['pulse','shake','flash','rotate'];
+    const _pick = _emphasisAnims[Math.floor(Math.random()*_emphasisAnims.length)];
+    if(typeof addAnimToSel === 'function'){
+      addAnimToSel(_pick, 'emphasis');
+      // Сразу проигрываем анимацию в редакторе
+      setTimeout(()=>{
+        // Используем ANIM_CSS из 10-animations.js
+        if(_pick === 'rotate'){
+          el.animate([{transform:'rotate(0deg)'},{transform:'rotate(360deg)'}],
+            {duration:600, easing:'ease-in-out', fill:'none'});
+        } else if(typeof ANIM_CSS !== 'undefined' && ANIM_CSS[_pick]){
+          const cls = ANIM_CSS[_pick];
+          el.style.animation=''; void el.offsetWidth; el.style.animation=cls+' 0.6s ease-out 0s both';
+          setTimeout(()=>{el.style.animation='';},700);
+        }
+      }, 50);
+    }
+    e.stopPropagation();
+  });
 }
 function mkResize(el,rh,cfg){
   rh.addEventListener('mousedown',e=>{

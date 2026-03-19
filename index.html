@@ -43,7 +43,7 @@
     </div>
     <div class="rg" data-tab="home">
       <button class="rb" onclick="addText()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg><span class="rbl" data-i18n="btnText">Текст</span></button>
-      <button class="rb" onclick="document.getElementById('imgup').click()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><span class="rbl" data-i18n="btnImage">Изображение</span></button>
+      <button class="rb" onclick="openImageModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><span class="rbl" data-i18n="btnImage">Изображение</span></button>
       <button class="rb" onclick="openShapeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l9 18H3L12 3z"/></svg><span class="rbl" data-i18n="btnShape">Фигура</span></button>
       <button class="rb" onclick="openIconModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg><span class="rbl" data-i18n="btnIcon">Значки</span></button>
       <button class="rb" onclick="openTableModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg><span class="rbl">Таблица</span></button>
@@ -58,7 +58,7 @@
     <!-- INSERT -->
     <div class="rg" data-tab="insert" style="display:none">
       <button class="rb" onclick="addText()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg><span class="rbl" data-i18n="btnText">Текст</span></button>
-      <button class="rb" onclick="document.getElementById('imgup').click()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><span class="rbl" data-i18n="btnImage">Изображение</span></button>
+      <button class="rb" onclick="openImageModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><span class="rbl" data-i18n="btnImage">Изображение</span></button>
       <button class="rb" onclick="openShapeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l9 18H3L12 3z"/></svg><span class="rbl" data-i18n="btnShape">Фигура</span></button>
       <button class="rb" onclick="openIconModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg><span class="rbl" data-i18n="btnIcon">Значки</span></button>
       <button class="rb" onclick="openSVGModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg><span class="rbl">SVG</span></button>
@@ -650,6 +650,10 @@
           <div class="ph" data-i18n="phImage">Image</div>
           <div class="psec" style="display:flex;flex-direction:column;gap:6px">
             <button id="img-crop-btn" class="mbtn-sm" onclick="startImgCrop()" style="width:100%;margin-bottom:2px" data-i18n="btnCropImage">✂️ Обрезка</button>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:2px">
+              <button class="mbtn-sm" onclick="flipImg('h')" title="Отразить по горизонтали" style="display:flex;align-items:center;justify-content:center;gap:5px;width:100%"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="3" width="6" height="10" rx="1" fill="currentColor" opacity=".4"/><rect x="9" y="3" width="6" height="10" rx="1" fill="currentColor"/><line x1="8" y1="1" x2="8" y2="15" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2 2"/></svg></button>
+              <button class="mbtn-sm" onclick="flipImg('v')" title="Отразить по вертикали" style="display:flex;align-items:center;justify-content:center;gap:5px;width:100%"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="1" width="10" height="6" rx="1" fill="currentColor" opacity=".4"/><rect x="3" y="9" width="10" height="6" rx="1" fill="currentColor"/><line x1="1" y1="8" x2="15" y2="8" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2 2"/></svg></button>
+            </div>
             <div class="pr" style="margin:0"><label data-i18n="propImgFit">Заполнение</label>
               <select id="img-fit" onchange="updateImgStyle('fit',this.value)">
                 <option value="contain">Вписать</option>
@@ -1432,6 +1436,32 @@
 </div>
 <!-- SHAPE MODAL -->
 <!-- ICON MODAL -->
+
+<!-- IMAGE GALLERY MODAL -->
+<div class="modal-ov" id="img-modal">
+  <div class="modal" style="width:720px;max-width:95vw;display:flex;flex-direction:column;max-height:85vh">
+    <div class="mhdr">
+      <span data-i18n="modalImages">Галерея изображений</span>
+      <button class="mclose" onclick="closeImageModal()">✕</button>
+    </div>
+    <div style="padding:10px 16px 6px;border-bottom:1px solid var(--border);flex-shrink:0">
+      <input type="text" id="img-search" data-i18n-placeholder="imgSearch" placeholder="Поиск изображений…" oninput="filterImages(this.value)"
+        style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 10px;font-size:12px;font-family:inherit;box-sizing:border-box">
+    </div>
+    <div id="img-cat-tabs" style="display:flex;flex-wrap:wrap;gap:4px;padding:8px 16px 4px;flex-shrink:0"></div>
+    <div id="img-grid" style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 16px;overflow-y:auto;flex:1;min-height:200px;align-content:flex-start"></div>
+    <div class="mfooter" style="border-top:1px solid var(--border);padding:10px 16px;display:flex;gap:8px;justify-content:space-between;flex-shrink:0">
+      <button class="mbtn" onclick="imgModalUpload()" style="gap:6px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="14" height="14"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <span data-i18n="btnUploadFile">Загрузить с компьютера</span>
+      </button>
+      <div style="display:flex;gap:6px">
+        <button class="mbtn" onclick="closeImageModal()"><span data-i18n="btnCancel">Отмена</span></button>
+        <button class="mbtn pri" id="img-modal-ok" disabled onclick="_insertSelectedImage()"><span data-i18n="btnInsert">Вставить</span></button>
+      </div>
+    </div>
+  </div>
+</div>
 <div class="modal-ov" id="icon-modal">
   <div class="modal" style="max-width:760px;width:760px;min-width:580px">
     <h3 data-i18n="modalIcon">🔍 Значки</h3>
@@ -1628,6 +1658,8 @@
 <script src="js/31-table.js"></script>
 <script src="js/28-multisel.js"></script>
 <script src="js/29-icons.js"></script>
+  <script src="images/image-index.js"></script>
+  <script src="js/40-images-modal.js"></script>
 <script src="js/30-rich-text.js"></script>
 
 <script src="js/32-scrubber.js"></script>

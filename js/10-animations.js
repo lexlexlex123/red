@@ -5,6 +5,7 @@ const ANIM_CSS={
   fadeOut:'el-fadeout',slideOut:'el-slideout',zoomOut:'el-zoomout',
   pulse:'el-pulse',shake:'el-shake',flash:'el-flash',
   dance:'el-dance',
+  swing:'el-swing',
 };
 
 const ANIM_CATS = [
@@ -49,6 +50,7 @@ const ANIM_CATS = [
     cat: 'live', label: 'Живая',
     items: [
       {name:'dance',      label:'Танец',        icon:'💃'},
+      {name:'swing',      label:'Качение',      icon:'🎷'},
       {name:'typewriter', label:'Смена текста',  icon:'⌨'},
     ]
   },
@@ -242,6 +244,27 @@ let _animPreviewTimer = null;
         {duration:dur, easing:'ease-in-out', fill:'none'});
       return;
     }
+    if(animName === 'swing'){
+      const sox = animData && animData.swingOx != null ? animData.swingOx : 0;
+      const d2 = (typeof slides!=='undefined' && typeof cur!=='undefined') ?
+        slides[cur]&&slides[cur].els.find(x=>el.dataset&&x.id===el.dataset.id) : null;
+      const sh = d2 ? d2.h : (parseInt(el.style.height)||200);
+      const sw = d2 ? d2.w : (parseInt(el.style.width)||300);
+      const soy = animData && animData.swingOy != null ? animData.swingOy : sh/2;
+      const ox = (50 + sox/sw*100).toFixed(2)+'%';
+      const oy = (50 + soy/sh*100).toFixed(2)+'%';
+      const prev = el.style.transformOrigin;
+      el.style.transformOrigin = ox+' '+oy;
+      el.animate([
+        {transform:'rotate(0deg)'},{transform:'rotate(30deg)'},{transform:'rotate(-30deg)'},
+        {transform:'rotate(20deg)'},{transform:'rotate(-20deg)'},{transform:'rotate(10deg)'},
+        {transform:'rotate(-10deg)'},{transform:'rotate(5deg)'},{transform:'rotate(-3deg)'},
+        {transform:'rotate(0deg)'}
+      ], {duration:1200, easing:'ease-in-out', fill:'none'});
+      clearTimeout(_animPreviewTimer);
+      _animPreviewTimer = setTimeout(()=>{ el.style.transformOrigin = prev; }, 1300);
+      return;
+    }
     const cssClass = ANIM_CSS[animName]; if(!cssClass) return;
     el.style.animation = '';
     void el.offsetWidth;
@@ -320,6 +343,12 @@ let _animPreviewTimer = null;
           const addBtn = document.getElementById('anim-add-btn');
           if(addBtn){ addBtn.disabled=false; addBtn.textContent='Добавить «'+it.label+'»'; }
           playAnimOnEl(it.name, it);
+        });
+        item.addEventListener('dblclick', e => {
+          e.preventDefault();
+          window._selectedAnimName = it.name;
+          window._selectedAnimCat  = group.cat;
+          window.addAnimToSel(it.name, group.cat);
         });
         grid.appendChild(item);
       });
@@ -563,6 +592,26 @@ let _animPreviewTimer = null;
         twWrap.appendChild(hint3);
 
         props.appendChild(twWrap);
+      }
+
+      // swing: количество качаний в стиле поля длительности
+      if(a.name === 'swing'){
+        const swingDiv = document.createElement('div');
+        swingDiv.className = 'anim-row-props';
+        swingDiv.style.marginTop = '4px';
+        const _cnt = a.swingCount != null ? a.swingCount : 1;
+        const _isInf = _cnt >= 10;
+        swingDiv.innerHTML = `
+          <label>Повторений<input type="number" value="${_isInf ? '∞' : _cnt}" min="1" max="9" step="1"
+            placeholder="1"
+            oninput="updateAnimProp('${d.id}',${ai},'swingCount',+this.value||1)"
+            onchange="updateAnimProp('${d.id}',${ai},'swingCount',+this.value||1)"></label>
+          <label style="position:relative">∞ повторять
+            <input type="checkbox" ${_isInf?'checked':''} style="width:auto;margin-left:4px"
+              onchange="updateAnimProp('${d.id}',${ai},'swingCount',this.checked?10:1);renderAnimPanel()">
+          </label>
+        `;
+        props.appendChild(swingDiv);
       }
 
       // dance: stopAfter checkbox

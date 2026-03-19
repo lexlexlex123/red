@@ -29,6 +29,18 @@ function updateImgStyle(prop,val){
   applyImgStyles(sel,d);commitAll();
 }
 
+function flipImg(axis){
+  if(!sel||sel.dataset.type!=='image')return;
+  pushUndo();
+  const d=slides[cur].els.find(e=>e.id===sel.dataset.id);if(!d)return;
+  if(axis==='h') d.imgFlipH=!d.imgFlipH;
+  else d.imgFlipV=!d.imgFlipV;
+  // Сохраняем в dataset чтобы save() подхватил при сериализации
+  sel.dataset.imgFlipH = d.imgFlipH ? 'true' : 'false';
+  sel.dataset.imgFlipV = d.imgFlipV ? 'true' : 'false';
+  applyImgStyles(sel,d);commitAll();
+}
+
 function updateImgPosition(){
   if(!sel||sel.dataset.type!=='image')return;
   const px=document.getElementById('img-pos-x').value;
@@ -63,6 +75,18 @@ function applyImgStyles(el,d){
   img.style.width='100%';
   img.style.height='100%';
   img.style.display='block';
+  const fx=(d.imgFlipH===true||d.imgFlipH==='true')?-1:1;
+  const fy=(d.imgFlipV===true||d.imgFlipV==='true')?-1:1;
+  // Флип на .iel контейнере — НЕ на el, чтобы не ломать анимации и drag
+  // el.style.transform содержит только rotate — не трогаем его здесь
+  const flipTarget = c || img;
+  if(fx===-1||fy===-1){
+    flipTarget.style.transform = `scale(${fx},${fy})`;
+    flipTarget.style.transformOrigin = 'center';
+  } else {
+    flipTarget.style.transform = '';
+    flipTarget.style.transformOrigin = '';
+  }
   if(typeof applyImgCrop==='function')applyImgCrop(el,d);
 }
 
@@ -186,6 +210,8 @@ function mkEl(d){
     el.dataset.imgCropT=d.imgCropT||0;
     el.dataset.imgCropR=d.imgCropR||0;
     el.dataset.imgCropB=d.imgCropB||0;
+    el.dataset.imgFlipH=d.imgFlipH?'true':'false';
+    el.dataset.imgFlipV=d.imgFlipV?'true':'false';
   }else if(d.type==='code'){
     // will call renderCodeEl after el.append
   }else if(d.type==='markdown'){

@@ -1,9 +1,9 @@
 // ══════════════ LOCALIZATION (i18n) ══════════════
-// Версия / Version: 5.4
+// Версия / Version: 5.5
 // Автор / Author: Некрасов Александр
 
 const APP_NAME = 'Слайды';
-const APP_VERSION = '5.4';
+const APP_VERSION = '5.5';
 const APP_AUTHOR = 'Некрасов Александр';
 
 const LANG_DATA = {
@@ -157,6 +157,9 @@ const LANG_DATA = {
     btnCancel: 'Cancel',
     btnInsert: 'Insert',
     btnInsertUpdate: 'Insert / Update',
+    modalImages: '🖼 Image Gallery',
+    imgSearch: 'Search images…',
+    btnUploadFile: 'Upload from Computer',
     btnApplyPresentation: 'Apply to Presentation',
     btnApplyAll: 'Apply to All',
 
@@ -413,6 +416,9 @@ const LANG_DATA = {
     btnCancel: 'Отмена',
     btnInsert: 'Вставить',
     btnInsertUpdate: 'Вставить / Обновить',
+    modalImages: '🖼 Галерея изображений',
+    imgSearch: 'Поиск изображений…',
+    btnUploadFile: 'Загрузить с компьютера',
     btnApplyPresentation: 'Применить к презентации',
     btnApplyAll: 'Применить ко всем',
 

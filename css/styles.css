@@ -400,6 +400,7 @@ input[type=color]{caret-color:transparent;}
 input[type=color]{caret-color:transparent;outline:none;}
 input[type=color]:focus{outline:none;box-shadow:none;}
 .psel{position:absolute;overflow:hidden;}
+.psel.has-swing{overflow:visible;}
 #p-prog{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--accent),var(--accent3));transition:width .3s;z-index:902;}
 #p-exit{position:fixed;top:14px;right:16px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:rgba(255,255,255,.6);padding:5px 13px;border-radius:6px;cursor:pointer;font-size:11px;font-family:inherit;z-index:902;transition:.15s;backdrop-filter:blur(6px);}
 #p-exit:hover{background:rgba(255,255,255,.2);color:#fff;}
@@ -445,6 +446,19 @@ input[type=color]:focus{outline:none;box-shadow:none;}
 @keyframes el-shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}}
 @keyframes el-flash{0%,50%,100%{opacity:1}25%,75%{opacity:0}}
 /* ── Live / "Живая" анимация — танец ── */
+
+@keyframes el-swing{
+  0%   { transform: rotate(  0deg); }
+  15%  { transform: rotate( 30deg); }
+  35%  { transform: rotate(-30deg); }
+  50%  { transform: rotate( 20deg); }
+  65%  { transform: rotate(-20deg); }
+  75%  { transform: rotate( 10deg); }
+  85%  { transform: rotate(-10deg); }
+  92%  { transform: rotate(  5deg); }
+  97%  { transform: rotate( -3deg); }
+  100% { transform: rotate(  0deg); }
+}
 @keyframes el-dance{
   0%   { transform: scaleX(1)    scaleY(1)    rotate(0deg);   }
   12%  { transform: scaleX(1.12) scaleY(0.82) rotate(-2deg);  }

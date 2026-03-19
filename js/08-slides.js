@@ -113,6 +113,8 @@ function save(){
       d.imgOpacity=el.dataset.imgOpacity!=null?+el.dataset.imgOpacity:(dd&&dd.imgOpacity!=null?dd.imgOpacity:1);
       d.imgPosX=el.dataset.imgPosX||(dd&&dd.imgPosX)||'center';
       d.imgPosY=el.dataset.imgPosY||(dd&&dd.imgPosY)||'center';
+      d.imgFlipH=el.dataset.imgFlipH==='true'||!!(dd&&dd.imgFlipH)||false;
+      d.imgFlipV=el.dataset.imgFlipV==='true'||!!(dd&&dd.imgFlipV)||false;
       // crop: read from dataset (written on exit crop mode), fallback to live d value
       d.imgCropL = el.dataset.imgCropL != null ? +el.dataset.imgCropL : (d.imgCropL || 0);
       d.imgCropT = el.dataset.imgCropT != null ? +el.dataset.imgCropT : (d.imgCropT || 0);

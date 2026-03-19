@@ -10,7 +10,7 @@
     if(!canvas) return null;
     const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
     svg.id = 'motion-svg';
-    svg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:92;overflow:visible;';
+    svg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:10001;overflow:visible;';
     canvas.appendChild(svg);
     _svgOverlay = svg;
     return svg;
@@ -22,7 +22,7 @@
     if(!canvas) return null;
     const div = document.createElement('div');
     div.id = 'motion-ghosts';
-    div.style.cssText = 'position:absolute;pointer-events:none;z-index:91;top:0;left:0;width:0;height:0;overflow:visible;';
+    div.style.cssText = 'position:absolute;pointer-events:none;z-index:10001;top:0;left:0;width:0;height:0;overflow:visible;';
     canvas.appendChild(div);
     _ghostContainer = div;
     return div;
@@ -93,13 +93,15 @@
     ghost.className = 'motion-ghost';
     ghost.removeAttribute('data-id'); ghost.removeAttribute('data-anims');
     ghost.removeAttribute('data-editing'); ghost.removeAttribute('data-type');
+    const _origTransform = domEl.style.transform || '';
     ghost.style.cssText = [
       'position:absolute',
       `left:${gx}px`,`top:${gy}px`,`width:${ow}px`,`height:${oh}px`,
       'opacity:0.28', 'pointer-events:none',
       `outline:1.5px dashed ${outlineColor}`,
       'z-index:91','user-select:none',
-    ].join(';');
+      _origTransform ? `transform:${_origTransform}` : '',
+    ].filter(Boolean).join(';');
     ghost.querySelectorAll('*').forEach(ch=>{ ch.style.pointerEvents='none'; ch.removeAttribute('contenteditable'); });
     ghost.querySelectorAll('.rh,.sel-box').forEach(ch=>ch.remove());
     ghost.classList.remove('sel');
@@ -129,7 +131,7 @@
     const canvas = document.getElementById('canvas');
     if(!canvas) return;
 
-    const hasMotion = s.els.some(d=>d.anims&&d.anims.some(a=>a.name==='moveTo'||a.name==='orbitTo'));
+    const hasMotion = s.els.some(d=>d.anims&&d.anims.some(a=>a.name==='moveTo'||a.name==='orbitTo'||a.name==='swing'));
     if(!hasMotion) return;
 
     const svg = _getSvg();
@@ -147,7 +149,7 @@
 
     s.els.forEach(d => {
       if(!d.anims||!d.anims.length) return;
-      const motionAnims = d.anims.filter(a=>a.name==='moveTo'||a.name==='orbitTo');
+      const motionAnims = d.anims.filter(a=>a.name==='moveTo'||a.name==='orbitTo'||a.name==='swing');
       if(!motionAnims.length) return;
 
       const domEl = canvas.querySelector(`.el[data-id="${d.id}"]`);
@@ -162,6 +164,119 @@
       let motionIdx = 0;
 
       d.anims.forEach((a, ai) => {
+        if(a.name !== 'moveTo' && a.name !== 'orbitTo' && a.name !== 'swing') return;
+
+        // ────────────────────────────────
+        // swing — точка центра качения
+        // ────────────────────────────────
+        if(a.name === 'swing'){
+          const sox = a.swingOx != null ? a.swingOx : 0;
+          const soy = a.swingOy != null ? a.swingOy : oh/2;
+          // Позиция точки на канвасе: центр объекта + смещение
+          const px = ox + ow/2 + sox;
+          const py = oy + oh/2 + soy;
+          // Рисуем крестик на SVG
+          const R=8;
+          const line = (x1,y1,x2,y2,col) => {
+            const l = document.createElementNS('http://www.w3.org/2000/svg','line');
+            l.setAttribute('x1',x1);l.setAttribute('y1',y1);l.setAttribute('x2',x2);l.setAttribute('y2',y2);
+            l.setAttribute('stroke',col);l.setAttribute('stroke-width','2');l.setAttribute('stroke-linecap','round');
+            svg.appendChild(l);
+          };
+          line(px-R,py, px+R,py, 'rgba(139,92,246,0.9)');
+          line(px,py-R, px,py+R, 'rgba(139,92,246,0.9)');
+          // Круг на точке
+          const circ = document.createElementNS('http://www.w3.org/2000/svg','circle');
+          circ.setAttribute('cx',px);circ.setAttribute('cy',py);circ.setAttribute('r',6);
+          circ.setAttribute('fill','rgba(139,92,246,0.85)');circ.setAttribute('stroke','#fff');circ.setAttribute('stroke-width','1.5');
+          svg.appendChild(circ);
+          // Пунктирная дуга от центра объекта до точки качения
+          const cx2 = ox+ow/2, cy2 = oy+oh/2;
+          if(sox!==0||soy!==0){
+            const ln = document.createElementNS('http://www.w3.org/2000/svg','line');
+            ln.setAttribute('x1',cx2);ln.setAttribute('y1',cy2);ln.setAttribute('x2',px);ln.setAttribute('y2',py);
+            ln.setAttribute('stroke','rgba(139,92,246,0.4)');ln.setAttribute('stroke-width','1');
+            ln.setAttribute('stroke-dasharray','3 3');svg.appendChild(ln);
+          }
+          // Snap-точки: углы, середины сторон и центр объекта
+          const snapPts = [
+            {x:ox,      y:oy},       // верх-лево
+            {x:ox+ow/2, y:oy},       // верх-центр
+            {x:ox+ow,   y:oy},       // верх-право
+            {x:ox+ow,   y:oy+oh/2},  // право-центр
+            {x:ox+ow,   y:oy+oh},    // низ-право
+            {x:ox+ow/2, y:oy+oh},    // низ-центр
+            {x:ox,      y:oy+oh},    // низ-лево
+            {x:ox,      y:oy+oh/2},  // лево-центр
+            {x:ox+ow/2, y:oy+oh/2},  // центр
+          ];
+
+          function applySnap(npx, npy){
+            // Порог 16px в экранных координатах = 16/scale в канвасных
+            const thresh = 16 / scale;
+            let bx=npx, by=npy, snapped=false;
+            let best=thresh;
+            snapPts.forEach(sp=>{
+              const d2=Math.sqrt((npx-sp.x)**2+(npy-sp.y)**2);
+              if(d2<best){ best=d2; bx=sp.x; by=sp.y; snapped=true; }
+            });
+            return {x:bx, y:by, snapped};
+          }
+
+          // Drag handle
+          const dot = document.createElement('div');
+          dot.style.cssText = `position:absolute;left:${px}px;top:${py}px;width:14px;height:14px;border-radius:50%;background:rgba(139,92,246,0.9);border:2px solid #fff;transform:translate(-50%,-50%);cursor:grab;pointer-events:auto;box-shadow:0 1px 6px rgba(139,92,246,.6)`;
+          dot.title = 'Перетащите для изменения центра качения';
+
+          dot.addEventListener('mousedown', e=>{
+            e.preventDefault(); e.stopPropagation();
+            dot.style.cursor='grabbing';
+            const sx=e.clientX, sy=e.clientY;
+            const ssox=sox, ssoy=soy;
+
+            const onMove = ev=>{
+              // Сырое смещение в канвасных координатах
+              const rawSox = ssox + (ev.clientX-sx)/scale;
+              const rawSoy = ssoy + (ev.clientY-sy)/scale;
+              const rawPx  = ox+ow/2+rawSox;
+              const rawPy  = oy+oh/2+rawSoy;
+              // Snap
+              const {x:spx, y:spy, snapped} = applySnap(rawPx, rawPy);
+              dot.style.left = spx+'px';
+              dot.style.top  = spy+'px';
+              dot.style.background = snapped ? 'rgba(99,102,241,1)' : 'rgba(139,92,246,0.9)';
+              dot.style.transform = snapped
+                ? 'translate(-50%,-50%) scale(1.3)'
+                : 'translate(-50%,-50%) scale(1)';
+            };
+
+            const onUp = ev=>{
+              document.removeEventListener('mousemove', onMove);
+              document.removeEventListener('mouseup', onUp);
+              dot.style.cursor='grab';
+              const rawSox = ssox + (ev.clientX-sx)/scale;
+              const rawSoy = ssoy + (ev.clientY-sy)/scale;
+              const rawPx  = ox+ow/2+rawSox;
+              const rawPy  = oy+oh/2+rawSoy;
+              const {x:spx, y:spy} = applySnap(rawPx, rawPy);
+              a.swingOx = Math.round(spx - (ox+ow/2));
+              a.swingOy = Math.round(spy - (oy+oh/2));
+              const domEl2 = canvas.querySelector(`.el[data-id="${d.id}"]`);
+              if(domEl2) domEl2.dataset.anims = JSON.stringify(d.anims);
+              if(typeof save==='function') save();
+              if(typeof saveState==='function') saveState();
+              renderMotionOverlay();
+              if(typeof renderAnimPanel==='function') renderAnimPanel();
+            };
+
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+          });
+
+          gc.appendChild(dot);
+          return;
+        }
+
         if(a.name !== 'moveTo' && a.name !== 'orbitTo') return;
         const mi = motionIdx++;
 
