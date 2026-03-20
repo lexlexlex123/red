@@ -115,6 +115,22 @@ function save(){
       d.imgPosY=el.dataset.imgPosY||(dd&&dd.imgPosY)||'center';
       d.imgFlipH=el.dataset.imgFlipH==='true'||!!(dd&&dd.imgFlipH)||false;
       d.imgFlipV=el.dataset.imgFlipV==='true'||!!(dd&&dd.imgFlipV)||false;
+      // QR Code — приоритет: dataset > oldEls (dd)
+      // Пишем dataset обратно если dd._isQR есть но dataset нет
+      if(dd&&dd._isQR && el.dataset.isQR!=='true'){
+        el.dataset.isQR='true';
+        if(dd.qrText) el.dataset.qrText=dd.qrText;
+        if(dd.qrBg)   el.dataset.qrBg=dd.qrBg;
+        if(dd.qrColor) el.dataset.qrColor=dd.qrColor;
+        if(dd.qrRx!=null) el.dataset.qrRx=dd.qrRx;
+      }
+      if(el.dataset.isQR==='true'||(dd&&dd._isQR)){
+        d._isQR=true;
+        d.qrText=el.dataset.qrText||(dd&&dd.qrText)||'https://example.com';
+        d.qrBg=el.dataset.qrBg!==undefined?el.dataset.qrBg:((dd&&dd.qrBg!=null)?dd.qrBg:'#ffffff');
+        d.qrColor=el.dataset.qrColor||(dd&&dd.qrColor)||'#000000';
+        d.qrRx=el.dataset.qrRx!=null?+el.dataset.qrRx:(dd&&dd.qrRx!=null?dd.qrRx:16);
+      }
       // crop: read from dataset (written on exit crop mode), fallback to live d value
       d.imgCropL = el.dataset.imgCropL != null ? +el.dataset.imgCropL : (d.imgCropL || 0);
       d.imgCropT = el.dataset.imgCropT != null ? +el.dataset.imgCropT : (d.imgCropT || 0);

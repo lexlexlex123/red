@@ -645,6 +645,39 @@
             </div>
           </div>
         </div>
+        <!-- QR PROPS -->
+        <div id="qrprops" style="display:none">
+          <div class="ph">▦ QR Code</div>
+          <div class="psec" style="display:flex;flex-direction:column;gap:8px">
+            <div class="pr" style="margin:0">
+              <label>Ссылка или текст</label>
+              <textarea id="qr-text" rows="3" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:5px 7px;font-size:11px;resize:vertical;font-family:inherit;box-sizing:border-box" placeholder="https://example.com" oninput="setQRProp('qrText',this.value)"></textarea>
+            </div>
+            <div class="pr" style="margin:0">
+              <label>Фон QR</label>
+              <div style="display:flex;gap:4px;align-items:center;margin-bottom:4px">
+                <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;overflow:hidden;flex-shrink:0;background:repeating-conic-gradient(#aaa 0% 25%,transparent 0% 50%) 0 0/8px 8px" onmousedown="openColorPanel('cp-qr-bg-slot','qr-bg',function(c){document.getElementById('qr-bg-preview').style.background=c;document.getElementById('qr-bg-hex').value=c;setQRProp('qrBg',c);})"><div id="qr-bg-preview" style="width:100%;height:100%;background:#ffffff"></div></div>
+                <input id="qr-bg-hex" type="text" value="#ffffff" style="flex:1;font-size:10px;padding:2px 5px" onchange="setQRProp('qrBg',this.value)" onblur="setQRProp('qrBg',this.value)">
+                <button title="Прозрачный" onmousedown="event.preventDefault()" onclick="document.getElementById('qr-bg-preview').style.background='';document.getElementById('qr-bg-hex').value='transparent';setQRProp('qrBg','transparent')" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;line-height:1" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">✕</button>
+              </div>
+              <div id="cp-qr-bg-slot" class="cp-slot" style="display:none" onmousedown="event.preventDefault()"></div>
+            </div>
+            <div class="pr" style="margin:0">
+              <label>Цвет модулей</label>
+              <div style="display:flex;gap:4px;align-items:center;margin-bottom:4px">
+                <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;overflow:hidden;flex-shrink:0" onmousedown="openColorPanel('cp-qr-color-slot','qr-color',function(c){document.getElementById('qr-color-preview').style.background=c;document.getElementById('qr-color-hex').value=c;setQRProp('qrColor',c);})"><div id="qr-color-preview" style="width:100%;height:100%;background:#000000"></div></div>
+                <input id="qr-color-hex" type="text" value="#000000" style="flex:1;font-size:10px;padding:2px 5px" onchange="setQRProp('qrColor',this.value)" onblur="setQRProp('qrColor',this.value)">
+              </div>
+              <div id="cp-qr-color-slot" class="cp-slot" style="display:none" onmousedown="event.preventDefault()"></div>
+            </div>
+            <div class="pr" style="margin:0">
+              <label>Скругление, px</label>
+              <input type="number" id="qr-rx" min="0" max="300" value="16" oninput="setQRProp('qrRx',+this.value)">
+            </div>
+            <button class="mbtn-sm" style="width:100%" onclick="if(sel)refreshQREl(sel.dataset.id)">↺ Обновить QR</button>
+          </div>
+        </div>
+
         <!-- IMAGE PROPS -->
         <div id="imgprops" style="display:none">
           <div class="ph" data-i18n="phImage">Image</div>
@@ -1625,6 +1658,7 @@
   </div>
 </div>
 <!-- RUBBER-BAND SELECTION -->
+<script src="libs/qrcode.min.js"></script>
 <script src="js/00-i18n.js"></script>
 <script src="js/01-state.js"></script>
 <script src="js/02-applets.js"></script>

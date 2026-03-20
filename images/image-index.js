@@ -1,12 +1,21 @@
 // ══════════════ IMAGE INDEX ══════════════
 // Сгенерировано автоматически: node images/build-index.js
 // НЕ РЕДАКТИРУЙТЕ ВРУЧНУЮ — изменения будут перезаписаны при следующем запуске
-// Дата: 19.03.2026, 14:15:52
+// Дата: 19.03.2026, 19:49:51
 
 const IMAGE_INDEX = [
-  {id:"img1", cat:"animals", file:"lion.png", name:"Lion", path:"images/animals/lion.png", isSvg:false},
+  {id:"img1", cat:"animals", file:"0_125b9f_4d0cbee7_orig.png", name:"0 125b9f 4d0cbee7 Orig", path:"images/animals/0_125b9f_4d0cbee7_orig.png", isSvg:false},
+  {id:"img2", cat:"animals", file:"1645007781_15-abrakadabra-fun-p-kotyata-na-prozrachnom-fone-43.png", name:"1645007781 15 Abrakadabra Fun P Kotyata Na Prozrachnom Fone 43", path:"images/animals/1645007781_15-abrakadabra-fun-p-kotyata-na-prozrachnom-fone-43.png", isSvg:false},
+  {id:"img3", cat:"animals", file:"foni-papik-pro-573y-p-kartinki-sobaka-na-prozrachnom-fone-1.png", name:"Foni Papik Pro 573y P Kartinki Sobaka Na Prozrachnom Fone 1", path:"images/animals/foni-papik-pro-573y-p-kartinki-sobaka-na-prozrachnom-fone-1.png", isSvg:false},
+  {id:"img4", cat:"animals", file:"free-png.ru-361.png", name:"Free Png.Ru 361", path:"images/animals/free-png.ru-361.png", isSvg:false},
+  {id:"img5", cat:"animals", file:"free-png.ru-375.png", name:"Free Png.Ru 375", path:"images/animals/free-png.ru-375.png", isSvg:false},
+  {id:"img6", cat:"animals", file:"free-png.ru-397.png", name:"Free Png.Ru 397", path:"images/animals/free-png.ru-397.png", isSvg:false},
+  {id:"img7", cat:"animals", file:"koshka.png", name:"Koshka", path:"images/animals/koshka.png", isSvg:false},
+  {id:"img8", cat:"animals", file:"lion.png", name:"Lion", path:"images/animals/lion.png", isSvg:false},
+  {id:"img9", cat:"animals", file:"slon-1.png", name:"Slon 1", path:"images/animals/slon-1.png", isSvg:false},
+  {id:"img10", cat:"animals", file:"sobachki-15-0.png", name:"Sobachki 15 0", path:"images/animals/sobachki-15-0.png", isSvg:false},
   {
-    id: "img2",
+    id: "img11",
     cat: "birds",
     file: "gdj-flock-1837494.svg",
     name: "Gdj Flock 1837494",

@@ -357,7 +357,71 @@ window.addEventListener('message',function(e){
 
 function getNotesHTML(){return `<style>*{margin:0;padding:0;box-sizing:border-box;}body{background:#fef3c7;margin:0;height:100vh;display:flex;flex-direction:column;}#hdr{background:#f59e0b;padding:6px 10px;font-weight:700;font-size:12px;color:#1a1a1a;display:flex;justify-content:space-between;align-items:center;}#ta{flex:1;border:none;background:transparent;resize:none;padding:10px;font-size:13px;color:#1a1a1a;font-family:inherit;line-height:1.6;}#ta:focus{outline:none;}</style><div id="hdr"><span>📝 Notes</span><input type="color" value="#fef3c7" onchange="document.body.style.background=this.value" style="width:22px;height:18px;border:none;background:none;cursor:pointer;padding:0" title="BG color"></div><textarea id="ta" placeholder="Click to type…"></textarea>`;}
 function getChartHTML(){return `<style>*{margin:0;padding:0;box-sizing:border-box;}body{background:#0d1117;font-family:system-ui,sans-serif;padding:12px;height:100vh;display:flex;flex-direction:column;gap:8px;}h4{color:#e2e8f0;font-size:11px;text-align:center;}#chart{flex:1;display:flex;align-items:flex-end;gap:4px;padding:0 4px 20px;position:relative;}#chart::before{content:'';position:absolute;bottom:20px;left:0;right:0;border-top:1px solid #252529;}#chart::after{content:'';position:absolute;top:0;left:0;right:0;bottom:20px;background:repeating-linear-gradient(to bottom,transparent,transparent calc(20%-1px),#ffffff08 calc(20%-1px),#ffffff08 20%);}#inputs{display:flex;gap:4px;flex-wrap:wrap;justify-content:center;}.col{display:flex;flex-direction:column;align-items:center;flex:1;gap:2px;}.bar{background:linear-gradient(to top,#3b82f6,#06b6d4);border-radius:3px 3px 0 0;transition:height .3s;width:100%;}.lbl{font-size:8px;color:#64748b;white-space:nowrap;}.inp{width:100%;background:#1e1e2e;border:1px solid #2a2a3e;color:#e0e0e0;padding:2px 3px;font-size:9px;border-radius:2px;text-align:center;}input:focus{outline:none;border-color:#3b82f6;}</style><h4>Bar Chart</h4><div id="chart"></div><div id="inputs"></div><script>const DATA=[['Q1',75],['Q2',60],['Q3',90],['Q4',45],['Q5',80]];function render(){const ch=document.getElementById('chart');const inp=document.getElementById('inputs');ch.innerHTML='';inp.innerHTML='';const mx=Math.max(...DATA.map(d=>d[1]));DATA.forEach((d,i)=>{const c=document.createElement('div');c.className='col';const b=document.createElement('div');b.className='bar';b.style.height=(d[1]/mx*100)+'%';const l=document.createElement('div');l.className='lbl';l.textContent=d[0];c.append(b,l);ch.appendChild(c);const iv=document.createElement('input');iv.className='inp';iv.value=d[1];iv.type='number';iv.min=0;iv.max=100;iv.oninput=()=>{DATA[i][1]=+iv.value||0;render();};inp.appendChild(iv);});}render();<\/script>`;}
-function getQRHTML(){return `<style>*{margin:0;padding:0;box-sizing:border-box;}body{background:#fff;font-family:system-ui,sans-serif;padding:8px;height:100vh;display:flex;flex-direction:column;gap:6px;align-items:center;}input{width:100%;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:4px;padding:5px 8px;font-size:11px;}canvas{width:120px;height:120px;border:1px solid #e2e8f0;border-radius:4px;}label{font-size:9px;color:#64748b;}</style><input id="t" type="text" value="https://anthropic.com" placeholder="Enter URL…" oninput="gen()"><canvas id="c" width="120" height="120"></canvas><label>Scan to open URL</label><script src="libs/qrcode.min.js"><\/script><script>let qr=null;function gen(){const v=document.getElementById('t').value||'https://example.com';const c=document.getElementById('c');const ctx=c.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,120,120);if(!window.QRCode){setTimeout(gen,500);return;}if(qr){try{document.getElementById('c').style.display='none';document.getElementById('c').style.display='block';}catch(e){}}const div=document.createElement('div');new QRCode(div,{text:v,width:120,height:120});const img=div.querySelector('img');if(img){img.onload=()=>{ctx.drawImage(img,0,0,120,120);};}else{const ci=div.querySelector('canvas');if(ci)ctx.drawImage(ci,0,0,120,120);}}setTimeout(gen,600);<\/script>`;}
+// Генерация QR как dataURL через canvas (без iframe, работает при file://)
+function renderQRDataURL(text, bgColor, qrColor, size){
+  size = size || 400;
+  text = (text || 'https://example.com').trim() || 'https://example.com';
+  // bgColor=null/undefined/'transparent' = прозрачный фон
+  const transparent = (bgColor === null || bgColor === undefined || bgColor === 'transparent');
+  if(transparent) bgColor = null;
+  else bgColor = bgColor || '#ffffff';
+  qrColor = qrColor || '#000000';
+  const canvas = document.createElement('canvas');
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext('2d');
+
+  // Фон
+  if(!transparent){
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(0, 0, size, size);
+  }
+
+  if(typeof qrGenerate === 'undefined' && typeof QRCode === 'undefined'){
+    // Библиотека не загружена — рисуем заглушку
+    ctx.fillStyle = qrColor;
+    ctx.font = 'bold ' + Math.round(size*0.07) + 'px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('QR Code', size/2, size/2);
+    return canvas.toDataURL('image/png');
+  }
+
+  // Получаем матрицу через qrGenerate (теперь глобальная)
+  let m = null;
+  try { m = qrGenerate(text); } catch(e) { m = null; }
+
+  if(m && m.length > 0){
+    const pad = Math.round(size * 0.04); // 4% отступ
+    const inner = size - pad * 2;
+    const cell = inner / m.length;
+    ctx.fillStyle = qrColor;
+    for(let r = 0; r < m.length; r++){
+      for(let c = 0; c < m[r].length; c++){
+        if(m[r][c] === 1){
+          ctx.fillRect(
+            pad + Math.round(c * cell),
+            pad + Math.round(r * cell),
+            Math.ceil(cell),
+            Math.ceil(cell)
+          );
+        }
+      }
+    }
+  } else {
+    // Fallback через QRCode объект
+    try {
+      const div = document.createElement('div');
+      new QRCode(div, {text, width: size, height: size, colorDark: qrColor, colorLight: bgColor});
+      const qrCanvas = div.querySelector('canvas');
+      if(qrCanvas) ctx.drawImage(qrCanvas, 0, 0, size, size);
+    } catch(e) {
+      ctx.fillStyle = qrColor;
+      ctx.font = 'bold ' + Math.round(size*0.07) + 'px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('QR: ' + text.slice(0,20), size/2, size/2);
+    }
+  }
+  return canvas.toDataURL('image/png');
+}
 
 // ── APPLETS REGISTRY ──
 // Each applet can optionally have a htmlFn(palette) for theme-aware rendering
@@ -366,7 +430,7 @@ const APPLETS=[
   {id:'clock', name:'Clock', desc:'Live digital clock', icon:'🕐', htmlFn:(p,cfg)=>getClockHTML(cfg), aspectRatio:null, hasProps:true},
   {id:'timer',      name:'Timer',      desc:'Countdown timer',    icon:'⏱', htmlFn:(p,cfg)=>getTimerHTML(cfg), aspectRatio:null, hasProps:true},
   {id:'notes',      name:'Notes',      desc:'Sticky note',        icon:'📝', html:getNotesHTML(),  aspectRatio:null},
-  {id:'qr',         name:'QR Code',    desc:'Generate QR code',   icon:'▦', html:getQRHTML(),     aspectRatio:null},
+  {id:'qr',         name:'QR Code',    desc:'Generate QR code',   icon:'▦', hasProps:true,        aspectRatio:1},
   {id:'generator',  name:'Generator',  desc:'Random number',      icon:'🎲', htmlFn:(p,cfg)=>getGeneratorHTML(cfg), aspectRatio:null, hasProps:true},
 ];
 
@@ -400,10 +464,75 @@ function insertApplet(a){
     ...(a.id==='generator' ? {genMin:1,genMax:100,genStep:1, genFontSize:64, genColor:'', genBg:(_appletTheme().ac1||'#6366f1'), genBgOp:0.2, genBgScheme:{col:0,row:0}, genBgBlur:0, genBorderColor:'', genBorderWidth:0, genAlign:'center', genVAlign:'middle', genBold:false, genShadowBlur:8, genShadowY:2, genShadowColor:'#000000'} : {}),
     ...(a.id==='timer'     ? {tmMin:5, tmSec:0, genFontSize:72, genColor:'', genBg:(_appletTheme().ac1||'#6366f1'), genBgOp:0.2, genBgScheme:{col:0,row:0}, genBgBlur:0, genBorderColor:'', genBorderWidth:0, genAlign:'center', genVAlign:'middle', genBold:false, genShadowBlur:8, genShadowColor:'#000000', genShadowOn:true} : {}),
     ...(a.id==='clock'     ? {genFontSize:48, genColor:'', genBg:(_appletTheme().ac1||'#6366f1'), genBgOp:0.2, genBgScheme:{col:0,row:0}, genBgBlur:0, genBorderColor:'', genBorderWidth:0, genAlign:'center', genVAlign:'middle', genBold:false, genShadowBlur:8, genShadowColor:'#000000', genShadowOn:true} : {}),
+    ...(a.id==='qr'        ? {qrText:'https://example.com', qrBg:'#ffffff', qrColor:'#000000', qrRx:16} : {}),
   };
+  // QR: генерируем сразу как image элемент
+  if(a.id === 'qr'){
+    const qrUrl = renderQRDataURL(d.qrText, d.qrBg, d.qrColor, 400);
+    const qrEl = {
+      id: d.id, type:'image', x:d.x, y:d.y, w:d.w, h:d.h,
+      rot:0, anims:[], src: qrUrl,
+      imgFit:'fill', imgRx: d.qrRx||16,
+      imgBw:0, imgBc:'#ffffff', imgShadow:false, imgShadowBlur:15, imgShadowColor:'#000000', imgOpacity:1,
+      // QR-специфичные поля
+      _isQR: true, qrText: d.qrText, qrBg: d.qrBg, qrColor: d.qrColor, qrRx: d.qrRx,
+    };
+    slides[cur].els.push(qrEl);
+    mkEl(qrEl);
+    const qrDomEl = document.getElementById('canvas').querySelector('[data-id="'+qrEl.id+'"]');
+    if(qrDomEl && typeof pick==='function') pick(qrDomEl);
+    if(typeof save==="function")save(); if(typeof drawThumbs==="function")drawThumbs(); if(typeof saveState==="function")saveState();
+    return;
+  }
   slides[cur].els.push(d);
   mkEl(d);
   if(typeof save==="function")save(); if(typeof drawThumbs==="function")drawThumbs(); if(typeof saveState==="function")saveState();
+}
+
+// Перегенерировать QR при изменении настроек
+function refreshQREl(elId){
+  if(!elId) return;
+  const domEl = document.getElementById('canvas').querySelector('[data-id="'+elId+'"]');
+  const d = slides[cur].els.find(e=>e.id===elId);
+  if(!d) return;
+  // Восстанавливаем _isQR из dataset если потерялся (первый save после загрузки)
+  if(!d._isQR && domEl && domEl.dataset.isQR==='true'){
+    d._isQR=true;
+    d.qrText=domEl.dataset.qrText||d.qrText||'https://example.com';
+    d.qrBg=domEl.dataset.qrBg||d.qrBg||'#ffffff';
+    d.qrColor=domEl.dataset.qrColor||d.qrColor||'#000000';
+    d.qrRx=domEl.dataset.qrRx!=null?+domEl.dataset.qrRx:(d.qrRx!=null?d.qrRx:16);
+  }
+  if(!d._isQR) return;
+  const isTransparent = (d.qrBg === 'transparent' || !d.qrBg);
+  const bg = isTransparent ? null : d.qrBg;
+  const url = renderQRDataURL(d.qrText||'https://example.com', bg, d.qrColor||'#000000', 400);
+  d.src = url;
+  d.imgFit = 'fill';
+  const rx = d.qrRx!=null ? +d.qrRx : 16;
+  d.imgRx = rx;
+  if(domEl){
+    const img = domEl.querySelector('img');
+    const iel = domEl.querySelector('.iel');
+    if(img) img.src = url;
+    domEl.dataset.imgRx = rx;
+    domEl.dataset.src = url;
+    // Скругление
+    if(iel) iel.style.borderRadius = rx+'px';
+    domEl.style.borderRadius = rx+'px';
+    domEl.style.overflow = 'hidden';
+    // Прозрачный фон — убираем любой background с элемента
+    if(isTransparent){
+      domEl.style.background = 'transparent';
+      if(iel) iel.style.background = 'transparent';
+    } else {
+      domEl.style.background = '';
+      if(iel) iel.style.background = '';
+    }
+  }
+  if(typeof save==='function') save();
+  if(typeof drawThumbs==='function') drawThumbs();
+  if(typeof saveState==='function') saveState();
 }
 
 

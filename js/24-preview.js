@@ -86,6 +86,17 @@ function stopPreview(){
         const d=slides[cur]&&slides[cur].els.find(x=>x.id===el.dataset.id);
         if(d){ d.w=parseInt(el.style.width)||d.w; d.h=parseInt(el.style.height)||d.h; renderTableEl(el,d); }
       }
+      // Восстанавливаем QR-специфичные поля после preview
+      if(el.dataset.type==='image'){
+        const dq=slides[cur]&&slides[cur].els.find(x=>x.id===el.dataset.id);
+        if(dq&&dq._isQR){
+          el.dataset.isQR='true';
+          el.dataset.qrText=dq.qrText||'';
+          el.dataset.qrBg=dq.qrBg||'#ffffff';
+          el.dataset.qrColor=dq.qrColor||'#000000';
+          el.dataset.qrRx=dq.qrRx!=null?dq.qrRx:16;
+        }
+      }
       if(el.dataset.type==='text'){
         // Re-stamp dataset from model to guarantee it's current
         const d=slides[cur]&&slides[cur].els.find(x=>x.id===el.dataset.id);

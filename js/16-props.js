@@ -21,6 +21,7 @@ function syncProps(){
   const icp=document.getElementById('iconprops');
   const tblp=document.getElementById('tableprops');
   const genp=document.getElementById('genprops');
+  const qrp=document.getElementById('qrprops');
   const fmp=document.getElementById('formulaprops');
   if(!sel || multiSel.size > 1){
     ep.style.display='none';
@@ -42,10 +43,18 @@ function syncProps(){
   document.getElementById('p-rot').value=sel.dataset.rot||0;
   document.getElementById('p-link').value=sel.dataset.link||'';document.getElementById('p-linkt').value=sel.dataset.linkt||'_blank';
   const t=sel.dataset.type;
+  // Определяем специальные типы ДО показа панелей
+  const isGen   = t==='applet' && sel.dataset.appletId==='generator';
+  const isTimer = t==='applet' && (sel.dataset.appletId==='timer'||sel.dataset.appletId==='clock');
+  // Проверяем isQR через dataset И через данные slides (на случай если dataset не обновился)
+  const _qrD = (t==='image') ? (slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id)) : null;
+  const isQR = t==='image' && (sel.dataset.isQR==='true' || !!(_qrD&&_qrD._isQR));
+  // Синхронизируем dataset если расхождение
+  if(isQR && sel.dataset.isQR!=='true') sel.dataset.isQR='true';
   // Show/hide type panels
   tp.style.display=t==='text'?'flex':'none';tp.style.flexDirection='column';
   shp.style.display=t==='shape'?'flex':'none';shp.style.flexDirection='column';
-  if(imp){imp.style.display=t==='image'?'flex':'none';imp.style.flexDirection='column';}
+  if(imp){imp.style.display=(t==='image'&&!isQR)?'flex':'none';imp.style.flexDirection='column';}
   if(cdp){cdp.style.display=t==='code'?'flex':'none';cdp.style.flexDirection='column';}
   const hfp=document.getElementById('hfprops');
   if(hfp){hfp.style.display=t==='htmlframe'?'flex':'none';
@@ -55,9 +64,8 @@ function syncProps(){
   const gmp=document.getElementById('graphprops');
   if(gmp){gmp.style.display=t==='graph'?'block':'none';if(t==='graph'&&typeof syncGraphProps==='function')syncGraphProps();}
   if(tblp){tblp.style.display=t==='table'?'flex':'none';tblp.style.flexDirection='column';if(t==='table')syncTableProps();}
-  const isGen   = t==='applet' && sel.dataset.appletId==='generator';
-  const isTimer = t==='applet' && (sel.dataset.appletId==='timer'||sel.dataset.appletId==='clock');
   if(genp){genp.style.display=(isGen||isTimer)?'flex':'none';genp.style.flexDirection='column';if(isGen)syncGenProps();if(isTimer&&sel.dataset.appletId==='clock'&&typeof syncClockProps==='function')syncClockProps();else if(isTimer&&typeof syncTimerProps==='function')syncTimerProps();}
+  if(qrp){qrp.style.display=isQR?'flex':'none';qrp.style.flexDirection='column';if(isQR)syncQRProps();}
   if(icp){
     icp.style.display=t==='icon'?'flex':'none';icp.style.flexDirection='column';
     if(t==='icon'){
@@ -782,3 +790,56 @@ window.setGenElRadius = function(v){
   d.rx = v;
   if(typeof saveState==='function') saveState();
 };
+
+// ── QR Code props ─────────────────────────────────────────────────
+function syncQRProps(){
+  if(!sel) return;
+  const d = slides[cur].els.find(e=>e.id===sel.dataset.id);
+  if(!d||!d._isQR) return;
+  const ta     = document.getElementById('qr-text');
+  const rxEl   = document.getElementById('qr-rx');
+  const bgPrev = document.getElementById('qr-bg-preview');
+  const bgHex  = document.getElementById('qr-bg-hex');
+  const colPrev= document.getElementById('qr-color-preview');
+  const colHex = document.getElementById('qr-color-hex');
+  if(ta) ta.value = d.qrText||'https://example.com';
+  if(rxEl) rxEl.value = d.qrRx!=null ? d.qrRx : 16;
+  const _bg = d.qrBg||'#ffffff';
+  const _isTransp = _bg === 'transparent';
+  if(bgPrev) bgPrev.style.background = _isTransp ? '' : _bg;
+  if(bgHex)  bgHex.value = _bg;
+  if(colPrev) colPrev.style.background = d.qrColor||'#000000';
+  if(colHex)  colHex.value = d.qrColor||'#000000';
+}
+
+function setQRProp(prop, val){
+  if(!sel) return;
+  const d = slides[cur].els.find(e=>e.id===sel.dataset.id);
+  if(!d||!d._isQR) return;
+  d[prop] = val;
+  sel.dataset[prop] = val;
+  if(prop==='qrRx'){
+    // Скругление — применяем напрямую на DOM без перегенерации
+    const rx = +val;
+    d.imgRx = rx;
+    sel.dataset.imgRx = rx;
+    const iel = sel.querySelector('.iel');
+    if(iel) iel.style.borderRadius = rx+'px';
+    sel.style.borderRadius = rx+'px';
+    if(typeof save==='function') save();
+    if(typeof saveState==='function') saveState();
+    return;
+  }
+  // Фон, цвет, текст — перегенерируем QR
+  if(prop==='qrBg'||prop==='qrColor'){
+    if(typeof refreshQREl==='function') refreshQREl(d.id);
+  }
+  if(prop==='qrText'){
+    clearTimeout(window._qrDebounce);
+    window._qrDebounce = setTimeout(()=>{
+      if(typeof refreshQREl==='function') refreshQREl(d.id);
+    }, 400);
+  }
+  if(typeof save==='function') save();
+  if(typeof saveState==='function') saveState();
+}
