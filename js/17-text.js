@@ -3,20 +3,138 @@ function setTextBorder(prop,val,schemeRef){
   if(!sel||sel.dataset.type!=='text')return;
   if(prop==='color'){
     sel.dataset.textBorderColor=val;
-    // Store scheme ref on data
     const d=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
     if(d) d.borderScheme = (schemeRef !== undefined ? (schemeRef || null) : d.borderScheme);
   }
   if(prop==='width'){sel.dataset.textBorderW=val;}
+  if(prop==='style'){sel.dataset.textBorderStyle=val;}
   applyTextBorderStyle(sel);
   save();drawThumbs();saveState();
 }
 function applyTextBorderStyle(el){
   const w=+(el.dataset.textBorderW||0);
   const c=el.dataset.textBorderColor||'#ffffff';
-  if(w>0){el.style.outline=w+'px solid '+c;el.style.outlineOffset='0px';}
-  else{el.style.outline='';}
+  const style=el.dataset.textBorderStyle||'solid';
+  // Remove old SVG overlay if present
+  const oldSvg=el.querySelector('.text-border-svg');if(oldSvg)oldSvg.remove();
+  if(w<=0){el.style.outline='';return;}
+  if(style==='wave'||style==='zigzag'||style==='double'){
+    // Complex styles via SVG overlay
+    el.style.outline='';
+    _applyTextBorderSVG(el,w,c,style);
+  } else {
+    // Simple CSS outline styles
+    const cssStyle={solid:'solid',dashed:'dashed',dotted:'dotted'}[style]||'solid';
+    el.style.outline=w+'px '+cssStyle+' '+c;
+    el.style.outlineOffset='0px';
+  }
 }
+function _applyTextBorderSVG(el, w, c, style) {
+  const ow = parseFloat(el.style.width)  || 200;
+  const oh = parseFloat(el.style.height) || 100;
+  const sw = +(el.dataset.textBorderW || 2);
+  const hm = sw / 2; // stroke sits on this inset
+
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.classList.add('text-border-svg');
+  svg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:5;';
+  svg.setAttribute('viewBox', `0 0 ${ow} ${oh}`);
+  svg.setAttribute('preserveAspectRatio', 'none');
+
+  if (style === 'double') {
+    const gap = sw * 2.5;
+    [
+      [hm, hm, ow - sw, oh - sw],
+      [hm + gap, hm + gap, Math.max(4, ow - sw - gap*2), Math.max(4, oh - sw - gap*2)]
+    ].forEach(([x, y, rw, rh]) => {
+      const r = document.createElementNS(svgNS, 'rect');
+      r.setAttribute('x', x); r.setAttribute('y', y);
+      r.setAttribute('width', rw); r.setAttribute('height', rh);
+      r.setAttribute('fill', 'none'); r.setAttribute('stroke', c); r.setAttribute('stroke-width', sw);
+      svg.appendChild(r);
+    });
+
+  } else {
+    // Wave or zigzag — continuous path around the full rect perimeter
+    // Perimeter sampled as evenly-spaced half-steps so phase wraps cleanly
+
+    const halfStep = style === 'wave' ? sw * 3.5 : sw * 2.5;
+    const amp = sw * 0.85;
+
+    // Rect perimeter as ordered points (inset by hm)
+    const x0 = hm, y0 = hm, x1 = ow - hm, y1 = oh - hm;
+    const perimeter = (x1-x0)*2 + (y1-y0)*2;
+
+    // Total half-steps — must be even so wave closes perfectly
+    let nHalf = Math.max(4, Math.round(perimeter / halfStep));
+    if (nHalf % 2 !== 0) nHalf++;
+    const actualHalf = perimeter / nHalf;
+
+    // Convert arc-length along perimeter to {x, y}
+    function perimPt(s) {
+      const W = x1 - x0, H = y1 - y0;
+      const segs = [
+        {len: W, fn: t => ({x: x0 + t*W, y: y0})},       // top
+        {len: H, fn: t => ({x: x1, y: y0 + t*H})},       // right
+        {len: W, fn: t => ({x: x1 - t*W, y: y1})},       // bottom
+        {len: H, fn: t => ({x: x0, y: y1 - t*H})},       // left
+      ];
+      let rem = ((s % perimeter) + perimeter) % perimeter;
+      for (const seg of segs) {
+        if (rem <= seg.len) return seg.fn(rem / seg.len);
+        rem -= seg.len;
+      }
+      return {x: x0, y: y0};
+    }
+
+    // Normal (outward) at perimeter position
+    function perimNormal(s) {
+      const W = x1 - x0, H = y1 - y0;
+      const rem = ((s % perimeter) + perimeter) % perimeter;
+      if (rem < W)            return {nx: 0,  ny: -1}; // top: up
+      if (rem < W + H)        return {nx: 1,  ny:  0}; // right
+      if (rem < W*2 + H)      return {nx: 0,  ny:  1}; // bottom: down
+      return                         {nx: -1, ny:  0}; // left
+    }
+
+    let pathD = '';
+    for (let i = 0; i <= nHalf; i++) {
+      const s = actualHalf * i;
+      const pt = perimPt(s);
+      if (i === 0) {
+        pathD += `M ${pt.x.toFixed(2)} ${pt.y.toFixed(2)} `;
+      } else {
+        // Midpoint of previous half-step
+        const sMid = actualHalf * (i - 0.5);
+        const mid = perimPt(sMid);
+        const {nx, ny} = perimNormal(sMid);
+        const side = ((i - 1) % 2 === 0) ? 1 : -1;
+        const cpx = (mid.x + nx * amp * side).toFixed(2);
+        const cpy = (mid.y + ny * amp * side).toFixed(2);
+        if (style === 'wave') {
+          pathD += `Q ${cpx} ${cpy} ${pt.x.toFixed(2)} ${pt.y.toFixed(2)} `;
+        } else {
+          pathD += `L ${cpx} ${cpy} L ${pt.x.toFixed(2)} ${pt.y.toFixed(2)} `;
+        }
+      }
+    }
+    pathD += 'Z';
+
+    const path = document.createElementNS(svgNS, 'path');
+    path.setAttribute('d', pathD);
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', c);
+    path.setAttribute('stroke-width', sw);
+    path.setAttribute('stroke-linecap', 'round');
+    path.setAttribute('stroke-linejoin', 'round');
+    svg.appendChild(path);
+  }
+
+  el.appendChild(svg);
+}
+
+
 function setTextElOpacity(op){
   if(!sel||sel.dataset.type!=='text')return;
   sel.dataset.elOpacity=op;
@@ -107,14 +225,28 @@ function pipetteApply(srcEl){
     if(srcEl.dataset.rx_tl){['tl','tr','bl','br'].forEach(c=>{pipetteSrc.dataset['rx_'+c]=srcEl.dataset['rx_'+c]||0;dstData['rx_'+c]=+(srcEl.dataset['rx_'+c]||0);});pipetteSrc.dataset.rxUnit=srcEl.dataset.rxUnit||'px';dstData.rxUnit=srcEl.dataset.rxUnit||'px';applyTextRadius(pipetteSrc);}
   } else if(srcType==='shape'&&dstType==='shape'){
     // Copy all shape styles: fill, stroke, sw, rx, shadow, fillOp
-    const props=['fill','stroke','sw','rx','fillOp','shadow','shadowBlur','shadowColor'];
+    const props=['fill','stroke','sw','rx','fillOp','shadow','shadowBlur','shadowColor','strokeStyle'];
     props.forEach(p=>{
-      if(srcEl.dataset[p]!=null){pipetteSrc.dataset[p]=srcEl.dataset[p];dstData[p]=isNaN(srcEl.dataset[p])?srcEl.dataset[p]==='true':+srcEl.dataset[p];}
+      // Read from srcData (source of truth) first, fall back to dataset
+      const val = srcData[p] != null ? srcData[p] : srcEl.dataset[p];
+      if(val != null && val !== ''){
+        dstData[p] = typeof val==='string' ? (val==='true'?true:val==='false'?false:isNaN(val)?val:+val) : val;
+        pipetteSrc.dataset[p] = val;
+      }
     });
     // Copy shape text style too
     const srcTxt=srcEl.querySelector('.shape-text');const dstTxt=pipetteSrc.querySelector('.shape-text');
     if(srcTxt&&dstTxt){dstTxt.setAttribute('style',srcTxt.getAttribute('style')||'');dstData.shapeTextCss=srcTxt.getAttribute('style')||'';}
     renderShapeEl(pipetteSrc,dstData);
+    // Update UI swatches immediately without waiting for syncProps
+    try{
+      document.getElementById('sh-fill-preview').style.background=pipetteSrc.dataset.fill||'#3b82f6';
+      document.getElementById('sh-stroke-preview').style.background=pipetteSrc.dataset.stroke||'#1d4ed8';
+      document.getElementById('sh-sw').value=pipetteSrc.dataset.sw||2;
+      document.getElementById('sh-fill-op').value=pipetteSrc.dataset.fillOp||1;
+      const _sst=pipetteSrc.dataset.strokeStyle||'solid';
+      document.querySelectorAll('.sh-stroke-style-btn').forEach(b=>b.classList.toggle('active',b.dataset.style===_sst));
+    }catch(e){}
   } else if(srcType==='text'&&dstType==='shape'){
     // Cross-type: copy just color to fill
     const srcC=srcEl.querySelector('.ec');
@@ -130,7 +262,7 @@ function pipetteApply(srcEl){
     applyHoverFxEditor(pipetteSrc,dstData.hoverFx);
   }
   save();drawThumbs();saveState();
-  syncProps();
+  if(typeof pick==='function') pick(pipetteSrc);
   toast('✓ Style copied','ok');
   cancelPipetteMode();
 }

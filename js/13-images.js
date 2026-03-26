@@ -35,10 +35,58 @@ function flipImg(axis){
   const d=slides[cur].els.find(e=>e.id===sel.dataset.id);if(!d)return;
   if(axis==='h') d.imgFlipH=!d.imgFlipH;
   else d.imgFlipV=!d.imgFlipV;
-  // Сохраняем в dataset чтобы save() подхватил при сериализации
   sel.dataset.imgFlipH = d.imgFlipH ? 'true' : 'false';
   sel.dataset.imgFlipV = d.imgFlipV ? 'true' : 'false';
-  applyImgStyles(sel,d);commitAll();
+
+  // Плавный разворот через CSS animation
+  const _flipTarget = sel.querySelector('.iel') || sel.querySelector('img');
+  if(_flipTarget){
+    const fx = (d.imgFlipH===true||d.imgFlipH==='true')?-1:1;
+    const fy = (d.imgFlipV===true||d.imgFlipV==='true')?-1:1;
+    // Целевой scale после flip
+    const toSX = fx, toSY = fy;
+    // Текущий scale (до flip)
+    const fromSX = axis==='h' ? -toSX : toSX;
+    const fromSY = axis==='v' ? -toSY : toSY;
+
+    // Инжектируем уникальный keyframe для этого разворота
+    const kfId = 'flip_'+Date.now();
+    const kfStyle = document.createElement('style');
+    // Разворот: от текущего scale → через 0 (схлопывание) → к целевому
+    // Используем rotateY/rotateX для 3D эффекта разворота
+    if(axis==='h'){
+      kfStyle.textContent = `@keyframes ${kfId}{
+        0%{transform:scaleX(${fromSX}) scaleY(${toSY})}
+        45%{transform:scaleX(0) scaleY(${toSY})}
+        55%{transform:scaleX(0) scaleY(${toSY})}
+        100%{transform:scaleX(${toSX}) scaleY(${toSY})}
+      }`;
+    } else {
+      kfStyle.textContent = `@keyframes ${kfId}{
+        0%{transform:scaleX(${toSX}) scaleY(${fromSY})}
+        45%{transform:scaleX(${toSX}) scaleY(0)}
+        55%{transform:scaleX(${toSX}) scaleY(0)}
+        100%{transform:scaleX(${toSX}) scaleY(${toSY})}
+      }`;
+    }
+    document.head.appendChild(kfStyle);
+    _flipTarget.style.animation = `${kfId} 0.5s cubic-bezier(0.4,0,0.6,1) forwards`;
+    _flipTarget.style.transformOrigin = 'center';
+
+    const onEnd = ()=>{
+      _flipTarget.style.animation = '';
+      _flipTarget.removeEventListener('animationend', onEnd);
+      // Удаляем временный keyframe
+      kfStyle.remove();
+      // Применяем финальный transform
+      applyImgStyles(sel,d);
+    };
+    _flipTarget.addEventListener('animationend', onEnd);
+  }
+
+  // Сразу сохраняем данные (без перерисовки DOM — это сделает onEnd)
+  if(!_flipTarget) applyImgStyles(sel,d);
+  commitAll();
 }
 
 function updateImgPosition(){
@@ -183,7 +231,7 @@ function mkEl(d){
       }
     }
     // Restore border
-    if(d.textBorderW&&+d.textBorderW>0){el.dataset.textBorderW=d.textBorderW;el.dataset.textBorderColor=d.textBorderColor||'#ffffff';applyTextBorderStyle(el);}
+    if(d.textBorderW&&+d.textBorderW>0){el.dataset.textBorderW=d.textBorderW;el.dataset.textBorderColor=d.textBorderColor||'#ffffff';if(d.textBorderStyle)el.dataset.textBorderStyle=d.textBorderStyle;applyTextBorderStyle(el);}
     // Restore opacity
     if(d.elOpacity!=null&&+d.elOpacity!==1){el.dataset.elOpacity=d.elOpacity;el.style.opacity=d.elOpacity;}
     // Restore corner radius
@@ -212,6 +260,14 @@ function mkEl(d){
     el.dataset.imgCropB=d.imgCropB||0;
     el.dataset.imgFlipH=d.imgFlipH?'true':'false';
     el.dataset.imgFlipV=d.imgFlipV?'true':'false';
+    // QR Code fields
+    if(d._isQR){
+      el.dataset.isQR='true';
+      el.dataset.qrText=d.qrText||'';
+      el.dataset.qrBg=d.qrBg||'#ffffff';
+      el.dataset.qrColor=d.qrColor||'#000000';
+      el.dataset.qrRx=d.qrRx!=null?d.qrRx:16;
+    }
   }else if(d.type==='code'){
     // will call renderCodeEl after el.append
   }else if(d.type==='markdown'){
@@ -277,6 +333,7 @@ function mkEl(d){
     if(d.tailX!==undefined){el.dataset.tailX=d.tailX;el.dataset.tailY=d.tailY;}
     el.dataset.sw=d.sw!=null?d.sw:2;el.dataset.rx=d.rx||0;el.dataset.fillOp=d.fillOp!=null?d.fillOp:1;
     el.dataset.shadow=d.shadow||false;el.dataset.shadowBlur=d.shadowBlur||8;el.dataset.shadowColor=d.shadowColor||'#000000';
+    if(d.strokeStyle)el.dataset.strokeStyle=d.strokeStyle;
     // Apply clip-path so hit area matches shape, not bounding box
     _applyShapeClipPath(el, d);
   }else if(d.type==='formula'){

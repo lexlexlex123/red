@@ -159,6 +159,7 @@ let _animPreviewTimer = null;
       // For orbitTo: default radius, direction, degrees
       if(animName==='orbitTo'){ anim.orbitR=120; anim.orbitDir='cw'; anim.orbitDeg=360; anim.orbitCx=0; anim.orbitCy=-120; }
       if(animName==='rotate'){ anim.rotateDir='cw'; anim.rotateDeg=360; }
+      if(animName==='dance'){ anim.swingCount=1; anim.duration=1200; }
       if(animName==='typewriter'){
         anim.charDelay = 40;
         // Если уже есть typewriter-анимации — fromHtml = toHtml последней из них
@@ -334,6 +335,9 @@ let _animPreviewTimer = null;
         item.appendChild(iconDiv);
         item.appendChild(labelDiv);
         item.addEventListener('mousedown', e => e.preventDefault());
+        item.addEventListener('mouseenter', () => {
+          playAnimOnEl(it.name, {});
+        });
         item.addEventListener('click', e => {
           e.preventDefault();
           window._selectedAnimName = it.name;
@@ -342,10 +346,9 @@ let _animPreviewTimer = null;
           item.classList.add('selected');
           const addBtn = document.getElementById('anim-add-btn');
           if(addBtn){ addBtn.disabled=false; addBtn.textContent='Добавить «'+it.label+'»'; }
-          playAnimOnEl(it.name, it);
         });
         item.addEventListener('dblclick', e => {
-          e.preventDefault();
+          e.preventDefault(); e.stopPropagation();
           window._selectedAnimName = it.name;
           window._selectedAnimCat  = group.cat;
           window.addAnimToSel(it.name, group.cat);
@@ -619,16 +622,25 @@ let _animPreviewTimer = null;
         const liveGrid = document.createElement('div');
         liveGrid.className = 'anim-row-props';
         liveGrid.style.marginTop = '4px';
-        const stopLabel = document.createElement('label');
-        stopLabel.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer;grid-column:1/-1;font-size:9px;color:var(--text2);';
-        const stopChk = document.createElement('input');
-        stopChk.type = 'checkbox';
-        stopChk.checked = !!a.stopAfter;
-        stopChk.addEventListener('mousedown', e=>e.stopPropagation());
-        stopChk.addEventListener('change', ()=>updateAnimProp(d.id, ai, 'stopAfter', stopChk.checked));
-        stopLabel.appendChild(stopChk);
-        stopLabel.appendChild(document.createTextNode('Остановить танец в конце потока'));
-        liveGrid.appendChild(stopLabel);
+        // Количество повторений (как у swing)
+        const _dcnt = a.swingCount != null ? a.swingCount : 1;
+        liveGrid.innerHTML = `<label>Кол-во раз
+          <input type="number" min="1" max="9" value="${_dcnt>=10?1:_dcnt}" ${_dcnt>=10?'disabled':''} style="width:48px"
+            oninput="updateAnimProp('${d.id}',${ai},'swingCount',+this.value||1)"
+            onchange="updateAnimProp('${d.id}',${ai},'swingCount',+this.value||1)"></label>`;
+        const infLabel = document.createElement('label');
+        infLabel.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer;grid-column:1/-1;font-size:9px;color:var(--text2);';
+        const infChk = document.createElement('input');
+        infChk.type = 'checkbox';
+        infChk.checked = _dcnt >= 10;
+        infChk.addEventListener('mousedown', e=>e.stopPropagation());
+        infChk.addEventListener('change', ()=>{
+          updateAnimProp(d.id, ai, 'swingCount', infChk.checked?10:1);
+          renderAnimPanel();
+        });
+        infLabel.appendChild(infChk);
+        infLabel.appendChild(document.createTextNode('Бесконечно'));
+        liveGrid.appendChild(infLabel);
         props.appendChild(liveGrid);
       }
 
@@ -779,38 +791,3 @@ document.addEventListener('mousedown', function(e) {
   }
 });
 
-// Play animations on element click while anim panel is open
-document.addEventListener('mousedown', function(e) {
-  var panel = document.getElementById('anim-panel');
-  if(!panel || !panel.classList.contains('open')) return;
-  var el = e.target.closest('.el');
-  if(!el) return;
-  try{
-    var anims = el.dataset.anims ? JSON.parse(el.dataset.anims) : [];
-    if(!anims.length) return;
-    var target = (el.dataset.type === 'shape' || el.dataset.type === 'icon') ? (el.querySelector('.ec') || el) : el;
-    // Separate rotate (Web Animations) from CSS anims
-    var cssAnimParts = [];
-    var maxDur = 600;
-    anims.forEach(function(a){
-      maxDur = Math.max(maxDur, a.duration||600);
-      if(a.name === 'rotate'){
-        var dir = (a.rotateDir||'cw')==='cw' ? 1 : -1;
-        var deg = (a.rotateDeg!=null ? a.rotateDeg : 360) * dir;
-        var dur = a.duration||600;
-        target.animate([{transform:'rotate(0deg)'},{transform:'rotate('+deg+'deg)'}],
-          {duration:dur, easing:'ease-in-out', fill:'none'});
-      } else {
-        var cssName = ANIM_CSS[a.name] || 'el-fadein';
-        var durS = (a.duration || 600) / 1000;
-        cssAnimParts.push(cssName + ' ' + durS + 's ease-out 0s both');
-      }
-    });
-    if(cssAnimParts.length){
-      target.style.animation = '';
-      void target.offsetWidth;
-      target.style.animation = cssAnimParts.join(',');
-      setTimeout(function(){ target.style.animation = ''; }, maxDur + 100);
-    }
-  }catch(ex){}
-});

@@ -11,6 +11,11 @@ const MODEL       = process.env.AI_MODEL    || 'qwen2.5:0.5b';
 const ROOT        = __dirname;
 const AUTO_OPEN   = process.env.NO_BROWSER  !== '1';
 
+// ── Groq ──────────────────────────────────────────────────────────────────
+const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
+const GROQ_MODEL   = process.env.GROQ_MODEL   || 'llama-3.1-8b-instant';
+const USE_GROQ     = !!GROQ_API_KEY;
+
 const MIME = {
   '.html':'text/html; charset=utf-8','.js':'application/javascript; charset=utf-8',
   '.css':'text/css; charset=utf-8','.json':'application/json; charset=utf-8',
@@ -72,6 +77,55 @@ function pullModel(){
   });
 }
 
+function proxyToGroq(req, res) {
+  let body = '';
+  req.on('data', c => body += c);
+  req.on('end', () => {
+    let payload; try { payload = JSON.parse(body); } catch(e) { res.writeHead(400); res.end('Bad JSON'); return; }
+    const ob = JSON.stringify({
+      model: GROQ_MODEL,
+      messages: payload.messages || [],
+      stream: true,
+      temperature: payload.temperature || 0.7,
+      max_tokens: payload.max_tokens || 512,
+    });
+    const opts = {
+      hostname: 'api.groq.com',
+      port: 443,
+      path: '/openai/v1/chat/completions',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + GROQ_API_KEY,
+        'Content-Length': Buffer.byteLength(ob),
+      },
+    };
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    const px = https.request(opts, groqRes => {
+      let buf = '';
+      groqRes.on('data', chunk => {
+        buf += chunk.toString();
+        const lines = buf.split('\n'); buf = lines.pop();
+        lines.forEach(l => {
+          if (!l.startsWith('data:')) return;
+          const data = l.slice(5).trim();
+          if (data === '[DONE]') { res.write('data: [DONE]\n\n'); return; }
+          try {
+            const e = JSON.parse(data);
+            const text = e.choices?.[0]?.delta?.content;
+            if (text) res.write(`data: ${JSON.stringify({ text })}\n\n`);
+          } catch(e) {}
+        });
+      });
+      groqRes.on('end', () => { res.write('data: [DONE]\n\n'); res.end(); });
+    });
+    px.on('error', e => { res.writeHead(502); res.end(JSON.stringify({ error: 'Groq: ' + e.message })); });
+    px.write(ob); px.end();
+  });
+}
+
 function proxyToOllama(req,res){
   let body='';
   req.on('data',c=>body+=c);
@@ -112,8 +166,18 @@ const server=http.createServer((req,res)=>{
     res.setHeader('Access-Control-Allow-Headers','Content-Type');
     res.writeHead(204);res.end();return;
   }
-  if(req.url==='/api/ai'&&req.method==='POST'){ proxyToOllama(req,res);return; }
+  if(req.url==='/api/ai'&&req.method==='POST'){
+    if(USE_GROQ) proxyToGroq(req,res); else proxyToOllama(req,res);
+    return;
+  }
   if(req.url==='/api/ai/status'){
+    if(USE_GROQ){
+      res.setHeader('Content-Type','application/json');
+      res.setHeader('Access-Control-Allow-Origin','*');
+      res.writeHead(200);
+      res.end(JSON.stringify({ok:true,model:GROQ_MODEL,provider:'groq'}));
+      return;
+    }
     checkOllama().then(ok=>{
       res.setHeader('Content-Type','application/json');
       res.setHeader('Access-Control-Allow-Origin','*');
@@ -142,6 +206,14 @@ async function main(){
   console.log('\n  ╔══════════════════════════════════════════╗');
   console.log('  ║      Редактор презентаций + AI           ║');
   console.log('  ╚══════════════════════════════════════════╝\n');
+  if(USE_GROQ){
+    console.log(`  ✓ AI: Groq (${GROQ_MODEL})\n`);
+    server.listen(PORT,()=>{
+      console.log(`  ✓ http://localhost:${PORT}\n`);
+      if(AUTO_OPEN) setTimeout(()=>openBrowser(`http://localhost:${PORT}`),600);
+    });
+    return;
+  }
   process.stdout.write('  Проверка Ollama... ');
   const ollamaOk=await checkOllama();
   if(!ollamaOk){

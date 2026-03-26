@@ -53,6 +53,9 @@ function syncProps(){
   if(isQR && sel.dataset.isQR!=='true') sel.dataset.isQR='true';
   // Show/hide type panels
   tp.style.display=t==='text'?'flex':'none';tp.style.flexDirection='column';
+  // Кнопка диктовки — только для текстовых блоков
+  const _dictWrap=document.getElementById('dictation-btn-wrap');
+  if(_dictWrap) _dictWrap.style.display=t==='text'?'flex':'none';
   shp.style.display=t==='shape'?'flex':'none';shp.style.flexDirection='column';
   if(imp){imp.style.display=(t==='image'&&!isQR)?'flex':'none';imp.style.flexDirection='column';}
   if(cdp){cdp.style.display=t==='code'?'flex':'none';cdp.style.flexDirection='column';}
@@ -89,7 +92,12 @@ function syncProps(){
   if(t==='text'){
     const cs=(sel.querySelector('.tel')||sel.querySelector('.ec')).getAttribute('style')||'';
     const m=(re,fb)=>{const x=cs.match(re);return x?x[1]:fb;};
-    document.getElementById('p-fs').value=parseFloat(m(/font-size:([\d.]+)px/,'48'));
+    // Читаем font-size из cs (.tel style) как основной источник
+    // Regex с \s* — учитываем пробелы вокруг двоеточия
+    const _fsFromCs=m(/font-size\s*:\s*([\d.]+)px/,'');
+    document.getElementById('p-fs').value=_fsFromCs?parseFloat(_fsFromCs):'';
+    // Проверяем span[data-ch] — если у них свои размеры, показываем их
+    // (но не перезаписываем если span пустые — тогда cs уже верный)
     // Check if all chars have same font size; if mixed, blank the field
     try {
       const _d = slides[cur] && slides[cur].els.find(e=>e.id===sel.dataset.id);
@@ -103,6 +111,8 @@ function syncProps(){
         const _inp = document.getElementById('p-fs');
         if (_fsVals.length > 1) { _inp.value = ''; _inp.placeholder = '—'; }
         else if (_fsVals.length === 1) { _inp.value = _fsVals[0]; _inp.placeholder = ''; }
+        // Если span не содержат font-size — оставляем значение из cs (уже установлено выше)
+        else if (_fsVals.length === 0 && _fsFromCs) { _inp.value = parseFloat(_fsFromCs); _inp.placeholder = ''; } // cs fallback
       }
     } catch(e){}
     const col=m(/(?:^|;|\s)color:(#[0-9a-fA-F]{3,8})/,'#ffffff');
@@ -141,6 +151,7 @@ function syncProps(){
     try{document.getElementById('role-body').classList.toggle('active',role==='body');document.getElementById('role-heading').classList.toggle('active',role==='heading');}catch(e){}
     // Border
     try{const _brd=document.getElementById('p-border-preview');if(_brd)_brd.style.background=sel.dataset.textBorderColor||'#ffffff';document.getElementById('p-border-w').value=sel.dataset.textBorderW||0;}catch(e){}
+    try{const _tbs=sel.dataset.textBorderStyle||'solid';document.querySelectorAll('.txt-border-style-btn').forEach(b=>b.classList.toggle('active',b.dataset.style===_tbs));}catch(e){}
     // Opacity
     try{const op=parseFloat(sel.dataset.elOpacity!=null?sel.dataset.elOpacity:1);document.getElementById('p-el-op').value=op;}catch(e){}
     // Padding - parse 4-sided
@@ -173,12 +184,12 @@ function syncProps(){
     try{const _strk=document.getElementById('sh-stroke-preview');if(_strk)_strk.style.background=sel.dataset.stroke||'#1d4ed8';document.getElementById('sh-stroke-hex').value=sel.dataset.stroke||'#1d4ed8';}catch(e){}
     document.getElementById('sh-sw').value=sel.dataset.sw!=null?sel.dataset.sw:2;
     const sw0=+(sel.dataset.sw!=null?sel.dataset.sw:2)===0;
-    
+    try{const _sst=sel.dataset.strokeStyle||'solid';document.querySelectorAll('.sh-stroke-style-btn').forEach(b=>b.classList.toggle('active',b.dataset.style===_sst));}catch(e){}
     document.getElementById('sh-rx').value=sel.dataset.rx||0;
     document.getElementById('sh-fill-op').value=sel.dataset.fillOp||1;
     document.getElementById('sh-shadow').checked=sel.dataset.shadow==='true';
     document.getElementById('sh-sb').value=sel.dataset.shadowBlur||8;
-    try{const sc=sel.dataset.shadowColor||'#000000';document.getElementById('sh-sc-preview').style.background=sc;document.getElementById('sh-sc-hex').value=sc;}catch(e){}
+    try{const sc=sel.dataset.shadowColor||'#000000';document.getElementById('sh-sc-preview').style.background=sc;}catch(e){}
     try{document.getElementById('sh-el-blur').value=parseFloat(sel.dataset.shapeBlur||0);}catch(e){}
     const st=sel.querySelector('.shape-text');
     if(st){
@@ -186,8 +197,13 @@ function syncProps(){
       const m=(re,fb)=>{const x=cs.match(re);return x?x[1]:fb;};
       document.getElementById('sh-fs').value=parseFloat(m(/font-size:([\d.]+)px/,'24'));
       document.getElementById('sh-fw').value=m(/font-weight:(\d+)/,'700');
-      const tc=m(/(?:^|;|\s)color:(#[0-9a-fA-F]{3,8})/,'#ffffff');
-      try{document.getElementById('sh-tc').value=tc;document.getElementById('sh-tc-hex').value=tc;}catch(e){}
+      const tc=m(/(?:^|;)\s*color:\s*(#[0-9a-fA-F]{3,8})/,'#ffffff');
+      try{
+        const _tcPr=document.getElementById('sh-tc-preview');
+        if(_tcPr)_tcPr.style.background=tc;
+        const _tcHx=document.getElementById('sh-tc-hex');
+        if(_tcHx)_tcHx.value=tc.replace('#','');
+      }catch(e){}
     }
   }
   // Image props sync

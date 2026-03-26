@@ -97,7 +97,7 @@ function insertShapeSelected(){
   window._shapeReplaceMode=false;
   pushUndo();
   const _isCallout=sh.special==='callout';
-  const d={id:'e'+(++ec),type:'shape',x:snapV(200),y:snapV(150),w:snapV(200),h:snapV(200),
+  const d={id:'e'+(++ec),type:'shape',x:snapV((canvasW-200)/2),y:snapV((canvasH-200)/2),w:snapV(200),h:snapV(200),
     shape:sh.id,fill,stroke,sw,rx:_isCallout?12:0,fillOp:1,shadow:false,shadowBlur:8,shadowColor:'#000000',
     shapeHtml:'',shapeTextCss:'font-size:24px;font-weight:700;color:#ffffff;text-align:center;',
     tailX:_isCallout?0:undefined,tailY:_isCallout?130:undefined,rot:0,anims:[]};
@@ -162,37 +162,359 @@ function _buildCalloutSVGPath(d,w,h,sh,fillAttr,strokeAttr,shadow,margin){
   return `<g ${shadow}><path d="${rectPath}" ${fillAttr} ${strokeAttr}/><path d="${tailPath}" ${fillAttr} stroke="none"/></g>`;
 }
 
-function buildShapeSVG(d,w,h){
-  const sh=SHAPES.find(s=>s.id===d.shape)||SHAPES[0];
-  const op=d.fillOp===undefined?1:+d.fillOp;
-  const fill=d.fill||'#3b82f6';
-  const sw=d.sw===undefined?2:+d.sw;
-  const strokeAttr=sw>0?`stroke="${d.stroke||'#1d4ed8'}" stroke-width="${sw}"`:`stroke="none"`;
-  const margin=sw>0?sw:0;
-  const ew=Math.max(1,w-margin*2);const eh=Math.max(1,h-margin*2);
-  const shadow=d.shadow?`filter="url(#sh_${d.id})"`:'';
-  const fillAttr=`fill="${fill}" fill-opacity="${op}"`;
-  let shapeDef='';
-  if(sh.special==='rect')shapeDef=`<rect x="${margin}" y="${margin}" width="${ew}" height="${eh}" rx="${d.rx||0}" ${fillAttr} ${strokeAttr} ${shadow}/>`;
-  else if(sh.special==='ellipse')shapeDef=`<ellipse cx="${w/2}" cy="${h/2}" rx="${ew/2}" ry="${eh/2}" ${fillAttr} ${strokeAttr} ${shadow}/>`;
-  else if(sh.special==='callout'){shapeDef=_buildCalloutSVGPath(d,w,h,sh,fillAttr,strokeAttr,shadow,margin);}
-  else{
-    const sx=ew/90,sy=eh/90;
-    const scaledPath=sh.path.replace(/(-?\d+(?:\.\d+)?)/g,(m,v,off,str)=>{
-      const before=str.slice(0,off);const nums=(before.match(/(-?\d+(?:\.\d+)?)/g)||[]).length;
-      return nums%2===0?String(Math.round((+v-5)*sx+margin)):String(Math.round((+v-5)*sy+margin));
-    });
-    shapeDef=`<path d="${scaledPath}" ${fillAttr} ${strokeAttr} ${shadow}/>`;
-  }
-  let filterDef='';
-  if(d.shadow){
-    const sc=d.shadowColor||'#000000';const sb=d.shadowBlur||8;
-    // Expand filter region proportionally to blur so shadow isn't clipped
-    const pad=Math.max(30, Math.ceil(sb*3));
-    filterDef=`<defs><filter id="sh_${d.id}" x="-${pad}%" y="-${pad}%" width="${100+pad*2}%" height="${100+pad*2}%"><feDropShadow dx="3" dy="3" stdDeviation="${sb}" flood-color="${sc}" flood-opacity="0.6"/></filter></defs>`;
-  }
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="overflow:visible">${filterDef}${shapeDef}</svg>`;
+function _getStrokeDasharray(style, sw) {
+  if (!style || style === 'solid') return '';
+  if (style === 'dashed') return `stroke-dasharray="${sw*4} ${sw*3}"`;
+  if (style === 'dotted') return `stroke-dasharray="${sw} ${sw*3}" stroke-linecap="round"`;
+  return '';
 }
+
+// Returns {dasharray, pathLength, extraAttrs} for even dot/dash distribution
+// perimeter: actual contour length; sw: stroke width; style: 'dotted'|'dashed'
+function _evenDash(style, sw, perimeter) {
+  if (!perimeter || perimeter < 1) return null;
+  const dot  = sw;        // dot diameter
+  const gap  = sw * 3;    // gap between dots (wider for better look)
+  const period = dot + gap;
+  // Round to nearest whole number of dots so they distribute evenly
+  const n = Math.max(1, Math.round(perimeter / period));
+  // Set pathLength so that n*(dot+gap) == pathLength
+  // Browser will stretch/compress evenly around the path
+  const pl = n * period;
+  if (style === 'dotted') {
+    return {
+      pathLength: pl.toFixed(2),
+      dasharray: `${dot} ${gap}`,
+      extraAttrs: `stroke-linecap="round" pathLength="${pl.toFixed(2)}"`
+    };
+  }
+  if (style === 'dashed') {
+    const dash = sw * 4, dgap = sw * 3;
+    const periodD = dash + dgap;
+    const nD = Math.max(1, Math.round(perimeter / periodD));
+    const plD = nD * periodD;
+    return {
+      pathLength: plD.toFixed(2),
+      dasharray: `${dash} ${dgap}`,
+      extraAttrs: `pathLength="${plD.toFixed(2)}"`
+    };
+  }
+  return null;
+}
+
+// Compute perimeter of shape given type and dimensions
+function _shapePerimeter(sh, w, h, m) {
+  const ew = Math.max(1, w - m*2), eh = Math.max(1, h - m*2);
+  if (sh.special === 'ellipse') {
+    // Ramanujan approximation
+    const a = ew/2, b = eh/2;
+    return Math.PI * (3*(a+b) - Math.sqrt((3*a+b)*(a+3*b)));
+  }
+  if (sh.special === 'rect') {
+    return 2*(ew + eh);
+  }
+  // For polygon shapes: sum of edge lengths
+  if (!sh.path) return 2*(ew+eh);
+  const sx = ew/90, sy = eh/90;
+  const pts = [];
+  const re = /[ML]\s*([-\d.]+)[,\s]+([-\d.]+)/g;
+  let match;
+  while ((match = re.exec(sh.path)) !== null) {
+    pts.push({x: (parseFloat(match[1])-5)*sx + m, y: (parseFloat(match[2])-5)*sy + m});
+  }
+  let perim = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i+1)%pts.length];
+    perim += Math.hypot(b.x-a.x, b.y-a.y);
+  }
+  return perim;
+}
+
+// ── Continuous wave/zigzag path along an arbitrary SVG path ──────
+// Samples the path at equal arc-length intervals and builds
+// a Bezier wave or zigzag that flows continuously across corners.
+function _complexPathWave(svgPathStr, style, sw) {
+  if (typeof document === 'undefined') return null;
+  try {
+    const tmpSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    tmpSvg.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;width:1px;height:1px;';
+    document.body.appendChild(tmpSvg);
+    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    p.setAttribute('d', svgPathStr);
+    tmpSvg.appendChild(p);
+    const totalLen = p.getTotalLength();
+    document.body.removeChild(tmpSvg);
+    if (totalLen < 1) return null;
+
+    // Step size — one full wave = 2 half-steps
+    const halfStep = style === 'wave' ? sw * 3.5 : sw * 2.5;
+    const amp = sw * 0.85;
+
+    // Number of half-steps — always even so wave closes at start point
+    let nHalf = Math.max(4, Math.round(totalLen / halfStep));
+    if (nHalf % 2 !== 0) nHalf++;
+    const actualHalf = totalLen / nHalf;
+
+    // Sample points: one per half-step boundary + midpoints for Bezier
+    // For each half-step i: we go from t_i to t_{i+1}, peak at midpoint
+    const pts = [];
+    for (let i = 0; i <= nHalf; i++) {
+      const l = Math.min(totalLen, actualHalf * i);
+      const pt = p.getPointAtLength(l);
+      pts.push({ x: pt.x, y: pt.y });
+    }
+
+    // Also sample midpoints for control points
+    const mids = [];
+    for (let i = 0; i < nHalf; i++) {
+      const l = actualHalf * i + actualHalf * 0.5;
+      const pt = p.getPointAtLength(Math.min(totalLen, l));
+      mids.push({ x: pt.x, y: pt.y });
+    }
+
+    // Build path: each half-step alternates outward/inward
+    let d = `M ${pts[0].x.toFixed(2)} ${pts[0].y.toFixed(2)} `;
+    for (let i = 0; i < nHalf; i++) {
+      const a = pts[i], b = pts[i + 1], m = mids[i];
+      const side = (i % 2 === 0) ? 1 : -1;
+      // Normal at midpoint: perpendicular to segment a→b
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const len = Math.hypot(dx, dy);
+      const nx = len > 0 ? -dy / len : 0;
+      const ny = len > 0 ?  dx / len : 1;
+      const cpx = (m.x + nx * amp * side).toFixed(2);
+      const cpy = (m.y + ny * amp * side).toFixed(2);
+      if (style === 'wave') {
+        d += `Q ${cpx} ${cpy} ${b.x.toFixed(2)} ${b.y.toFixed(2)} `;
+      } else {
+        // Zigzag: two straight lines through peak
+        d += `L ${cpx} ${cpy} L ${b.x.toFixed(2)} ${b.y.toFixed(2)} `;
+      }
+    }
+    // Close back to start
+    d += 'Z';
+    return d;
+  } catch(e) {
+    console.warn('[wave] error:', e);
+    return null;
+  }
+}
+
+// Rounds polygon corners like Adobe Illustrator using cubic Bezier curves.
+// Both convex and concave corners are rounded — control points sit AT the vertex,
+// creating smooth tangent-continuous curves on both sides.
+function _roundedPolygonPath(pts, rx) {
+  const n = pts.length;
+  if (n < 3 || rx <= 0) {
+    return pts.map((p,i)=>(i===0?'M ':'L ')+p.x.toFixed(2)+' '+p.y.toFixed(2)).join(' ')+' Z';
+  }
+
+  // Precompute anchor points (p1, p2) and control points (vertex) for every corner
+  const corners = [];
+  for (let i = 0; i < n; i++) {
+    const prev = pts[(i-1+n)%n];
+    const curr = pts[i];
+    const next = pts[(i+1)%n];
+
+    const e1x = prev.x-curr.x, e1y = prev.y-curr.y; // toward prev
+    const e2x = next.x-curr.x, e2y = next.y-curr.y; // toward next
+    const len1 = Math.hypot(e1x, e1y);
+    const len2 = Math.hypot(e2x, e2y);
+    if (len1 < 0.001 || len2 < 0.001) { corners.push(null); continue; }
+
+    const u1x = e1x/len1, u1y = e1y/len1; // unit toward prev
+    const u2x = e2x/len2, u2y = e2y/len2; // unit toward next
+
+    // Angle between the two edges at this vertex
+    const dot = u1x*u2x + u1y*u2y;
+    const cosA = Math.max(-1, Math.min(1, dot));
+    const halfAngle = Math.acos(cosA) / 2;
+
+    // Limit r so arcs from adjacent corners don't overlap
+    const r = Math.min(rx, len1/2, len2/2);
+
+    // Anchor points on edges at distance r from vertex
+    const p1x = curr.x + u1x*r, p1y = curr.y + u1y*r; // on incoming edge
+    const p2x = curr.x + u2x*r, p2y = curr.y + u2y*r; // on outgoing edge
+
+    // Bezier control point weight: k = (4/3)*tan(angle/4)
+    // This gives the cubic bezier that best approximates a circular arc
+    // k controls how far control points pull toward the vertex
+    // Standard arc approximation: (4/3)*tan(θ/4). Use max(k,0.55) for rounder feel.
+    const kCalc = (4/3) * Math.tan(halfAngle / 2);
+    const k = Math.max(kCalc, 0.55);
+    const cp1x = p1x - u1x * r * k, cp1y = p1y - u1y * r * k; // cp toward vertex
+    const cp2x = p2x - u2x * r * k, cp2y = p2y - u2y * r * k; // cp toward vertex
+
+    corners.push({ p1x, p1y, p2x, p2y, cp1x, cp1y, cp2x, cp2y });
+  }
+
+  // Build path: for each corner emit L p1, C cp1 cp2 p2
+  // The L connects p2 of previous corner to p1 of current corner (straight edge segment)
+  let d = '';
+  let started = false;
+  for (let i = 0; i < n; i++) {
+    const c = corners[i];
+    if (!c) continue;
+    if (!started) {
+      d += `M ${c.p1x.toFixed(2)} ${c.p1y.toFixed(2)} `;
+      started = true;
+    } else {
+      d += `L ${c.p1x.toFixed(2)} ${c.p1y.toFixed(2)} `;
+    }
+    // Cubic bezier through the corner
+    d += `C ${c.cp1x.toFixed(2)} ${c.cp1y.toFixed(2)} ${c.cp2x.toFixed(2)} ${c.cp2y.toFixed(2)} ${c.p2x.toFixed(2)} ${c.p2y.toFixed(2)} `;
+  }
+  d += 'Z';
+  return d;
+}
+
+// Extract polygon points from a simple M/L/Z SVG path string
+function _extractPolygonPts(pathStr) {
+  const pts = [];
+  const re = /[MLml]\s*([-\d.]+)[,\s]+([-\d.]+)/g;
+  let m;
+  while ((m = re.exec(pathStr)) !== null) {
+    pts.push({ x: parseFloat(m[1]), y: parseFloat(m[2]) });
+  }
+  return pts;
+}
+
+
+function buildShapeSVG(d, w, h) {
+  const sh = SHAPES.find(s => s.id === d.shape) || SHAPES[0];
+  const op = d.fillOp === undefined ? 1 : +d.fillOp;
+  const fill = (d.fill && d.fill !== 'none') ? d.fill : (d.fill === 'none' ? 'none' : '#3b82f6');
+  const hasFill = fill !== 'none';
+  const sw = d.sw === undefined ? 2 : +d.sw;
+  const strokeColor = d.stroke || '#1d4ed8';
+  const strokeStyle = d.strokeStyle || 'solid';
+  const isComplex = strokeStyle === 'wave' || strokeStyle === 'zigzag';
+  const isDouble  = strokeStyle === 'double';
+  // margin for non-complex: stroke sits centred on shape edge
+  const margin = (!isComplex && sw > 0) ? sw / 2 : 0;
+  const shadow = d.shadow ? `filter="url(#sh_${d.id})"` : '';
+  // op applied as SVG opacity so both fill AND stroke are transparent together
+  const fillAttr = hasFill ? `fill="${fill}"` : 'fill="none"';
+
+  // ── shape geometry helpers ──────────────────────────────────────
+
+  // Returns SVG element string for a given margin
+  function shapeEl(fAttr, sAttr, m, extra = '') {
+    const ew = Math.max(1, w - m * 2), eh = Math.max(1, h - m * 2);
+    if (sh.special === 'rect')
+      return `<rect x="${m}" y="${m}" width="${ew}" height="${eh}" rx="${d.rx||0}" ${fAttr} ${sAttr} ${extra} ${shadow}/>`;
+    if (sh.special === 'ellipse')
+      return `<ellipse cx="${w/2}" cy="${h/2}" rx="${ew/2}" ry="${eh/2}" ${fAttr} ${sAttr} ${extra} ${shadow}/>`;
+    if (sh.special === 'callout') return null;
+    // Scale path points and apply corner rounding
+    const sx = ew/90, sy = eh/90;
+    const rawPath = sh.path.replace(/(-?\d+(?:\.\d+)?)/g, (_, v, off, str) => {
+      const nums = (str.slice(0, off).match(/(-?\d+(?:\.\d+)?)/g)||[]).length;
+      return nums % 2 === 0
+        ? String(Math.round((+v - 5) * sx + m))
+        : String(Math.round((+v - 5) * sy + m));
+    });
+    let sp = rawPath;
+    if (rx > 0) {
+      const polyPts = _extractPolygonPts(rawPath);
+      if (polyPts.length >= 3) sp = _roundedPolygonPath(polyPts, rx);
+    }
+    return `<path d="${sp}" ${fAttr} ${sAttr} ${extra} ${shadow}/>`;
+  }
+
+  // Returns path data string for shape at margin m (for wave sampling & clipPath)
+  function shapePathStr(m) {
+    const ew = Math.max(1, w - m*2), eh = Math.max(1, h - m*2);
+    if (sh.special === 'rect') {
+      const rxR = d.rx || 0;
+      if (rxR > 0)
+        return `M ${m+rxR} ${m} H ${m+ew-rxR} Q ${m+ew} ${m} ${m+ew} ${m+rxR} V ${m+eh-rxR} Q ${m+ew} ${m+eh} ${m+ew-rxR} ${m+eh} H ${m+rxR} Q ${m} ${m+eh} ${m} ${m+eh-rxR} V ${m+rxR} Q ${m} ${m} ${m+rxR} ${m} Z`;
+      return `M ${m} ${m} H ${m+ew} V ${m+eh} H ${m} Z`;
+    }
+    if (sh.special === 'ellipse') {
+      const cx = w/2, cy = h/2, erx = ew/2, ery = eh/2;
+      return `M ${cx-erx} ${cy} A ${erx} ${ery} 0 1 1 ${cx+erx} ${cy} A ${erx} ${ery} 0 1 1 ${cx-erx} ${cy} Z`;
+    }
+    if (sh.special === 'callout') return null;
+    const sx = ew/90, sy = eh/90;
+    const rawPath = sh.path.replace(/(-?\d+(?:\.\d+)?)/g, (_, v, off, str) => {
+      const nums = (str.slice(0, off).match(/(-?\d+(?:\.\d+)?)/g)||[]).length;
+      return nums % 2 === 0
+        ? String(Math.round((+v - 5) * sx + m))
+        : String(Math.round((+v - 5) * sy + m));
+    });
+    if (rx > 0) {
+      const polyPts = _extractPolygonPts(rawPath);
+      if (polyPts.length >= 3) return _roundedPolygonPath(polyPts, rx);
+    }
+    return rawPath;
+  }
+
+  let shapeDef = '';
+  let defBlock = '';
+
+  // Corner radius for non-rect/ellipse shapes via offset path algorithm.
+  // Rounds polygon corners by cutting each vertex and inserting a circular arc.
+  const rx = d.rx || 0;
+
+  if (sh.special === 'callout') {
+    const sAttr = sw > 0
+      ? `stroke="${strokeColor}" stroke-width="${sw}" ${_getStrokeDasharray(strokeStyle, sw)}`
+      : 'stroke="none"';
+    shapeDef = _buildCalloutSVGPath(d, w, h, sh, fillAttr, sAttr, shadow, margin);
+
+  } else if (isComplex && sw > 0) {
+    // Fill: clipped to shape boundary (margin = sw/2 so fill edge aligns with stroke centre)
+    const fillM = sw / 2;
+    let filled = '';
+    if (hasFill) {
+      const clipId = `scp_${d.id}`;
+      const clipEl = shapeEl('fill="white"', 'stroke="none"', fillM);
+      defBlock += `<clipPath id="${clipId}">${clipEl}</clipPath>`;
+      filled = shapeEl(fillAttr, 'stroke="none"', fillM, `clip-path="url(#${clipId})"`) || '';
+    }
+
+    // Wave/zigzag stroke path sampled along shape at margin=0 (stroke centre on shape edge)
+    const pathStr = shapePathStr(0);
+    let wavePath = pathStr ? _complexPathWave(pathStr, strokeStyle, sw) : null;
+    const strokeEl = wavePath
+      ? `<path d="${wavePath}" fill="none" stroke="${strokeColor}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"/>`
+      : shapeEl('fill="none"', `stroke="${strokeColor}" stroke-width="${sw}"`, 0);
+
+    shapeDef = (filled || '') + (strokeEl || '');
+
+  } else if (isDouble && sw > 0) {
+    const outer = shapeEl(fillAttr, `stroke="${strokeColor}" stroke-width="${sw * 3}"`, sw * 0.5);
+    const inner = shapeEl('fill="none"', `stroke="${fill}" stroke-width="${sw * 1.4}"`, sw * 0.5);
+    shapeDef = (outer || '') + (inner || '');
+
+  } else {
+    if (sw > 0) {
+      const perim = _shapePerimeter(sh, w, h, margin);
+      const evenD = (strokeStyle === 'dotted' || strokeStyle === 'dashed')
+        ? _evenDash(strokeStyle, sw, perim) : null;
+      const sAttr = evenD
+        ? `stroke="${strokeColor}" stroke-width="${sw}" stroke-dasharray="${evenD.dasharray}" ${evenD.extraAttrs}`
+        : `stroke="${strokeColor}" stroke-width="${sw}" ${_getStrokeDasharray(strokeStyle, sw)}`;
+      shapeDef = shapeEl(fillAttr, sAttr, margin) || '';
+    } else {
+      shapeDef = shapeEl(fillAttr, 'stroke="none"', margin) || '';
+    }
+  }
+
+  let filterDef = '';
+  if (d.shadow) {
+    const sc = d.shadowColor || '#000000', sb = d.shadowBlur || 8;
+    const pad = Math.max(30, Math.ceil(sb * 3));
+    filterDef = `<filter id="sh_${d.id}" x="-${pad}%" y="-${pad}%" width="${100+pad*2}%" height="${100+pad*2}%">` +
+      `<feDropShadow dx="3" dy="3" stdDeviation="${sb}" flood-color="${sc}" flood-opacity="0.6"/></filter>`;
+  }
+  const defsContent = (filterDef || '') + (defBlock || '');
+  const defs = defsContent ? `<defs>${defsContent}</defs>` : '';
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="overflow:visible" opacity="${op}">${defs}${shapeDef}</svg>`;
+}
+
 
 // Returns CSS clip-path string matching the shape, for use with backdrop-filter
 function _shapeClipPath(d, w, h) {
@@ -279,6 +601,9 @@ function _applyShapeClipPath(el, d) {
 }
 function renderShapeEl(el,d){
   const w=parseInt(el.style.width),h=parseInt(el.style.height);
+  // Keep dataset in sync so syncProps reads correct values
+  if(d.strokeStyle)el.dataset.strokeStyle=d.strokeStyle;
+  else if(!el.dataset.strokeStyle)el.dataset.strokeStyle='solid';
   const c=el.querySelector('.sel-el');if(!c)return;
   const svgDiv=c.querySelector('.shape-svg');
   if(svgDiv){
@@ -305,6 +630,7 @@ function updateShapeStyle(prop,val){
   if(prop==='fill'){d.fill=val;sel.dataset.fill=val;}
   else if(prop==='stroke'){d.stroke=val;sel.dataset.stroke=val;}
   else if(prop==='sw'){d.sw=+val;sel.dataset.sw=val;}
+  else if(prop==='strokeStyle'){d.strokeStyle=val;sel.dataset.strokeStyle=val;}
   else if(prop==='rx'){d.rx=+val;sel.dataset.rx=val;}
   else if(prop==='fillOp'){d.fillOp=+val;sel.dataset.fillOp=val;}
   else if(prop==='shadow'){d.shadow=val;sel.dataset.shadow=val;}
@@ -332,13 +658,24 @@ function startEditShapeText(){
   const range=document.createRange();range.selectNodeContents(txt);
   const s=window.getSelection();s.removeAllRanges();s.addRange(range);
 }
-function updateShapeTextColor(v){
+function updateShapeTextColor(v, schemeRef){
   if(!sel||sel.dataset.type!=='shape')return;
   const st=sel.querySelector('.shape-text');if(!st)return;
-  let cs=st.getAttribute('style')||'';cs=cs.replace(/color:[^;]+;?/,'')+'color:'+v+';';
+  // Replace only standalone color: (not background-color:)
+  let cs=st.getAttribute('style')||'';
+  cs=cs.replace(/(?:^|;)\s*color:\s*[^;]+/g,'').replace(/;;/g,';').replace(/^;/,'').trim();
+  cs=(cs?cs+';':'')+'color:'+v+';';
   st.setAttribute('style',cs);
-  try{document.getElementById('sh-tc-hex').value=v;}catch(e){}
-  save();saveState();
+  const d=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+  if(d){
+    d.shapeTextColorScheme=(schemeRef!==undefined?(schemeRef||null):d.shapeTextColorScheme);
+    d.shapeTextCss=cs;
+  }
+  try{
+    const pr=document.getElementById('sh-tc-preview');if(pr)pr.style.background=v;
+    const hx=document.getElementById('sh-tc-hex');if(hx)hx.value=v.replace('#','');
+  }catch(e){}
+  save();drawThumbs();saveState();
 }
 function updateShapeTextStyle(prop,val){
   if(!sel||sel.dataset.type!=='shape')return;

@@ -180,6 +180,18 @@ function applyTheme(){
         // else strokeScheme===null: custom — leave unchanged
         if(!el.stroke) el.stroke = theme.shapeStroke || '#1d4ed8';
         if(el.shadow) el.shadowColor=theme.ac1||theme.shapeFill||el.shadowColor||'#000000';
+        // Remap shape text color scheme
+        if(el.shapeTextColorScheme !== null && el.shapeTextColorScheme !== undefined){
+          const resolved = _resolveSchemeColor(el.shapeTextColorScheme, theme);
+          if(resolved && el.shapeTextCss){
+            // Replace standalone color: only (not background-color:)
+            el.shapeTextCss = el.shapeTextCss.replace(/(^|;)\s*color:\s*[^;]+/g, (m,p)=>(p||'')+' color:'+resolved).replace(/;;/g,';').trim();
+          }
+        } else if(el.shapeTextColorScheme === undefined && el.shapeTextCss) {
+          // No scheme saved yet — treat as scheme-tracked (use heading color default)
+          const _defShapeTc = theme.headingColor || theme.bodyColor || '#ffffff';
+          el.shapeTextCss = el.shapeTextCss.replace(/(^|;)\s*color:\s*[^;]+/g, (m,p)=>(p||'')+' color:'+_defShapeTc).replace(/;;/g,';').trim();
+        }
       }
       if(el.type==='table'){
         const tc=theme.ac1||'#3b82f6';
@@ -254,6 +266,29 @@ function applyTheme(){
           newFc = null; // custom — skip
         }
         if(newFc){ el.formulaColor = newFc; }
+      }
+      if(el.type==='lego'){
+        // null = кастомный цвет, оставляем как есть
+        // schemeRef {col,row} = пересчитываем по новой теме
+        if(el.legoColorScheme !== null && el.legoColorScheme !== undefined){
+          const resolved = _resolveSchemeColor(el.legoColorScheme, theme);
+          if(resolved){
+            el.legoColor = resolved;
+            // Перерисовываем DOM-элемент если он на текущем слайде
+            const cv = document.getElementById('canvas');
+            if(cv){
+              const domEl = cv.querySelector('.el[data-id="'+el.id+'"]');
+              if(domEl){
+                domEl.dataset.legoColor = resolved;
+                const ec_ = domEl.querySelector('.ec');
+                if(ec_ && typeof window._legoMakeSVG==='function'){
+                  ec_.innerHTML = window._legoMakeSVG(el.legoStuds, el.legoTall, resolved)
+                    + (window._legoHit||'');
+                }
+              }
+            }
+          }
+        }
       }
       if(el.type==='applet' && el.appletId==='generator'){
         // Remap scheme-pinned colors; leave custom (null) unchanged

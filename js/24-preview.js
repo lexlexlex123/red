@@ -1,3 +1,14 @@
+
+// Лего-блоки: вспомогательная функция SVG для превью/экспорта
+function _legoMakeSVG(n,tall,base){
+  const U=40,SH=10,FH=12,TH=36,SW=26;
+  const bh=tall?TH:FH,bw=n*U;
+  function blend(hex,r2,g2,b2,t){const h=hex.replace('#','');const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);return '#'+[r,g,b].map((v,i)=>Math.round(v+([r2,g2,b2][i]-v)*t).toString(16).padStart(2,'0')).join('');}
+  const stud=blend(base,0,0,0,.20),hl=blend(base,255,255,255,.65),dark=blend(base,0,0,0,.30);
+  let studs='';
+  for(let i=0;i<n;i++){const sx=i*U+(U-SW)/2;studs+=`<rect x="${sx}" y="0" width="${SW}" height="${SH}" rx="1" fill="${stud}"/><rect x="${sx+2}" y="1" width="${SW-6}" height="${Math.max(2,SH-4)}" rx="1" fill="${hl}" opacity="0.5"/>`;}
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${bw} ${bh+SH}" width="${bw}" height="${bh+SH}" style="display:block;overflow:visible">${studs}<rect x="0" y="${SH}" width="${bw}" height="${bh}" rx="1" fill="${base}"/><rect x="1" y="${SH+1}" width="${bw-2}" height="2" rx="1" fill="${hl}" opacity="0.4"/><rect x="0" y="${SH+bh-3}" width="${bw}" height="3" rx="1" fill="${dark}" opacity="0.5"/><rect x="0" y="${SH}" width="2" height="${bh}" rx="1" fill="${dark}" opacity="0.28"/><rect x="${bw-2}" y="${SH}" width="2" height="${bh}" rx="1" fill="${dark}" opacity="0.38"/></svg>`;
+}
 let pidx=0,pTransiting=false,autoTimer=null;
 const playedAnimSlides=new Set(); // tracks which slides had their nav-anims already played
 const hiddenElsPerSlide={}; // slideIdx -> Set of elIds that have been hidden by nav trigger
@@ -310,18 +321,25 @@ function buildPSlide(container,idx,transOffset){
   // New explicit 'click' resets; new 'auto' on a NEW element that has no prior click = plain auto
   let lastEffTrig = 'auto';
   let lastEffEl = null;
+  let lastEffResult = 'auto'; // что реально получил предыдущий элемент (для withPrev)
   const globalEffTrig = globalAnimList.map(({a, d}) => {
     const t = a.trigger||'auto';
-    if(t === 'click') { lastEffTrig = 'click'; lastEffEl = d.id; return 'click'; }
-    if(t === 'withPrev') { return lastEffTrig; }
+    if(t === 'click') {
+      lastEffTrig = 'click'; lastEffEl = d.id; lastEffResult = 'click';
+      return 'click';
+    }
+    if(t === 'withPrev') {
+      // Наследуем результат предыдущего — не lastEffTrig
+      // Это исправляет: click → autoAfter(el2) → withPrev(el3) → autoAfter (не click)
+      return lastEffResult;
+    }
     // auto / afterPrev
     if(lastEffTrig === 'click') {
-      // Still in the wake of a click — this auto is autoAfter regardless of element
-      // but only update lastEffEl to current, keep lastEffTrig as 'click' so chain continues
       lastEffEl = d.id;
+      lastEffResult = 'autoAfter';
       return 'autoAfter';
     }
-    lastEffTrig = 'auto'; lastEffEl = null;
+    lastEffTrig = 'auto'; lastEffEl = null; lastEffResult = 'auto';
     return 'auto';
   });
 
@@ -339,15 +357,15 @@ function buildPSlide(container,idx,transOffset){
         if(gPrevStart===0 && gPrevDur===0){
           absDelay = relDelay;
         } else if(_isLive && a.name!=='typewriter' && (a.trigger||'auto')==='auto'){
-          // live (dance и др.) без withPrev стартует немедленно — только явная задержка
-          absDelay = relDelay;
+          // live (dance и др.) стартует после предыдущей анимации, как обычный afterPrev
+          absDelay = gPrevStart + gPrevDur + relDelay;
         } else if((a.trigger||'auto')==='withPrev'){
           absDelay = gPrevStart + relDelay;
         } else {
           absDelay = gPrevStart + gPrevDur + relDelay;
         }
-        // live не сдвигает цепочку — gPrevStart/gPrevDur остаются от non-live анимации
-        // Исключение: typewriter — считаем его реальную длительность
+        // Обновляем gPrevStart/gPrevDur для всех анимаций включая live
+        // Это гарантирует что следующая анимация стартует после текущей
         if(a.name==='typewriter'){
           const _fromLen = (a.fromHtml||'').replace(/<[^>]*>/g,'').length;
           const _toLen   = (a.toHtml  ||'').replace(/<[^>]*>/g,'').length;
@@ -355,7 +373,8 @@ function buildPSlide(container,idx,transOffset){
           const _twDur = (_fromLen + _toLen) * _cd;
           gPrevStart = absDelay;
           gPrevDur   = _twDur;
-        } else if(!_isLive){
+        } else {
+          // live тоже сдвигает цепочку — иначе две live подряд стартуют одновременно
           gPrevStart = absDelay;
           gPrevDur = a.duration||600;
         }
@@ -370,7 +389,7 @@ function buildPSlide(container,idx,transOffset){
     });
   }
 
-  s.els.forEach(d=>{
+  s.els.forEach((d,_elIdx)=>{
     if(hiddenSet.has(d.id))return;
     const el=document.createElement('div');el.className='psel';
     const rot=d.rot||0;
@@ -385,7 +404,7 @@ function buildPSlide(container,idx,transOffset){
     const elOp=d.elOpacity!=null?d.elOpacity:1;
     const _previewBdBlur=(d.type==='text'&&d.textBgBlur>0)?'backdrop-filter:blur('+d.textBgBlur+'px);-webkit-backdrop-filter:blur('+d.textBgBlur+'px);':'';
     const _hasSwing = (d.anims||[]).some(a=>a.name==='swing');
-    el.style.cssText='position:absolute;left:'+d.x+'px;top:'+d.y+'px;width:'+d.w+'px;height:'+d.h+'px;z-index:2;'+(_hasSwing?'overflow:visible;':'overflow:hidden;')+'transform:rotate('+rot+'deg);'+rxStr+(hasCursor?'cursor:pointer;':'cursor:default;')+(elOp!==1?'opacity:'+elOp+';':'')+_previewBdBlur;
+    el.style.cssText='position:absolute;left:'+d.x+'px;top:'+d.y+'px;width:'+d.w+'px;height:'+d.h+'px;z-index:2;'+(d.type==='lego'||_hasSwing?'overflow:visible;':'overflow:hidden;')+'transform:rotate('+rot+'deg);'+rxStr+(hasCursor?'cursor:pointer;':'cursor:default;')+(elOp!==1?'opacity:'+elOp+';':'')+_previewBdBlur;
 
     // Build content
     if(d.type==='text'){
@@ -602,6 +621,12 @@ function buildPSlide(container,idx,transOffset){
       styleEl.textContent=`${s} h1{font-size:2em;font-weight:700;margin:0 0 .4em;border-bottom:1px solid ${col}33;padding-bottom:.2em}${s} h2{font-size:1.5em;font-weight:600;margin:0 0 .35em}${s} h3{font-size:1.17em;font-weight:600;margin:0 0 .3em}${s} p{margin:0 0 .6em}${s} code{font-family:monospace;font-size:.85em;background:${col}18;padding:2px 5px;border-radius:3px}${s} pre{background:${col}18;border-radius:5px;padding:10px 12px;margin:0 0 .6em;overflow-x:auto}${s} pre code{background:none;padding:0}${s} ul,${s} ol{margin:0 0 .6em;padding-left:1.4em}${s} li{margin-bottom:.2em}${s} blockquote{border-left:3px solid ${col}88;padding-left:.8em;color:${col}99;margin:.4em 0}${s} strong{font-weight:700}${s} em{font-style:italic}${s} hr{border:none;border-top:1px solid ${col}33;margin:.6em 0}${s} a{color:${col};text-decoration:underline}`;
       document.head.appendChild(styleEl);
       c.innerHTML=d.mdHtml||'';el.appendChild(c);
+    }else if(d.type==='lego'){
+      el.style.overflow='visible';
+      const _lec=document.createElement('div');
+      _lec.style.cssText='width:100%;height:100%;overflow:visible;position:relative;';
+      _lec.innerHTML=_legoMakeSVG(d.legoStuds,d.legoTall,d.legoColor||'#e3000b');
+      el.appendChild(_lec);
     }else if(d.type==='pagenum'){
       const c=document.createElement('div');
       c.style.cssText='width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:visible;';
@@ -668,13 +693,15 @@ function buildPSlide(container,idx,transOffset){
       // live: сохраняем для запуска ПОСЛЕ appendChild (нужен живой DOM)
       el._pendingLiveAnims = liveAnims;
       el._pendingTwAnims = twAnims;
-      // Fire motion anims in original order — each needs cumulative offset from previous
+      // Fire motion anims in original order
+      // withPrev: анимация стартует одновременно с предыдущей —
+      // её baseTx/baseTy = позиция ДО предыдущей, не после
       {
         let cumTx=0, cumTy=0;
         motionAnims.forEach(({anim:a,absDelay})=>{
           fireAnim(el,d,a,idx,absDelay + transOffset,cumTx,cumTy);
           if(a.name==='moveTo'){
-            cumTx=a.tx||0; cumTy=a.ty||0;
+            cumTx+=a.tx||0; cumTy+=a.ty||0;
           } else if(a.name==='orbitTo'){
             const ocx=a.orbitCx||0, ocy=a.orbitCy||0;
             const r=Math.sqrt(ocx*ocx+ocy*ocy)||(a.orbitR||120);
@@ -685,7 +712,6 @@ function buildPSlide(container,idx,transOffset){
             cumTy+=(ocy+r*Math.sin(ea))-(ocy+r*Math.sin(sa));
           }
         });
-        // Сохраняем финальный translate для восстановления после остановки live-анимаций
         el._finalTx = cumTx; el._finalTy = cumTy;
       }
       rotateAnims.forEach(({anim:a,absDelay})=>fireAnim(el,d,a,idx,absDelay + transOffset));
@@ -1035,9 +1061,27 @@ function buildPSlide(container,idx,transOffset){
       if(typeof ANIM_INFO!=='undefined'&&ANIM_INFO[a.name]&&ANIM_INFO[a.name].cat==='live') return;
       autoDelay = Math.max(autoDelay, ((absDelay||0)-baseDelay)+(a.duration||600));
     });
+    // autoAfter: идут последовательно, withPrev — одновременно с предыдущим
+    let prevAutoDelay = autoDelay;
+    let prevAutoDur = 0;
     group.autoAfter.forEach(({el,d,a,wasHidden})=>{
-      const t=autoDelay; autoDelay+=a.duration||600;
+      const isLive = typeof ANIM_INFO!=='undefined'&&ANIM_INFO[a.name]&&ANIM_INFO[a.name].cat==='live';
+      const origTrig = a.trigger||'auto';
+      let t;
+      if(origTrig === 'withPrev') {
+        // Стартует вместе с предыдущим autoAfter
+        t = prevAutoDelay;
+      } else {
+        // Стартует после предыдущего
+        t = autoDelay;
+        prevAutoDelay = autoDelay;
+      }
       setTimeout(()=>{ if(wasHidden)el.style.visibility='visible'; fireAnim(el,d,a,idx,0); }, t);
+      if(!isLive) {
+        prevAutoDur = a.duration||600;
+        if(origTrig !== 'withPrev') autoDelay = t + prevAutoDur;
+        else autoDelay = Math.max(autoDelay, t + prevAutoDur);
+      }
     });
     groupIdx++;
     return true;
@@ -1127,10 +1171,17 @@ function fireAnim(el,d,a,idx,overrideDelay,_cumTx,_cumTy){
         requestAnimationFrame(()=>{
           const _oRot = d.rot||0;
           const _oRotStr = _oRot ? ` rotate(${_oRot}deg)` : '';
-          el.style.transform = `translate(${endTx.toFixed(2)}px,${endTy.toFixed(2)}px)${_oRotStr}`;
+          // НЕ устанавливаем el.style.transform до анимации —
+          // frames уже содержат полный translate (baseTx + орбита)
+          // composite:'replace' — полностью заменяет transform, без двойного сложения
           const _orbitFrames = frames.map(f=>({transform:f.transform+_oRotStr}));
-          const _orbitAnim = el.animate(_orbitFrames, {duration:dur, easing:'linear', fill:'forwards', composite:'add'});
-          _orbitAnim.onfinish = ()=>{ try{ _orbitAnim.commitStyles(); }catch(e){} _orbitAnim.cancel(); };
+          const _orbitAnim = el.animate(_orbitFrames, {duration:dur, easing:'linear', fill:'forwards', composite:'replace'});
+          _orbitAnim.onfinish = ()=>{
+            try{ _orbitAnim.commitStyles(); }catch(e){}
+            _orbitAnim.cancel();
+            // Фиксируем финальную позицию
+            el.style.transform = `translate(${endTx.toFixed(2)}px,${endTy.toFixed(2)}px)${_oRotStr}`;
+          };
         });
       }
     }, delay);
@@ -1165,43 +1216,33 @@ function fireAnim(el,d,a,idx,overrideDelay,_cumTx,_cumTy){
 
 
     // Получаем plaintext из HTML (сохраняем теги минимально — только br)
-    function _htmlToChars(html){
-      // Возвращаем массив «символов» — либо текст либо HTML-тег
-      const res = [];
-      const re = /(<[^>]+>)|([^<]+)/g;
-      let m;
-      while((m = re.exec(html)) !== null){
-        if(m[1]){ res.push({type:'tag', val:m[1]}); }
-        else { for(const ch of m[2]) res.push({type:'char', val:ch}); }
-      }
-      return res;
-    }
-
+    
     function _charsToHtml(chars){ return chars.map(c=>c.val).join(''); }
 
     const fromHtml = a.fromHtml || '';
     const toHtml   = a.toHtml   || '';
 
-    // Находим текстовый контейнер (в preview нет .tel — ищем по типу и структуре)
+    // Находим текстовый контейнер в превью
+    // Структура: el.psel > c(d.cs+flex-column) > div(white-space:normal) > d.html
+    // Пишем в внутренний div — тогда стили c (цвет, шрифт) наследуются
     let _tel = null;
     if(d.type==='text'){
-      // psel > div(flex) > div(innerHTML) — нам нужен внутренний div
-      const _outer = el.querySelector('div');
-      _tel = _outer ? (_outer.querySelector('div') || _outer) : null;
+      // c = первый не-абсолютный div (имеет d.cs с color, font-size)
+      // Пишем напрямую в c — тогда стили гарантированно применяются
+      const _divs = Array.from(el.querySelectorAll(':scope > div'));
+      const _c = _divs.find(dv => dv.style.position !== 'absolute') || _divs[0];
+      _tel = _c || null;
     } else if(d.type==='shape'){
       _tel = el.querySelector('.shape-text');
     } else {
-      // иконка, htmlframe и др. — ищем любой текстовый контейнер
       _tel = el.querySelector('.shape-text') || el.querySelector('div');
     }
     if(!_tel){ console.warn('[typewriter] no text container found for type:', d.type); return; }
+    const _telOrigHtml = _tel.innerHTML; // сохраняем оригинал для восстановления
 
-    const fromChars = _htmlToChars(fromHtml);
-    const toChars   = _htmlToChars(toHtml);
-
-    // Только текстовые символы (не теги) — их стираем/печатаем
-    const fromTextChars = fromChars.filter(c=>c.type==='char');
-    const toTextChars   = toChars.filter(c=>c.type==='char');
+    function _htmlToPlain(html){ return html.replace(/<[^>]*>/g, ''); }
+    const fromPlain = _htmlToPlain(fromHtml);
+    const toPlain   = _htmlToPlain(toHtml);
 
     let _twTimer = null;
     let _twRunning = true;
@@ -1209,41 +1250,36 @@ function fireAnim(el,d,a,idx,overrideDelay,_cumTx,_cumTy){
     setTimeout(()=>{
       if(!_twRunning) return;
 
-      // Шаг 1: стираем fromHtml посимвольно с конца
-      let curFrom = fromChars.slice(); // копия
-      let textIdxs = []; // индексы текстовых символов в curFrom
-      curFrom.forEach((c,i)=>{ if(c.type==='char') textIdxs.push(i); });
-
       let deleteStep = 0;
-      const totalDelete = textIdxs.length;
+      const totalDelete = fromPlain.length;
 
       function doDelete(){
         if(!_twRunning) return;
         if(deleteStep >= totalDelete){
-          // Стёрли всё — начинаем печатать
-          _tel.innerHTML = '';
-          requestAnimationFrame(doPrint.bind(null, 0, []));
+          _tel.innerHTML = '<div style="width:100%;white-space:pre-wrap;word-break:break-word;"></div>';
+          requestAnimationFrame(()=>doPrint(0));
           return;
         }
-        // Удаляем последний текстовый символ
-        const removeIdx = textIdxs[totalDelete - 1 - deleteStep];
-        curFrom[removeIdx] = {type:'char', val:''};
-        _tel.innerHTML = _charsToHtml(curFrom);
+        const remaining = fromPlain.slice(0, totalDelete - deleteStep);
+        // Оборачиваем в div с сохранением стилей — flex-item один = горизонтально
+        _tel.innerHTML = '<div style="width:100%;white-space:pre-wrap;word-break:break-word;">' + remaining + '</div>';
         deleteStep++;
         _twTimer = setTimeout(doDelete, charDelay);
       }
 
-      // Шаг 2: печатаем toHtml посимвольно
-      function doPrint(step, builtChars){
+      function doPrint(step){
         if(!_twRunning) return;
-        if(step >= toChars.length){
-          _tel.innerHTML = toHtml; // финальный вариант с полными тегами
+        if(step >= toPlain.length){
+          // Финал: вставляем toHtml но через временный div чтобы сохранить структуру
+          // Если toHtml совпадает по структуре с оригиналом — вставляем как есть
+          // Иначе заменяем только text nodes сохраняя теги
+          // Финал: показываем toHtml (новый текст)
+          _tel.innerHTML = '<div style="width:100%;white-space:pre-wrap;word-break:break-word;">' + toPlain + '</div>';
           return;
         }
-        builtChars.push(toChars[step]);
-        _tel.innerHTML = _charsToHtml(builtChars);
-        const isTag = toChars[step].type === 'tag';
-        _twTimer = setTimeout(()=>doPrint(step+1, builtChars), isTag ? 0 : charDelay);
+        const built = toPlain.slice(0, step + 1);
+        _tel.innerHTML = '<div style="width:100%;white-space:pre-wrap;word-break:break-word;">' + built + '</div>';
+        _twTimer = setTimeout(()=>doPrint(step+1), charDelay);
       }
 
       doDelete();
@@ -1267,7 +1303,11 @@ function fireAnim(el,d,a,idx,overrideDelay,_cumTx,_cumTy){
     const cnt = a.swingCount != null ? a.swingCount : 1;
     const iters = cnt >= 10 ? Infinity : cnt;
     setTimeout(()=>{
-      if(el._liveAnims){ el._liveAnims.forEach(an=>{try{an.cancel();}catch(e){};}); el._liveAnims=[]; }
+      // Отменяем только предыдущий swing (не другие live-анимации как dance)
+      if(el._liveAnimsByName && el._liveAnimsByName['swing']){
+        try{el._liveAnimsByName['swing'].cancel();}catch(e){}
+        delete el._liveAnimsByName['swing'];
+      }
       // Swing всегда на .ec или на специальной обёртке — никогда на el
       // чтобы rotate не конфликтовал с translate от moveTo (на el)
       let swingTarget = el.querySelector('.ec') || el.querySelector('.iel') || el.querySelector('.psel-txt');
@@ -1302,6 +1342,8 @@ function fireAnim(el,d,a,idx,overrideDelay,_cumTx,_cumTy){
         {duration:dur, iterations:iters, fill:'none', composite:'replace'});
       if(!el._liveAnims) el._liveAnims=[];
       el._liveAnims.push(anim);
+      if(!el._liveAnimsByName) el._liveAnimsByName={};
+      el._liveAnimsByName['swing'] = anim;
     }, delay);
     return;
   }
@@ -1309,15 +1351,30 @@ function fireAnim(el,d,a,idx,overrideDelay,_cumTx,_cumTy){
   if(a.cat==='live'||ANIM_INFO[a.name]&&ANIM_INFO[a.name].cat==='live'){
     const dur  = a.duration||1200;
     const delay= typeof overrideDelay==='number' ? overrideDelay : (a.delay||0);
-    const ecEl = el.querySelector('.ec')||null;
-    const target = ecEl||el;
+    // Создаём отдельную обёртку для dance — не конфликтует со swing на .ec
+    let danceTarget;
+    {
+      let _dw = el.querySelector('._dance_wrap');
+      if(!_dw){
+        _dw = document.createElement('div');
+        _dw.className = '_dance_wrap';
+        _dw.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
+        // Оборачиваем содержимое el
+        const _ec = el.querySelector('.ec');
+        if(_ec){ _ec.parentNode.insertBefore(_dw, _ec); _dw.appendChild(_ec); }
+        else { while(el.firstChild) _dw.appendChild(el.firstChild); el.appendChild(_dw); }
+      }
+      danceTarget = _dw;
+    }
+    const cnt = a.swingCount != null ? a.swingCount : (a.count != null ? a.count : 1);
+    const iters = (!isFinite(cnt)||cnt>=10) ? Infinity : cnt;
     setTimeout(()=>{
-      // Останавливаем предыдущую live-анимацию на том же target
-      if(el._liveAnims){ el._liveAnims.forEach(an=>{try{an.cancel();}catch(e){};}); el._liveAnims=[]; }
-      // Применяем на .ec если есть — тогда transform от moveTo (на el) не конфликтует
-      // Если .ec нет — используем composite:'add' чтобы складываться с translate от moveTo
-      const _liveOnEc = !!ecEl;
-      const anim = target.animate(
+      if(el._liveAnimsByName && el._liveAnimsByName['dance']){
+        try{el._liveAnimsByName['dance'].cancel();}catch(e){}
+        delete el._liveAnimsByName['dance'];
+      }
+      const _liveOnEc = true; // всегда на обёртке
+      const anim = danceTarget.animate(
         [
           {transform:'scaleX(1)    scaleY(1)    rotate(0deg)',   easing:'cubic-bezier(.42,0,.3,1.4)'},
           {transform:'scaleX(1.12) scaleY(0.82) rotate(-2deg)',  easing:'cubic-bezier(.6,0,.4,1.3)'},
@@ -1328,11 +1385,12 @@ function fireAnim(el,d,a,idx,overrideDelay,_cumTx,_cumTy){
           {transform:'scaleX(0.97) scaleY(1.03) rotate(0.5deg)', easing:'cubic-bezier(.4,0,.6,1)'},
           {transform:'scaleX(1)    scaleY(1)    rotate(0deg)'}
         ],
-        {duration:dur, iterations:Infinity, fill:'none', composite: _liveOnEc ? 'replace' : 'add'}
+        {duration:dur, iterations:iters, fill:'none', composite: _liveOnEc ? 'replace' : 'add'}
       );
-      // Сохраняем ссылку для возможной остановки
       if(!el._liveAnims) el._liveAnims=[];
       el._liveAnims.push(anim);
+      if(!el._liveAnimsByName) el._liveAnimsByName={};
+      el._liveAnimsByName['dance'] = anim;
     }, delay);
     return;
   }

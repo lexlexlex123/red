@@ -83,7 +83,7 @@ function pickMulti(el,shiftKey){
     const wasMulti = multiSel.size > 1;
     _justClearedMulti = wasMulti;
     clearMultiSel();
-    if(sel&&!(typeof _rotDragging!=='undefined'&&_rotDragging)){sel.classList.remove('sel');sel=null;}
+    if(sel&&!(typeof _rotDragging!=='undefined'&&_rotDragging)){if(typeof pick==='function')pick(null);else{sel.classList.remove('sel');sel=null;}}
     // If clicking outside canvas (on cwrap bg) always show slide props regardless
     const onCanvas = e.target.closest('#canvas') || e.target.closest('#canvas-bg-rect');
     if(!wasMulti || !onCanvas) _justClearedMulti = false;
@@ -99,6 +99,32 @@ function pickMulti(el,shiftKey){
   // Remove old canvas-only listener, attach to document for cwrap-wide start
   cc.addEventListener('mousedown',onDown);
   cwrap.addEventListener('mousedown',onDown);
+
+  // Снимаем выделение ТОЛЬКО при клике по слайду (#canvas, #cvbg) или холсту (#cwrap вне слайда).
+  // Все панели, тулбары, сайдбар — НЕ снимают выделение.
+  document.addEventListener('mousedown', function(e) {
+    if(e.button!==0) return;
+    if(window._anyDragging) return;
+    // Разрешаем клики по любым UI-панелям — выделение не снимаем
+    if(e.target.closest('#ribbon')) return;
+    if(e.target.closest('#props')) return;
+    if(e.target.closest('#ctoolbar')) return;
+    if(e.target.closest('#sidebar')) return;
+    if(e.target.closest('.modal-ov')) return;
+    if(e.target.closest('.modal')) return;
+    if(e.target.closest('#anim-panel')) return;
+    // cwrap: onDown уже ставит sel=null — чистим overlay после тика
+    if(e.target.closest('#cwrap')) {
+      if(!e.target.closest('.el') && !e.target.closest('#handles-overlay')) {
+        requestAnimationFrame(function() {
+          var _ov=document.getElementById('handles-overlay');
+          if(_ov && typeof sel!=='undefined' && !sel) _ov.innerHTML='';
+        });
+      }
+      return;
+    }
+  });
+
 
   document.addEventListener('mousemove',e=>{
     if(!rbStart)return;

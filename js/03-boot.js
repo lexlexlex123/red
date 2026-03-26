@@ -256,6 +256,10 @@ function buildShapeGallery(){
         c2.style.borderColor=''; // clear any inline override
       });
     };
+    card.ondblclick=()=>{
+      selShape=s.id;
+      if(typeof insertShapeSelected==='function') insertShapeSelected();
+    };
     if(selShape===s.id)card.classList.add('active');
     g.appendChild(card);
   });

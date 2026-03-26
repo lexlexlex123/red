@@ -4,6 +4,59 @@
 (function(){
 
 // ── LaTeX → JS expression ───────────────────────────────────────────────────
+// Парсит условие вида "x > 0", "x <= 0", "x \geq 2" из строки LaTeX
+// Возвращает {xMin, xMax} или null
+function _parseCondition(raw){
+  // Убираем LaTeX команды для сравнений
+  let s = raw
+    .replace(/\\geq/g, '>=').replace(/\\leq/g, '<=')
+    .replace(/\\gt/g, '>').replace(/\\lt/g, '<')
+    .replace(/\\ge/g, '>=').replace(/\\le/g, '<=')
+    .trim();
+
+  // Ищем паттерны: x > n, x < n, x >= n, x <= n, n < x < m и т.д.
+  // Нормализуем: убираем пробелы вокруг операторов
+  s = s.replace(/\s*([<>]=?)\s*/g, '$1');
+
+  let xMin = -Infinity, xMax = Infinity;
+
+  // x >= n или x > n
+  let m = s.match(/^x(>=?|<=?)(-?[\d.]+)$/);
+  if(m){
+    const [,op,val] = m; const v = parseFloat(val);
+    if(op === '>'  || op === '>=') xMin = v;
+    if(op === '<'  || op === '<=') xMax = v;
+    return {xMin, xMax};
+  }
+  // n <= x или n < x
+  m = s.match(/^(-?[\d.]+)(>=?|<=?)x$/);
+  if(m){
+    const [,val,op] = m; const v = parseFloat(val);
+    if(op === '<'  || op === '<=') xMin = v;
+    if(op === '>'  || op === '>=') xMax = v;
+    return {xMin, xMax};
+  }
+  // n < x < m
+  m = s.match(/^(-?[\d.]+)(>=?|<=?)x(>=?|<=?)(-?[\d.]+)$/);
+  if(m){
+    const [,v1,op1,,v2] = m;
+    xMin = parseFloat(v1); xMax = parseFloat(v2);
+    return {xMin, xMax};
+  }
+  return null;
+}
+
+// Разбирает строку вида "y = x^2, x > 0" на {expr, condition}
+function _splitCondition(raw){
+  // Ищем запятую после основной формулы
+  const commaIdx = raw.lastIndexOf(',');
+  if(commaIdx < 0) return {expr: raw, cond: null};
+  const main = raw.slice(0, commaIdx).trim();
+  const condStr = raw.slice(commaIdx + 1).trim();
+  const cond = _parseCondition(condStr);
+  return {expr: main, cond};
+}
+
 function _latexToExpr(raw){
 
   // Extract balanced {…} content starting at index i, return [content, endIdx]
@@ -265,14 +318,22 @@ function _renderGraph(exprsOrExpr, latexLabelOrLines, opts){
   // ── Draw all curves, save pts for label placement ────────────────────────
   const allPtsArrays = [];
 
+  const condList = opts.conditions || [];
+
   fns.forEach((fn, fi) => {
     if(!fn){ allPtsArrays.push([]); return; }
     const curveColor = lineColors[fi % lineColors.length];
+    const cond = condList[fi] || null;
+    // Ограничения по условию: xMin/xMax для этой кривой
+    const cxMin = (cond && cond.xMin != null && isFinite(cond.xMin)) ? Math.max(xMin, cond.xMin) : xMin;
+    const cxMax = (cond && cond.xMax != null && isFinite(cond.xMax)) ? Math.min(xMax, cond.xMax) : xMax;
 
     const pts = [];
     let prevY2 = null;
     for(let i=0;i<=steps;i++){
       const x = xMin + i*dxStep;
+      // Пропускаем точки вне условия
+      if(x < cxMin - 1e-10 || x > cxMax + 1e-10){ pts.push(null); prevY2=null; continue; }
       let y;
       try{ y=fn(x); }catch(e){ pts.push(null); prevY2=null; continue; }
       if(!isFinite(y)||isNaN(y)){ pts.push(null); prevY2=null; continue; }
@@ -504,14 +565,33 @@ async function buildFormulaGraph(formulaEl){
 
   const raw  = d.formulaRaw || '';
   // Support multi-line system: formulaLines array or single raw
-  const lines = (Array.isArray(d.formulaLines) && d.formulaLines.length)
+  let lines = (Array.isArray(d.formulaLines) && d.formulaLines.length)
     ? d.formulaLines.filter(l => l && l.trim())
     : [raw];
 
+  // Парсим \begin{cases}...\end{cases} — система уравнений
+  if(lines.length === 1){
+    const casesMatch = lines[0].match(/\\begin\s*\{cases\}([\s\S]+?)\\end\s*\{cases\}/);
+    if(casesMatch){
+      lines = casesMatch[1]
+        .split(/\\\\/)
+        .map(l => l.replace(/&/g,'').trim())
+        .filter(Boolean);
+    }
+  }
+  // Также парсим \begin{pmatrix} и вертикальные системы через \\ в formulaLines
+  // Если одна строка содержит \\ — разбиваем
+  if(lines.length === 1 && lines[0].includes('\\\\')){
+    const parts = lines[0].split('\\\\').map(l=>l.trim()).filter(Boolean);
+    if(parts.length > 1) lines = parts;
+  }
+
   if(!lines.length){ if(typeof toast==='function') toast('Не удалось разобрать формулу','err'); return; }
 
-  // Check at least one parseable expression
-  const exprs = lines.map(l => _latexToExpr(l)).filter(Boolean);
+  // Разбираем каждую строку на выражение + условие
+  const parsedLines = lines.map(l => _splitCondition(l));
+  const exprs = parsedLines.map(p => _latexToExpr(p.expr)).filter(Boolean);
+  const conditions = parsedLines.map(p => p.cond); // [{xMin,xMax}|null]
   if(!exprs.length){ if(typeof toast==='function') toast('Не удалось разобрать формулу','err'); return; }
 
   const existing = slides[cur].els.find(x => x.type==='graph' && x.linkedFormulaId===d.id);
@@ -531,7 +611,7 @@ async function buildFormulaGraph(formulaEl){
 
   const lineColors = (_theme&&_theme.colors) ? _theme.colors.slice(0,7) : ['#6366f1','#34d399','#f472b6','#fbbf24','#67e8f9','#fb923c','#a78bfa'];
 
-  const raw_result = _renderGraph(exprs, lines, {w:800, h:560, color, lineColors, bg, isDark, xMin, xMax, step, yMin, yMax});
+  const raw_result = _renderGraph(exprs, lines, {w:800, h:560, color, lineColors, bg, isDark, xMin, xMax, step, yMin, yMax, conditions});
   const result = await _addMathLabel(raw_result);
 
   if(existing){

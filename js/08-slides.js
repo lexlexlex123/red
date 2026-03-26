@@ -18,7 +18,14 @@ function addSlide(tmpl){
   }
   renderAll();saveState();
 }
-function dupSlide(){if(slides.length)addSlide(slides[cur]);}
+function dupSlide(){
+  if(!slides.length)return;
+  // Клонируем текущий слайд, но убираем декоры — addSlide сам добавит свежий декор
+  const src=slides[cur];
+  const tmpl=JSON.parse(JSON.stringify(src));
+  tmpl.els=tmpl.els.filter(d=>!d._isDecor);
+  addSlide(tmpl);
+}
 function delSlide(){
   if(slides.length<=1)return toast(t('toastNeedSlide'));
   pushUndo();slides.splice(cur,1);cur=Math.min(cur,slides.length-1);renderAll();saveState();
@@ -82,7 +89,7 @@ function save(){
         if(_od.tableBgBlur!=null)d.tableBgBlur=_od.tableBgBlur;
       }
       if(el.dataset.textRole)d.textRole=el.dataset.textRole;
-      if(el.dataset.textBorderW&&+el.dataset.textBorderW>0){d.textBorderW=+el.dataset.textBorderW;d.textBorderColor=el.dataset.textBorderColor||'#ffffff';}
+      if(el.dataset.textBorderW&&+el.dataset.textBorderW>0){d.textBorderW=+el.dataset.textBorderW;d.textBorderColor=el.dataset.textBorderColor||'#ffffff';d.textBorderStyle=el.dataset.textBorderStyle||'solid';}
       if(el.dataset.rx_tl||el.dataset.rx_tr||el.dataset.rx_bl||el.dataset.rx_br){
         d.rx_tl=+(el.dataset.rx_tl||0);d.rx_tr=+(el.dataset.rx_tr||0);
         d.rx_bl=+(el.dataset.rx_bl||0);d.rx_br=+(el.dataset.rx_br||0);
@@ -100,6 +107,7 @@ function save(){
     if(el.dataset.hoverFx)d.hoverFx=JSON.parse(el.dataset.hoverFx);
     if(el.dataset.elOpacity!=null&&+el.dataset.elOpacity!==1)d.elOpacity=+el.dataset.elOpacity;
     if(el.dataset.objHidden==='1')d.objHidden=true;else delete d.objHidden;
+    if(el.dataset.groupId)d.groupId=el.dataset.groupId;else delete d.groupId;
     if(d.type==='image'){
       const dd=oldElsById[d.id];
       d.src=el.querySelector('img').src;
@@ -152,6 +160,7 @@ function save(){
       }
       d.sw=el.dataset.sw!=null?+el.dataset.sw:2;d.rx=+(el.dataset.rx||0);d.fillOp=el.dataset.fillOp!=null?+el.dataset.fillOp:1;
       d.shadow=el.dataset.shadow==='true';d.shadowBlur=+(el.dataset.shadowBlur||8);d.shadowColor=el.dataset.shadowColor||'#000000';
+      if(el.dataset.strokeStyle)d.strokeStyle=el.dataset.strokeStyle; else if(_ods&&_ods.strokeStyle)d.strokeStyle=_ods.strokeStyle;
       if(el.dataset.shapeBlur>0) d.shapeBlur=+el.dataset.shapeBlur;
       else if(_ods&&_ods.shapeBlur>0) d.shapeBlur=_ods.shapeBlur;
       // Callout tail position - read from dataset (most reliable) or _ods
@@ -162,6 +171,7 @@ function save(){
     }
     else if(d.type==='svg')d.svgContent=el.querySelector('.ec').innerHTML;
     else if(d.type==='formula'){const dd=oldElsById[d.id];if(dd){d.formulaRaw=dd.formulaRaw;d.formulaLines=dd.formulaLines;d.formulaSvg=dd.formulaSvg;d.formulaColorScheme=dd.formulaColorScheme;}d.formulaColor=el.dataset.formulaColor||'#ffffff';}
+    else if(d.type==='lego'){d.legoStuds=+el.dataset.legoStuds||2;d.legoTall=el.dataset.legoTall==='true';d.legoColor=el.dataset.legoColor||'#e3000b';const _lsc=el.dataset.legoColorScheme;d.legoColorScheme=(!_lsc||_lsc===''||_lsc==='undefined')?undefined:(_lsc==='null'?null:(function(){try{return JSON.parse(_lsc);}catch(e){return undefined;}})());}
     else if(d.type==='graph'){const dd=oldElsById[d.id];if(dd){d.linkedFormulaId=dd.linkedFormulaId;d.graphExpr=dd.graphExpr;d.graphLatex=dd.graphLatex;d.graphExprs=dd.graphExprs;d.graphLines=dd.graphLines;d.graphLineColors=dd.graphLineColors;d.graphImg=dd.graphImg;d.graphColor=dd.graphColor;d.graphBg=dd.graphBg;d.graphDark=dd.graphDark;d.graphXMin=dd.graphXMin;d.graphXMax=dd.graphXMax;d.graphYMin=dd.graphYMin;d.graphYMax=dd.graphYMax;d.graphStep=dd.graphStep;}}
     else if(d.type==='code'){const dd=oldElsById[d.id];if(dd){d.codeLang=dd.codeLang;d.codeTheme=dd.codeTheme;d.codeRaw=dd.codeRaw;d.codeHtml=dd.codeHtml;d.codeFs=dd.codeFs;d.codeBg=dd.codeBg;if(dd.hfParentId)d.hfParentId=dd.hfParentId;}}
     else if(d.type==='htmlframe'){
@@ -177,7 +187,7 @@ function save(){
       if(el.dataset.textBgGrad==='1'){d.textBgGrad=true;} else {delete d.textBgGrad;}
       if(el.dataset.textBgCol2)d.textBgCol2=el.dataset.textBgCol2; else delete d.textBgCol2;
       if(el.dataset.textBgDir!=null)d.textBgDir=+el.dataset.textBgDir; else delete d.textBgDir;
-      if(el.dataset.textBorderW&&+el.dataset.textBorderW>0){d.textBorderW=+el.dataset.textBorderW;d.textBorderColor=el.dataset.textBorderColor||'#ffffff';}
+      if(el.dataset.textBorderW&&+el.dataset.textBorderW>0){d.textBorderW=+el.dataset.textBorderW;d.textBorderColor=el.dataset.textBorderColor||'#ffffff';d.textBorderStyle=el.dataset.textBorderStyle||'solid';}
       if(el.dataset.rx_tl||el.dataset.rx_tr||el.dataset.rx_bl||el.dataset.rx_br){d.rx_tl=+(el.dataset.rx_tl||0);d.rx_tr=+(el.dataset.rx_tr||0);d.rx_bl=+(el.dataset.rx_bl||0);d.rx_br=+(el.dataset.rx_br||0);}
       const _odmd=oldElsById[d.id];if(_odmd){if(_odmd.textBgScheme!==undefined)d.textBgScheme=_odmd.textBgScheme;if(_odmd.borderScheme!==undefined)d.borderScheme=_odmd.borderScheme;}
     }
@@ -251,8 +261,8 @@ function load(){
   const canvas=document.getElementById('canvas');canvas.querySelectorAll('.el').forEach(e=>e.remove());
   const s=slides[cur];loadBg(s);s.els.forEach(mkEl);
   document.getElementById('p-st').value=s.title;
-  // Highlight active transition button in slide props
-  const _st=s.trans||'';
+  // Highlight active transition button — пустой/undefined = 'none'
+  const _st=s.trans||'none';
   document.querySelectorAll('#slide-trans-grid .tbtn2[data-st]').forEach(b=>
     b.classList.toggle('active', b.dataset.st===_st)
   );

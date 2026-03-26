@@ -7,10 +7,23 @@ function layerEl(dir){
   console.log('[layer] dir='+dir+' sel='+!!sel+' i='+i+' total='+els.length+' type='+(sel&&sel.dataset.type));
   if(i<0){console.warn('[layer] sel not found in canvas children');return;}
   pushUndo();
-  if(dir==='front')cv.appendChild(sel);
-  else if(dir==='back')cv.insertBefore(sel,els[0]);
-  else if(dir==='up'&&i<els.length-1)cv.insertBefore(els[i+1],sel);
-  else if(dir==='down'&&i>0)cv.insertBefore(sel,els[i-1]);
+  // Декоры всегда на заднем плане — не уходим за них
+  const decors = els.filter(e=>e.classList.contains('decor-el'));
+  const nonDecors = els.filter(e=>!e.classList.contains('decor-el'));
+  const firstNonDecor = nonDecors[0] || els[0];
+
+  if(dir==='front') cv.appendChild(sel);
+  else if(dir==='back'){
+    // Вставляем перед первым НЕ-декором (декоры остаются позади)
+    if(firstNonDecor && firstNonDecor !== sel) cv.insertBefore(sel, firstNonDecor);
+    else if(nonDecors.length > 1) cv.insertBefore(sel, nonDecors[0]);
+  }
+  else if(dir==='up' && i < els.length-1) cv.insertBefore(els[i+1], sel);
+  else if(dir==='down' && i > 0){
+    const prev = els[i-1];
+    // Не уходим за декоры
+    if(!prev.classList.contains('decor-el')) cv.insertBefore(sel, prev);
+  }
   save();drawThumbs();saveState();
 }
 function setAlignScope(s){
@@ -22,8 +35,16 @@ function setAlignScope(s){
 }
 
 function alignEl(t,scope){
-  const targets=multiSel.size>1?[...multiSel]:(sel?[sel]:[]);
+  // If selected element is part of a group — align the whole group as one unit
+  let targets=multiSel.size>1?[...multiSel]:(sel?[sel]:[]);
   if(!targets.length)return;
+  // Expand single group member to full group
+  if(targets.length===1 && targets[0].dataset.groupId){
+    const gid=targets[0].dataset.groupId;
+    const cvEl=document.getElementById('canvas');
+    const gEls=Array.from(cvEl.querySelectorAll('.el[data-group-id="'+gid+'"]'));
+    if(gEls.length>1) targets=gEls;
+  }
   pushUndo();
   // Bounding box of the selection
   const bb={l:Infinity,t:Infinity,r:-Infinity,b:-Infinity};
@@ -33,21 +54,25 @@ function alignEl(t,scope){
   const refL=toSlide?0:bb.l, refT=toSlide?0:bb.t;
   const refR=toSlide?canvasW:bb.r, refB=toSlide?canvasH:bb.b;
   const refMX=(refL+refR)/2, refMY=(refT+refB)/2;
+  // Compute offset to apply to all elements (keeps relative positions intact)
+  const bbW=bb.r-bb.l, bbH=bb.b-bb.t;
+  let dx=0,dy=0;
+  if(t==='left')      dx=refL-bb.l;
+  else if(t==='right')  dx=refR-bb.r;
+  else if(t==='top')    dy=refT-bb.t;
+  else if(t==='bottom') dy=refB-bb.b;
+  else if(t==='centerH') dx=snapV(refMX-bbW/2)-bb.l;
+  else if(t==='centerV') dy=snapV(refMY-bbH/2)-bb.t;
+  else if(t==='center'){dx=snapV(refMX-bbW/2)-bb.l;dy=snapV(refMY-bbH/2)-bb.t;}
   targets.forEach(el=>{
-    const w=parseInt(el.style.width),h=parseInt(el.style.height);
-    if(t==='left')el.style.left=refL+'px';
-    else if(t==='right')el.style.left=(refR-w)+'px';
-    else if(t==='top')el.style.top=refT+'px';
-    else if(t==='bottom')el.style.top=(refB-h)+'px';
-    else if(t==='centerH')el.style.left=snapV(refMX-w/2)+'px';
-    else if(t==='centerV')el.style.top=snapV(refMY-h/2)+'px';
-    else if(t==='center'){el.style.left=snapV(refMX-w/2)+'px';el.style.top=snapV(refMY-h/2)+'px';}
+    if(dx!==0) el.style.left=(parseInt(el.style.left)+dx)+'px';
+    if(dy!==0) el.style.top=(parseInt(el.style.top)+dy)+'px';
   });
   syncPos();save();drawThumbs();saveState();
 }
 
 function distributeEls(axis,scope){
-  const targets=multiSel.size>1?[...multiSel]:(sel?[sel]:[]);
+  let targets=multiSel.size>1?[...multiSel]:(sel?[sel]:[]);
   if(targets.length<2)return toast('Select 2+ elements to distribute');
   pushUndo();
   if(axis==='h'){

@@ -69,6 +69,7 @@ function renderThumbCanvas(cnv,s,slideIdx){
     else if(d.type==='table')drawThumbTable(ctx,d,scaleX,scaleY);
     else if(d.type==='formula')drawThumbFormula(ctx,d,scaleX,scaleY);
     else if(d.type==='graph')drawThumbGraph(ctx,d,scaleX,scaleY);
+    else if(d.type==='lego')drawThumbLego(ctx,d,scaleX,scaleY);
   });
 
   // Draw connectors
@@ -472,4 +473,37 @@ function drawThumbGraph(ctx,d,sx,sy){
   const img=new Image();
   img.onload=()=>{_thumbGraphCache[key]=img;drawThumbs();};
   img.src=d.graphImg;
+}
+
+function drawThumbLego(ctx, d, sx, sy) {
+  const U=40,SH=10,FH=12,TH=36,SW=26;
+  const bh = d.legoTall ? TH : FH;
+  const bw = d.legoStuds * U;
+  const x = d.x * sx, y = d.y * sy;
+  const w = bw * sx, h = (bh+SH) * sy;
+  const bodyY = y + SH*sy;
+  const bodyH = bh * sy;
+  const c = d.legoColor || '#e3000b';
+  // тело
+  ctx.fillStyle = c;
+  ctx.beginPath();
+  ctx.roundRect(x, bodyY, w, bodyH, 1*sx);
+  ctx.fill();
+  // тень снизу
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.fillRect(x, bodyY+bodyH-2*sy, w, 2*sy);
+  // пупырышки
+  ctx.fillStyle = _blendHex(c, 0, 0, 0, 0.18);
+  for(let i=0;i<d.legoStuds;i++){
+    const sx2 = x + (i*U + (U-SW)/2)*sx;
+    const sw2 = SW*sx;
+    ctx.beginPath();
+    ctx.roundRect(sx2, y, sw2, SH*sy, 1*sx);
+    ctx.fill();
+  }
+}
+function _blendHex(hex,r2,g2,b2,t){
+  const h=hex.replace('#','');
+  const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);
+  return '#'+[r,g,b].map((v,i)=>Math.round(v+([r2,g2,b2][i]-v)*t).toString(16).padStart(2,'0')).join('');
 }

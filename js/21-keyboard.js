@@ -80,10 +80,23 @@ function onKey(e){
       e.preventDefault();
       if(typeof pushUndo==="function")pushUndo();
       allEls.forEach(el=>{
-        if(e.key==='ArrowLeft')el.style.left=(parseInt(el.style.left)-step)+'px';
-        else if(e.key==='ArrowRight')el.style.left=(parseInt(el.style.left)+step)+'px';
-        else if(e.key==='ArrowUp')el.style.top=(parseInt(el.style.top)-step)+'px';
-        else if(e.key==='ArrowDown')el.style.top=(parseInt(el.style.top)+step)+'px';
+        const isLego=el.dataset&&el.dataset.type==='lego';
+        const LU=40,LGY=12; // лего: U и GY из 41-lego.js
+        const curL=parseInt(el.style.left),curT=parseInt(el.style.top);
+        if(e.key==='ArrowLeft'){
+          el.style.left=(isLego?(Math.round(curL/LU)*LU-LU):(curL-step))+'px';
+        } else if(e.key==='ArrowRight'){
+          el.style.left=(isLego?(Math.round(curL/LU)*LU+LU):(curL+step))+'px';
+        } else if(e.key==='ArrowUp'){
+          el.style.top=(isLego?(Math.round(curT/LGY)*LGY-LGY):(curT-step))+'px';
+        } else if(e.key==='ArrowDown'){
+          el.style.top=(isLego?(Math.round(curT/LGY)*LGY+LGY):(curT+step))+'px';
+        }
+        if(isLego&&typeof slides!=='undefined'&&typeof cur!=='undefined'){
+          const d=slides[cur]&&slides[cur].els.find(function(e_){return e_.id===el.dataset.id;});
+          if(d){d.x=parseInt(el.style.left);d.y=parseInt(el.style.top);}
+          if(typeof window._refreshAllLegoZ==='function') window._refreshAllLegoZ();
+        }
       });
       syncPos();
       if(typeof _updateHandlesOverlay==='function') _updateHandlesOverlay();

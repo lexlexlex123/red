@@ -84,16 +84,52 @@ function showGuides(el){
   clearGuides();if(!document.getElementById('snap-chk').checked)return;
   const x=parseInt(el.style.left),y=parseInt(el.style.top),w=parseInt(el.style.width),h=parseInt(el.style.height);
   const cx=canvasW/2,cy=canvasH/2,TH=7;
+  // Центр и края слайда
   if(Math.abs(x+w/2-cx)<TH){addGuide('v',cx);el.style.left=(cx-w/2)+'px';}
   if(Math.abs(y+h/2-cy)<TH){addGuide('h',cy);el.style.top=(cy-h/2)+'px';}
   if(Math.abs(x)<TH){addGuide('v',0);el.style.left='0px';}
   if(Math.abs(y)<TH){addGuide('h',0);el.style.top='0px';}
   if(Math.abs(x+w-canvasW)<TH){addGuide('v',canvasW-1);el.style.left=(canvasW-w)+'px';}
   if(Math.abs(y+h-canvasH)<TH){addGuide('h',canvasH-1);el.style.top=(canvasH-h)+'px';}
+  // Привязка к активным направляющим (thirds / golden)
+  if(typeof _extraGuidesMode==='undefined'||_extraGuidesMode==='none') return;
+  const phi=0.618;
+  let snapLines=[];
+  if(_extraGuidesMode==='thirds'){
+    snapLines=[
+      {t:'v',pos:canvasW/3},{t:'v',pos:canvasW*2/3},
+      {t:'h',pos:canvasH/3},{t:'h',pos:canvasH*2/3}
+    ];
+  } else if(_extraGuidesMode==='golden'){
+    snapLines=[
+      {t:'v',pos:canvasW*phi},{t:'v',pos:canvasW*(1-phi)},
+      {t:'h',pos:canvasH*phi},{t:'h',pos:canvasH*(1-phi)}
+    ];
+  }
+  // Snap элемент к линии: левый/правый край или центр по X; верхний/нижний или центр по Y
+  snapLines.forEach(({t,pos})=>{
+    if(t==='v'){
+      // Левый край
+      if(Math.abs(x-pos)<TH){addGuide('v',pos,'amber');el.style.left=Math.round(pos)+'px';}
+      // Правый край
+      else if(Math.abs(x+w-pos)<TH){addGuide('v',pos,'amber');el.style.left=Math.round(pos-w)+'px';}
+      // Центр
+      else if(Math.abs(x+w/2-pos)<TH){addGuide('v',pos,'amber');el.style.left=Math.round(pos-w/2)+'px';}
+    } else {
+      // Верхний край
+      if(Math.abs(y-pos)<TH){addGuide('h',pos,'amber');el.style.top=Math.round(pos)+'px';}
+      // Нижний край
+      else if(Math.abs(y+h-pos)<TH){addGuide('h',pos,'amber');el.style.top=Math.round(pos-h)+'px';}
+      // Центр
+      else if(Math.abs(y+h/2-pos)<TH){addGuide('h',pos,'amber');el.style.top=Math.round(pos-h/2)+'px';}
+    }
+  });
 }
-function addGuide(t,pos){
+function addGuide(t,pos,color){
   const cv=document.getElementById('canvas');const g=document.createElement('div');g.className='guide '+t;
-  if(t==='h')g.style.top=pos+'px';else g.style.left=pos+'px';cv.appendChild(g);guides.push(g);
+  if(t==='h')g.style.top=Math.round(pos)+'px';else g.style.left=Math.round(pos)+'px';
+  if(color==='amber'){g.style.borderColor='#f59e0b';g.style.opacity='0.9';}
+  cv.appendChild(g);guides.push(g);
 }
 
 // ══════════════ AR ══════════════
@@ -449,6 +485,7 @@ function _updateHandlesOverlay(){
       }
     }
   }
+
 }
 
 function _rhCursor(cls, rotDeg){
@@ -554,6 +591,7 @@ function _toCanvasCoords(clientX, clientY) {
 }
 
 function _addRotationZones(overlay, el) {
+  if(el && el.dataset.type==='lego') return; // лего не вращается
   _rotEl = el;
   if (_rotListenersAttached) return;
   _rotListenersAttached = true;

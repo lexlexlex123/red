@@ -27,10 +27,15 @@ function mkDrag(el,c){
       const isHitArea=e.target.classList&&e.target.classList.contains('shape-hit-area');
       if(!isSvgPart&&!e.target.closest('.shape-text')&&!isHitArea)return;
     }
+    // For lego: allow drag/click on any SVG content inside .ec
+    if(el.dataset.type==='lego'){
+      if(!e.target.closest('.ec')&&e.target!==el)return;
+    }
     // Select element immediately if not already selected, then start drag in same mousedown
     // But don't reset multi-selection if element is already part of it
     if(!el.classList.contains('sel')&&!(multiSel.size>1&&multiSel.has(el))){
-      pick(el);
+      if(typeof pickMulti==='function') pickMulti(el, e.shiftKey);
+      else pick(el);
     }
     e.preventDefault();on=true;window._anyDragging=true;ox=e.clientX;oy=e.clientY;ol=parseInt(el.style.left);ot=parseInt(el.style.top);
     pushUndo(); // Record state before drag starts
@@ -66,37 +71,6 @@ function mkDrag(el,c){
     document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
   });
 
-  // Двойной клик на выбранном объекте — добавить emphasis анимацию и проиграть
-  el.addEventListener('dblclick', e => {
-    // Пропускаем если клик попал на интерактивные дочерние элементы
-    if(e.target.closest && (
-      e.target.closest('.tel') ||
-      e.target.closest('.shape-text') ||
-      e.target.closest('.rh') ||
-      e.target.closest('.tbl-drag-border') ||
-      e.target.tagName === 'TD' || e.target.tagName === 'TH'
-    )) return;
-    // Только если элемент уже выбран
-    if(!el.classList.contains('sel')) return;
-    const _emphasisAnims = ['pulse','shake','flash','rotate'];
-    const _pick = _emphasisAnims[Math.floor(Math.random()*_emphasisAnims.length)];
-    if(typeof addAnimToSel === 'function'){
-      addAnimToSel(_pick, 'emphasis');
-      // Сразу проигрываем анимацию в редакторе
-      setTimeout(()=>{
-        // Используем ANIM_CSS из 10-animations.js
-        if(_pick === 'rotate'){
-          el.animate([{transform:'rotate(0deg)'},{transform:'rotate(360deg)'}],
-            {duration:600, easing:'ease-in-out', fill:'none'});
-        } else if(typeof ANIM_CSS !== 'undefined' && ANIM_CSS[_pick]){
-          const cls = ANIM_CSS[_pick];
-          el.style.animation=''; void el.offsetWidth; el.style.animation=cls+' 0.6s ease-out 0s both';
-          setTimeout(()=>{el.style.animation='';},700);
-        }
-      }, 50);
-    }
-    e.stopPropagation();
-  });
 }
 function mkResize(el,rh,cfg){
   rh.addEventListener('mousedown',e=>{
