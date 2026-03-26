@@ -133,14 +133,14 @@ body{display:flex;flex-direction:column;}
 #grid-canvas{position:sticky;top:0;left:0;pointer-events:none;z-index:1;flex-shrink:0;}
 #canvas-container{position:absolute;z-index:2;transform-origin:top left;}
 #canvas-bg-rect{position:absolute;top:0;left:0;width:1200px;height:675px;background:#fff;box-shadow:0 16px 70px rgba(0,0,0,.95),0 0 0 1px rgba(255,255,255,.04);z-index:0;pointer-events:none;}
-#canvas{position:absolute;top:0;left:0;width:1200px;height:675px;overflow:visible;z-index:1;}
+#canvas{position:absolute;top:0;left:0;width:1200px;height:675px;overflow:visible;z-index:1;isolation:isolate;}
 #handles-overlay{display:none;}
 #cvbg{position:absolute;inset:0;z-index:0;pointer-events:none;overflow:hidden;}
 .guide{position:absolute;pointer-events:none;z-index:100;}
 .guide.h{left:0;right:0;height:1px;background:#06b6d4;opacity:.9;box-shadow:0 0 6px #06b6d4;}
 .guide.v{top:0;bottom:0;width:1px;background:#06b6d4;opacity:.9;box-shadow:0 0 6px #06b6d4;}
 /* ELEMENTS */
-.el{position:absolute;cursor:move;user-select:none;border:1.5px solid transparent;z-index:2;overflow:visible;}
+.el{position:absolute;cursor:move;user-select:none;border:1.5px solid transparent;z-index:3;overflow:visible;}
 .el.sel{border-color:var(--selb)!important;overflow:visible!important;}
 .el:hover{border-color:rgba(59,130,246,.35);}
 /* Connector mode highlights */
@@ -148,7 +148,7 @@ body{display:flex;flex-direction:column;}
 .el.conn-target:hover{border-color:rgba(96,165,250,.9)!important;outline-color:rgba(96,165,250,.8);}
 .el.conn-source{border-color:#34d399!important;outline:2px solid #34d399;outline-offset:3px;}
 /* Decor elements: fully passive, no selection, always behind */
-.el.decor-el{pointer-events:none!important;cursor:default!important;z-index:0!important;}
+.el.decor-el{pointer-events:none!important;cursor:default!important;z-index:1!important;}
 .el.decor-el:hover{border-color:transparent!important;}
 /* Shape hover: only highlight when actually over the shape fill, not bounding box */
 .el[data-type=shape]:hover{border-color:transparent;}
@@ -391,6 +391,7 @@ input[type=color]{caret-color:transparent;}
 .shape-card.active{border-color:var(--accent);background:var(--surface3);box-shadow:0 0 0 2px var(--accent)40;}
 .shape-card svg{width:28px;height:28px;}
 .shape-card span{font-size:8.5px;color:var(--text2);}
+.shape-card,.shape-card span,.shape-card svg{user-select:none;-webkit-user-select:none;}
 /* PREVIEW */
 #preview-ov{position:fixed;inset:0;background:#000;z-index:900;display:none;align-items:center;justify-content:center;}
 #preview-ov.active{display:flex;}
@@ -540,3 +541,183 @@ input[type=color]:focus{outline:none;box-shadow:none;}
 /* Background layer for text elements — absolute fill, behind text */
 .el-bg-layer{position:absolute;inset:0;z-index:0;pointer-events:none;border-radius:inherit;}
 .el[data-type=text] > .ec.tel{position:relative;z-index:1;}
+
+/* ══════════════════════════════════════════════════
+   IMPROVEMENTS: Version History & Layout Preview
+   ══════════════════════════════════════════════════ */
+
+/* Backdrop */
+#version-history-modal,
+#layout-preview-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.6);
+  z-index: 9100;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  box-sizing: border-box;
+}
+#version-history-modal.open,
+#layout-preview-modal.open { display: flex; }
+
+/* Box */
+.imp-modal-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 18px 20px 16px;
+  width: 100%;
+  max-width: 420px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 12px 40px rgba(0,0,0,.5);
+  box-sizing: border-box;
+}
+.imp-modal-box h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.imp-modal-box p {
+  font-size: 11px;
+  color: var(--text2);
+  margin: 0 0 10px;
+  line-height: 1.5;
+}
+
+/* Version list */
+#version-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.version-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--text2);
+}
+.version-item span { flex: 1; }
+
+/* Layout preview — wide box */
+#layout-preview-modal .imp-modal-box {
+  max-width: min(860px, 94vw);
+}
+#layout-preview-variants {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin: 8px 0 12px;
+}
+.lp-card {
+  background: var(--surface2);
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color .15s, box-shadow .15s;
+}
+.lp-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(99,102,241,.2);
+}
+.lp-thumb {
+  width: 100%;
+  aspect-ratio: 16/9;
+  overflow: hidden;
+  background: var(--surface3);
+}
+.lp-thumb svg { width: 100%; height: 100%; display: block; }
+.lp-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  padding: 6px 8px 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lp-sub {
+  font-size: 10px;
+  color: var(--text2);
+  padding: 0 8px 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lp-card .mbtn {
+  display: block;
+  width: calc(100% - 16px);
+  margin: 0 8px 8px;
+  font-size: 10px;
+  padding: 4px 6px;
+}
+
+/* Extra guides */
+.guide-extra { pointer-events: none; z-index: 999; }
+
+/* Typo quick buttons */
+.typo-quick {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.typo-quick button {
+  flex: 1;
+  min-width: 70px;
+  font-size: 10px;
+  padding: 4px 5px;
+  white-space: nowrap;
+}
+
+/* ══ ГРУППИРОВКА ══ */
+/* Тонкая рамка вокруг сгруппированных объектов */
+.el.in-group {
+  outline: 1.5px dashed rgba(99, 102, 241, 0.55);
+  outline-offset: 2px;
+}
+.el.in-group.sel {
+  outline: 2px dashed rgba(99, 102, 241, 0.9);
+}
+
+/* Значок группы в панели объектов */
+.obj-group-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 2px;
+  color: #818cf8;
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+.obj-group-badge svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* ══ BORDER STYLE BUTTONS ══ */
+.txt-border-style-btn.active,
+.sh-stroke-style-btn.active {
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+  background: var(--surface3) !important;
+}
+.txt-border-style-btn:hover,
+.sh-stroke-style-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
