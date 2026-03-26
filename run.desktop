@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Запустить локальный сервер
+Comment=Запускает Python сервер и открывает браузер
+Exec=/bin/bash -c "cd %f && python3 -m http.server 8000 & sleep 1 && xdg-open http://localhost:8000 && wait"
+Icon=network-workgroup
+Terminal=true
+Categories=Development;
