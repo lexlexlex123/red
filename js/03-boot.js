@@ -37,7 +37,31 @@ function boot(){
   };
 
   document.getElementById('canvas').addEventListener('mousedown',e=>{
-    if(e.target.id==='canvas'||e.target.id==='cvbg'){if(pipetteMode){cancelPipetteMode();return;}desel();}
+    if(e.target.id==='canvas'||e.target.id==='cvbg'){
+      if(pipetteMode){cancelPipetteMode();return;}
+      // Magnetic selection: find nearest element within 40px
+      const SNAP_R = 40;
+      const z = typeof _canvasZoom!=='undefined' ? _canvasZoom : 1;
+      const cvRect = document.getElementById('canvas').getBoundingClientRect();
+      const mx = (e.clientX - cvRect.left) / z;
+      const my = (e.clientY - cvRect.top) / z;
+      const els = Array.from(document.getElementById('canvas').querySelectorAll('.el:not(.decor-el)'));
+      let best = null, bestD = SNAP_R;
+      els.forEach(el => {
+        const l=parseInt(el.style.left)||0, t2=parseInt(el.style.top)||0;
+        const w=parseInt(el.style.width)||0, h=parseInt(el.style.height)||0;
+        // Distance from point to rectangle
+        const cx = Math.max(l, Math.min(mx, l+w));
+        const cy = Math.max(t2, Math.min(my, t2+h));
+        const d = Math.hypot(mx-cx, my-cy);
+        if(d < bestD){ bestD = d; best = el; }
+      });
+      if(best){
+        if(e.shiftKey && typeof pickMulti==='function') pickMulti(best, true);
+        else if(typeof pick==='function') pick(best);
+      }
+      else if(!e.shiftKey) desel();
+    }
   });
   // Global: clicking anywhere outside an element exits text/table editing
   document.addEventListener('mousedown',e=>{

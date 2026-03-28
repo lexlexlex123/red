@@ -477,29 +477,68 @@ function drawThumbGraph(ctx,d,sx,sy){
 
 function drawThumbLego(ctx, d, sx, sy) {
   const U=40,SH=10,FH=12,TH=36,SW=26;
-  const bh = d.legoTall ? TH : FH;
-  const bw = d.legoStuds * U;
-  const x = d.x * sx, y = d.y * sy;
-  const w = bw * sx, h = (bh+SH) * sy;
-  const bodyY = y + SH*sy;
-  const bodyH = bh * sy;
   const c = d.legoColor || '#e3000b';
-  // тело
-  ctx.fillStyle = c;
-  ctx.beginPath();
-  ctx.roundRect(x, bodyY, w, bodyH, 1*sx);
-  ctx.fill();
-  // тень снизу
-  ctx.fillStyle = 'rgba(0,0,0,0.25)';
-  ctx.fillRect(x, bodyY+bodyH-2*sy, w, 2*sy);
-  // пупырышки
-  ctx.fillStyle = _blendHex(c, 0, 0, 0, 0.18);
-  for(let i=0;i<d.legoStuds;i++){
-    const sx2 = x + (i*U + (U-SW)/2)*sx;
-    const sw2 = SW*sx;
+  const blend = (hex,r2,g2,b2,t) => { const h=hex.replace('#','');const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);return '#'+[r,g,b].map((v,i)=>Math.round(v+([r2,g2,b2][i]-v)*t).toString(16).padStart(2,'0')).join(''); };
+  const dark = blend(c,0,0,0,0.28);
+
+  if (d.legoStair) {
+    const dir = d.legoStair;
+    const bw = 2*U, totalH = SH+TH;
+    const x=d.x*sx, y=d.y*sy;
+    const yTop=y+SH*sy, yBot=y+totalH*sy, yVert=y+(SH+FH)*sy;
+    // Inverted slope: top wide (2U), right side drops vertically to yVert, then diagonal to bottom-left
+    ctx.fillStyle=c; ctx.beginPath();
+    if(dir==='right'){ ctx.moveTo(x,yTop); ctx.lineTo(x+bw*sx,yTop); ctx.lineTo(x+bw*sx,yVert); ctx.lineTo(x+U*sx,yBot); ctx.lineTo(x,yBot); }
+    else { ctx.moveTo(x,yTop); ctx.lineTo(x+bw*sx,yTop); ctx.lineTo(x+bw*sx,yBot); ctx.lineTo(x+U*sx,yBot); ctx.lineTo(x,yVert); }
+    ctx.closePath(); ctx.fill();
+    // shadow under narrow base
+    ctx.fillStyle='rgba(0,0,0,0.22)';
+    ctx.fillRect(x+(dir==='right'?0:U)*sx, yBot-2*sy, U*sx, 2*sy);
+    // two studs on top
+    ctx.fillStyle=blend(c,0,0,0,0.18);
+    for(let i=0;i<2;i++){ const sx2=x+(i*U+(U-SW)/2)*sx; ctx.beginPath(); ctx.roundRect(sx2,y,SW*sx,SH*sy,1); ctx.fill(); }
+  } else if (d.legoSlope) {
+    const dir = d.legoSlope;
+    const n = d.legoStuds, bw=n*U, totalH=SH+TH;
+    const x=d.x*sx, y=d.y*sy;
+    const hiIdx=dir==='slope-right'?0:n-1, hiX=hiIdx*U;
+    const yBodyTop=y+SH*sy, yBot=y+totalH*sy, yLoTop=yBot-FH*sy;
+    // high block
+    ctx.fillStyle=c; ctx.beginPath(); ctx.roundRect(x+hiX*sx, yBodyTop, U*sx, TH*sy, 1); ctx.fill();
+    // slope trapezoid
+    ctx.fillStyle=c; ctx.beginPath();
+    if(dir==='slope-right'){ ctx.moveTo(x+U*sx,yBodyTop); ctx.lineTo(x+bw*sx,yLoTop); ctx.lineTo(x+bw*sx,yBot); ctx.lineTo(x+U*sx,yBot); }
+    else { ctx.moveTo(x,yLoTop); ctx.lineTo(x+(n-1)*U*sx,yBodyTop); ctx.lineTo(x+(n-1)*U*sx,yBot); ctx.lineTo(x,yBot); }
+    ctx.closePath(); ctx.fill();
+    // shadow
+    ctx.fillStyle='rgba(0,0,0,0.22)'; ctx.fillRect(x, yBot-2*sy, bw*sx, 2*sy);
+    // stud
+    ctx.fillStyle=blend(c,0,0,0,0.18);
+    const sx2=x+(hiX+(U-SW)/2)*sx; ctx.beginPath(); ctx.roundRect(sx2,y,SW*sx,SH*sy,1); ctx.fill();
+  } else {
+    const bh = d.legoTall ? TH : FH;
+    const bw = d.legoStuds * U;
+    const x = d.x * sx, y = d.y * sy;
+    const w = bw * sx, h = (bh+SH) * sy;
+    const bodyY = y + SH*sy;
+    const bodyH = bh * sy;
+    // тело
+    ctx.fillStyle = c;
     ctx.beginPath();
-    ctx.roundRect(sx2, y, sw2, SH*sy, 1*sx);
+    ctx.roundRect(x, bodyY, w, bodyH, 1*sx);
     ctx.fill();
+    // тень снизу
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.fillRect(x, bodyY+bodyH-2*sy, w, 2*sy);
+    // пупырышки
+    ctx.fillStyle = blend(c, 0, 0, 0, 0.18);
+    for(let i=0;i<d.legoStuds;i++){
+      const sx2 = x + (i*U + (U-SW)/2)*sx;
+      const sw2 = SW*sx;
+      ctx.beginPath();
+      ctx.roundRect(sx2, y, sw2, SH*sy, 1*sx);
+      ctx.fill();
+    }
   }
 }
 function _blendHex(hex,r2,g2,b2,t){

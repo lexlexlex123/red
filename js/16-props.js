@@ -187,6 +187,13 @@ function syncProps(){
     try{const _sst=sel.dataset.strokeStyle||'solid';document.querySelectorAll('.sh-stroke-style-btn').forEach(b=>b.classList.toggle('active',b.dataset.style===_sst));}catch(e){}
     document.getElementById('sh-rx').value=sel.dataset.rx||0;
     document.getElementById('sh-fill-op').value=sel.dataset.fillOp||1;
+    // Hide fill section for noFill shapes (line, wave)
+    try{
+      const _shapeId = sel.dataset.shape;
+      const _sh = typeof SHAPES!=='undefined' ? SHAPES.find(s=>s.id===_shapeId) : null;
+      const _fillSec = document.getElementById('sh-fill-section');
+      if(_fillSec) _fillSec.style.display = (_sh&&_sh.noFill) ? 'none' : '';
+    }catch(e){}
     document.getElementById('sh-shadow').checked=sel.dataset.shadow==='true';
     document.getElementById('sh-sb').value=sel.dataset.shadowBlur||8;
     try{const sc=sel.dataset.shadowColor||'#000000';document.getElementById('sh-sc-preview').style.background=sc;}catch(e){}

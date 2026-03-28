@@ -97,8 +97,9 @@ function insertShapeSelected(){
   window._shapeReplaceMode=false;
   pushUndo();
   const _isCallout=sh.special==='callout';
+  const _insertFill = sh.noFill ? 'none' : fill;
   const d={id:'e'+(++ec),type:'shape',x:snapV((canvasW-200)/2),y:snapV((canvasH-200)/2),w:snapV(200),h:snapV(200),
-    shape:sh.id,fill,stroke,sw,rx:_isCallout?12:0,fillOp:1,shadow:false,shadowBlur:8,shadowColor:'#000000',
+    shape:sh.id,fill:_insertFill,stroke,sw,rx:_isCallout?12:0,fillOp:1,shadow:false,shadowBlur:8,shadowColor:'#000000',
     shapeHtml:'',shapeTextCss:'font-size:24px;font-weight:700;color:#ffffff;text-align:center;',
     tailX:_isCallout?0:undefined,tailY:_isCallout?130:undefined,rot:0,anims:[]};
   slides[cur].els.push(d);mkEl(d);save();drawThumbs();saveState();
@@ -384,7 +385,9 @@ function _extractPolygonPts(pathStr) {
 function buildShapeSVG(d, w, h) {
   const sh = SHAPES.find(s => s.id === d.shape) || SHAPES[0];
   const op = d.fillOp === undefined ? 1 : +d.fillOp;
-  const fill = (d.fill && d.fill !== 'none') ? d.fill : (d.fill === 'none' ? 'none' : '#3b82f6');
+  // noFill shapes (line, wave) always render without fill
+  const _noFill = sh.noFill || false;
+  const fill = _noFill ? 'none' : ((d.fill && d.fill !== 'none') ? d.fill : (d.fill === 'none' ? 'none' : '#3b82f6'));
   const hasFill = fill !== 'none';
   const sw = d.sw === undefined ? 2 : +d.sw;
   const strokeColor = d.stroke || '#1d4ed8';
@@ -512,6 +515,7 @@ function buildShapeSVG(d, w, h) {
   }
   const defsContent = (filterDef || '') + (defBlock || '');
   const defs = defsContent ? `<defs>${defsContent}</defs>` : '';
+  // For noFill (line/wave) the bounding-box div hit area handles clicks
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="overflow:visible" opacity="${op}">${defs}${shapeDef}</svg>`;
 }
 
@@ -584,6 +588,18 @@ function _applyShapeClipPath(el, d) {
 
   const w = parseInt(el.style.width) || d.w;
   const h = parseInt(el.style.height) || d.h;
+
+  // noFill shapes (line, wave): use full bounding-box hit area — no clip-path
+  const sh = typeof SHAPES !== 'undefined' ? SHAPES.find(s => s.id === d.shape) : null;
+  if (sh && sh.noFill) {
+    const hit = document.createElement('div');
+    hit.className = 'shape-hit-area';
+    hit.style.cssText = 'position:absolute;inset:0;z-index:10;pointer-events:auto;cursor:move;background:transparent;';
+    el.appendChild(hit);
+    // Do NOT set pointerEvents:none on el — resize handle dispatched events need to reach hidden .rh inside el
+    return;
+  }
+
   const cp = _shapeClipPath(d, w, h);
   if (cp === 'none') return;
 

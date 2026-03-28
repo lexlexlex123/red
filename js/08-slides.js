@@ -168,10 +168,14 @@ function save(){
       else if(_ods&&_ods.tailX!==undefined){d.tailX=_ods.tailX;d.tailY=_ods.tailY;}
       const st=el.querySelector('.shape-text');d.shapeHtml=st?st.innerHTML:'';
       d.shapeTextCss=st?st.getAttribute('style')||'':'';
+      // Preserve shapeTextColorScheme
+      if(_ods&&_ods.shapeTextColorScheme!==undefined)d.shapeTextColorScheme=_ods.shapeTextColorScheme;
+      // Preserve shapeTextColorScheme (not in DOM, only in data)
+      if(_ods&&_ods.shapeTextColorScheme!==undefined)d.shapeTextColorScheme=_ods.shapeTextColorScheme;
     }
     else if(d.type==='svg')d.svgContent=el.querySelector('.ec').innerHTML;
     else if(d.type==='formula'){const dd=oldElsById[d.id];if(dd){d.formulaRaw=dd.formulaRaw;d.formulaLines=dd.formulaLines;d.formulaSvg=dd.formulaSvg;d.formulaColorScheme=dd.formulaColorScheme;}d.formulaColor=el.dataset.formulaColor||'#ffffff';}
-    else if(d.type==='lego'){d.legoStuds=+el.dataset.legoStuds||2;d.legoTall=el.dataset.legoTall==='true';d.legoColor=el.dataset.legoColor||'#e3000b';const _lsc=el.dataset.legoColorScheme;d.legoColorScheme=(!_lsc||_lsc===''||_lsc==='undefined')?undefined:(_lsc==='null'?null:(function(){try{return JSON.parse(_lsc);}catch(e){return undefined;}})());}
+    else if(d.type==='lego'){d.legoStuds=+el.dataset.legoStuds||2;d.legoTall=el.dataset.legoTall==='true';d.legoSlope=el.dataset.legoSlope||null;d.legoStair=el.dataset.legoStair||null;d.legoColor=el.dataset.legoColor||'#e3000b';const _lsc=el.dataset.legoColorScheme;d.legoColorScheme=(!_lsc||_lsc===''||_lsc==='undefined')?undefined:(_lsc==='null'?null:(function(){try{return JSON.parse(_lsc);}catch(e){return undefined;}})());}
     else if(d.type==='graph'){const dd=oldElsById[d.id];if(dd){d.linkedFormulaId=dd.linkedFormulaId;d.graphExpr=dd.graphExpr;d.graphLatex=dd.graphLatex;d.graphExprs=dd.graphExprs;d.graphLines=dd.graphLines;d.graphLineColors=dd.graphLineColors;d.graphImg=dd.graphImg;d.graphColor=dd.graphColor;d.graphBg=dd.graphBg;d.graphDark=dd.graphDark;d.graphXMin=dd.graphXMin;d.graphXMax=dd.graphXMax;d.graphYMin=dd.graphYMin;d.graphYMax=dd.graphYMax;d.graphStep=dd.graphStep;}}
     else if(d.type==='code'){const dd=oldElsById[d.id];if(dd){d.codeLang=dd.codeLang;d.codeTheme=dd.codeTheme;d.codeRaw=dd.codeRaw;d.codeHtml=dd.codeHtml;d.codeFs=dd.codeFs;d.codeBg=dd.codeBg;if(dd.hfParentId)d.hfParentId=dd.hfParentId;}}
     else if(d.type==='htmlframe'){
@@ -248,6 +252,11 @@ function save(){
       // page number element — data stored in slide data, no DOM reading needed
       const dd=oldElsById[d.id];
       if(dd){d.html=dd.html;d.pnStyle=dd.pnStyle;d.pnPos=dd.pnPos;d.pnColor=dd.pnColor;d.pnTextColor=dd.pnTextColor;d.pnFontSize=dd.pnFontSize;d.pnShowTotal=dd.pnShowTotal;}
+    }
+    else if(d.type==='mediavideo'||d.type==='mediaaudio'){
+      // Media elements — all data stored in slides array, not in DOM
+      const dd=oldElsById[d.id];
+      if(dd){d.mediaSrc=dd.mediaSrc;d.mediaSrcType=dd.mediaSrcType;d.mvDisplay=dd.mvDisplay;d.mvControls=dd.mvControls;d.mvStart=dd.mvStart;d.maStart=dd.maStart;d.maContinue=dd.maContinue;d.maVolume=dd.maVolume;d.maTriggerElId=dd.maTriggerElId;d.maTriggerElIds=dd.maTriggerElIds;}
     }
     // Restore decor flags
     if(decorMeta[d.id])Object.assign(d,decorMeta[d.id]);

@@ -9,6 +9,37 @@ function _legoMakeSVG(n,tall,base){
   for(let i=0;i<n;i++){const sx=i*U+(U-SW)/2;studs+=`<rect x="${sx}" y="0" width="${SW}" height="${SH}" rx="1" fill="${stud}"/><rect x="${sx+2}" y="1" width="${SW-6}" height="${Math.max(2,SH-4)}" rx="1" fill="${hl}" opacity="0.5"/>`;}
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${bw} ${bh+SH}" width="${bw}" height="${bh+SH}" style="display:block;overflow:visible">${studs}<rect x="0" y="${SH}" width="${bw}" height="${bh}" rx="1" fill="${base}"/><rect x="1" y="${SH+1}" width="${bw-2}" height="2" rx="1" fill="${hl}" opacity="0.4"/><rect x="0" y="${SH+bh-3}" width="${bw}" height="3" rx="1" fill="${dark}" opacity="0.5"/><rect x="0" y="${SH}" width="2" height="${bh}" rx="1" fill="${dark}" opacity="0.28"/><rect x="${bw-2}" y="${SH}" width="2" height="${bh}" rx="1" fill="${dark}" opacity="0.38"/></svg>`;
 }
+function _legoMakeSlopeSVG(n,dir,base){
+  const U=40,SH=10,FH=12,TH=36,SW=26,bw=n*U,totalH=SH+TH;
+  function blend(hex,r2,g2,b2,t){const h=hex.replace('#','');const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);return '#'+[r,g,b].map((v,i)=>Math.round(v+([r2,g2,b2][i]-v)*t).toString(16).padStart(2,'0')).join('');}
+  const stud=blend(base,0,0,0,.20),hl=blend(base,255,255,255,.65),dark=blend(base,0,0,0,.30);
+  const hiIdx=dir==='slope-right'?0:n-1,hiX=hiIdx*U,sx=hiX+(U-SW)/2;
+  const yBodyTop=SH,yBot=totalH,yLoTop=yBot-FH;
+  const studSvg=`<rect x="${sx}" y="0" width="${SW}" height="${SH}" rx="1" fill="${stud}"/><rect x="${sx+2}" y="1" width="${SW-6}" height="${Math.max(2,SH-4)}" rx="1" fill="${hl}" opacity="0.5"/>`;
+  const hiBlock=`<rect x="${hiX}" y="${yBodyTop}" width="${U}" height="${TH}" rx="1" fill="${base}"/><rect x="${hiX+1}" y="${yBodyTop+1}" width="${U-2}" height="2" fill="${hl}" opacity="0.4"/>`;
+  let slopePts,blikPts;
+  if(dir==='slope-right'){slopePts=`${U},${yBodyTop} ${bw},${yLoTop} ${bw},${yBot} ${U},${yBot}`;blikPts=`${U},${yBodyTop} ${bw},${yLoTop} ${bw},${yLoTop+2} ${U},${yBodyTop+2}`;}
+  else{slopePts=`0,${yLoTop} ${(n-1)*U},${yBodyTop} ${(n-1)*U},${yBot} 0,${yBot}`;blikPts=`0,${yLoTop} ${(n-1)*U},${yBodyTop} ${(n-1)*U},${yBodyTop+2} 0,${yLoTop+2}`;}
+  const sideL=dir==='slope-right'?`<rect x="0" y="${yBodyTop}" width="2" height="${TH}" fill="${dark}" opacity="0.28"/>`:`<rect x="0" y="${yLoTop}" width="2" height="${FH}" fill="${dark}" opacity="0.28"/>`;
+  const sideR=dir==='slope-right'?`<rect x="${bw-2}" y="${yLoTop}" width="2" height="${FH}" fill="${dark}" opacity="0.38"/>`:`<rect x="${bw-2}" y="${yBodyTop}" width="2" height="${TH}" fill="${dark}" opacity="0.38"/>`;
+  const shadow=`<rect x="${dir==='right'?0:U}" y="${yBot-3}" width="${U}" height="3" fill="${dark}" opacity="0.5"/>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${bw} ${totalH}" width="${bw}" height="${totalH}" style="display:block;overflow:hidden">${studSvg}${hiBlock}<polygon points="${slopePts}" fill="${base}"/><polygon points="${blikPts}" fill="${hl}" opacity="0.4"/>${shadow}${sideL}${sideR}</svg>`;
+}
+function _legoMakeStairSVG(base,dir){
+  const U=40,SH=10,FH=12,TH=36,SW=26,bw=2*U,totalH=SH+TH;
+  function blend(hex,r2,g2,b2,t){const h=hex.replace('#','');const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);return '#'+[r,g,b].map((v,i)=>Math.round(v+([r2,g2,b2][i]-v)*t).toString(16).padStart(2,'0')).join('');}
+  const stud=blend(base,0,0,0,.20),hl=blend(base,255,255,255,.65),dark=blend(base,0,0,0,.30);
+  const yTop=SH,yBot=totalH,yVert=yTop+FH;
+  let studs='';
+  for(let i=0;i<2;i++){const sx=i*U+(U-SW)/2;studs+=`<rect x="${sx}" y="0" width="${SW}" height="${SH}" rx="1" fill="${stud}"/><rect x="${sx+2}" y="1" width="${SW-6}" height="${Math.max(2,SH-4)}" rx="1" fill="${hl}" opacity="0.5"/>`;}
+  const bodyPts=dir==='right'?`0,${yTop} ${bw},${yTop} ${bw},${yVert} ${U},${yBot} 0,${yBot}`:`0,${yTop} ${bw},${yTop} ${bw},${yBot} ${U},${yBot} 0,${yVert}`;
+  const body=`<polygon points="${bodyPts}" fill="${base}"/>`;
+  const topBlik=`<rect x="0" y="${yTop}" width="${bw}" height="2" fill="${hl}" opacity="0.4"/>`;
+  const blik=dir==='right'?`<polygon points="${bw},${yVert} ${U},${yBot} ${U},${yBot+2} ${bw},${yVert+2}" fill="${hl}" opacity="0.25"/>`:`<polygon points="0,${yVert} ${U},${yBot} ${U},${yBot+2} 0,${yVert+2}" fill="${hl}" opacity="0.25"/>`;
+  const shadow=`<rect x="${dir==='right'?0:U}" y="${yBot-3}" width="${U}" height="3" fill="${dark}" opacity="0.5"/>`;
+  const sideVert='';
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${bw} ${totalH}" width="${bw}" height="${totalH}" style="display:block;overflow:hidden">${studs}${body}${topBlik}${blik}${shadow}${sideVert}</svg>`;
+}
 let pidx=0,pTransiting=false,autoTimer=null;
 const playedAnimSlides=new Set(); // tracks which slides had their nav-anims already played
 const hiddenElsPerSlide={}; // slideIdx -> Set of elIds that have been hidden by nav trigger
@@ -159,6 +190,8 @@ function gotoPreview(to,dir){
       a.style.transition='none';b.style.transition='none';
       pTransiting=false;
     }
+    // Stop non-persistent audio from current slide
+    if(typeof _mediaStopAllPreviewAudio==='function') _mediaStopAllPreviewAudio();
     buildPSlide(document.getElementById('psa'),to);
     pidx=to;updatePUI();scheduleAuto();return;
   }
@@ -625,7 +658,10 @@ function buildPSlide(container,idx,transOffset){
       el.style.overflow='visible';
       const _lec=document.createElement('div');
       _lec.style.cssText='width:100%;height:100%;overflow:visible;position:relative;';
-      _lec.innerHTML=_legoMakeSVG(d.legoStuds,d.legoTall,d.legoColor||'#e3000b');
+      const _lc=d.legoColor||'#e3000b';
+      if(d.legoSlope)_lec.innerHTML=_legoMakeSlopeSVG(d.legoStuds,d.legoSlope,_lc);
+      else if(d.legoStair)_lec.innerHTML=_legoMakeStairSVG(_lc,d.legoStair);
+      else _lec.innerHTML=_legoMakeSVG(d.legoStuds,d.legoTall,_lc);
       el.appendChild(_lec);
     }else if(d.type==='pagenum'){
       const c=document.createElement('div');
@@ -1344,6 +1380,47 @@ function fireAnim(el,d,a,idx,overrideDelay,_cumTx,_cumTy){
       el._liveAnims.push(anim);
       if(!el._liveAnimsByName) el._liveAnimsByName={};
       el._liveAnimsByName['swing'] = anim;
+    }, delay);
+    return;
+  }
+
+  if(a.name==='float'){
+    const dur  = a.duration||5000;
+    const delay= typeof overrideDelay==='number' ? overrideDelay : (a.delay||0);
+    const cnt  = a.swingCount != null ? a.swingCount : (a.count != null ? a.count : 1);
+    const iters = (!isFinite(cnt)||cnt>=10) ? Infinity : cnt;
+    let floatTarget = el.querySelector('._float_wrap');
+    if(!floatTarget){
+      floatTarget = document.createElement('div');
+      floatTarget.className = '_float_wrap';
+      floatTarget.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
+      const _ec = el.querySelector('.ec');
+      if(_ec){ _ec.parentNode.insertBefore(floatTarget, _ec); floatTarget.appendChild(_ec); }
+      else { while(el.firstChild) floatTarget.appendChild(el.firstChild); el.appendChild(floatTarget); }
+    }
+    const fw = d.w||200, fh = d.h||200;
+    function _mkDrift(){
+      const mx=fw*0.06, my=fh*0.06, N=32;
+      const mkW=()=>[1,2,3].map(freq=>({amp:0.2+Math.random()*0.8,freq,ph:Math.random()*Math.PI*2}));
+      const rx=mkW(), ry=mkW();
+      const smp=(ws,t)=>{const s=ws.reduce((a,w)=>a+w.amp*Math.sin(w.freq*t*Math.PI*2+w.ph),0);return s/ws.reduce((a,w)=>a+w.amp,0);};
+      return Array.from({length:N+1},(_,i)=>{
+        const t=i/N, x=Math.round(smp(rx,t)*mx), y=Math.round(smp(ry,t)*my);
+        const f={transform:`translate(${x}px,${y}px)`};
+        if(i<N)f.easing='ease-in-out';
+        return f;
+      });
+    }
+    setTimeout(()=>{
+      if(el._liveAnimsByName && el._liveAnimsByName['float']){
+        try{el._liveAnimsByName['float'].cancel();}catch(e){}
+        delete el._liveAnimsByName['float'];
+      }
+      const anim = floatTarget.animate(_mkDrift(), {duration:dur, iterations:iters, fill:'none', composite:'replace'});
+      if(!el._liveAnims) el._liveAnims=[];
+      el._liveAnims.push(anim);
+      if(!el._liveAnimsByName) el._liveAnimsByName={};
+      el._liveAnimsByName['float'] = anim;
     }, delay);
     return;
   }

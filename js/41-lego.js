@@ -46,8 +46,140 @@ function makeSVG(n, tall, base) {
 </svg>`;
 }
 
+// ── SVG скошенной детали ─────────────────────────────────────────
+// Деталь: 1×1 высокий блок с шипом + скосная плоская часть рядом
+// dir='slope-right': высокий блок СЛЕВА, скос идёт вправо вниз
+// dir='slope-left':  высокий блок СПРАВА, скос идёт влево вниз
+function makeSlopeSVG(n, dir, base) {
+  const bw  = n * U;
+  const col = _colors(base);
+  // SVG layout (y от верха):
+  //   0..SH        — шип
+  //   SH..SH+TH    — тело (totalH = SH+TH)
+  // Высокий блок = TH, низкий конец = FH
+  const totalH = SH + TH;
+  const yStudTop = 0;
+  const yBodyTop = SH;
+  const yBot     = totalH;          // низ всего SVG
+  const yLoTop   = yBot - FH;       // верх низкого конца
+
+  // Индекс высокого блока
+  const hiIdx = dir === 'slope-right' ? 0 : n - 1;
+  const hiX   = hiIdx * U;
+
+  // Шип над высоким блоком
+  const sx   = hiX + (U - SW) / 2;
+  const stud = `<rect x="${sx}" y="${yStudTop}" width="${SW}" height="${SH}" rx="1" fill="${col.stud}"/>` +
+               `<rect x="${sx+2}" y="1" width="${SW-6}" height="${Math.max(2,SH-4)}" rx="1" fill="${col.hl}" opacity="0.5"/>`;
+
+  // Высокий блок 1×TH
+  const hiBlock = `<rect x="${hiX}" y="${yBodyTop}" width="${U}" height="${TH}" rx="1" fill="${col.mid}"/>` +
+                  `<rect x="${hiX+1}" y="${yBodyTop+1}" width="${U-2}" height="2" fill="${col.hl}" opacity="0.4"/>`;
+
+  // Скосная часть: трапеция от низа высокого блока (y=yBodyTop..yBot)
+  // до верха низкого конца (y=yLoTop..yBot) по горизонтали
+  // slope-right: блок слева [0..U], скос [U..bw] — трапеция
+  //   точки: (U, yBodyTop), (bw, yLoTop), (bw, yBot), (U, yBot)
+  // slope-left: блок справа [(n-1)U..bw], скос [0..(n-1)U]
+  //   точки: (0, yLoTop), ((n-1)U, yBodyTop), ((n-1)U, yBot), (0, yBot)
+  let slopePts;
+  if (dir === 'slope-right') {
+    slopePts = `${U},${yBodyTop} ${bw},${yLoTop} ${bw},${yBot} ${U},${yBot}`;
+  } else {
+    slopePts = `0,${yLoTop} ${(n-1)*U},${yBodyTop} ${(n-1)*U},${yBot} 0,${yBot}`;
+  }
+  const slopeBody = `<polygon points="${slopePts}" fill="${col.mid}"/>`;
+
+  // Блик вдоль наклонной верхней грани
+  let blikPts;
+  if (dir === 'slope-right') {
+    blikPts = `${U},${yBodyTop} ${bw},${yLoTop} ${bw},${yLoTop+2} ${U},${yBodyTop+2}`;
+  } else {
+    blikPts = `0,${yLoTop} ${(n-1)*U},${yBodyTop} ${(n-1)*U},${yBodyTop+2} 0,${yLoTop+2}`;
+  }
+  const blik   = `<polygon points="${blikPts}" fill="${col.hl}" opacity="0.4"/>`;
+  const shadow = `<rect x="0" y="${yBot-3}" width="${bw}" height="3" fill="${col.dark}" opacity="0.5"/>`;
+  // Боковые тени
+  const sideL = dir === 'slope-right'
+    ? `<rect x="0" y="${yBodyTop}" width="2" height="${TH}" fill="${col.dark}" opacity="0.28"/>`
+    : `<rect x="0" y="${yLoTop}" width="2" height="${FH}" fill="${col.dark}" opacity="0.28"/>`;
+  const sideR = dir === 'slope-right'
+    ? `<rect x="${bw-2}" y="${yLoTop}" width="2" height="${FH}" fill="${col.dark}" opacity="0.38"/>`
+    : `<rect x="${bw-2}" y="${yBodyTop}" width="2" height="${TH}" fill="${col.dark}" opacity="0.38"/>`;
+
+  return `<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 ${bw} ${totalH}" width="${bw}" height="${totalH}"
+     style="display:block;overflow:hidden">
+  ${stud}${slopeBody}${hiBlock}${blik}${shadow}${sideL}${sideR}
+</svg>`;
+}
+
+// ── Обратный скос ─────────────────────────────────────────────────
+// Сверху горизонталь 2U (два шипа), правая сторона опускается вертикально
+// на (TH-FH), затем наклон к низу левой стороны. Низ = 1U слева.
+// dir='right': вертикаль СПРАВА, наклон к нижнему левому углу
+// dir='left':  вертикаль СЛЕВА, наклон к нижнему правому углу
+function makeStairSVG(base, dir) {
+  const col    = _colors(base);
+  const bw     = 2 * U;
+  const totalH = SH + TH;
+  const yTop   = SH;
+  const yBot   = totalH;
+  const yVert  = yTop + FH;  // низ вертикальной части = yLoTop
+
+  // Два шипа сверху
+  let studs = '';
+  for (let i = 0; i < 2; i++) {
+    const sx = i * U + (U - SW) / 2;
+    studs += `<rect x="${sx}" y="0" width="${SW}" height="${SH}" rx="1" fill="${col.stud}"/>` +
+             `<rect x="${sx+2}" y="1" width="${SW-6}" height="${Math.max(2,SH-4)}" rx="1" fill="${col.hl}" opacity="0.5"/>`;
+  }
+
+  // Пятиугольник:
+  // dir='right':
+  //   (0,yTop) → (bw,yTop) → (bw,yVert) → (0,yBot) — ∧ нижний левый угол
+  //   закрываем: (0,yBot) → (0,yTop)
+  // dir='left':
+  //   (0,yTop) → (bw,yTop) → (bw,yBot) → (0,yVert)
+  let bodyPts;
+  if (dir === 'right') {
+    bodyPts = `0,${yTop} ${bw},${yTop} ${bw},${yVert} ${U},${yBot} 0,${yBot}`;
+  } else {
+    bodyPts = `0,${yTop} ${bw},${yTop} ${bw},${yBot} ${U},${yBot} 0,${yVert}`;
+  }
+  const body = `<polygon points="${bodyPts}" fill="${col.mid}"/>`;
+
+  // Блик по верхней горизонтали
+  const topBlik = `<rect x="0" y="${yTop}" width="${bw}" height="2" fill="${col.hl}" opacity="0.4"/>`;
+
+  // Блик вдоль наклонной грани
+  let blikPts;
+  if (dir === 'right') {
+    blikPts = `${bw},${yVert} 0,${yBot} 0,${yBot+2} ${bw},${yVert+2}`;
+  } else {
+    blikPts = `0,${yVert} ${bw},${yBot} ${bw},${yBot+2} 0,${yVert+2}`;  // нет, блик выше диагонали
+  }
+  // Блик чуть выше диагонали (тонкая полоска)
+  const blik = dir === 'right'
+    ? `<polygon points="${bw},${yVert} ${U},${yBot} ${U},${yBot+2} ${bw},${yVert+2}" fill="${col.hl}" opacity="0.25"/>`
+    : `<polygon points="0,${yVert} ${U},${yBot} ${U},${yBot+2} 0,${yVert+2}" fill="${col.hl}" opacity="0.25"/>`;
+
+  const shadow = `<rect x="${dir==='right'?0:U}" y="${yBot-3}" width="${U}" height="3" fill="${col.dark}" opacity="0.5"/>`;
+
+  // Вертикальная боковая тень (высокая сторона)
+  const sideVert = '';
+
+  return `<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 ${bw} ${totalH}" width="${bw}" height="${totalH}"
+     style="display:block;overflow:hidden">
+  ${studs}${body}${topBlik}${blik}${shadow}${sideVert}
+</svg>`;
+}
+
 // Экспортируем функции глобально
 window._legoMakeSVG = function(n,tall,base){ return makeSVG(n,tall,base); };
+window._legoMakeSlopeSVG = function(n,dir,base){ return makeSlopeSVG(n,dir,base); };
+window._legoMakeStairSVG = function(base,dir){ return makeStairSVG(base,dir); };
 window._refreshAllLegoZ = function(){ _refreshAllZOrders(); };
 window._legoHit = '<div class="lego-hit" style="position:absolute;inset:0;z-index:1;cursor:move;"></div>';
 
@@ -91,14 +223,15 @@ function _occupiedCells(col, row, n, tall) {
 
 // Все занятые ячейки на слайде (кроме skipId)
 function _allOccupied(skipId) {
-  const cv = document.getElementById('canvas'); if (!cv) return new Set();
+  const cv = _legoLayer(); if (!cv) return new Set();
   const occupied = new Set();
   cv.querySelectorAll('.el[data-type="lego"]').forEach(el => {
     if (skipId && el.dataset.id === skipId) return;
     const col = Math.round(parseInt(el.style.left) / U);
     const row = Math.round(parseInt(el.style.top)  / GY);
     const n   = +el.dataset.legoStuds || 2;
-    const tall = el.dataset.legoTall === 'true';
+    // slope and stair are 3 rows tall like tall blocks
+    const tall = el.dataset.legoTall === 'true' || !!el.dataset.legoSlope || !!el.dataset.legoStair;
     _occupiedCells(col, row, n, tall).forEach(c => occupied.add(c));
   });
   return occupied;
@@ -141,25 +274,36 @@ function _updateZOrder(el) {
   el.style.zIndex = '';
 }
 
-function _refreshAllZOrders() {
-  const cv = document.getElementById('canvas'); if (!cv) return;
-  // Снимаем inline z-index со всех лего
-  cv.querySelectorAll('.el[data-type="lego"]').forEach(el => { el.style.zIndex = ''; });
-  // Сортируем лего-детали в DOM по Y (убывание): деталь с МЕНЬШИМ Y идёт ПОЗЖЕ в DOM
-  // => в CSS без z-index позднее = выше, деталь сверху (меньший Y) перекрывает пупырышки нижней
-  const legoEls = Array.from(cv.querySelectorAll('.el[data-type="lego"]'));
-  if (legoEls.length < 2) return;
-  // Сортируем: больший Y → раньше в DOM (ниже визуально), меньший Y → позже (выше)
-  legoEls.sort((a, b) => (parseInt(b.style.top)||0) - (parseInt(a.style.top)||0));
-  // Находим первый не-лего элемент чтобы вставить лего перед ним
-  // (лего как группа находятся внизу стека среди не-декоров)
-  // Вставляем в правильном порядке: первый в legoEls (самый нижний Y) первым
-  legoEls.forEach(el => {
-    // Ищем позицию: вставляем так чтобы лего шли в конце (самый последний = наименьший Y)
-    cv.appendChild(el);
-  });
+function _legoLayer() {
+  return document.getElementById('lego-layer') || document.getElementById('canvas');
 }
 
+function _refreshAllZOrders() {
+  const ll = _legoLayer(); if (!ll) return;
+  ll.querySelectorAll('.el[data-type="lego"]').forEach(el => { el.style.zIndex = ''; });
+  const legoEls = Array.from(ll.querySelectorAll('.el[data-type="lego"]'));
+  if (legoEls.length < 2) return;
+  const selId = typeof sel !== 'undefined' && sel ? sel.dataset.id : null;
+  const selEl = selId ? legoEls.find(e => e.dataset.id === selId) : null;
+  const rest = selEl ? legoEls.filter(e => e !== selEl) : legoEls;
+  rest.sort((a, b) => {
+    const ay = parseInt(a.style.top)||0, by = parseInt(b.style.top)||0;
+    if (by !== ay) return by - ay;
+    const aSloped = !!(a.dataset.legoSlope || a.dataset.legoStair);
+    const bSloped = !!(b.dataset.legoSlope || b.dataset.legoStair);
+    if (aSloped && !bSloped) return -1;
+    if (!aSloped && bSloped) return 1;
+    return 0;
+  });
+
+  rest.forEach(el => { ll.appendChild(el); });
+  if (selEl) ll.appendChild(selEl);
+  const overlay = document.getElementById('handles-overlay');
+  if (overlay && overlay.parentElement !== ll) {
+    const cv2 = document.getElementById('canvas');
+    if (cv2) cv2.appendChild(overlay);
+  }
+}
 // ── Состояние ─────────────────────────────────────────────────────
 let _color = '#e3000b';
 let _colorScheme = null; // null=кастомный, {col,row}=из палитры схемы
@@ -174,6 +318,10 @@ const PIECES = [
   { id:'t2', n:2, tall:true,  label:'1×2 блок'    },
   { id:'t3', n:3, tall:true,  label:'1×3 блок'    },
   { id:'t4', n:4, tall:true,  label:'1×4 блок'    },
+  { id:'sr', n:2, slope:'slope-right', label:'Скос →' },
+  { id:'sl', n:2, slope:'slope-left',  label:'Скос ←' },
+  { id:'stair-r', n:2, stair:'right', label:'Обратный скос →' },
+  { id:'stair-l', n:2, stair:'left',  label:'Обратный скос ←' },
 ];
 
 // ── Панель ────────────────────────────────────────────────────────
@@ -246,7 +394,9 @@ window.legoOnColorPick = function(c, sr) {
       if (ec_) {
         const n = +m.dataset.legoStuds||2;
         const tall = m.dataset.legoTall==='true';
-        ec_.innerHTML = makeSVG(n, tall, c) + '<div class="lego-hit" style="position:absolute;inset:0;z-index:1;cursor:move;"></div>';
+        const slope_ = m.dataset.legoSlope||null;
+        const stair_ = m.dataset.legoStair||null;
+        ec_.innerHTML = (slope_ ? makeSlopeSVG(n, slope_, c) : stair_ ? makeStairSVG(c, stair_) : makeSVG(n, tall, c)) + '<div class="lego-hit" style="position:absolute;inset:0;z-index:1;cursor:move;"></div>';
       }
       const d = slides[cur]&&slides[cur].els.find(e=>e.id===m.dataset.id);
       if (d) { d.legoColor = c; d.legoColorScheme = _colorScheme; }
@@ -263,16 +413,19 @@ function _buildGrid() {
   if (!grid) return;
   grid.innerHTML = '';
   PIECES.forEach(piece => {
-    const bh = (piece.tall ? TH : FH) + SH;
+    const isSlope = !!piece.slope;
+    const isStair = !!piece.stair;
+    const bh = isStair ? (TH+FH+SH) : isSlope ? (TH+SH) : ((piece.tall ? TH : FH) + SH);
+    const svg = isSlope ? makeSlopeSVG(piece.n, piece.slope, _color) : isStair ? makeStairSVG(_color, piece.stair) : makeSVG(piece.n, piece.tall, _color);
     const cell = document.createElement('div');
-    cell.style.cssText = `background:var(--surface2);border:1px solid var(--border2);
-      border-radius:6px;padding:8px 4px 5px;cursor:grab;display:flex;flex-direction:column;
-      align-items:center;gap:3px;transition:border-color .15s,background .15s;
-      user-select:none;overflow:hidden;`;
-    cell.innerHTML = `<div style="display:flex;justify-content:center;align-items:flex-end;min-height:${bh+4}px">
-        ${makeSVG(piece.n, piece.tall, _color)}
-      </div>
-      <span style="font-size:9px;color:var(--text3);text-align:center">${piece.label}</span>`;
+    cell.style.cssText = 'background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:8px 4px 5px;cursor:grab;display:flex;flex-direction:column;align-items:center;gap:3px;transition:border-color .15s,background .15s;user-select:none;overflow:hidden;';
+    const d = document.createElement('div');
+    d.style.cssText = 'display:flex;justify-content:center;align-items:flex-end;min-height:'+(bh+4)+'px';
+    d.innerHTML = svg;
+    const lbl = document.createElement('span');
+    lbl.style.cssText = 'font-size:9px;color:var(--text3);text-align:center';
+    lbl.textContent = piece.label;
+    cell.appendChild(d); cell.appendChild(lbl);
     cell.addEventListener('mouseenter',()=>{cell.style.borderColor='var(--accent)';cell.style.background='var(--surface3)';});
     cell.addEventListener('mouseleave',()=>{cell.style.borderColor='var(--border2)';cell.style.background='var(--surface2)';});
     cell.addEventListener('mousedown', e => {
@@ -288,39 +441,53 @@ function _buildGrid() {
 (function(){
   const _orig = window.syncProps;
   window.syncProps = function() {
-    if (_orig) _orig();
-    const panel = document.getElementById('legoprops');
-    if (!panel) return;
-    const isLego = typeof sel!=='undefined' && sel && sel.dataset.type==='lego';
-    panel.style.display = isLego ? 'flex' : 'none';
-    if (isLego) panel.style.flexDirection = 'column';
-
+    const isLego = typeof sel !== 'undefined' && sel && sel.dataset.type === 'lego';
+    const panelOpen = (function(){
+      const p = document.getElementById('legoprops');
+      return p && p.style.display === 'flex';
+    })();
     if (isLego) {
+      // Pre-hide slide-props so _orig cannot show it
       const sp = document.getElementById('slide-props');
       if (sp) sp.style.display = 'none';
-      // Скрываем все type-панели
-      ['tprops','shprops','imgprops','codeprops','mdprops','formulaprops',
-       'graphprops','tableprops','genprops','qrprops','iconprops','hfprops',
-       'hoverprops'].forEach(id => {
+      const ns = document.getElementById('nosel');
+      if (ns) ns.style.display = 'none';
+    }
+
+    if (_orig) _orig();
+
+    const panel = document.getElementById('legoprops');
+    if (!panel) return;
+
+    if (isLego) {
+      panel.style.display = 'flex';
+      panel.style.flexDirection = 'column';
+
+      // Re-hide everything _orig may have re-shown
+      ['slide-props','tprops','shprops','imgprops','codeprops','mdprops','formulaprops',
+       'graphprops','tableprops','genprops','qrprops','iconprops','hfprops','hoverprops',
+       'nosel'].forEach(id => {
         const el_ = document.getElementById(id);
         if (el_) el_.style.display = 'none';
       });
-      // Скрываем блок X/Y/Ш/В/Поворот и секцию Ссылка
       ['lego-hide-dims','lego-hide-link-ph','lego-hide-link-body'].forEach(id => {
         const e_ = document.getElementById(id);
         if (e_) e_.style.display = 'none';
       });
-      // Скрываем заголовок ЭЛЕМЕНТ
       const elph = document.querySelector('#elprops > .ph');
       if (elph) elph.style.display = 'none';
-      // Показываем цвет выбранной детали в пикере, но НЕ меняем _color для новых блоков
+
+      // Sync color to selected block
       const c = sel.dataset.legoColor || '#e3000b';
       const inner = document.getElementById('lego-color-inner');
       if (inner) inner.style.background = c;
       const hexEl = document.getElementById('lego-color-hex');
       if (hexEl) hexEl.value = c;
+      if (c !== _color) { _color = c; _buildGrid(); }
+
     } else {
-      // Восстанавливаем скрытые секции
+      // Not lego selected — hide lego panel, restore everything
+      panel.style.display = 'none';
       ['lego-hide-dims','lego-hide-link-ph','lego-hide-link-body'].forEach(id => {
         const e_ = document.getElementById(id);
         if (e_) e_.style.display = '';
@@ -360,12 +527,12 @@ function _buildGrid() {
 })();
 
 function _mkLegoEl(d) {
-  const cv = document.getElementById('canvas'); if (!cv) return;
+  const cv = _legoLayer(); if (!cv) return;
 
   // Snap к сетке при создании из сохранённых данных
   d.x = Math.round(d.x / U) * U;
   d.y = Math.round(d.y / GY) * GY;
-  const bh = (d.legoTall ? TH : FH);
+  const bh = d.legoStair ? TH : d.legoSlope ? TH : (d.legoTall ? TH : FH);
   d.w = d.legoStuds * U;
   d.h = bh + SH;
 
@@ -375,6 +542,8 @@ function _mkLegoEl(d) {
   el.dataset.type      = 'lego';
   el.dataset.legoStuds = d.legoStuds;
   el.dataset.legoTall  = d.legoTall ? 'true' : 'false';
+  el.dataset.legoSlope = d.legoSlope || '';
+  el.dataset.legoStair = d.legoStair || '';
   el.dataset.legoColor       = d.legoColor || '#e3000b';
   // null → 'null' (кастомный), {col,row} → '{...}', undefined → '' (не задан)
   el.dataset.legoColorScheme = d.legoColorScheme !== undefined ? JSON.stringify(d.legoColorScheme) : '';
@@ -387,7 +556,8 @@ function _mkLegoEl(d) {
   const ec_ = document.createElement('div');
   ec_.className = 'ec';
   ec_.style.cssText = 'width:100%;height:100%;overflow:visible;position:relative;';
-  ec_.innerHTML = makeSVG(d.legoStuds, d.legoTall, d.legoColor || '#e3000b');
+  const _lc = d.legoColor||'#e3000b';
+  ec_.innerHTML = d.legoSlope ? makeSlopeSVG(d.legoStuds, d.legoSlope, _lc) : d.legoStair ? makeStairSVG(_lc, d.legoStair) : makeSVG(d.legoStuds, d.legoTall, _lc);
 
   // Hit-area для надёжного клика
   const hit = document.createElement('div');
@@ -460,6 +630,8 @@ function _mkLegoDrag(el, c) {
         y:    parseInt(m.style.top),
         n:    +m.dataset.legoStuds || 2,
         tall: m.dataset.legoTall === 'true',
+        slope: m.dataset.legoSlope || null,
+        stair: m.dataset.legoStair || null,
         id:   m.dataset.id,
       });
     });
@@ -499,14 +671,15 @@ function _mkLegoDrag(el, c) {
       const dRow = Math.round((refCurT - refOrig.y) / GY);
 
       // Строим занятые ячейки НЕ перемещаемых элементов
-      const cv = document.getElementById('canvas');
+      const cv = _legoLayer();
       const fixedOcc = new Set();
       if (cv) {
         cv.querySelectorAll('.el[data-type="lego"]').forEach(ot => {
           if (movingIds.has(ot.dataset.id)) return;
           const col = Math.round(parseInt(ot.style.left) / U);
           const row = Math.round(parseInt(ot.style.top) / GY);
-          _occupiedCells(col, row, +ot.dataset.legoStuds||2, ot.dataset.legoTall==='true')
+          const isTallEl = ot.dataset.legoTall==='true' || !!ot.dataset.legoSlope || !!ot.dataset.legoStair;
+          _occupiedCells(col, row, +ot.dataset.legoStuds||2, isTallEl)
             .forEach(c_ => fixedOcc.add(c_));
         });
       }
@@ -518,7 +691,7 @@ function _mkLegoDrag(el, c) {
         const newCol = Math.round(orig.x / U) + dCol;
         const newRow = Math.round(orig.y / GY) + dRow;
         if (newCol < 0 || newRow < 0) { hasCollision = true; return; }
-        const cells = _occupiedCells(newCol, newRow, orig.n, orig.tall);
+        const cells = _occupiedCells(newCol, newRow, orig.n, orig.tall || !!orig.slope || !!orig.stair);
         for (const c_ of cells) {
           if (fixedOcc.has(c_)) { hasCollision = true; return; }
         }
@@ -564,7 +737,7 @@ function _startPanelDrag(e, piece, color) {
   _ghost = document.createElement('div');
   _ghost.style.cssText = `position:fixed;pointer-events:none;z-index:99999;
     opacity:.82;transform:translate(-50%,-50%);`;
-  _ghost.innerHTML = makeSVG(piece.n, piece.tall, color);
+  _ghost.innerHTML = piece.slope ? makeSlopeSVG(piece.n, piece.slope, color) : piece.stair ? makeStairSVG(color, piece.stair) : makeSVG(piece.n, piece.tall, color);
   document.body.appendChild(_ghost);
   _moveGhost(e.clientX, e.clientY);
   const mv = ev => _moveGhost(ev.clientX, ev.clientY);
@@ -589,7 +762,7 @@ function _moveGhost(cx, cy) {
     const ry = (cy - rect.top)  / zoom;
     if (rx >= 0 && ry >= 0) {
       const bw = _dragPiece.n * U;
-      const bh = (_dragPiece.tall ? TH : FH) + SH;
+      const bh = _dragPiece.stair ? (TH+FH+SH) : _dragPiece.slope ? (TH+SH) : ((_dragPiece.tall ? TH : FH) + SH);
       // Снапим ЛЕВЫЙ КРАЙ детали (не центр курсора)
       const snappedLeft = Math.round((rx - bw/2) / U) * U;
       const snappedTop  = Math.round((ry - bh/2) / GY) * GY;
@@ -616,13 +789,13 @@ function _dropOnCanvas(ev, piece, color) {
   if (rx<0||ry<0||rx>cw||ry>ch) return;
 
   const bw = piece.n * U;
-  const bh = (piece.tall ? TH : FH) + SH;
+  const bh = piece.stair ? (TH+FH+SH) : piece.slope ? (TH+SH) : ((piece.tall ? TH : FH) + SH);
   // Центрируем по телу блока (не по SVG целиком)
   const wantX = Math.round((rx - bw/2) / U) * U;
   const wantY = Math.round((ry - (bh-SH)/2) / GY) * GY;
   const [wantCol, wantRow] = _pxToCell(wantX, wantY);
 
-  const pos = _findFreePos(wantCol, wantRow, piece.n, piece.tall, null);
+  const pos = _findFreePos(wantCol, wantRow, piece.n, piece.tall || !!piece.slope || !!piece.stair, null);
   if (!pos) {
     if (typeof toast==='function') toast('Нет места для блока', 'err');
     return;
@@ -634,12 +807,12 @@ function _dropOnCanvas(ev, piece, color) {
 function _addLegoEl(piece, color, x, y) {
   if (typeof pushUndo==='function') pushUndo();
   const bw = piece.n * U;
-  const bh = (piece.tall ? TH : FH) + SH;
+  const bh = piece.stair ? (TH+FH+SH) : piece.slope ? (TH+SH) : ((piece.tall ? TH : FH) + SH);
   const d = {
     id:'e'+(++ec), type:'lego',
     x, y, w:bw, h:bh, rot:0, anims:[],
-    legoStuds: piece.n, legoTall: piece.tall, legoColor: color,
-    legoColorScheme: _colorScheme, // null=кастом, {col,row}=из палитры, undefined=не задан
+    legoStuds: piece.n, legoTall: piece.tall, legoSlope: piece.slope||null, legoStair: piece.stair||null, legoColor: color,
+    legoColorScheme: _colorScheme,
   };
   slides[cur].els.push(d);
   _mkLegoEl(d);
@@ -688,7 +861,7 @@ function _init() {
   if (!document.getElementById('lego-style')) {
     const s = document.createElement('style');
     s.id = 'lego-style';
-    s.textContent = '.el[data-type="lego"] .rh.rot-h { display:none!important; }';
+    s.textContent = '.el[data-type="lego"] .rh { display:none!important; }';
     document.head.appendChild(s);
   }
 }

@@ -62,7 +62,7 @@ function _apSlide_layout(s,isTitle,headAlign){
   const tables=els.filter(e=>e.type==='table');
   if(isTitle) _apTitle(head,bodies,images,W,H,PAD,GAP,headAlign);
   else        _apContent(head,bodies,images,tables,W,H,PAD,GAP,headAlign);
-  if(head) _apHStyle(head,isTitle?50:40);
+  if(head) _apHStyle(head,isTitle?50:40,isTitle);
   delete s._apHead; delete s._apBodies;
 }
 
@@ -142,11 +142,15 @@ function _apHeading(texts,slide,H,isTitle){
     return p?p.split(/\s+/).filter(Boolean).length:0;
   }
 
-  // Случай А: единственный текст → всегда заголовок
+  // Случай А: единственный текст → всегда заголовок (если не помечен как body)
   if(byY.length===1){
     const el=byY[0];
     const plain=_apPlain(el).trim();
     const words=wc(el);
+    // Уважаем явную роль 'body' — не превращаем в заголовок
+    if(el.textRole==='body'||el.textRole==='subtitle'){
+      return {head:null,bodies:[el]};
+    }
     // Короткий или пустой → заголовок
     if(!plain||words<=12){
   return {head:el,bodies:[]};
@@ -166,8 +170,23 @@ function _apHeading(texts,slide,H,isTitle){
   const byFs=[...byY].sort((a,b)=>csFs(b)-csFs(a));
   const maxFs=csFs(byFs[0]);
 
+  // Приоритет: если есть явные роли — используем их
+  const explicitHead = byY.find(e => e.textRole==='title'||e.textRole==='heading');
+  const explicitBodies = byY.filter(e => e.textRole==='body'||e.textRole==='subtitle');
+  if(explicitHead && explicitBodies.length){
+    return {head:explicitHead, bodies:byY.filter(e=>e!==explicitHead)};
+  }
+  if(explicitHead && !explicitBodies.length){
+    return {head:explicitHead, bodies:byY.filter(e=>e!==explicitHead)};
+  }
+  if(!explicitHead && explicitBodies.length===byY.length){
+    // Все body — первый считаем заголовком
+    return {head:byY[0], bodies:byY.slice(1)};
+  }
+
   // Б0: короткий текст (≤8 слов) в верхней трети — явный заголовок
   for(const el of byY){
+    if(el.textRole==='body'||el.textRole==='subtitle') continue; // skip explicit body
     if((el.y||0)<H*0.35 && wc(el)>=1 && wc(el)<=8){
       return {head:el,bodies:byY.filter(e=>e!==el)};
     }
@@ -246,7 +265,7 @@ function _apThemeColor(){
     return color||'#ffffff';
   }catch(e){ return '#ffffff'; }
 }
-function _apHStyle(el,fs){
+function _apHStyle(el,fs,noUppercase){
   if(!el.cs) el.cs='';
   el.cs=el.cs
     .replace(/font-size\s*:\s*[^;]+;?/gi,'')
@@ -255,9 +274,8 @@ function _apHStyle(el,fs){
     .replace(/\bcolor\s*:\s*[^;]+;?/gi,'');
   const _tc=_apThemeColor();
   el.cs=(el.cs?el.cs.replace(/;$/,'')+';':'')
-    +'font-size:'+fs+'px;font-weight:700;text-transform:uppercase;color:'+_tc;
+    +'font-size:'+fs+'px;font-weight:700;'+(noUppercase?'':'text-transform:uppercase;')+'color:'+_tc;
   el.textRole='heading';
-  // Сбрасываем схемную ссылку — цвет теперь задан явно из темы
   el.textColorScheme={col:7,row:0};
 }
 
@@ -287,42 +305,44 @@ function _apFix(s){
 // ══════════════════════════════════════════════════════════════════
 function _apTitle(head,bodies,images,W,H,PAD,GAP,align){
   const n=images.length, b=bodies[0]||null;
+  // Если нет заголовка — обрабатываем как контентный слайд
+  if(!head){
+    _apTexts(bodies,PAD,PAD,W-PAD*2,H-PAD*2,GAP);
+    _apImgs(images,PAD,PAD,W-PAD*2,H-PAD*2,GAP);
+    return;
+  }
   if(head&&!b&&n===0){
     // Только заголовок — по центру слайда
     _apSetFs(head,52); _apAlign(head,'center'); head.valign='middle';
     const hH=Math.max(head.h||0, Math.round(H*0.25));
     head.h=hH; head.w=W-PAD*2;
     head.x=PAD; head.y=Math.round((H-hH)/2);
-  } else if(head&&b&&n===0){
-    // Заголовок + подпись — случайное расположение (сверху/по центру/снизу)
+  } else if(head&&bodies.length&&n===0){
+    // Заголовок + одна или несколько надписей
     _apAlign(head,'center'); head.valign='middle';
-    _apAlign(b,'center');    b.valign='middle';
 
-    // Высоты с разумными минимумами
-    const hH = Math.min(Math.max(head.h||60, Math.round(H*0.16)), Math.round(H*0.3));
-    const bH = Math.min(Math.max(b.h||50,   Math.round(H*0.1)),  Math.round(H*0.2));
-    head.h = hH; b.h = bH; head.w = W-PAD*2; b.w = W-PAD*2; head.x = PAD; b.x = PAD;
+    // Высота заголовка
+    const hH = Math.min(Math.max(head.h||60, Math.round(H*0.16)), Math.round(H*0.28));
+    head.h = hH; head.w = W-PAD*2; head.x = PAD;
 
-    const totalH = hH + GAP*2 + bH;
-    // Три варианта: подпись сверху/по центру (стек)/снизу
-    const variant = Math.floor(Math.random()*3);
+    // Доступная зона для тел под/над заголовком
+    const bodyZoneH = H - PAD*2 - hH - GAP;
+
+    const variant = Math.floor(Math.random()*2); // 0=заголовок по центру, тела снизу; 1=стек по центру
     if(variant === 0){
-      // Вариант A: заголовок по центру, подпись снизу
       head.y = Math.round((H - hH) / 2);
-      b.y    = Math.min(H - PAD - bH, head.y + hH + GAP*2);
-    } else if(variant === 1){
-      // Вариант B: стек по центру слайда
-      const sy = Math.max(PAD, Math.round((H - totalH) / 2));
-      head.y = sy;
-      b.y    = sy + hH + GAP*2;
+      const bodyY = Math.min(H - PAD - 60, head.y + hH + GAP);
+      const bodyH = H - PAD - bodyY;
+      _apTexts(bodies, PAD, bodyY, W-PAD*2, Math.max(40, bodyH), GAP);
     } else {
-      // Вариант C: подпись сверху, заголовок по центру
-      b.y    = PAD;
-      head.y = Math.max(b.y + bH + GAP*2, Math.round((H - hH) / 2));
+      const totalEstH = hH + GAP*2 + Math.round(H*0.12)*bodies.length;
+      const sy = Math.max(PAD, Math.round((H - totalEstH) / 2));
+      head.y = sy;
+      const bodyY = sy + hH + GAP;
+      const bodyH = H - PAD - bodyY;
+      _apTexts(bodies, PAD, bodyY, W-PAD*2, Math.max(40, bodyH), GAP);
     }
-    // Финальная защита — не выходим за границы
     head.y = Math.max(PAD, Math.min(head.y, H - PAD - hH));
-    b.y    = Math.max(PAD, Math.min(b.y,    H - PAD - bH));
   } else if(head&&n===1){
     // Заголовок слева, картинка справа
     _apAlign(head,'left'); head.valign='middle';
@@ -427,7 +447,7 @@ function _apTexts(texts,ax,ay,aw,ah,gap){
 
   // Используем глобальный шрифт (одинаковый для всей презентации)
   // но дополнительно проверяем что он влезает в эту зону
-  let fs = _apGlobalBodyFs||30;
+  let fs = Math.max(_apGlobalBodyFs||30, 30); // title bodies always >= 30px
   const totalNeed = texts.reduce((s,e)=>s+_apEst(e,aw,fs)+10,0)+gap*(texts.length-1);
   if(totalNeed > ah){
     // Глобальный шрифт не влезает в эту зону — уменьшаем локально
@@ -448,7 +468,10 @@ function _apTexts(texts,ax,ay,aw,ah,gap){
     const blockH=Math.max(MIN*2, Math.round(heights[i]*scaleH));
     _apSetFs(el,fs);
     _apSetColor(el,color);
-    el.x=ax; el.y=ay+usedH; el.w=aw; el.h=blockH;
+    // Preserve element's own width if it fits within available area, else use full aw
+    const elW = (el.w && el.w >= 100 && el.w <= aw) ? el.w : aw;
+    const elX = ax + Math.round((aw - elW) / 2); // center within available area
+    el.x=elX; el.y=ay+usedH; el.w=elW; el.h=blockH;
     el.valign='top'; el.textRole='body';
     usedH+=blockH+gap;
   });

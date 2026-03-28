@@ -25,7 +25,10 @@ function mkDrag(el,c){
         e.target.tagName==='ellipse'||e.target.tagName==='circle'||
         e.target.tagName==='polygon'||e.target.tagName==='polyline';
       const isHitArea=e.target.classList&&e.target.classList.contains('shape-hit-area');
-      if(!isSvgPart&&!e.target.closest('.shape-text')&&!isHitArea)return;
+      // noFill shapes (line/wave): when selected, hit area removed, click lands on el div itself
+      const _sh = typeof SHAPES!=='undefined' ? SHAPES.find(s=>s.id===el.dataset.shape) : null;
+      const isNoFillSelf = e.target===el && _sh && _sh.noFill;
+      if(!isSvgPart&&!e.target.closest('.shape-text')&&!isHitArea&&!isNoFillSelf)return;
     }
     // For lego: allow drag/click on any SVG content inside .ec
     if(el.dataset.type==='lego'){
@@ -33,8 +36,13 @@ function mkDrag(el,c){
     }
     // Select element immediately if not already selected, then start drag in same mousedown
     // But don't reset multi-selection if element is already part of it
-    if(!el.classList.contains('sel')&&!(multiSel.size>1&&multiSel.has(el))){
-      if(typeof pickMulti==='function') pickMulti(el, e.shiftKey);
+    if(e.shiftKey && typeof pickMulti==='function'){
+      // Shift: add/remove from multiSel, do NOT start drag
+      pickMulti(el, true);
+      e.preventDefault();
+      return;
+    } else if(!el.classList.contains('sel')&&!(multiSel.size>1&&multiSel.has(el))){
+      if(typeof pickMulti==='function') pickMulti(el, false);
       else pick(el);
     }
     e.preventDefault();on=true;window._anyDragging=true;ox=e.clientX;oy=e.clientY;ol=parseInt(el.style.left);ot=parseInt(el.style.top);
@@ -92,10 +100,14 @@ function mkResize(el,rh,cfg){
       const _z=typeof _canvasZoom==='number'?_canvasZoom:1;
       let nw,nh;
       const _rdx=(e2.clientX-sx)/_z, _rdy=(e2.clientY-sy)/_z;
-      // Project onto element local axes if rotated
+      // Project mouse delta onto element's local axes (accounting for rotation)
+      // CSS rotate(θ) is clockwise. To go from screen→local: rotate by -θ
       const _rot=(parseFloat(el.dataset.rot||0))*Math.PI/180;
-      const localDx=_rot?_rdx*Math.cos(_rot)+_rdy*Math.sin(_rot):_rdx;
-      const localDy=_rot?-_rdx*Math.sin(_rot)+_rdy*Math.cos(_rot):_rdy;
+      const cosR=Math.cos(_rot), sinR=Math.sin(_rot);
+      // Screen space → element local space (inverse rotation)
+      const localDx= _rdx*cosR + _rdy*sinR;
+      const localDy=-_rdx*sinR + _rdy*cosR;
+
       if(isImgCorner){
         const rawDx=cfg.dx*localDx;
         const rawDy=cfg.dy*localDy;
@@ -113,9 +125,47 @@ function mkResize(el,rh,cfg){
         nh=cfg.dy!==0?Math.max(20,sh+cfg.dy*localDy):sh;
       }
 
-      if(document.getElementById('snap-chk').checked){nw=snapV(nw);nh=snapV(nh);}
+      if(document.getElementById('snap-chk').checked&&_rot===0){nw=snapV(nw);nh=snapV(nh);}
       el.style.width=nw+'px';el.style.height=nh+'px';
-      if(cfg.ax)el.style.left=(sl+sw-nw)+'px';if(cfg.ay)el.style.top=(st+sh-nh)+'px';
+
+      // Adjust position so the anchored corner stays visually fixed
+      // The element rotates around its CSS top-left, but visually around its center.
+      // When size changes, we need to shift top-left so center of the anchored edge stays put.
+      if(_rot===0){
+        if(cfg.ax)el.style.left=(sl+sw-nw)+'px';
+        if(cfg.ay)el.style.top=(st+sh-nh)+'px';
+      } else {
+        // CSS transform-origin defaults to 50% 50% (center of element).
+        // So rotation is around center: cx = sl+sw/2, cy = st+sh/2.
+        //
+        // When resizing, the dragged handle moves. The opposite handle must stay fixed.
+        // Since rotation is around center, we:
+        // 1. Find the current center in screen space
+        // 2. Compute where the center MUST BE after resize so the fixed handle stays put
+        // 3. Set new top-left from new center
+        //
+        // The fixed handle is at local offset from center:
+        //   fix_cx = (cfg.ax ? -sw/2 : sw/2) for x   [ax=1 means dragging from left, so right is fixed]
+        //   fix_cy = (cfg.ay ? -sh/2 : sh/2) for y
+        // But for edge handles (dx=0 or dy=0), that axis of center doesn't change:
+        //   dx=0: fix_cx=0 (no horizontal anchor shift)
+        //   dy=0: fix_cy=0
+        const fcx = cfg.dx!==0 ? (cfg.ax ? sw/2 : -sw/2) : 0;
+        const fcy = cfg.dy!==0 ? (cfg.ay ? sh/2 : -sh/2) : 0;
+        // Fixed handle in screen space: center + rotate(fcx, fcy)
+        const oldCx = sl + sw/2, oldCy = st + sh/2;
+        const fix_sx = oldCx + fcx*cosR - fcy*sinR;
+        const fix_sy = oldCy + fcx*sinR + fcy*cosR;
+        // After resize, fixed handle has new local offset from new center:
+        const fcx2 = cfg.dx!==0 ? (cfg.ax ? nw/2 : -nw/2) : 0;
+        const fcy2 = cfg.dy!==0 ? (cfg.ay ? nh/2 : -nh/2) : 0;
+        // New center so that fixed handle stays at (fix_sx, fix_sy):
+        // fix_sx = newCx + fcx2*cosR - fcy2*sinR  →  newCx = fix_sx - fcx2*cosR + fcy2*sinR
+        const newCx = fix_sx - fcx2*cosR + fcy2*sinR;
+        const newCy = fix_sy - fcx2*sinR - fcy2*cosR;
+        el.style.left = Math.round(newCx - nw/2)+'px';
+        el.style.top  = Math.round(newCy - nh/2)+'px';
+      }
       const d=slides[cur]&&slides[cur].els.find(x=>x.id===el.dataset.id);
       if(d&&el.dataset.type==='shape')renderShapeEl(el,d);
       if(d&&el.dataset.type==='table'){d.w=nw;d.h=nh;if(typeof renderTableEl==='function'){if(d.showChart){const sv=el.querySelector('.ec svg');if(sv){sv.setAttribute('width',nw);sv.setAttribute('height',nh);sv.setAttribute('viewBox','0 0 '+nw+' '+nh);}}else{renderTableEl(el,d);}}}
@@ -143,6 +193,14 @@ function mkResize(el,rh,cfg){
       }
       // Full re-render chart/table after resize (chart viewBox was only adjusted during drag)
       if(el.dataset.type==='table'&&typeof renderTableEl==='function'){const dmu=slides[cur]&&slides[cur].els.find(x=>x.id===el.dataset.id);if(dmu)renderTableEl(el,dmu);}
+      // Sync data x/y/w/h from DOM after resize (important for rotated elements)
+      const _dmu2 = slides[cur]&&slides[cur].els.find(x=>x.id===el.dataset.id);
+      if(_dmu2){
+        _dmu2.x=parseInt(el.style.left)||0;
+        _dmu2.y=parseInt(el.style.top)||0;
+        _dmu2.w=parseInt(el.style.width)||0;
+        _dmu2.h=parseInt(el.style.height)||0;
+      }
       commitAll();
     };
     document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);

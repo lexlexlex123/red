@@ -363,18 +363,31 @@ function _updateHandlesOverlay(){
   overlay.style.pointerEvents = 'auto';
 
   const el = typeof sel !== 'undefined' ? sel : null;
-  // Restore any previously hidden rh handles
+  if (!el) { overlay.style.pointerEvents = 'none'; return; }
   document.querySelectorAll('.rh[data-overlay-hidden]').forEach(rh => {
     rh.style.display = '';
     delete rh.dataset.overlayHidden;
   });
-  if(!el) return;
+
+  // Lego blocks: no resize handles, no rotation
+  if(el.dataset.type === 'lego') return;
 
   const elL = parseInt(el.style.left)||0;
   const elT = parseInt(el.style.top)||0;
   const elW = parseInt(el.style.width)||0;
   const elH = parseInt(el.style.height)||0;
-  const elRad = (parseFloat(el.dataset.rot)||0) * Math.PI / 180;
+
+  // Read actual rotation from computed transform matrix (handles CSS animation)
+  let elDeg = parseFloat(el.dataset.rot)||0;
+  try {
+    const mat = new DOMMatrix(getComputedStyle(el).transform);
+    if (mat && !isNaN(mat.a)) {
+      const computedDeg = Math.atan2(mat.b, mat.a) * 180 / Math.PI;
+      // Only use computed if animation is running or differs significantly
+      if (Math.abs(computedDeg - elDeg) > 0.5) elDeg = computedDeg;
+    }
+  } catch(e) {}
+  const elRad = elDeg * Math.PI / 180;
   const cx = elL + elW/2, cy = elT + elH/2;
   const H = 4;
 
@@ -489,18 +502,19 @@ function _updateHandlesOverlay(){
 }
 
 function _rhCursor(cls, rotDeg){
-  // Base cursor directions at rot=0
-  const base = {tl:'nw-resize',tm:'n-resize',tr:'ne-resize',ml:'w-resize',mr:'e-resize',bl:'sw-resize',bm:'s-resize',br:'se-resize'};
-  if(!rotDeg) return base[cls]||'default';
-  // Base angles (degrees, clockwise from east)
-  const baseAngle = {tl:315,tm:270,tr:45,ml:180,mr:0,bl:225,bm:90,br:135}[cls]||0;
+  // Base angle FROM center TO handle, clockwise from North (0=up, 90=right)
+  const baseAngle = {tm:0,tr:45,mr:90,br:135,bm:180,bl:225,ml:270,tl:315}[cls];
+  if(baseAngle===undefined) return 'default';
+  // Add element rotation to get actual screen direction
   const angle = ((baseAngle + rotDeg) % 360 + 360) % 360;
-  const dirs = [
-    [337.5,'e-resize'],[292.5,'ne-resize'],[247.5,'n-resize'],[202.5,'nw-resize'],
-    [157.5,'w-resize'],[112.5,'sw-resize'],[67.5,'s-resize'],[22.5,'se-resize'],[0,'e-resize']
+  // Map angle to CSS cursor (cursor points FROM center TOWARD handle)
+  // 0=N=n-resize, 45=NE=ne-resize, 90=E=e-resize, etc.
+  const cursors = [
+    [22.5,'n-resize'],[67.5,'ne-resize'],[112.5,'e-resize'],[157.5,'se-resize'],
+    [202.5,'s-resize'],[247.5,'sw-resize'],[292.5,'w-resize'],[337.5,'nw-resize'],[360,'n-resize']
   ];
-  for(const [thresh, cur] of dirs){ if(angle>=thresh) return cur; }
-  return 'e-resize';
+  for(const [thresh, cur] of cursors){ if(angle < thresh) return cur; }
+  return 'n-resize';
 }
 
 // Single rotation cursor — clean arc with two arrowheads, white with dark outline
@@ -620,6 +634,8 @@ function _addRotationZones(overlay, el) {
     _rotDragging = true;
 
     const el = _rotEl;
+    // Always ensure rotation is around element center
+    el.style.transformOrigin = '';
     const L = parseInt(el.style.left)||0, T = parseInt(el.style.top)||0;
     const W = parseInt(el.style.width)||0, H = parseInt(el.style.height)||0;
     const cx = L + W/2, cy = T + H/2;
@@ -636,6 +652,10 @@ function _addRotationZones(overlay, el) {
       el.dataset.rot = deg;
       const pRot = document.getElementById('p-rot');
       if (pRot) pRot.value = deg;
+      // Update handles overlay during rotation
+      _rotDragging = false;
+      _updateHandlesOverlay();
+      _rotDragging = true;
       // Rotate cursor with object — find closest corner angle
       const nearest = _getRotCorners(el).reduce((best, c) => {
         const dx = q.x-c.x, dy = q.y-c.y, d = dx*dx+dy*dy;

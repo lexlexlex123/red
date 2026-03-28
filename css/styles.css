@@ -38,13 +38,22 @@ html.light #canvas{box-shadow:0 2px 24px rgba(0,0,0,.12);}
 .sclose{margin-top:20px;width:100%;background:var(--accent);border:none;color:#fff;padding:8px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit;}
 /* RUBBER-BAND & MULTI-SELECT */
 #rubberband{position:absolute;border:1.5px dashed var(--accent);background:rgba(59,130,246,.08);pointer-events:none;display:none;z-index:10002;}
-.el.multi-sel{outline:2px solid var(--accent);outline-offset:1px;}
+.el.multi-sel{outline:2px dashed var(--selb)!important;outline-offset:2px;}
+.el.multi-sel .rh{display:block!important;opacity:0.6;}
 /* Pipette / style-copy mode */
 body.pipette-mode{cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M20.71 5.63l-2.34-2.34a1 1 0 0 0-1.41 0l-3.12 3.12-1.41-1.42-1.42 1.42 1.41 1.41-6.6 6.6A2 2 0 0 0 5 16v3h3a2 2 0 0 0 1.42-.59l6.6-6.6 1.41 1.42 1.42-1.42-1.42-1.41 3.12-3.12a1 1 0 0 0 0-1.65z' fill='%233b82f6'/%3E%3C/svg%3E") 0 24, crosshair !important;}
 body.pipette-mode .el{cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M20.71 5.63l-2.34-2.34a1 1 0 0 0-1.41 0l-3.12 3.12-1.41-1.42-1.42 1.42 1.41 1.41-6.6 6.6A2 2 0 0 0 5 16v3h3a2 2 0 0 0 1.42-.59l6.6-6.6 1.41 1.42 1.42-1.42-1.42-1.41 3.12-3.12a1 1 0 0 0 0-1.65z' fill='%233b82f6'/%3E%3C/svg%3E") 0 24, crosshair !important;;overflow:visible;}
 .pipette-btn.active{background:var(--accentl)!important;border-color:var(--accent)!important;color:var(--accent)!important;}
 html,body{height:100%;overflow:hidden;font-family:var(--font-ui);background:var(--bg);color:var(--text);font-size:12px;}
-body{display:flex;flex-direction:column;}
+body{display:flex;flex-direction:column;caret-color:transparent;}
+/* Prevent text selection on UI elements */
+button,label,svg,.ribbon-tab,.rtab,.albtn,.anim-item,.pr label,
+#props-panel,#slide-panel,#ribbon,#sidebar,.modal-hdr,
+.thumb-wrap,.slide-num,.tog,.tog-wrap{user-select:none;-webkit-user-select:none;}
+/* Allow caret in actual text inputs */
+input[type=text],input[type=number],input[type=email],textarea,[contenteditable=true]{caret-color:auto;}
+/* Canvas elements: no text cursor */
+#canvas,#cwrap,#canvas-container,.el:not([data-editing=true]) .tel{caret-color:transparent;}
 /* RIBBON */
 #ribbon{background:var(--ribbon);border-bottom:1px solid var(--border);flex-shrink:0;user-select:none;display:flex;flex-direction:column;width:100%;}
 /* Свёрнутая лента — только вкладки и импорт/экспорт в одну строку */

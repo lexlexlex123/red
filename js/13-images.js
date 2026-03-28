@@ -640,18 +640,19 @@ function mkEl(d){
       const isSvgPart=ev.target.tagName==='path'||ev.target.tagName==='rect'||
         ev.target.tagName==='ellipse'||ev.target.tagName==='circle'||
         ev.target.tagName==='polygon'||ev.target.tagName==='polyline';
-      if(!isSvgPart&&!ev.target.closest('.shape-text')&&!ev.target.closest('.rh'))return;
+      const isHitArea=ev.target.classList&&ev.target.classList.contains('shape-hit-area');
+      const _sh2=typeof SHAPES!=='undefined'?SHAPES.find(s=>s.id===el.dataset.shape):null;
+      const isNoFillSelf=ev.target===el&&_sh2&&_sh2.noFill;
+      if(!isSvgPart&&!isHitArea&&!isNoFillSelf&&!ev.target.closest('.shape-text')&&!ev.target.closest('.rh'))return;
     }
     ev.stopPropagation();
     // If element is already part of multi-selection, don't reset the group
     if(multiSel.size>1&&multiSel.has(el)&&!ev.shiftKey)return;
-    pickMulti(el,ev.shiftKey);
+    // mkDrag already handles shiftKey via pickMulti — avoid double call
+    if(ev.shiftKey) return;
+    pickMulti(el, false);
   });
-  // Resize observer for shapes
-  if(d.type==='shape'){
-    const ro=new ResizeObserver(()=>{const dd=slides[cur]&&slides[cur].els.find(x=>x.id===el.dataset.id);if(dd)renderShapeEl(el,dd);});
-    ro.observe(el);
-  }
+  // Note: ResizeObserver removed - renderShapeEl is called explicitly from mkResize
 }
 function pick(el){
   // Deselect connector synchronously when picking an element
@@ -687,6 +688,8 @@ function pick(el){
   }
   syncProps();
   if(typeof _updateHandlesOverlay==='function') _updateHandlesOverlay();
+  // Refresh lego z-order so selected element appears on top
+  if(typeof _refreshAllLegoZ==='function') _refreshAllLegoZ();
   if(document.getElementById('anim-panel').classList.contains('open'))renderAnimPanel();
 }
 function desel(){clearGuides();pick(null);}

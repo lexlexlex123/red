@@ -51,6 +51,7 @@ const ANIM_CATS = [
     items: [
       {name:'dance',      label:'Танец',        icon:'💃'},
       {name:'swing',      label:'Качение',      icon:'🎷'},
+      {name:'float',      label:'Плавание',     icon:'🌊'},
       {name:'typewriter', label:'Смена текста',  icon:'⌨'},
     ]
   },
@@ -58,6 +59,33 @@ const ANIM_CATS = [
 
 const ANIM_INFO = {};
 ANIM_CATS.forEach(g => g.items.forEach(it => { ANIM_INFO[it.name] = {label:it.label, icon:it.icon, cat:g.cat}; }));
+
+// ── Float organic smooth drift ───────────────────────────────────
+// Uses integer-frequency sine waves so the loop is perfectly seamless.
+// Each wave completes a whole number of cycles → t=0 and t=1 identical.
+function _floatFrames(fw, fh) {
+  const mx = fw * 0.06, my = fh * 0.06;
+  const N = 32; // many keyframes = smooth
+  // Integer frequencies (1,2,3) ensure perfect loop: sin(n*2π*1+ph)=sin(ph)
+  const mkW = () => [1,2,3].map(freq => ({
+    amp: 0.2 + Math.random() * 0.8,
+    freq,
+    phase: Math.random() * Math.PI * 2
+  }));
+  const rx = mkW(), ry = mkW();
+  const smp = (ws, t) => {
+    const s = ws.reduce((a,w) => a + w.amp * Math.sin(w.freq * t * Math.PI * 2 + w.phase), 0);
+    return s / ws.reduce((a,w) => a + w.amp, 0);
+  };
+  return Array.from({length: N + 1}, (_, i) => {
+    const t = i / N;
+    const x = Math.round(smp(rx, t) * mx);
+    const y = Math.round(smp(ry, t) * my);
+    const frame = {transform: `translate(${x}px,${y}px)`};
+    if (i < N) frame.easing = 'ease-in-out';
+    return frame;
+  });
+}
 
 // Exposed globals so inline onclick handlers can access them
 window._selectedAnimName = null;
@@ -160,6 +188,7 @@ let _animPreviewTimer = null;
       if(animName==='orbitTo'){ anim.orbitR=120; anim.orbitDir='cw'; anim.orbitDeg=360; anim.orbitCx=0; anim.orbitCy=-120; }
       if(animName==='rotate'){ anim.rotateDir='cw'; anim.rotateDeg=360; }
       if(animName==='dance'){ anim.swingCount=1; anim.duration=1200; }
+      if(animName==='float'){ anim.swingCount=10; anim.duration=5000; }
       if(animName==='typewriter'){
         anim.charDelay = 40;
         // Если уже есть typewriter-анимации — fromHtml = toHtml последней из них
@@ -254,24 +283,39 @@ let _animPreviewTimer = null;
       const soy = animData && animData.swingOy != null ? animData.swingOy : sh/2;
       const ox = (50 + sox/sw*100).toFixed(2)+'%';
       const oy = (50 + soy/sh*100).toFixed(2)+'%';
-      const prev = el.style.transformOrigin;
-      el.style.transformOrigin = ox+' '+oy;
-      el.animate([
+      // Run on .ec child so el's rotation transform is preserved
+      const swTarget = el.querySelector('.ec') || el;
+      swTarget.style.transformOrigin = ox+' '+oy;
+      const anim = swTarget.animate([
         {transform:'rotate(0deg)'},{transform:'rotate(30deg)'},{transform:'rotate(-30deg)'},
         {transform:'rotate(20deg)'},{transform:'rotate(-20deg)'},{transform:'rotate(10deg)'},
         {transform:'rotate(-10deg)'},{transform:'rotate(5deg)'},{transform:'rotate(-3deg)'},
         {transform:'rotate(0deg)'}
       ], {duration:1200, easing:'ease-in-out', fill:'none'});
+      anim.onfinish = () => { swTarget.style.transformOrigin = ''; };
       clearTimeout(_animPreviewTimer);
-      _animPreviewTimer = setTimeout(()=>{ el.style.transformOrigin = prev; }, 1300);
+      _animPreviewTimer = setTimeout(()=>{ swTarget.style.transformOrigin = ''; }, 1400);
       return;
     }
     const cssClass = ANIM_CSS[animName]; if(!cssClass) return;
-    el.style.animation = '';
-    void el.offsetWidth;
-    el.style.animation = cssClass + ' 0.6s ease-out 0s both';
+    // Emphasis/live animations (dance, pulse, shake etc.) set transform absolutely —
+    // run them on .ec child so they don't override el's rotation transform
+    const isEmphasisLive = ['dance','pulse','shake','flash','swing','float'].includes(animName);
+    const animTarget = isEmphasisLive ? (el.querySelector('.ec') || el) : el;
+    if(animName === 'float'){
+      const fw = parseInt(el.style.width)||200, fh = parseInt(el.style.height)||200;
+      const floatTarget = el.querySelector('.ec') || el;
+      const previewFrames = _floatFrames(fw, fh);
+      floatTarget.animate(previewFrames, {duration:3000, fill:'none', iterations:1});
+      clearTimeout(_animPreviewTimer);
+      _animPreviewTimer = setTimeout(()=>{ floatTarget.style.transform=''; }, 3100);
+      return;
+    }
+    animTarget.style.animation = '';
+    void animTarget.offsetWidth;
+    animTarget.style.animation = cssClass + ' 0.6s ease-out 0s ' + (isEmphasisLive ? 'none' : 'both');
     clearTimeout(_animPreviewTimer);
-    _animPreviewTimer = setTimeout(()=>{ el.style.animation = ''; }, 700);
+    _animPreviewTimer = setTimeout(()=>{ animTarget.style.animation = ''; }, 700);
   }
 
   window.renderAnimPanel = function(){
@@ -598,50 +642,61 @@ let _animPreviewTimer = null;
       }
 
       // swing: количество качаний в стиле поля длительности
+
+      function _mkRepeatRow(animName2, d2, ai2, cnt, isInf) {
+        const rw = document.createElement('div');
+        rw.className = 'anim-row-props';
+        rw.style.marginTop = '4px';
+
+        // Left: number input
+        const numLabel = document.createElement('label');
+        numLabel.textContent = 'Повторений';
+        const numInput = document.createElement('input');
+        numInput.type = 'number'; numInput.min = '1'; numInput.max = '9'; numInput.step = '1';
+        numInput.value = isInf ? 1 : cnt;
+        if(isInf) numInput.disabled = true;
+        numInput.addEventListener('mousedown', e=>e.stopPropagation());
+        numInput.addEventListener('input',  ()=>updateAnimProp(d2.id, ai2, 'swingCount', +numInput.value||1));
+        numInput.addEventListener('change', ()=>updateAnimProp(d2.id, ai2, 'swingCount', +numInput.value||1));
+        numLabel.appendChild(numInput);
+        rw.appendChild(numLabel);
+
+        // Right: tog toggle + "∞"
+        const togWrap = document.createElement('div');
+        togWrap.style.cssText = 'display:flex;align-items:center;gap:5px;cursor:pointer;';
+        togWrap.innerHTML = '<label class="tog" style="flex-shrink:0;pointer-events:none">'
+          + '<input type="checkbox" style="opacity:0;width:0;height:0;position:absolute"'
+          + (isInf?' checked':'') + '>'
+          + '<span class="tog-track"></span><span class="tog-thumb"></span></label>'
+          + '<span style="font-size:10px;color:var(--text2)">∞</span>';
+        const togChk = togWrap.querySelector('input[type=checkbox]');
+        togWrap.addEventListener('mousedown', e=>{ e.stopPropagation(); e.preventDefault(); });
+        togWrap.addEventListener('click', e=>{ e.stopPropagation(); e.preventDefault();
+          const v = !togChk.checked;
+          togChk.checked = v;
+          togWrap.querySelector('.tog-thumb').style.transform = v ? 'translateX(16px)' : '';
+          togWrap.querySelector('.tog-track').style.background = v ? 'var(--accent)' : '';
+          updateAnimProp(d2.id, ai2, 'swingCount', v ? 10 : 1);
+          numInput.disabled = v; numInput.value = v ? 1 : (cnt >= 10 ? 1 : cnt);
+        });
+        rw.appendChild(togWrap);
+        return rw;
+      }
       if(a.name === 'swing'){
-        const swingDiv = document.createElement('div');
-        swingDiv.className = 'anim-row-props';
-        swingDiv.style.marginTop = '4px';
         const _cnt = a.swingCount != null ? a.swingCount : 1;
-        const _isInf = _cnt >= 10;
-        swingDiv.innerHTML = `
-          <label>Повторений<input type="number" value="${_isInf ? '∞' : _cnt}" min="1" max="9" step="1"
-            placeholder="1"
-            oninput="updateAnimProp('${d.id}',${ai},'swingCount',+this.value||1)"
-            onchange="updateAnimProp('${d.id}',${ai},'swingCount',+this.value||1)"></label>
-          <label style="position:relative">∞ повторять
-            <input type="checkbox" ${_isInf?'checked':''} style="width:auto;margin-left:4px"
-              onchange="updateAnimProp('${d.id}',${ai},'swingCount',this.checked?10:1);renderAnimPanel()">
-          </label>
-        `;
-        props.appendChild(swingDiv);
+        props.appendChild(_mkRepeatRow('swing', d, ai, _cnt, _cnt>=10));
       }
 
-      // dance: stopAfter checkbox
+      // dance: repeat count
       if(a.name === 'dance'){
-        const liveGrid = document.createElement('div');
-        liveGrid.className = 'anim-row-props';
-        liveGrid.style.marginTop = '4px';
-        // Количество повторений (как у swing)
         const _dcnt = a.swingCount != null ? a.swingCount : 1;
-        liveGrid.innerHTML = `<label>Кол-во раз
-          <input type="number" min="1" max="9" value="${_dcnt>=10?1:_dcnt}" ${_dcnt>=10?'disabled':''} style="width:48px"
-            oninput="updateAnimProp('${d.id}',${ai},'swingCount',+this.value||1)"
-            onchange="updateAnimProp('${d.id}',${ai},'swingCount',+this.value||1)"></label>`;
-        const infLabel = document.createElement('label');
-        infLabel.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer;grid-column:1/-1;font-size:9px;color:var(--text2);';
-        const infChk = document.createElement('input');
-        infChk.type = 'checkbox';
-        infChk.checked = _dcnt >= 10;
-        infChk.addEventListener('mousedown', e=>e.stopPropagation());
-        infChk.addEventListener('change', ()=>{
-          updateAnimProp(d.id, ai, 'swingCount', infChk.checked?10:1);
-          renderAnimPanel();
-        });
-        infLabel.appendChild(infChk);
-        infLabel.appendChild(document.createTextNode('Бесконечно'));
-        liveGrid.appendChild(infLabel);
-        props.appendChild(liveGrid);
+        props.appendChild(_mkRepeatRow('dance', d, ai, _dcnt, _dcnt>=10));
+      }
+
+      // float: repeat count only
+      if(a.name === 'float'){
+        const _fcnt = a.swingCount != null ? a.swingCount : 1;
+        props.appendChild(_mkRepeatRow('float', d, ai, _fcnt, _fcnt>=10));
       }
 
       // orbitTo: radius, direction, degrees

@@ -46,27 +46,55 @@ function alignEl(t,scope){
     if(gEls.length>1) targets=gEls;
   }
   pushUndo();
-  // Bounding box of the selection
+
+  // Helper: get rotated visual bounding box of an element
+  function getRotBB(el){
+    const l=parseInt(el.style.left)||0, tp=parseInt(el.style.top)||0;
+    const w=parseInt(el.style.width)||0, h=parseInt(el.style.height)||0;
+    const rot=(parseFloat(el.dataset.rot)||0)*Math.PI/180;
+    if(!rot) return {l,t:tp,r:l+w,b:tp+h,cx:l+w/2,cy:tp+h/2};
+    const cx=l+w/2, cy=tp+h/2;
+    const cos=Math.cos(rot), sin=Math.sin(rot);
+    // 4 corners in screen space
+    const corners=[[-w/2,-h/2],[w/2,-h/2],[w/2,h/2],[-w/2,h/2]].map(([dx,dy])=>({
+      x:cx+dx*cos-dy*sin, y:cy+dx*sin+dy*cos
+    }));
+    const xs=corners.map(c=>c.x), ys=corners.map(c=>c.y);
+    return {l:Math.min(...xs),t:Math.min(...ys),r:Math.max(...xs),b:Math.max(...ys),cx,cy};
+  }
+
+  // Bounding box of the selection (visual, rotation-aware)
   const bb={l:Infinity,t:Infinity,r:-Infinity,b:-Infinity};
-  targets.forEach(el=>{const l=parseInt(el.style.left),tp=parseInt(el.style.top),w=parseInt(el.style.width),h=parseInt(el.style.height);bb.l=Math.min(bb.l,l);bb.t=Math.min(bb.t,tp);bb.r=Math.max(bb.r,l+w);bb.b=Math.max(bb.b,tp+h);});
-  // For 1 element OR explicit 'slide' scope → align to slide
-  const toSlide=(targets.length===1||scope==='slide');
-  const refL=toSlide?0:bb.l, refT=toSlide?0:bb.t;
-  const refR=toSlide?canvasW:bb.r, refB=toSlide?canvasH:bb.b;
+  targets.forEach(el=>{const rb=getRotBB(el);bb.l=Math.min(bb.l,rb.l);bb.t=Math.min(bb.t,rb.t);bb.r=Math.max(bb.r,rb.r);bb.b=Math.max(bb.b,rb.b);});
+  // Reference bounds depend on scope:
+  // 'slide' → align to slide edges
+  // 'sel'   → align to selection bounding box (each element to the group's edge)
+  const refL = scope==='slide' ? 0 : bb.l;
+  const refT = scope==='slide' ? 0 : bb.t;
+  const refR = scope==='slide' ? canvasW : bb.r;
+  const refB = scope==='slide' ? canvasH : bb.b;
   const refMX=(refL+refR)/2, refMY=(refT+refB)/2;
-  // Compute offset to apply to all elements (keeps relative positions intact)
-  const bbW=bb.r-bb.l, bbH=bb.b-bb.t;
   let dx=0,dy=0;
-  if(t==='left')      dx=refL-bb.l;
-  else if(t==='right')  dx=refR-bb.r;
-  else if(t==='top')    dy=refT-bb.t;
-  else if(t==='bottom') dy=refB-bb.b;
-  else if(t==='centerH') dx=snapV(refMX-bbW/2)-bb.l;
-  else if(t==='centerV') dy=snapV(refMY-bbH/2)-bb.t;
-  else if(t==='center'){dx=snapV(refMX-bbW/2)-bb.l;dy=snapV(refMY-bbH/2)-bb.t;}
+  if(t==='centerH') dx=refMX-(bb.l+bb.r)/2;
+  else if(t==='centerV') dy=refMY-(bb.t+bb.b)/2;
+  else if(t==='center'){dx=refMX-(bb.l+bb.r)/2;dy=refMY-(bb.t+bb.b)/2;}
+
+  // Apply: edge alignment = each element individually; center = group moves together
+  const isEdge = t==='left'||t==='right'||t==='top'||t==='bottom';
   targets.forEach(el=>{
-    if(dx!==0) el.style.left=(parseInt(el.style.left)+dx)+'px';
-    if(dy!==0) el.style.top=(parseInt(el.style.top)+dy)+'px';
+    if(isEdge){
+      const rb = getRotBB(el);
+      let edx=0, edy=0;
+      if(t==='left')        edx = refL - rb.l;
+      else if(t==='right')  edx = refR - rb.r;
+      else if(t==='top')    edy = refT - rb.t;
+      else if(t==='bottom') edy = refB - rb.b;
+      if(edx!==0) el.style.left=(parseInt(el.style.left)+Math.round(edx))+'px';
+      if(edy!==0) el.style.top=(parseInt(el.style.top)+Math.round(edy))+'px';
+    } else {
+      if(dx!==0) el.style.left=(parseInt(el.style.left)+Math.round(dx))+'px';
+      if(dy!==0) el.style.top=(parseInt(el.style.top)+Math.round(dy))+'px';
+    }
   });
   syncPos();save();drawThumbs();saveState();
 }

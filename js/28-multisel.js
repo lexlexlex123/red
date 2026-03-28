@@ -79,6 +79,26 @@ function pickMulti(el,shiftKey){
     if(e.target.closest('#handles-overlay'))return;
     // Must be inside cwrap area
     if(!e.target.closest('#cwrap'))return;
+    // Magnetic selection: if near an element within 40px, pick it and skip rubber-band
+    if(e.target.closest('#canvas')||e.target.closest('#canvas-bg-rect')||e.target.closest('#lego-layer')){
+      const SNAP_R = 40;
+      const pt2 = toCanvasCoords(e);
+      const allEls = Array.from(cv.querySelectorAll('.el:not(.decor-el)'));
+      let bestEl = null, bestD2 = SNAP_R;
+      allEls.forEach(el => {
+        const l=parseInt(el.style.left)||0, t2=parseInt(el.style.top)||0;
+        const w=parseInt(el.style.width)||0, h=parseInt(el.style.height)||0;
+        const cx2 = Math.max(l, Math.min(pt2.x, l+w));
+        const cy2 = Math.max(t2, Math.min(pt2.y, t2+h));
+        const d2 = Math.hypot(pt2.x-cx2, pt2.y-cy2);
+        if(d2 < bestD2){ bestD2 = d2; bestEl = el; }
+      });
+      if(bestEl){
+        if(e.shiftKey && typeof pickMulti==='function') pickMulti(bestEl, true);
+        else if(typeof pick==='function') pick(bestEl);
+        return;
+      }
+    }
     if(typeof stopTextEditing==='function')stopTextEditing();
     const wasMulti = multiSel.size > 1;
     _justClearedMulti = wasMulti;
