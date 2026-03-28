@@ -430,8 +430,10 @@ function _updateHandlesOverlay(){
       background:#fff;border:1.5px solid var(--selb);border-radius:50%;
       box-shadow:0 1px 4px rgba(0,0,0,.5);pointer-events:auto;
       cursor:${_rhCursor(cls, parseFloat((typeof sel!=='undefined'&&sel)?sel.dataset.rot||0:0))};z-index:9999;`;
-    // Forward mousedown to original handle
+    // Forward mousedown to original handle — MUST stop propagation to prevent drag
     rh.addEventListener('mousedown', e=>{
+      e.stopPropagation();
+      e.preventDefault();
       const orig = origRhs[cls];
       if(orig) orig.dispatchEvent(new MouseEvent('mousedown', {bubbles:false, cancelable:true, clientX:e.clientX, clientY:e.clientY, button:0}));
     });

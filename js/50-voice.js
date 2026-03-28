@@ -126,6 +126,120 @@ function _deleteByType(type) {
   if (typeof saveState === 'function') saveState();
 }
 
+// ── Dictation mode ────────────────────────────────────────────────
+// Reuses the SAME _recognition object to avoid re-requesting microphone permission
+let _dictMode = false;
+let _dictEl = null;
+let _dictText = '';
+
+// Punct map: replace spoken punctuation words with symbols (works mid-phrase)
+// Word boundary for Cyrillic: space/start/end surroundings
+// Use space-padded matching — pad text with spaces, then trim result
+const _PUNCT_MAP = [
+  ['точка с запятой', '; '],
+  ['новый абзац',     '\n\n'],
+  ['новая строка',    '\n'],
+  ['восклицательный знак', '! '],
+  ['вопросительный знак',  '? '],
+  ['кавычки открыть', ' «'],
+  ['кавычки закрыть', '» '],
+  ['запятая',    ', '],
+  ['запятую',    ', '],
+  ['точка',      '. '],
+  ['точку',      '. '],
+  ['восклицательный', '! '],
+  ['вопросительный',  '? '],
+  ['двоеточие',  ': '],
+  ['многоточие', '… '],
+  ['тире',       ' — '],
+  ['дефис',      '-'],
+  ['абзац',      '\n\n'],
+  ['перенос',    '\n'],
+];
+function _dictApplyPunct(text) {
+  // Split into tokens preserving original case, replace punct words
+  const tokens = text.split(/\s+/);
+  const result = [];
+  let i = 0;
+  while (i < tokens.length) {
+    // Try matching multi-word phrases first
+    let matched = false;
+    for (const [word, sym] of _PUNCT_MAP) {
+      const words = word.split(' ');
+      if (words.length > 1) {
+        const slice = tokens.slice(i, i + words.length).join(' ').toLowerCase();
+        if (slice === word) {
+          // Remove trailing space from last token in result if sym starts with punct
+          if (result.length && /^[,\.!?:;…]/.test(sym)) {
+            result[result.length-1] = result[result.length-1].trimEnd();
+          }
+          result.push(sym.trim());
+          i += words.length;
+          matched = true;
+          break;
+        }
+      }
+    }
+    if (!matched) {
+      const lower = tokens[i].toLowerCase();
+      let found = false;
+      for (const [word, sym] of _PUNCT_MAP) {
+        if (!word.includes(' ') && lower === word) {
+          if (result.length && /^[,\.!?:;…]/.test(sym)) {
+            result[result.length-1] = result[result.length-1].trimEnd();
+          }
+          result.push(sym.trim());
+          found = true;
+          break;
+        }
+      }
+      if (!found) result.push(tokens[i]);
+    }
+    i++;
+  }
+  return result.join(' ').replace(/  +/g, ' ').replace(/ ([,\.!?:;…»])/g,'$1').replace(/«\s+/g,'«').trim();
+}
+
+function _startDictation(targetEl) {
+  if (!_recognition) { _voiceMsg('Сначала включите голосовое управление'); return; }
+  _dictMode = true;
+  _dictEl = targetEl;
+  _dictText = '';
+  const btn = document.getElementById('voice-tab-btn');
+  if (btn) btn.style.outline = '2px solid #f59e0b';
+  _voiceMsg('🎤 Диктовка. Говорите... «стоп» для завершения', 'ok');
+}
+
+function _stopDictation() {
+  if (!_dictMode) return;
+  _dictMode = false;
+  const btn = document.getElementById('voice-tab-btn');
+  if (btn) btn.style.outline = '';
+  if (typeof save === 'function') save();
+  if (typeof drawThumbs === 'function') drawThumbs();
+  if (typeof saveState === 'function') saveState();
+  _voiceMsg('✅ Диктовка завершена', 'ok');
+  _dictEl = null;
+  _dictText = '';
+}
+
+window.stopDictation = _stopDictation;
+
+
+// ── Apply action to all selected elements ──────────────────────────
+function _forEachSel(fn) {
+  if (!hasSel()) return;
+  const targets = multiSel.size > 1 ? [...multiSel] : [sel];
+  if (typeof pushUndo === 'function') pushUndo();
+  targets.forEach(elT => {
+    const d = slides[cur]?.els.find(e => e.id === elT.dataset.id);
+    if (d) fn(elT, d);
+  });
+  if (typeof save === 'function') save();
+  if (typeof drawThumbs === 'function') drawThumbs();
+  if (typeof _updateHandlesOverlay === 'function') _updateHandlesOverlay();
+}
+
 // ── Command handler ─────────────────────────────────────────────────
 // Normalizes speech input: strips filler words, maps imperative forms
 function _normalize(raw) {
@@ -247,6 +361,7 @@ function _normalize(raw) {
     [/^(авторазмещение|авто\s+размести)$/, 'разместить объекты'],
     // Размер
     [/^(установи|задай|сделай)\s+ширину?\s+(\d+)$/, (m) => 'ширина '+m[2]],
+    [/^(размер|сделай размер)\s+(\d+)\s+(на|х|x)\s+(\d+)$/, (m) => 'размер '+m[2]+' на '+m[4]],
     [/^(установи|задай|сделай)\s+высоту?\s+(\d+)$/, (m) => 'высота '+m[2]],
     [/^(поверни|повернуть)\s+(на\s+)?(\d+)(\s+градусов?)?$/, (m) => 'повернуть на '+m[3]],
     // Текст
@@ -403,6 +518,12 @@ function _normalize(raw) {
     // Соотношение сторон
     [/^(заблокируй|сохрани)\s+(соотношение\s+сторон|пропорции)$/, 'заблокировать пропорции'],
     [/^(новый слайд в начало|добавь слайд в начало)$/, 'новый слайд в начало'],
+    // Диктовка — голосовой ввод текста в выделенный элемент
+    [/^(диктовка|начать диктовку|диктовать|голосовой ввод)$/, 'начать диктовку'],
+    [/^(стоп|остановить диктовку|завершить диктовку)$/, 'остановить диктовку'],
+    // Очистка текста
+    [/^(убери|убрать|очисти|очистить|удали|стереть?)\s+(текст|надпись|содержимое|текст\s+внутри\s+блока|текст\s+внутри)\s*(блока?|элемента?)?$/, 'очистить текст'],
+    [/^(заменить?|поменяй|замени)\s+текст\s+(диктовка|на\s+диктовку|голосом)$/, 'начать диктовку'],
     [/^(сохрани|сохранить)$/, 'сохранить'],
     [/^(экспортируй|экспортировать|выгрузи)$/, 'экспортировать'],
     [/^(полный экран|на весь экран|развернуть)$/, 'полный экран'],
@@ -424,11 +545,15 @@ function _handleCommand(raw) {
   const hasSel = () => typeof sel !== 'undefined' && sel;
   const move = (dx, dy) => {
     if (!hasSel()) return;
-    const d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
-    if (!d) return;
     if (typeof pushUndo === 'function') pushUndo();
-    d.x += dx; d.y += dy;
-    sel.style.left = d.x + 'px'; sel.style.top = d.y + 'px';
+    // Move all selected elements (multiSel or just sel)
+    const targets = multiSel.size > 1 ? [...multiSel] : [sel];
+    targets.forEach(elT => {
+      const dT = slides[cur]?.els.find(e => e.id === elT.dataset.id);
+      if (!dT) return;
+      dT.x += dx; dT.y += dy;
+      elT.style.left = dT.x + 'px'; elT.style.top = dT.y + 'px';
+    });
     if (typeof save === 'function') save();
     if (typeof _updateHandlesOverlay === 'function') _updateHandlesOverlay();
   };
@@ -820,8 +945,9 @@ function _handleCommand(raw) {
   }
 
   // ── Размер ──
-  const wM=t.match(/ширина (\d+)/); if (wM&&hasSel()) { const d=slides[cur]?.els.find(e=>e.id===sel.dataset.id); if(d){if(typeof pushUndo==='function')pushUndo();d.w=parseInt(wM[1]);sel.style.width=d.w+'px';if(typeof save==='function')save();if(typeof syncProps==='function')syncProps();if(typeof _updateHandlesOverlay==='function')_updateHandlesOverlay();} return; }
-  const hM=t.match(/высота (\d+)/); if (hM&&hasSel()) { const d=slides[cur]?.els.find(e=>e.id===sel.dataset.id); if(d){if(typeof pushUndo==='function')pushUndo();d.h=parseInt(hM[1]);sel.style.height=d.h+'px';if(typeof save==='function')save();if(typeof syncProps==='function')syncProps();if(typeof _updateHandlesOverlay==='function')_updateHandlesOverlay();} return; }
+  const wM=t.match(/ширина (\d+)/); if (wM&&hasSel()) { _forEachSel((elT,d)=>{d.w=parseInt(wM[1]);elT.style.width=d.w+'px';}); if(typeof syncProps==='function')syncProps(); return; }
+  const hM=t.match(/высота (\d+)/); if (hM&&hasSel()) { _forEachSel((elT,d)=>{d.h=parseInt(hM[1]);elT.style.height=d.h+'px';}); if(typeof syncProps==='function')syncProps(); return; }
+  const whM=t.match(/размер (\d+) на (\d+)/); if (whM&&hasSel()) { _forEachSel((elT,d)=>{d.w=parseInt(whM[1]);d.h=parseInt(whM[2]);elT.style.width=d.w+'px';elT.style.height=d.h+'px';}); if(typeof syncProps==='function')syncProps(); return; }
   const rotM=t.match(/повернуть на (\d+)/); if (rotM&&hasSel()) {
     const deg=parseInt(rotM[1]); // positive = clockwise
     const d=slides[cur]?.els.find(e=>e.id===sel.dataset.id);
@@ -841,42 +967,25 @@ function _handleCommand(raw) {
   // ── Изменение размера объекта ──
   const sizeM = t.match(/^размер ([+\-*]) (.+)$/);
   if (sizeM && hasSel()) {
-    const d = slides[cur]?.els.find(e => e.id === sel.dataset.id);
-    if (!d) return;
-    if (typeof pushUndo === 'function') pushUndo();
     const op = sizeM[1], val = sizeM[2];
-    const applySize = (w, h) => {
-      d.w = Math.max(20, Math.round(w));
-      d.h = Math.max(20, Math.round(h));
-      sel.style.width  = d.w + 'px';
-      sel.style.height = d.h + 'px';
-      if (typeof save === 'function') save();
-      if (typeof drawThumbs === 'function') drawThumbs();
-      if (typeof syncProps === 'function') syncProps();
-      if (typeof _updateHandlesOverlay === 'function') _updateHandlesOverlay();
-    };
-    if (op === '*') {
-      const factor = parseFloat(val);
-      applySize(d.w * factor, d.h * factor);
-    } else if (val.endsWith('px')) {
-      const px = parseInt(val);
-      applySize(d.w + (op === '+' ? px : -px), d.h + (op === '+' ? px : -px));
-    } else if (val.endsWith('%')) {
-      const pct = parseInt(val) / 100;
-      applySize(d.w * (op === '+' ? 1 + pct : 1 - pct), d.h * (op === '+' ? 1 + pct : 1 - pct));
-    }
+    _forEachSel((elT, d) => {
+      const applySize = (w, h) => {
+        d.w = Math.max(20, Math.round(w));
+        d.h = Math.max(20, Math.round(h));
+        elT.style.width  = d.w + 'px';
+        elT.style.height = d.h + 'px';
+      };
+      if (op === '*') { const factor = parseFloat(val); applySize(d.w * factor, d.h * factor); }
+      else if (val.endsWith('px')) { const px = parseInt(val); applySize(d.w + (op==='+'?px:-px), d.h + (op==='+'?px:-px)); }
+      else if (val.endsWith('%')) { const pct = parseInt(val)/100; applySize(d.w*(op==='+'?1+pct:1-pct), d.h*(op==='+'?1+pct:1-pct)); }
+    });
+    if (typeof syncProps === 'function') syncProps();
     return;
   }
 
-  const fsM=t.match(/размер шрифта (\d+)/); if (fsM) { const inp=document.getElementById('p-fs'); if(inp){inp.value=fsM[1];inp.dispatchEvent(new Event('input'));} return; }
-  if (t === 'шрифт больше' || t === 'шрифт меньше' || t.match(/^шрифт [+-]\d+/)) {
-    const inp=document.getElementById('p-fs');
-    if (inp) {
-      let cur2 = parseInt(inp.value)||16;
-      const delta = t.includes('больше') ? 4 : t.includes('меньше') ? -4 : (parseInt(t.match(/[+-]\d+/)?.[0])||4);
-      inp.value = Math.max(6, cur2 + delta);
-      inp.dispatchEvent(new Event('input'));
-    }
+  const fsM=t.match(/размер шрифта (\d+)/);
+  if (fsM) {
+    if (typeof setTS==='function') _forEachSel((elT) => { const _ps=sel; sel=elT; setTS('font-size', fsM[1]+'px'); sel=_ps; });
     return;
   }
   // ── Выравнивание текста ──
@@ -1085,25 +1194,31 @@ function _handleCommand(raw) {
     if (_colorMap[withDash]) return _colorMap[withDash];
     return null;
   }
-  const fillColorM = t.match(/^цвет заливки ([а-яёА-ЯЁ]+)$/);
+  const fillColorM = t.match(/^цвет заливки ([а-яёА-ЯЁ-]+)$/);
   if (fillColorM) {
     const hex = _resolveColor(fillColorM[1]) || null;
-    if (hex && hasSel()) {
-      if (sel.dataset.type === 'shape' && typeof updateShapeStyle === 'function') {
-        updateShapeStyle('fill', hex);
-      } else if (sel.dataset.type === 'text' && typeof setTS === 'function') {
-        setTS('background-color', hex);
-      }
+    if (hex) {
+      _forEachSel((elT, d) => {
+        if (elT.dataset.type === 'shape' && typeof updateShapeStyle === 'function') {
+          if (typeof sel !== 'undefined') { const _ps = sel; sel = elT; updateShapeStyle('fill', hex); sel = _ps; }
+        } else if (elT.dataset.type === 'text' && typeof setTS === 'function') {
+          const _ps = sel; sel = elT; setTS('background-color', hex); sel = _ps;
+        }
+      });
     }
     return;
   }
 
   // ── Цвет границы ──
-  const strokeColorM = t.match(/^цвет границы ([а-яёА-ЯЁ]+)$/);
+  const strokeColorM = t.match(/^цвет границы ([а-яёА-ЯЁ-]+)$/);
   if (strokeColorM) {
     const hex = _resolveColor(strokeColorM[1]) || null;
-    if (hex && hasSel() && sel.dataset.type === 'shape' && typeof updateShapeStyle === 'function') {
-      updateShapeStyle('stroke', hex);
+    if (hex) {
+      _forEachSel((elT) => {
+        if (elT.dataset.type === 'shape' && typeof updateShapeStyle === 'function') {
+          const _ps = sel; sel = elT; updateShapeStyle('stroke', hex); sel = _ps;
+        }
+      });
     }
     return;
   }
@@ -1145,6 +1260,37 @@ function _handleCommand(raw) {
     if (typeof save === 'function') save();
     if (typeof syncProps === 'function') syncProps();
     if (typeof _updateHandlesOverlay === 'function') _updateHandlesOverlay();
+    return;
+  }
+
+  // ── Диктовка — ввод текста голосом в выбранный элемент ──
+  if (t === 'начать диктовку') {
+    if (!hasSel()) { _voiceMsg('Выберите текстовый элемент'); return; }
+    _startDictation(sel);
+    return;
+  }
+  if (t === 'остановить диктовку') {
+    _stopDictation();
+    return;
+  }
+
+  // ── Очистить текст ──
+  if (t === 'очистить текст' && hasSel()) {
+    const d = slides[cur]?.els.find(e => e.id === sel.dataset.id);
+    if (d) {
+      if (typeof pushUndo === 'function') pushUndo();
+      if (d.type === 'text') {
+        d.html = '';
+        const tel = sel.querySelector('.tel');
+        if (tel) tel.innerHTML = '';
+      } else if (d.type === 'shape') {
+        d.shapeHtml = '';
+        const stxt = sel.querySelector('.shape-text');
+        if (stxt) stxt.textContent = '';
+      }
+      if (typeof save === 'function') save();
+      if (typeof drawThumbs === 'function') drawThumbs();
+    }
     return;
   }
 
@@ -1255,7 +1401,9 @@ function _handleCommand(raw) {
   const textColorM = t.match(/^цвет текста ([а-яёА-ЯЁ-]+)$/);
   if (textColorM) {
     const hex = _resolveColor(textColorM[1]) || null;
-    if (hex && typeof setTS === 'function') setTS('color', hex);
+    if (hex && typeof setTS === 'function') {
+      _forEachSel((elT) => { const _ps=sel; sel=elT; setTS('color', hex); sel=_ps; });
+    }
     return;
   }
 
@@ -1336,11 +1484,54 @@ function _startRecognition() {
   _recognition.interimResults = false;
   _recognition.maxAlternatives = 1;
 
+  _recognition.interimResults = true; // enables live preview for dictation
+  let _lastResultIdx = 0;
   _recognition.onresult = (e) => {
-    const result = e.results[e.results.length - 1];
+    const result = e.results[e.resultIndex];
+
+    // Live interim preview during dictation
+    if (_dictMode && !result.isFinal) {
+      const interim = result[0].transcript.trim();
+      if (_dictEl) {
+        const tel = _dictEl.querySelector('.tel');
+        const preview = (_dictText ? _dictText + ' ' : '') + interim;
+        if (tel) tel.textContent = preview;
+      }
+      return;
+    }
+
     if (result.isFinal) {
       const text = result[0].transcript.trim();
-      if (text) _handleCommand(text); // skip empty results
+      if (!text) return;
+
+      // Dictation mode: route text to element, not command handler
+      if (_dictMode) {
+        const lower = text.toLowerCase().replace(/[.,!?]/g, '').trim();
+        if (lower === 'стоп' || lower === 'остановить диктовку' || lower === 'стоп диктовка' || lower === 'завершить диктовку') {
+          _stopDictation();
+          return;
+        }
+        // Replace punctuation words inside any phrase
+        const processed = _dictApplyPunct(text);
+        _dictText = (_dictText && !_dictText.endsWith('\n') ? _dictText + ' ' : _dictText) + processed;
+        _dictText = _dictText.replace(/ ([,\.!?:;…])/g, '$1').replace(/  +/g, ' ').trimStart();
+        if (_dictEl) {
+          const tel = _dictEl.querySelector('.tel');
+          if (tel) { tel.textContent = _dictText; }
+          const d2 = slides[cur]?.els.find(e => e.id === _dictEl.dataset.id);
+          if (d2 && d2.type === 'text') d2.html = tel ? tel.innerHTML : _dictText;
+          else if (d2 && d2.type === 'shape') {
+            d2.shapeHtml = _dictText;
+            const stxt = _dictEl.querySelector('.shape-text');
+            if (stxt) stxt.textContent = _dictText;
+          }
+        }
+        _voiceMsg('🎤 ' + _dictText.slice(-80));
+        return;
+      }
+
+      // Normal command mode
+      _handleCommand(text);
     }
   };
 
