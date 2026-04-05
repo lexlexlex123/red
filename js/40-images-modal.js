@@ -3,18 +3,38 @@
 // Файлы лежат в images/{catId}/*.{svg,png,jpg,jpeg,webp,gif}
 // Добавьте новые категории здесь — они автоматически появятся в модале
 
-const IMAGE_CATS = [
-  {id:'nature',      name:'Природа'},
-  {id:'animals',     name:'Животные'},
-  {id:'birds',       name:'Птицы'},
-  {id:'business',    name:'Бизнес'},
-  {id:'technology',  name:'Технологии'},
-  {id:'backgrounds', name:'Фоны'},
-  {id:'textures',    name:'Текстуры'},
-  {id:'people',      name:'Люди'},
-  {id:'abstract',    name:'Абстракция'},
-  {id:'icons_png',   name:'Иконки PNG'},
-];
+// Известные имена категорий. Новые папки подхватываются автоматически из IMAGE_INDEX.
+const IMAGE_CATS_NAMES = {
+  'nature':'Природа', 'animals':'Животные', 'birds':'Птицы',
+  'business':'Бизнес', 'technology':'Технологии', 'backgrounds':'Фоны',
+  'textures':'Текстуры', 'people':'Люди', 'abstract':'Абстракция',
+  'icons_png':'Иконки PNG', 'smiles':'Смайлики',
+};
+// IMAGE_CATS строится динамически из IMAGE_INDEX — все папки подхватываются автоматически
+function _buildImageCats() {
+  const raw = (typeof IMAGE_INDEX !== 'undefined') ? IMAGE_INDEX : [];
+  const seen = new Set();
+  const cats = [];
+  // Сначала известные в нужном порядке
+  const knownOrder = Object.keys(IMAGE_CATS_NAMES);
+  for (const id of knownOrder) {
+    if (raw.some(x => x.cat === id)) {
+      seen.add(id);
+      cats.push({id, name: IMAGE_CATS_NAMES[id]});
+    }
+  }
+  // Потом новые (неизвестные) папки
+  for (const img of raw) {
+    if (!seen.has(img.cat)) {
+      seen.add(img.cat);
+      // Генерируем имя из id: my_cats -> My Cats
+      const name = (IMAGE_CATS_NAMES[img.cat]) || img.cat.replace(/[-_]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+      cats.push({id: img.cat, name});
+    }
+  }
+  return cats.length ? cats : [{id:'all', name:'Все'}];
+}
+let IMAGE_CATS = _buildImageCats();
 
 // Реестр изображений — заполняется автоматически через IMAGE_INDEX
 // Формат: [{id, cat, file, name, path, isSvg}]
@@ -38,6 +58,7 @@ function _refreshRegistry(){
     if(!entry.path && entry.cat && entry.file){
       entry.path = 'images/' + entry.cat + '/' + entry.file;
     }
+    // src contains base64 for alpha hit-testing, path stays as file path for display
     // Определяем isSvg по расширению если не указано
     if(entry.isSvg === undefined && entry.path){
       entry.isSvg = entry.path.toLowerCase().endsWith('.svg');
@@ -53,7 +74,8 @@ function openImageModal(replaceMode){
   _imgSearchVal = '';
   const si = document.getElementById('img-search');
   if(si) si.value = '';
-  // Обновляем реестр (IMAGE_INDEX мог измениться если файл перезагружен)
+  // Пересобираем категории и реестр (подхватывает новые папки без перезагрузки)
+  IMAGE_CATS = _buildImageCats();
   _refreshRegistry();
   // Переключаемся на первую категорию с файлами если текущая пустая
   const hasCurrent = IMAGE_REGISTRY.some(x => x.cat === _imgCurCat);
@@ -124,17 +146,19 @@ function _renderImgCells(grid, imgs){
       return;
     }
     const cell = document.createElement('div');
-    cell.style.cssText = 'width:90px;height:70px;border-radius:6px;overflow:hidden;cursor:pointer;border:2px solid transparent;position:relative;background:var(--surface2);transition:.12s;flex-shrink:0;';
+    cell.style.cssText = 'width:100%;height:85px;border-radius:6px;overflow:hidden;cursor:pointer;border:2px solid transparent;position:relative;background:var(--surface2);transition:.12s;';
     // Превью
     // Превью через CSS background-image — не вызывает broken image курсор при ошибке
     const preview = document.createElement('div');
-    preview.style.cssText = 'position:absolute;inset:0;background-size:cover;background-position:center;background-repeat:no-repeat;pointer-events:none;';
+    preview.style.cssText = 'position:absolute;inset:0;background-size:contain;background-position:center;background-repeat:no-repeat;pointer-events:none;';
     // Кодируем спецсимволы в пути
-    const encodedPath = img.path.split('/').map(function(p, i){
-      return i === 0 ? p : encodeURIComponent(decodeURIComponent(p));
-    }).join('/');
-    preview.style.backgroundImage = 'url("' + encodedPath + '")';
-    // Показываем расширение как заглушку (всегда, перекрывается если фото загрузилось)
+    // Use base64 src if available (works without HTTP server), else file path
+    const previewUrl = img.src ? img.src : (function(){
+      return img.path.split('/').map(function(p, i){
+        return i === 0 ? p : encodeURIComponent(decodeURIComponent(p));
+      }).join('/');
+    })();
+    preview.style.backgroundImage = 'url("' + previewUrl + '")';
     const ext = (img.path||'').split('.').pop().toUpperCase();
     const fb = document.createElement('div');
     fb.textContent = ext || '?';
@@ -156,7 +180,8 @@ function _renderImgCells(grid, imgs){
     cell.onmouseenter = () => lbl.style.opacity = '1';
     cell.onmouseleave = () => lbl.style.opacity = '0';
     // Сохраняем path в dataset чтобы не зависеть от замыкания
-    cell.dataset.imgPath = img.path;
+    // Store base64 src if available — used for insertion and alpha hit-testing
+    cell.dataset.imgPath = img.src || img.path;
     cell.dataset.imgIsSvg = img.isSvg ? '1' : '0';
     // Выбор
     cell.onclick = function(){

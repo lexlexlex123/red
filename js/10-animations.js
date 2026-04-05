@@ -241,6 +241,12 @@ let _animPreviewTimer = null;
       else d.anims[animIdx][prop]=val;
       const domEl=document.getElementById('canvas').querySelector('[data-id="'+elId+'"]');
       if(domEl) domEl.dataset.anims=JSON.stringify(d.anims);
+      // Also sync animJson on the panel row so drag-reorder stays current
+      const _animPanel=document.getElementById('anim-panel');
+      if(_animPanel){
+        const _rows=[..._animPanel.querySelectorAll('.anim-row[data-el-id="'+elId+'"]')];
+        if(_rows[animIdx]) _rows[animIdx].dataset.animJson=JSON.stringify(d.anims[animIdx]);
+      }
       _save(); _saveState();
     }catch(e){}
   };
@@ -461,7 +467,8 @@ let _animPreviewTimer = null;
       const TRIGGER_ICONS = {
         auto: '▶',
         click: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" width="10" height="10" style="vertical-align:middle"><path d="M5 1v7l2-1.5 1.5 3 1-.5-1.5-3 2.5-.5z"/></svg>',
-        withPrev: '⟳'
+        withPrev: '⟳',
+        element: '👆'
       };
       const trigIcon = TRIGGER_ICONS[trigger] || '▶';
       const head = document.createElement('div');
@@ -485,22 +492,23 @@ let _animPreviewTimer = null;
         const onMove = mv => {
           didDrag = true;
           const rows = [...container.querySelectorAll('.anim-row')];
-          const target = rows.find(r => {
-            if(r === row) return false;
+          // Find which row the cursor is over
+          let insertBefore = null;
+          for(const r of rows) {
+            if(r === row) continue;
             const rect = r.getBoundingClientRect();
-            const mid = rect.top + rect.height / 2;
-            const rowRect = row.getBoundingClientRect();
-            const rowMid = rowRect.top + rowRect.height / 2;
-            // Insert before if dragging up and cursor above target mid, insert after if dragging down and cursor below target mid
-            if(rowMid < rect.top) return mv.clientY > mid; // row is above target
-            if(rowMid > rect.bottom) return mv.clientY < mid; // row is below target
-            return false;
-          });
-          if(target){
-            const rows2 = [...container.querySelectorAll('.anim-row')];
-            const fromIdx = rows2.indexOf(row);
-            const toIdx = rows2.indexOf(target);
-            if(toIdx > fromIdx) target.after(row); else target.before(row);
+            if(mv.clientY < rect.top + rect.height / 2) {
+              insertBefore = r;
+              break;
+            }
+          }
+          // Move row to new position
+          if(insertBefore) {
+            container.insertBefore(row, insertBefore);
+          } else {
+            // Cursor below all rows — append to end
+            const last = rows[rows.length - 1];
+            if(last && last !== row) last.after(row);
           }
         };
 
@@ -663,7 +671,7 @@ let _animPreviewTimer = null;
 
         // Right: tog toggle + "∞"
         const togWrap = document.createElement('div');
-        togWrap.style.cssText = 'display:flex;align-items:center;gap:5px;cursor:pointer;';
+        togWrap.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:5px;cursor:pointer;';
         togWrap.innerHTML = '<label class="tog" style="flex-shrink:0;pointer-events:none">'
           + '<input type="checkbox" style="opacity:0;width:0;height:0;position:absolute"'
           + (isInf?' checked':'') + '>'
@@ -776,16 +784,27 @@ let _animPreviewTimer = null;
       {
         const trigSel = document.createElement('select');
         trigSel.style.cssText = 'width:100%;background:var(--surface3);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:2px 5px;font-size:9px;font-family:inherit;margin-top:4px;';
-        [{v:'auto',l:'▶ Авто'},{v:'click',l:'После клика'},{v:'withPrev',l:'⟳ Вместе с предыдущей'}].forEach(opt=>{
+        [{v:'auto',l:'▶ Авто'},{v:'click',l:'После клика'},{v:'withPrev',l:'⟳ Вместе с предыдущей'},{v:'element',l:'👆 Триггер (клик по объекту)'}].forEach(opt=>{
           const o=document.createElement('option'); o.value=opt.v; o.textContent=opt.l;
           if(trigger===opt.v) o.selected=true;
           trigSel.appendChild(o);
         });
         trigSel.addEventListener('mousedown', e=>e.stopPropagation());
         trigSel.addEventListener('change', ()=>{
-          updateAnimProp(d.id, ai, 'trigger', trigSel.value);
+          const newTrig = trigSel.value;
+          updateAnimProp(d.id, ai, 'trigger', newTrig);
+          // Clear navTarget when switching away from nav trigger
+          if(newTrig !== 'nav') {
+            updateAnimProp(d.id, ai, 'navTarget', undefined);
+          }
+          // Update row.dataset.animJson to keep drag-reorder in sync
+          const _s = (typeof _slides==='function'?_slides():[slides[cur]||{}]);
+          const _d2 = (_s[typeof _cur==='function'?_cur():cur]||{els:[]}).els.find(x=>x.id===d.id);
+          if(_d2 && _d2.anims && _d2.anims[ai]) row.dataset.animJson = JSON.stringify(_d2.anims[ai]);
           const iconSpan = head.querySelector('.anim-trig-icon');
-          if(iconSpan) iconSpan.innerHTML = TRIGGER_ICONS[trigSel.value] || '▶';
+          if(iconSpan) iconSpan.innerHTML = TRIGGER_ICONS[newTrig] || '▶';
+          // Force re-render to persist and show correct value
+          requestAnimationFrame(()=>{ if(typeof renderAnimPanel==='function') renderAnimPanel(); });
         });
         props.appendChild(trigSel);
       }
@@ -796,7 +815,7 @@ let _animPreviewTimer = null;
       navCheck.type='checkbox';
       navCheck.className='tog'; // use CSS later — for now inline
       navCheck.style.cssText='accent-color:var(--accent);flex-shrink:0;';
-      navCheck.checked = (trigger==='nav' || typeof a.navTarget==='number');
+      navCheck.checked = (trigger==='nav' || (typeof a.navTarget==='number' && trigger!=='element'));
       const navLabel = document.createElement('label');
       navLabel.style.cssText='font-size:9px;color:var(--text2);display:flex;align-items:center;gap:4px;cursor:pointer;flex:1;min-width:0;';
       navLabel.textContent='→ Слайд:';

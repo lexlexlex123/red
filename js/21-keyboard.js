@@ -48,6 +48,13 @@ function onKey(e){
     }
     return;
   }
+  if(e.key==='Escape'||e.key==='Enter'){
+    if(window._curveEditMode){
+      e.preventDefault();
+      if(typeof toggleCurveEditMode==='function') toggleCurveEditMode();
+      return;
+    }
+  }
   if(e.key==='Escape'){if(pipetteMode){cancelPipetteMode();return;}if(typeof exitCropModeIfActive==='function'&&typeof _cropEl!=='undefined'&&_cropEl){exitCropModeIfActive();return;}clearMultiSel();desel();}
   if(e.key==='Enter'&&!editing&&!inInput){if(typeof exitCropModeIfActive==='function'&&typeof _cropEl!=='undefined'&&_cropEl){e.preventDefault();exitCropModeIfActive();return;}}
   if(e.ctrlKey||e.metaKey){
@@ -102,7 +109,10 @@ function onKey(e){
       if(typeof _updateHandlesOverlay==='function') _updateHandlesOverlay();
       save();return;
     }
-    if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();deleteSelected();return;}
+    if((e.key==='Delete'||e.key==='Backspace')&&window._curveEditMode){
+    if(typeof curveRemoveNode==='function'){curveRemoveNode();return;}
+  }
+  if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();deleteSelected();return;}
   } else {
     // No element selected — Delete removes current slide
     if(e.key==='Delete'){e.preventDefault();delSlide();return;}

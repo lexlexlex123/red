@@ -353,6 +353,8 @@ function rtAttachSelectionTracking(wrapEl, telEl) {
     if (_rtElId && _rtElId !== id) _savedSelIdx = null;
     _rtEl = telEl; _rtElId = id;
     // No mode conversion needed — edit directly in place
+    // Update toolbar immediately so buttons reflect whole-text state before any selection
+    setTimeout(() => { if (typeof rtUpdateToolbarState === 'function') rtUpdateToolbarState(); }, 0);
   });
 
   telEl.addEventListener('keydown', _interceptEnter);
@@ -429,6 +431,15 @@ function _applyToSelection(prop, val) {
   } else if (prop === 'text-decoration') {
     const allUnder = selected.every(c => (c.style.textDecoration||'').includes('underline'));
     selected.forEach(c => { c.style.textDecoration = allUnder ? 'none' : 'underline'; });
+  } else if (prop === 'vertical-align') {
+    const allSuper = selected.every(c => c.style.verticalAlign === 'super');
+    const allSub   = selected.every(c => c.style.verticalAlign === 'sub');
+    const isToggleOff = (val === 'super' && allSuper) || (val === 'sub' && allSub);
+    selected.forEach(c => {
+      c.style.verticalAlign = isToggleOff ? '' : val;
+      // When toggling super/sub also reset font-size if it was shrunk for script
+      if (isToggleOff) c.style.fontSize = c.style.fontSize || '';
+    });
   } else {
     selected.forEach(c => {
       c.style[camel] = val;
@@ -446,7 +457,19 @@ function _applyToSelection(prop, val) {
   const inEditMode = !root.querySelector('span[data-ch]');
   const newHtml = inEditMode ? _groupedHtml(chars) : _charObjsToHtml(chars);
   root.innerHTML = newHtml;
-  _restoreSelToDOM(idx, root);
+  // After innerHTML rebuild the browser clears the selection. We restore it,
+  // but first ensure the editor has focus — without focus the browser won't
+  // display the selection highlight even if the Range is correctly set.
+  // We do this inside rAF so the browser has laid out the new DOM first.
+  const _idxToRestore = idx;
+  const _rootToRestore = root;
+  requestAnimationFrame(() => {
+    if (_rtEl && _rtEl.contentEditable === 'true' && document.activeElement !== _rtEl) {
+      _rtEl.focus({ preventScroll: true });
+    }
+    _restoreSelToDOM(_idxToRestore, _rootToRestore);
+    if (typeof rtUpdateToolbarState === 'function') rtUpdateToolbarState();
+  });
   _savedSelIdx = idx;
   return true;
 }
@@ -479,6 +502,8 @@ function _setTSWhole(prop, val, skipHtmlSync) {
     }
   }
   save(); saveState(); drawThumbs(); syncProps();
+  // Update button highlight state after whole-element formatting
+  setTimeout(() => { if (typeof rtUpdateToolbarState === 'function') rtUpdateToolbarState(); }, 0);
 }
 
 // Strip explicit color from every char-span so the container .ec color takes over.
@@ -556,12 +581,28 @@ function rtUnderline() {
 }
 
 function rtSuperscript() {
-  if (_applyToSelection('vertical-align','super')) _rtCommit();
+  if (!_applyToSelection('vertical-align','super')) {
+    if (!sel||sel.dataset.type!=='text') return;
+    const root = _rtContent(sel.querySelector('.ec'));
+    const allChars = root ? Array.from(root.querySelectorAll('span[data-ch]')) : [];
+    const allSuper = allChars.length > 0 && allChars.every(c => c.style.verticalAlign === 'super');
+    _setTSWhole('vertical-align', allSuper ? '' : 'super');
+  } else {
+    _rtCommit();
+  }
   rtUpdateToolbarState();
 }
 
 function rtSubscript() {
-  if (_applyToSelection('vertical-align','sub')) _rtCommit();
+  if (!_applyToSelection('vertical-align','sub')) {
+    if (!sel||sel.dataset.type!=='text') return;
+    const root = _rtContent(sel.querySelector('.ec'));
+    const allChars = root ? Array.from(root.querySelectorAll('span[data-ch]')) : [];
+    const allSub = allChars.length > 0 && allChars.every(c => c.style.verticalAlign === 'sub');
+    _setTSWhole('vertical-align', allSub ? '' : 'sub');
+  } else {
+    _rtCommit();
+  }
   rtUpdateToolbarState();
 }
 
@@ -612,6 +653,17 @@ function rtFontSize(size) {
   }
   // Keep bullet icons in sync with font size
   if (typeof rtUpdateListIconSize === 'function') rtUpdateListIconSize();
+}
+
+function rtFontFamily(family) {
+  const val = family ? `'${family}', sans-serif` : '';
+  if (family && _applyToSelection('font-family', val)) _rtCommit();
+  else if (family) _setTSWhole('font-family', val);
+  else {
+    // Reset: remove font-family
+    if (_applyToSelection('font-family', '')) _rtCommit();
+    else _setTSWhole('font-family', '');
+  }
 }
 
 function rtFontWeight(weight) {
@@ -667,6 +719,32 @@ function rtUpdateToolbarState() {
     const s = window.getSelection();
     const hasSel = s && s.rangeCount > 0 && !s.isCollapsed;
     if (hint) hint.style.display = hasSel ? 'inline' : 'none';
+    const setOn = (id,on) => { const b=document.getElementById(id); if(b) b.classList.toggle('on',!!on); };
+
+    // When no text is selected, reflect the state of ALL chars in the active editor
+    if (!hasSel && _rtEl) {
+      const root = _rtContent(_rtEl);
+      const allChars = Array.from(root.querySelectorAll('span[data-ch]'));
+      if (allChars.length > 0) {
+        setOn('ft-b',   allChars.every(c => parseInt(window.getComputedStyle(c).fontWeight||'400') >= 600));
+        setOn('ft-i',   allChars.every(c => window.getComputedStyle(c).fontStyle === 'italic'));
+        setOn('ft-u',   allChars.every(c => window.getComputedStyle(c).textDecoration.includes('underline')));
+        setOn('ft-sup', allChars.every(c => c.style.verticalAlign === 'super'));
+        setOn('ft-sub', allChars.every(c => c.style.verticalAlign === 'sub'));
+        _updateListButtonState();
+        return;
+      }
+      // Fallback: no spans yet — read from element style
+      const cs0 = window.getComputedStyle(root);
+      setOn('ft-b',   parseInt(cs0.fontWeight||'400') >= 600);
+      setOn('ft-i',   cs0.fontStyle === 'italic');
+      setOn('ft-u',   cs0.textDecoration.includes('underline'));
+      setOn('ft-sup', false);
+      setOn('ft-sub', false);
+      _updateListButtonState();
+      return;
+    }
+
     let el2 = null;
     if (s && s.rangeCount > 0) {
       const anc = s.getRangeAt(0).commonAncestorContainer;
@@ -674,7 +752,6 @@ function rtUpdateToolbarState() {
     }
     if (!el2) return;
     const cs = window.getComputedStyle(el2);
-    const setOn = (id,on) => { const b=document.getElementById(id); if(b) b.classList.toggle('on',!!on); };
     setOn('ft-b',   parseInt(cs.fontWeight)>=600);
     setOn('ft-i',   cs.fontStyle==='italic');
     setOn('ft-u',   cs.textDecoration.includes('underline'));

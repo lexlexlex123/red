@@ -75,7 +75,9 @@ function pickMulti(el,shiftKey){
     // If clicked on an element or resize handle — skip
     if(e.target.closest('.el'))return;
     if(e.target.closest('.rh'))return;
+    // In curve edit mode — rubber-band still works but only for node selection
     if(e.target.closest('#conn-handles'))return;
+    if(e.target.closest('#conn-svg-layer'))return;
     if(e.target.closest('#handles-overlay'))return;
     // Must be inside cwrap area
     if(!e.target.closest('#cwrap'))return;
@@ -100,10 +102,19 @@ function pickMulti(el,shiftKey){
       }
     }
     if(typeof stopTextEditing==='function')stopTextEditing();
+    // In curve edit mode: clicking background starts node rubber-band, don't deselect
+    if(window._curveEditMode) {
+      const pt0=toCanvasCoords(e);
+      rbStart={x:pt0.x,y:pt0.y};
+      const rb=document.getElementById('rubberband');
+      rb.style.cssText=`display:block;left:${pt0.x}px;top:${pt0.y}px;width:0;height:0;`;
+      e.preventDefault();
+      return;
+    }
     const wasMulti = multiSel.size > 1;
     _justClearedMulti = wasMulti;
     clearMultiSel();
-    if(sel&&!(typeof _rotDragging!=='undefined'&&_rotDragging)){if(typeof pick==='function')pick(null);else{sel.classList.remove('sel');sel=null;}}
+    if(sel&&!(typeof _rotDragging!=='undefined'&&_rotDragging)&&!window._curveEditMode){if(typeof pick==='function')pick(null);else{sel.classList.remove('sel');sel=null;}}
     // If clicking outside canvas (on cwrap bg) always show slide props regardless
     const onCanvas = e.target.closest('#canvas') || e.target.closest('#canvas-bg-rect');
     if(!wasMulti || !onCanvas) _justClearedMulti = false;
@@ -171,6 +182,11 @@ function pickMulti(el,shiftKey){
     rbStart=null;
     document.getElementById('rubberband').style.display='none';
     if(rw<4&&rh<4)return;
+    // In curve edit mode: select nodes within rect instead of elements
+    if(window._curveEditMode && typeof sel!=='undefined' && sel && sel.dataset.shape==='curve') {
+      if(typeof _curveRubberBandSelect==='function') _curveRubberBandSelect(rx,ry,rw,rh);
+      return;
+    }
     cv.querySelectorAll('.el').forEach(el=>{
       const ex=parseInt(el.style.left),ey=parseInt(el.style.top);
       const ew=parseInt(el.style.width),eh=parseInt(el.style.height);
@@ -178,10 +194,34 @@ function pickMulti(el,shiftKey){
         addToMultiSel(el);
       }
     });
+    // Expand selection: if any group member is selected, add ALL members of that group
+    const _selectedGroupIds = new Set();
+    multiSel.forEach(el => {
+      const gid = el.dataset && el.dataset.groupId;
+      if(gid) _selectedGroupIds.add(gid);
+    });
+    if(_selectedGroupIds.size > 0) {
+      cv.querySelectorAll('.el').forEach(el => {
+        const gid = el.dataset && el.dataset.groupId;
+        if(gid && _selectedGroupIds.has(gid) && !multiSel.has(el)) {
+          addToMultiSel(el);
+        }
+      });
+    }
     if(multiSel.size===1){
       const onlyEl=[...multiSel][0];clearMultiSel();pick(onlyEl);
     } else if(multiSel.size>1){
-      pick([...multiSel].slice(-1)[0]);
+      // Freeze the full selection before pick() can overwrite it
+      const _frozenSel = [...multiSel];
+      // Pick the last element for props panel, but without letting group patch clear multiSel
+      const _lastEl = _frozenSel[_frozenSel.length-1];
+      // Temporarily disable group-pick expansion by calling original pick via flag
+      window._rbSelecting = true;
+      if(typeof pick==='function') pick(_lastEl);
+      window._rbSelecting = false;
+      // Re-add all rubber-band selected elements (pick may have wiped them)
+      _frozenSel.forEach(el => { if(!multiSel.has(el)) addToMultiSel(el); });
+      if(typeof _updateHandlesOverlay==='function') _updateHandlesOverlay();
       if(typeof toast==="function")toast(multiSel.size+t('toastMultiSel'),'ok');
     }
   });
@@ -239,7 +279,7 @@ function deleteSelected(){
     if(typeof renderAnimPanel==="function")renderAnimPanel();
     if(typeof renderMotionOverlay==="function")renderMotionOverlay();
     if(typeof toast==="function")toast('Deleted elements','ok');
-    _rotEl=null;const _ov2=document.getElementById('handles-overlay');if(_ov2)_ov2.innerHTML='';
+    _rotEl=null;const _ov2=document.getElementById('handles-overlay');if(_ov2)_ov2.innerHTML='';document.querySelectorAll('.arc-handle').forEach(h=>h.remove()); document.querySelectorAll('.star-handle').forEach(h=>h.remove()); document.querySelectorAll('.para-handle').forEach(h=>h.remove());
   } else if(sel){
     const s=slides[cur];if(!s)return;
     if(typeof pushUndo==="function")pushUndo();
@@ -251,9 +291,11 @@ function deleteSelected(){
     // htmlframe: delete linked code; code: unlink parent
     if(typeof _hfOnDelete==='function'){ const _d=s.els[idx2]; if(_d)_hfOnDelete(_d); }
     if(idx2>=0)s.els.splice(idx2,1);
-    sel.remove();sel=null;_rotEl=null;const _ov=document.getElementById('handles-overlay');if(_ov)_ov.innerHTML='';save();if(typeof drawThumbs==="function")drawThumbs();if(typeof saveState==="function")saveState();syncProps();
+    sel.remove();sel=null;_rotEl=null;const _ov=document.getElementById('handles-overlay');if(_ov)_ov.innerHTML='';document.querySelectorAll('.arc-handle,.star-handle,.para-handle').forEach(h=>h.remove());save();if(typeof drawThumbs==="function")drawThumbs();if(typeof saveState==="function")saveState();syncProps();
     if(typeof renderAnimPanel==="function")renderAnimPanel();
     if(typeof renderMotionOverlay==="function")renderMotionOverlay();
+    // Final cleanup — syncProps may have rebuilt handles
+    document.querySelectorAll('.arc-handle,.star-handle,.para-handle').forEach(h=>h.remove());
   }
 }
 

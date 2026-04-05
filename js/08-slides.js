@@ -48,6 +48,8 @@ function save(){
       x:parseInt(el.style.left),y:parseInt(el.style.top),
       w:parseInt(el.style.width),h:parseInt(el.style.height),
       rot:el.dataset.rot?+el.dataset.rot:0,
+      rotPivotX:el.dataset.rotPivotX?+el.dataset.rotPivotX:0,
+      rotPivotY:el.dataset.rotPivotY?+el.dataset.rotPivotY:0,
       anims:el.dataset.anims?JSON.parse(el.dataset.anims):[],
       isTrigger:el.dataset.isTrigger==='true',
     };
@@ -161,6 +163,48 @@ function save(){
       d.sw=el.dataset.sw!=null?+el.dataset.sw:2;d.rx=+(el.dataset.rx||0);d.fillOp=el.dataset.fillOp!=null?+el.dataset.fillOp:1;
       d.shadow=el.dataset.shadow==='true';d.shadowBlur=+(el.dataset.shadowBlur||8);d.shadowColor=el.dataset.shadowColor||'#000000';
       if(el.dataset.strokeStyle)d.strokeStyle=el.dataset.strokeStyle; else if(_ods&&_ods.strokeStyle)d.strokeStyle=_ods.strokeStyle;
+      // Shape fill gradient
+      if(el.dataset.fillGrad!=null){d.fillGrad=el.dataset.fillGrad==='1';}
+      else if(_ods&&_ods.fillGrad!=null){d.fillGrad=_ods.fillGrad;}
+      if(el.dataset.fillGrad2)d.fillGrad2=el.dataset.fillGrad2;
+      else if(_ods&&_ods.fillGrad2)d.fillGrad2=_ods.fillGrad2;
+      // fillGrad2Scheme: try dataset first, then _ods
+      if(el.dataset.fillGrad2Scheme)d.fillGrad2Scheme=JSON.parse(el.dataset.fillGrad2Scheme);
+      else if(_ods&&_ods.fillGrad2Scheme!==undefined)d.fillGrad2Scheme=_ods.fillGrad2Scheme;
+      // shadowColorScheme
+      if(el.dataset.shadowColorScheme)d.shadowColorScheme=JSON.parse(el.dataset.shadowColorScheme);
+      else if(_ods&&_ods.shadowColorScheme!==undefined)d.shadowColorScheme=_ods.shadowColorScheme;
+      if(el.dataset.fillGradDir!=null)d.fillGradDir=+el.dataset.fillGradDir;
+      else if(_ods&&_ods.fillGradDir!=null)d.fillGradDir=_ods.fillGradDir;
+      // Cloud seed
+      if(el.dataset.cloudSeed!=null) d.cloudSeed=+el.dataset.cloudSeed;
+      else if(_ods&&_ods.cloudSeed!=null) d.cloudSeed=_ods.cloudSeed;
+      // Parallelogram skew
+      if(el.dataset.paraSkew!=null) d.paraSkew=+el.dataset.paraSkew;
+      else if(_ods&&_ods.paraSkew!=null) d.paraSkew=_ods.paraSkew;
+      // Chevron depth
+      if(el.dataset.chevSkew!=null) d.chevSkew=+el.dataset.chevSkew;
+      else if(_ods&&_ods.chevSkew!=null) d.chevSkew=_ods.chevSkew;
+      // Curve bezier points
+      if(el.dataset.curvePoints){try{d.curvePoints=JSON.parse(el.dataset.curvePoints);}catch(e){}}
+      else if(_ods&&_ods.curvePoints) d.curvePoints=_ods.curvePoints;
+      if(el.dataset.curveClosed==='1') d.curveClosed=true;
+      else if(_ods&&_ods.curveClosed) d.curveClosed=_ods.curveClosed;
+      // Star rays/inner radius
+      if(el.dataset.starRays) d.starRays=+el.dataset.starRays;
+      else if(_ods&&_ods.starRays) d.starRays=_ods.starRays;
+      if(el.dataset.starInner) d.starInner=+el.dataset.starInner;
+      else if(_ods&&_ods.starInner!=null) d.starInner=_ods.starInner;
+      // Polygon sides
+      if(el.dataset.polySides) d.polySides=+el.dataset.polySides;
+      else if(_ods&&_ods.polySides) d.polySides=_ods.polySides;
+      // Arc/sector/chord for ellipse
+      if(el.dataset.arcMode) d.arcMode=el.dataset.arcMode;
+      else if(_ods&&_ods.arcMode) d.arcMode=_ods.arcMode;
+      if(el.dataset.arcStart!=null&&el.dataset.arcStart!=='') d.arcStart=+el.dataset.arcStart;
+      else if(_ods&&_ods.arcStart!=null) d.arcStart=_ods.arcStart;
+      if(el.dataset.arcEnd!=null&&el.dataset.arcEnd!=='') d.arcEnd=+el.dataset.arcEnd;
+      else if(_ods&&_ods.arcEnd!=null) d.arcEnd=_ods.arcEnd;
       if(el.dataset.shapeBlur>0) d.shapeBlur=+el.dataset.shapeBlur;
       else if(_ods&&_ods.shapeBlur>0) d.shapeBlur=_ods.shapeBlur;
       // Callout tail position - read from dataset (most reliable) or _ods
@@ -265,6 +309,8 @@ function save(){
 }
 function load(){
   clearMultiSel();sel=null;_rotEl=null;clearGuides();
+  // Clean up shape handles (arc, star) when switching slides
+  document.querySelectorAll('.arc-handle,.star-handle,.para-handle').forEach(h=>h.remove());
   const _ov=document.getElementById('handles-overlay');if(_ov)_ov.innerHTML='';
   document.querySelectorAll('.rh[data-overlay-hidden]').forEach(rh=>{rh.style.display='';delete rh.dataset.overlayHidden;});
   const canvas=document.getElementById('canvas');canvas.querySelectorAll('.el').forEach(e=>e.remove());

@@ -60,7 +60,7 @@ const LANG_DATA = {
     roleBodyText: 'Body Text', roleHeading: 'Heading',
     // Misc
     btnRemove: 'Remove', btnApply: 'Apply',
-    btnAlignSelShort: 'Sel', btnAlignSlideShort: 'Slide',
+    btnAlignSelShort: 'Sel', btnAlignSlideShort: 'Slide', labelAlignTo: 'Align to:',
     propClearAllAnims: 'Clear All',
 
     btnLink: 'Link',
@@ -320,7 +320,7 @@ const LANG_DATA = {
     roleBodyText: 'Основной текст', roleHeading: 'Заголовок',
     // Разное
     btnRemove: 'Удалить', btnApply: 'Применить',
-    btnAlignSelShort: 'Выд.', btnAlignSlideShort: 'Слайд',
+    btnAlignSelShort: 'Выд.', btnAlignSlideShort: 'Слайд', labelAlignTo: 'Выровн.:',
     propClearAllAnims: 'Очистить всё',
 
     btnLink: 'Ссылка',

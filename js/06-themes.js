@@ -170,6 +170,19 @@ function applyTheme(){
         // else fillScheme===null: custom color — leave el.fill unchanged
         // Ensure fill is never empty
         if(!el.fill) el.fill = theme.shapeFill || '#3b82f6';
+        // Remap gradient second color (null=custom, object=scheme, undefined=no scheme set)
+        if(el.fillGrad2Scheme !== null && el.fillGrad2Scheme !== undefined){
+          const resolvedG2 = _resolveSchemeColor(el.fillGrad2Scheme, theme);
+          if(resolvedG2) el.fillGrad2 = resolvedG2;
+        }
+        // else null or undefined: leave fillGrad2 unchanged
+        // Remap shadow color
+        if(el.shadowColorScheme !== null && el.shadowColorScheme !== undefined){
+          const resolvedSC = _resolveSchemeColor(el.shadowColorScheme, theme);
+          if(resolvedSC) el.shadowColor = resolvedSC;
+        } else if(el.shadowColorScheme === undefined && el.shadow){
+          // Default shadow color = black (no scheme = leave as-is)
+        }
         // Remap stroke
         if(el.strokeScheme !== null && el.strokeScheme !== undefined){
           const resolved = _resolveSchemeColor(el.strokeScheme, theme);
@@ -179,7 +192,7 @@ function applyTheme(){
         }
         // else strokeScheme===null: custom — leave unchanged
         if(!el.stroke) el.stroke = theme.shapeStroke || '#1d4ed8';
-        if(el.shadow) el.shadowColor=theme.ac1||theme.shapeFill||el.shadowColor||'#000000';
+        // Shadow color: only remap if scheme is set (handled above), else preserve custom color
         // Remap shape text color scheme
         if(el.shapeTextColorScheme !== null && el.shapeTextColorScheme !== undefined){
           const resolved = _resolveSchemeColor(el.shapeTextColorScheme, theme);

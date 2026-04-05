@@ -1,3 +1,78 @@
+
+// ── PNG Alpha Hit Testing ─────────────────────────────────────────────
+// Returns true if the pixel under cursor is transparent (alpha < threshold)
+function _isTransparentPixel(elOuter, clientX, clientY, threshold) {
+  threshold = threshold == null ? 20 : threshold;
+  try {
+    const imgTag = elOuter.querySelector('img');
+    if (!imgTag || !imgTag.complete || !imgTag.naturalWidth || !imgTag.naturalHeight) return false;
+
+    const src = imgTag.src || '';
+
+    // Compute pixel coords regardless of canvas availability
+    const elRect = elOuter.getBoundingClientRect();
+    const elW = elRect.width, elH = elRect.height;
+    if (!elW || !elH) return false;
+    const relX = (clientX - elRect.left) / elW;
+    const relY = (clientY - elRect.top) / elH;
+    if (relX < 0 || relY < 0 || relX > 1 || relY > 1) return true;
+
+    // Account for object-fit:contain letterboxing
+    const nw = imgTag.naturalWidth, nh = imgTag.naturalHeight;
+    const imgAspect = nw / nh, elAspect = elW / elH;
+    let ox = 0, oy = 0, iw = 1, ih = 1;
+    if (imgAspect > elAspect) { ih = elAspect/imgAspect; oy = (1-ih)/2; }
+    else { iw = imgAspect/elAspect; ox = (1-iw)/2; }
+    const imgRelX = (relX - ox) / iw;
+    const imgRelY = (relY - oy) / ih;
+    if (imgRelX < 0 || imgRelY < 0 || imgRelX > 1 || imgRelY > 1) return true;
+
+    const px = Math.floor(imgRelX * nw);
+    const py = Math.floor(imgRelY * nh);
+
+    // Use cached alpha canvas if ready
+    if (imgTag._alphaCanvas && imgTag._alphaCanvas._src === src) {
+      const data = imgTag._alphaCanvas.getContext('2d').getImageData(px, py, 1, 1).data;
+      return data[3] < threshold;
+    }
+
+    // Build canvas (data: URLs work without CORS; file:// needs fetch workaround)
+    if (!imgTag._alphaLoading) {
+      imgTag._alphaLoading = true;
+      const buildCanvas = (imageEl) => {
+        const c = document.createElement('canvas');
+        c.width = imageEl.naturalWidth; c.height = imageEl.naturalHeight;
+        const ctx = c.getContext('2d', {willReadFrequently: true});
+        ctx.drawImage(imageEl, 0, 0);
+        try {
+          ctx.getImageData(0, 0, 1, 1); // test readability
+          c._src = src;
+          imgTag._alphaCanvas = c;
+        } catch(e) { /* still tainted */ }
+      };
+
+      if (src.startsWith('data:')) {
+        // Data URL — no CORS, can read directly
+        buildCanvas(imgTag);
+      } else {
+        // file:// or http:// — use fetch+blob to avoid CORS
+        fetch(src)
+          .then(r => r.blob())
+          .then(blob => {
+            const url = URL.createObjectURL(blob);
+            const img2 = new Image();
+            img2.onload = () => { buildCanvas(img2); URL.revokeObjectURL(url); };
+            img2.src = url;
+          })
+          .catch(() => buildCanvas(imgTag)); // try direct as fallback
+      }
+    }
+    return false; // canvas not ready yet — will work on next click
+  } catch(e) {
+    return false;
+  }
+}
+
 // ══════════════ STOP TEXT EDITING (called from anywhere) ══════════════
 function stopTextEditing() {
   const editing = document.querySelector('.el[data-editing="true"]');
@@ -167,6 +242,33 @@ function syncImgProps(el,d){
   try{document.getElementById('img-sc').value=d.imgShadowColor||'#000000';}catch(e){}
   try{document.getElementById('img-op').value=d.imgOpacity!=null?+d.imgOpacity:1;}catch(e){}
 }
+
+// ── SVG ID isolation — prevents id conflicts between multiple SVGs in DOM ──
+function _isolateSvgIds(svgStr, uid) {
+  if (!svgStr || !uid) return svgStr;
+  // Collect all id values defined in this SVG
+  const ids = [];
+  svgStr.replace(/\bid="([^"]+)"/g, (_, id) => { ids.push(id); return _; });
+  svgStr.replace(/\bid='([^']+)'/g, (_, id) => { ids.push(id); return _; });
+  if (!ids.length) return svgStr;
+  // Replace all id definitions and references with prefixed versions
+  let s = svgStr;
+  ids.forEach(id => {
+    const safe = id.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const newId = uid + '_' + safe;
+    // Replace id="..." definitions
+    s = s.replace(new RegExp('\\bid="' + id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '"', 'g'), 'id="' + newId + '"');
+    s = s.replace(new RegExp("\\bid='" + id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + "'", 'g'), "id='" + newId + "'");
+    // Replace url(#...) references
+    s = s.replace(new RegExp('url\\(#' + id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\)', 'g'), 'url(#' + newId + ')');
+    // Replace href="#..." and xlink:href="#..."
+    s = s.replace(new RegExp('href="#' + id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '"', 'g'), 'href="#' + newId + '"');
+    s = s.replace(new RegExp('xlink:href="#' + id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '"', 'g'), 'xlink:href="#' + newId + '"');
+    // Replace fill="url(#...)" stroke="url(#...)" clip-path="url(#...)" etc.
+  });
+  return s;
+}
+
 function mkEl(d){
   const cv=document.getElementById('canvas');
   const el=document.createElement('div');
@@ -178,6 +280,11 @@ function mkEl(d){
   if(d.rot)el.dataset.rot=d.rot;
   const rot=d.rot||0;
   el.style.cssText='left:'+d.x+'px;top:'+d.y+'px;width:'+d.w+'px;height:'+d.h+'px;transform:rotate('+rot+'deg);';
+  if(d.rotPivotX||d.rotPivotY){
+    el.dataset.rotPivotX=d.rotPivotX||0;
+    el.dataset.rotPivotY=d.rotPivotY||0;
+    // transformOrigin stays 50%50% — pivot handled via left/top during rotation
+  }
   const c=document.createElement('div');c.className='ec';
   if(d.type==='table'){
     c.className='ec tbl-ec';
@@ -200,9 +307,16 @@ function mkEl(d){
       if(typeof _toEditMode==='function') _toEditMode(c);
       c.focus();
       el.dataset.editing='true';el.style.cursor='text';
+      // Prevent growing text from scrolling #cwrap
+      el.style.overflow='visible';
+      const _cwrap=document.getElementById('cwrap');
+      if(_cwrap) _cwrap.style.overflow='hidden';
     });
     c.addEventListener('blur',()=>{
       if(typeof _toSaveMode==='function') _toSaveMode(c);
+      // Restore cwrap scroll after editing
+      const _cwrap2=document.getElementById('cwrap');
+      if(_cwrap2) _cwrap2.style.overflow='';
       // Capture HTML BEFORE contentEditable=false — browser collapses BR tags after
       const vw = c.querySelector('.ec-valign-wrap');
       const _snap = vw ? vw.innerHTML : c.innerHTML;
@@ -300,36 +414,85 @@ function mkEl(d){
     }
     const _sh=typeof SHAPES!=='undefined'&&SHAPES.find(s=>s.id===d.shape);
     const _isCallout=_sh&&_sh.special==='callout';
+    // Shape text: outer flex wrapper (centering) + inner editable div
     const txt=document.createElement('div');txt.className='shape-text';
     const _baseTextCss=d.shapeTextCss||'font-size:24px;font-weight:700;color:#ffffff;text-align:center;';
     txt.setAttribute('style',_baseTextCss);
-    // For callout: constrain text to the rect area, excluding tail zone
     if(_isCallout){
       const _sw2=d.sw||2;
-      txt.style.position='absolute';
-      txt.style.inset=_sw2+'px';
-      txt.style.padding='8px';
-      txt.style.display='flex';
-      txt.style.alignItems='center';
-      txt.style.justifyContent='center';
+      txt.style.position='absolute';txt.style.inset=_sw2+'px';txt.style.padding='8px';
+      txt.style.display='flex';txt.style.flexDirection='column';
+      txt.style.alignItems='center';txt.style.justifyContent='center';txt.style.textAlign='center';
     }
-    txt.innerHTML=d.shapeHtml||'';
+    // Inner editable div — editing here keeps cursor centered correctly
+    const _txtInner=document.createElement('div');
+    _txtInner.style.cssText='width:100%;text-align:center;min-height:1em;outline:none;';
+    _txtInner.innerHTML=d.shapeHtml||'';
+    txt.appendChild(_txtInner);
+
     function _activateShapeTxt(){
-      if(txt.contentEditable==='true')return; // already editing
+      if(_txtInner.contentEditable==='true')return;
       el.dataset.editing='true';
-      txt.contentEditable='true';txt.style.pointerEvents='auto';txt.focus();
-      // Move cursor to end
-      const range=document.createRange();range.selectNodeContents(txt);range.collapse(false);
+      _txtInner.contentEditable='true';
+      txt.style.pointerEvents='auto';
+      _txtInner.focus();
+      // Place cursor at end
+      const range=document.createRange();range.selectNodeContents(_txtInner);range.collapse(false);
       const sel2=window.getSelection();sel2.removeAllRanges();sel2.addRange(range);
     }
     txt.addEventListener('dblclick',e=>{e.stopPropagation();_activateShapeTxt();});
-    txt.addEventListener('blur',()=>{txt.contentEditable='false';txt.style.pointerEvents='none';el.dataset.editing='false';commitAll();});
-    txt.addEventListener('input',save);
-    txt.addEventListener('keydown',e=>{if(e.key==='Escape'){txt.blur();}});
+    _txtInner.addEventListener('blur',()=>{
+      _txtInner.contentEditable='false';
+      txt.style.pointerEvents='none';
+      el.dataset.editing='false';
+      const _dTxt=slides[cur]&&slides[cur].els.find(ev=>ev.id===el.dataset.id);
+      if(_dTxt) _dTxt.shapeHtml=_txtInner.innerHTML;
+      commitAll();
+    });
+    _txtInner.addEventListener('keydown',e=>{
+      if(e.key==='Escape'){_txtInner.blur();return;}
+      if(e.key==='Enter'){
+        e.preventDefault();
+        document.execCommand('insertParagraph',false);
+        // Ensure new paragraph is centered
+        const _sel3=window.getSelection();
+        if(_sel3&&_sel3.rangeCount){
+          const _node=_sel3.getRangeAt(0).startContainer;
+          const _par=_node.nodeType===3?_node.parentElement:_node;
+          if(_par&&_par!==_txtInner) _par.style.textAlign='center';
+        }
+      }
+    });
+    _txtInner.addEventListener('input',()=>{
+      _txtInner.querySelectorAll('div,p').forEach(n=>n.style.textAlign='center');
+      const _dTxt2=slides[cur]&&slides[cur].els.find(ev=>ev.id===el.dataset.id);
+      if(_dTxt2) _dTxt2.shapeHtml=_txtInner.innerHTML;
+      save();
+    });
+;
     // dblclick on wrap (full bounding box) — works regardless of fill opacity
     wrap.addEventListener('dblclick',e=>{e.stopPropagation();_activateShapeTxt();});
     wrap.append(svgDiv,txt);c.appendChild(wrap);
     el.dataset.shape=d.shape;el.dataset.fill=d.fill||'#3b82f6';el.dataset.stroke=d.stroke||'#1d4ed8';
+    if(d.fillGrad!=null){el.dataset.fillGrad=d.fillGrad?'1':'0';}
+    if(d.fillGrad2)el.dataset.fillGrad2=d.fillGrad2;
+    if(d.fillGradDir!=null)el.dataset.fillGradDir=d.fillGradDir;
+    if(d.cloudSeed!=null){el.dataset.cloudSeed=d.cloudSeed;}
+    if(d.paraSkew!=null){el.dataset.paraSkew=d.paraSkew;}
+    if(d.shape==='chevron'||d.shape==='chevronLeft'){
+      if(d.chevSkew==null) d.chevSkew=25;
+      el.dataset.chevSkew=d.chevSkew;
+    }
+    if(d.shape==='curve'){
+      if(!d.curvePoints&&typeof _defaultCurvePoints==='function') d.curvePoints=_defaultCurvePoints();
+      if(d.curvePoints) el.dataset.curvePoints=JSON.stringify(d.curvePoints);
+    }
+    if(d.starRays!=null){el.dataset.starRays=d.starRays;}
+    if(d.starInner!=null){el.dataset.starInner=d.starInner;}
+    if(d.polySides!=null){el.dataset.polySides=d.polySides;}
+    if(d.arcMode){el.dataset.arcMode=d.arcMode;}
+    if(d.arcStart!=null){el.dataset.arcStart=d.arcStart;}
+    if(d.arcEnd!=null){el.dataset.arcEnd=d.arcEnd;}
     if(d.tailX!==undefined){el.dataset.tailX=d.tailX;el.dataset.tailY=d.tailY;}
     el.dataset.sw=d.sw!=null?d.sw:2;el.dataset.rx=d.rx||0;el.dataset.fillOp=d.fillOp!=null?d.fillOp:1;
     el.dataset.shadow=d.shadow||false;el.dataset.shadowBlur=d.shadowBlur||8;el.dataset.shadowColor=d.shadowColor||'#000000';
@@ -371,7 +534,10 @@ function mkEl(d){
   }else if(d.type==='svg'){
     // Use DOMParser so SVG SMIL animations (<animate>, <animateTransform>) work correctly.
     // innerHTML uses the HTML parser which drops unknown SVG animation elements.
-    const _svgStr=d.svgContent||'';
+    const _svgRaw=d.svgContent||'';
+    // Isolate SVG IDs to prevent conflicts between multiple SVGs in DOM
+    const _svgUid = 'svg_' + (d.id||('u'+Math.random().toString(36).slice(2)));
+    const _svgStr = _isolateSvgIds(_svgRaw, _svgUid);
     try{
       const _dp=new DOMParser();
       const _doc=_dp.parseFromString(_svgStr,'image/svg+xml');
@@ -400,7 +566,9 @@ function mkEl(d){
       : ((_mkIc&&typeof _buildIconSVG==='function')
           ?_buildIconSVG(_mkIc,d.iconColor||'#3b82f6',d.iconSw!=null?d.iconSw:1.8,d.iconStyle||'stroke',_mkShadow,d.shadowBlur,d.shadowColor)
           :(d.svgContent||''));
-    c.innerHTML=_mkSvg;
+    const _iconSvgRaw = _mkSvg;
+    const _iconUid = 'icon_' + (d.id||('u'+Math.random().toString(36).slice(2)));
+    c.innerHTML = _isolateSvgIds(_iconSvgRaw, _iconUid);
     const svgEl2=c.querySelector('svg');
     if(svgEl2){svgEl2.style.width='100%';svgEl2.style.height='100%';}
     el.dataset.iconId=d.iconId||'';
@@ -635,15 +803,145 @@ function mkEl(d){
     const cn=ev.target.className||'';
     if(typeof cn==='string'&&(cn.includes('rh')||cn.includes('db')))return;
     if(ev.target.closest&&(ev.target.closest('.applet-el')&&ev.target.closest('.interactive')))return;
+    // PNG alpha hit test: if clicking transparent area of an image, pass click to element below
+    if(d.type==='image' && !(typeof multiSel!=='undefined'&&multiSel&&multiSel.size>1&&multiSel.has(el))){
+      const _iel = el.querySelector('.iel');
+      // Pass the outer el for correct rect (iel fills el; object-fit handled inside function)
+      if(_iel && _isTransparentPixel(el, ev.clientX, ev.clientY, 20)){
+        // Find element below in DOM stack
+        const _cv2 = document.getElementById('canvas');
+        if(_cv2){
+          const _r2 = _cv2.getBoundingClientRect();
+          const _sx2 = (typeof canvasW!=='undefined'?canvasW:_cv2.offsetWidth)/_r2.width;
+          const _sy2 = (typeof canvasH!=='undefined'?canvasH:_cv2.offsetHeight)/_r2.height;
+          const _cx2 = (ev.clientX-_r2.left)*_sx2, _cy2 = (ev.clientY-_r2.top)*_sy2;
+          const _kids2 = Array.from(_cv2.querySelectorAll('.el:not(.decor-el)'));
+          let _below2 = null;
+          for(let _i2=_kids2.length-1;_i2>=0;_i2--){
+            const _pp=_kids2[_i2]; if(_pp===el) continue;
+            const _ppx=parseInt(_pp.style.left)||0,_ppy=parseInt(_pp.style.top)||0;
+            const _ppw=parseInt(_pp.style.width)||0,_pph=parseInt(_pp.style.height)||0;
+            if(_cx2>=_ppx&&_cx2<=_ppx+_ppw&&_cy2>=_ppy&&_cy2<=_ppy+_pph){_below2=_pp;break;}
+          }
+          if(_below2){
+            ev.stopPropagation();
+            if(typeof pickMulti==='function') pickMulti(_below2, false);
+            else if(typeof pick==='function') pick(_below2);
+            // Start drag on element below
+            const _bl3=parseInt(_below2.style.left)||0,_bt3=parseInt(_below2.style.top)||0;
+            window._anyDragging=true;
+            const _ox3=ev.clientX,_oy3=ev.clientY; let _mv3=false;
+            const _mm3=mv=>{
+              if(!_mv3){_mv3=true;if(typeof pushUndo==='function')pushUndo();}
+              const _z3=typeof zoom!=='undefined'?zoom:1;
+              const _snc=document.getElementById('snap-chk');
+              let _nl3=_bl3+(mv.clientX-_ox3)/_z3,_nt3=_bt3+(mv.clientY-_oy3)/_z3;
+              if(_snc&&_snc.checked&&typeof snapV==='function'){_nl3=snapV(_nl3);_nt3=snapV(_nt3);}
+              _below2.style.left=_nl3+'px';_below2.style.top=_nt3+'px';
+              if(typeof drawGuides==='function')drawGuides(_below2);
+              if(typeof _updateHandlesOverlay==='function')_updateHandlesOverlay();
+            };
+            const _mu3=()=>{
+              window._anyDragging=false;
+              document.removeEventListener('mousemove',_mm3);document.removeEventListener('mouseup',_mu3);
+              if(_mv3){
+                if(typeof clearGuides==='function')clearGuides();if(typeof commitAll==='function')commitAll();
+                const _bd3=slides[cur]&&slides[cur].els.find(e=>e.id===_below2.dataset.id);
+                if(_bd3){_bd3.x=parseInt(_below2.style.left);_bd3.y=parseInt(_below2.style.top);}
+                if(typeof save==='function')save();if(typeof drawThumbs==='function')drawThumbs();if(typeof saveState==='function')saveState();
+              }
+            };
+            document.addEventListener('mousemove',_mm3);document.addEventListener('mouseup',_mu3);
+            return;
+          }
+        }
+      }
+    }
     // For shapes: only pick if clicking on actual SVG shape fill, not empty bounding box area
+    if(d.type==='shape'&&(d.shape==='curve')){
+      // Curve: only selectable/draggable via actual stroke, not empty bbox
+      const _isCurvePath = ev.target.tagName==='path' && ev.target.closest('.el')===el;
+      // If part of multi-selection, always drag the group — don't passthrough
+      if(typeof multiSel!=='undefined' && multiSel.size > 1 && multiSel.has(el)){
+        // fall through to normal group drag
+      } else if(!_isCurvePath){
+        const _belowParent = (()=>{
+          const _cv = document.getElementById('canvas');
+          if (!_cv) return null;
+          const _rect = _cv.getBoundingClientRect();
+          const _sx = (typeof canvasW!=='undefined'?canvasW:_cv.offsetWidth)/_rect.width;
+          const _sy = (typeof canvasH!=='undefined'?canvasH:_cv.offsetHeight)/_rect.height;
+          const _cx = (ev.clientX-_rect.left)*_sx, _cy = (ev.clientY-_rect.top)*_sy;
+          const _kids = Array.from(_cv.querySelectorAll('.el:not(.decor-el)'));
+          for(let _i=_kids.length-1;_i>=0;_i--){
+            const _p=_kids[_i]; if(_p===el) continue;
+            const _px=parseInt(_p.style.left)||0,_py=parseInt(_p.style.top)||0;
+            const _pw=parseInt(_p.style.width)||0,_ph=parseInt(_p.style.height)||0;
+            if(parseFloat(_p.dataset.rot||0)!==0){
+              const _ee=document.elementsFromPoint(ev.clientX,ev.clientY);
+              for(const _e2 of _ee){const _ep=_e2.closest('.el');if(_ep&&_ep!==el&&!_ep.classList.contains('decor-el'))return _ep;}
+              return null;
+            }
+            if(_cx>=_px&&_cx<=_px+_pw&&_cy>=_py&&_cy<=_py+_ph) return _p;
+          }
+          return null;
+        })();
+        if(_belowParent){
+          ev.stopPropagation();
+          if(typeof pickMulti==='function') pickMulti(_belowParent, false);
+          else if(typeof pick==='function') pick(_belowParent);
+          // Start drag on _belowParent immediately
+          const _bl2=parseInt(_belowParent.style.left)||0, _bt2=parseInt(_belowParent.style.top)||0;
+          window._anyDragging=true;
+          const _ox2=ev.clientX, _oy2=ev.clientY;
+          let _mv2=false;
+          const _mm2=mv=>{
+            if(!_mv2){_mv2=true;if(typeof pushUndo==='function')pushUndo();}
+            const _zoom2=typeof zoom!=='undefined'?zoom:1;
+            let _nl2=_bl2+(mv.clientX-_ox2)/_zoom2,_nt2=_bt2+(mv.clientY-_oy2)/_zoom2;
+            const _snChk2=document.getElementById('snap-chk');
+            if(_snChk2&&_snChk2.checked&&typeof snapV==='function'){_nl2=snapV(_nl2);_nt2=snapV(_nt2);}
+            _belowParent.style.left=_nl2+'px';
+            _belowParent.style.top=_nt2+'px';
+            if(typeof drawGuides==='function')drawGuides(_belowParent);
+            if(typeof _updateHandlesOverlay==='function')_updateHandlesOverlay();
+          };
+          const _mu2=()=>{
+            window._anyDragging=false;
+            window._alphaPassthroughDrag=false;
+            document.removeEventListener('mousemove',_mm2);
+            document.removeEventListener('mouseup',_mu2);
+            if(_mv2){
+              if(typeof clearGuides==='function')clearGuides();
+              if(typeof commitAll==='function')commitAll();
+              const _bd2=slides[cur]&&slides[cur].els.find(e=>e.id===_belowParent.dataset.id);
+              if(_bd2){_bd2.x=parseInt(_belowParent.style.left);_bd2.y=parseInt(_belowParent.style.top);}
+              if(typeof save==='function')save();
+              if(typeof drawThumbs==='function')drawThumbs();
+              if(typeof saveState==='function')saveState();
+            }
+          };
+          document.addEventListener('mousemove',_mm2);
+          document.addEventListener('mouseup',_mu2);
+          return;
+        }
+        // Nothing below — allow curve pick only if not already selected
+        if(el.classList.contains('sel')) return; // keep curve selected, don't restart drag
+      } // end else if(!_isCurvePath)
+    }
     if(d.type==='shape'&&!el.classList.contains('sel')){
-      const isSvgPart=ev.target.tagName==='path'||ev.target.tagName==='rect'||
-        ev.target.tagName==='ellipse'||ev.target.tagName==='circle'||
-        ev.target.tagName==='polygon'||ev.target.tagName==='polyline';
-      const isHitArea=ev.target.classList&&ev.target.classList.contains('shape-hit-area');
-      const _sh2=typeof SHAPES!=='undefined'?SHAPES.find(s=>s.id===el.dataset.shape):null;
-      const isNoFillSelf=ev.target===el&&_sh2&&_sh2.noFill;
-      if(!isSvgPart&&!isHitArea&&!isNoFillSelf&&!ev.target.closest('.shape-text')&&!ev.target.closest('.rh'))return;
+      if(d.shape!=='curve'){ // curve already handled above
+        if(false){
+      } else {
+        const isSvgPart=ev.target.tagName==='path'||ev.target.tagName==='rect'||
+          ev.target.tagName==='ellipse'||ev.target.tagName==='circle'||
+          ev.target.tagName==='polygon'||ev.target.tagName==='polyline';
+        const isHitArea=ev.target.classList&&ev.target.classList.contains('shape-hit-area');
+        const _sh2=typeof SHAPES!=='undefined'?SHAPES.find(s=>s.id===el.dataset.shape):null;
+        const isNoFillSelf=ev.target===el&&_sh2&&_sh2.noFill;
+        if(!isSvgPart&&!isHitArea&&!isNoFillSelf&&!ev.target.closest('.shape-text')&&!ev.target.closest('.rh'))return;
+      }
+      } // end if(d.shape!=='curve')
     }
     ev.stopPropagation();
     // If element is already part of multi-selection, don't reset the group
@@ -655,6 +953,9 @@ function mkEl(d){
   // Note: ResizeObserver removed - renderShapeEl is called explicitly from mkResize
 }
 function pick(el){
+  // Remove arc/star handles when deselecting or switching element
+  document.querySelectorAll('.arc-handle').forEach(h=>h.remove());
+  document.querySelectorAll('.star-handle').forEach(h=>h.remove()); document.querySelectorAll('.para-handle').forEach(h=>h.remove()); document.querySelectorAll('.chev-handle').forEach(h=>h.remove()); document.querySelectorAll('.curve-handle').forEach(h=>h.remove()); if(typeof _curveSelPts!=='undefined'&&el!==sel)_curveSelPts.clear(); if(typeof _exitCurveEditMode==='function'&&el!==sel&&!(window._curveEditMode&&el===null))_exitCurveEditMode();
   // Deselect connector synchronously when picking an element
   if(typeof _deselectConn==='function'&&typeof _selConnId!=='undefined'&&_selConnId) _deselectConn();
   // Exit crop mode if switching away from the cropped image
@@ -675,10 +976,45 @@ function pick(el){
   sel=el;
   if(el){
     el.classList.add('sel');
+    // Restore pivot transform-origin if set
+
     // When selected: restore full pointer-events so resize handles work
     if(el.dataset.type==='shape'){
       el.style.pointerEvents='auto';
-      const _hit=el.querySelector('.shape-hit-area');if(_hit)_hit.remove();
+      const _sh2=typeof SHAPES!=='undefined'?SHAPES.find(s=>s.id===el.dataset.shape):null;
+      const _isCloud = _sh2 && _sh2.special === 'cloud';
+      const _isCurve = _sh2 && _sh2.special === 'curve';
+      // Check if shape needs clip-path hit testing when selected
+      // (ellipse, polygon, star, parallelogram and any non-rectangular shape)
+      const _dClipCheck = slides[cur]&&slides[cur].els.find(e=>e.id===el.dataset.id);
+      const _wClip = parseInt(el.style.width)||(_dClipCheck&&_dClipCheck.w)||100;
+      const _hClip = parseInt(el.style.height)||(_dClipCheck&&_dClipCheck.h)||100;
+      const _cpCheck = _dClipCheck && typeof _shapeClipPath==='function' ? _shapeClipPath(_dClipCheck,_wClip,_hClip) : 'none';
+      const _needsClipHit = _sh2 && !_sh2.noFill && _cpCheck !== 'none' && !_cpCheck.startsWith('inset(');
+      if(_isCloud){
+        // Cloud: keep pointerEvents:none on el, SVG fill path handles clicks
+        el.style.pointerEvents='none';
+        const _dClip=slides[cur]&&slides[cur].els.find(e=>e.id===el.dataset.id);
+        if(_dClip&&typeof _applyShapeClipPath==='function') _applyShapeClipPath(el,_dClip);
+      } else if(_isCurve){
+        // Curve: apply hit testing based on fill state
+        const _dCurve=slides[cur]&&slides[cur].els.find(e=>e.id===el.dataset.id);
+        if(_dCurve&&typeof _applyShapeClipPath==='function') _applyShapeClipPath(el,_dCurve);
+      } else if(_needsClipHit){
+        // Keep/rebuild hit-area with clip-path so clicks outside shape pass through
+        const _dClip=slides[cur]&&slides[cur].els.find(e=>e.id===el.dataset.id);
+        const _hit=el.querySelector('.shape-hit-area');
+        if(_hit){ _hit.style.pointerEvents='auto'; }
+        else if(_dClip&&typeof _applyShapeClipPath==='function'){
+          _applyShapeClipPath(el,_dClip);
+          const _hit2=el.querySelector('.shape-hit-area');
+          if(_hit2) _hit2.style.pointerEvents='auto';
+        }
+        el.style.pointerEvents='none';
+      } else {
+        el.style.pointerEvents='auto';
+        const _hit=el.querySelector('.shape-hit-area');if(_hit)_hit.remove();
+      }
     }
   }
   // When deselected: re-apply hit area with clip-path on the PREVIOUSLY selected shape
@@ -692,4 +1028,4 @@ function pick(el){
   if(typeof _refreshAllLegoZ==='function') _refreshAllLegoZ();
   if(document.getElementById('anim-panel').classList.contains('open'))renderAnimPanel();
 }
-function desel(){clearGuides();pick(null);}
+function desel(){if(window._curveEditMode)return;clearGuides();pick(null);}

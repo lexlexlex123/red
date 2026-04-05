@@ -130,6 +130,9 @@ function startImgCrop() {
 
   sel.querySelectorAll('.rh').forEach(h => h.style.display = 'none');
   sel.dataset.cropMode = 'true';
+  // Clear handles overlay — crop handles take over interaction
+  const _ov = document.getElementById('handles-overlay');
+  if (_ov) _ov.innerHTML = '';
   _buildCropUI(sel, d);
   _updateCropBtn(true);
 }
@@ -179,6 +182,7 @@ function _exitCropMode(doSave) {
     applyImgCrop(el, d);
   }
   _updateCropBtn(false);
+  if(typeof _updateHandlesOverlay==='function') _updateHandlesOverlay();
 }
 
 function exitCropModeIfActive() {
@@ -191,7 +195,7 @@ function _buildCropUI(el, d) {
     const ov = document.createElement('div');
     ov.className = 'crop-overlay';
     ov.dataset.ovSide = side;
-    ov.style.cssText = 'position:absolute;background:rgba(0,0,0,0.55);pointer-events:none;z-index:100;';
+    ov.style.cssText = 'position:absolute;background:rgba(0,0,0,0.55);pointer-events:none;z-index:10000;';
     el.appendChild(ov);
   });
 
@@ -207,7 +211,7 @@ function _buildCropUI(el, d) {
   ].forEach(h => {
     const hEl = document.createElement('div');
     hEl.className = 'crop-handle crop-handle-' + h.pos;
-    hEl.style.cssText = `position:absolute;width:10px;height:10px;background:#fff;border:2px solid #222;border-radius:1px;z-index:201;cursor:${h.cursor};box-shadow:0 1px 4px rgba(0,0,0,.5);pointer-events:auto;`;
+    hEl.style.cssText = `position:absolute;width:10px;height:10px;background:#fff;border:2px solid #222;border-radius:1px;z-index:10001;cursor:${h.cursor};box-shadow:0 1px 4px rgba(0,0,0,.5);pointer-events:auto;`;
     _attachCropDrag(hEl, el, d, h.sides);
     el.appendChild(hEl);
   });

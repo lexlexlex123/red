@@ -357,6 +357,11 @@ function buildPSlide(container,idx,transOffset){
   let lastEffResult = 'auto'; // что реально получил предыдущий элемент (для withPrev)
   const globalEffTrig = globalAnimList.map(({a, d}) => {
     const t = a.trigger||'auto';
+    if(t === 'element') {
+      // element trigger: self-contained, doesn't affect subsequent anim sequencing
+      lastEffTrig = 'auto'; lastEffEl = null; lastEffResult = 'auto';
+      return 'element';
+    }
     if(t === 'click') {
       lastEffTrig = 'click'; lastEffEl = d.id; lastEffResult = 'click';
       return 'click';
@@ -383,6 +388,8 @@ function buildPSlide(container,idx,transOffset){
     let gPrevStart = 0, gPrevDur = 0;
     globalAnimList.forEach(({d, a}, gi) => {
       const eff = globalEffTrig[gi];
+      // 'element' trigger: handled per-element in build loop below, skip here
+      if(a.trigger === 'element') return;
       if(eff === 'auto' || eff === 'withPrev') {
         const relDelay = a.delay||0;
         let absDelay;
@@ -673,6 +680,87 @@ function buildPSlide(container,idx,transOffset){
     const anims=d.anims||[];
     const isTrigger=d.isTrigger||anims.some(a=>a.trigger==='nav');
 
+    // ── Element trigger: each 'element' anim fires on separate click ──
+    const hasElemTrigger = anims.some(a=>a.trigger==='element');
+    if(hasElemTrigger) {
+      globalAutoMap.delete(d.id);
+      globalClickMap.delete(d.id);
+    }
+    if(hasElemTrigger) {
+      // Build queue: each 'element' anim (+ its withPrev followers) = one click step
+      const clickSteps = []; // [{anims:[...], willHide, navTarget}]
+      let i2 = 0;
+      while(i2 < anims.length) {
+        const a = anims[i2];
+        if(a.trigger === 'element') {
+          const step = { anims: [a], willHide: false, navTarget: null };
+          if(a.cat==='exit') step.willHide = true;
+          if(typeof a.navTarget==='number') step.navTarget = a.navTarget;
+          // Collect following withPrev anims
+          let j = i2 + 1;
+          while(j < anims.length && (anims[j].trigger==='withPrev')) {
+            const b = anims[j];
+            step.anims.push(b);
+            if(b.cat==='exit') step.willHide = true;
+            if(typeof b.navTarget==='number') step.navTarget = b.navTarget;
+            j++;
+          }
+          clickSteps.push(step);
+          i2 = j;
+        } else {
+          i2++;
+        }
+      }
+
+      if(clickSteps.length > 0) {
+        el.style.cursor = 'pointer';
+        let _stepIdx = 0;
+        let _running = false;
+
+        const _fireStep = (e) => {
+          if(_running || _stepIdx >= clickSteps.length) return;
+          _running = true;
+          e.stopPropagation();
+          const step = clickSteps[_stepIdx];
+          _stepIdx++;
+
+          // Fire anims in this step
+          let delay = 0;
+          step.anims.forEach(a => {
+            const d2 = a.delay||0;
+            setTimeout(()=>fireAnim(el,d,a,idx), delay + d2);
+            delay += d2 + (a.duration||600);
+          });
+
+          const totalDur = delay;
+
+          if(step.willHide) {
+            // After exit anim: disable element permanently for this slide view
+            setTimeout(()=>{
+              el.style.pointerEvents = 'none';
+              el.style.cursor = '';
+              if(!hiddenElsPerSlide[idx]) hiddenElsPerSlide[idx] = new Set();
+              hiddenElsPerSlide[idx].add(d.id);
+              if(step.navTarget !== null) {
+                clearAutoTimer();
+                gotoPreview(step.navTarget, step.navTarget>pidx?'next':'prev');
+              }
+            }, totalDur);
+          } else if(step.navTarget !== null) {
+            setTimeout(()=>{
+              clearAutoTimer();
+              gotoPreview(step.navTarget, step.navTarget>pidx?'next':'prev');
+            }, totalDur);
+            // don't reset _running since we're navigating away
+          } else {
+            // Allow next click after this step completes
+            setTimeout(()=>{ _running = false; }, totalDur + 50);
+          }
+        };
+        el.addEventListener('click', _fireStep);
+      }
+    }
+
     // Auto anims — from global map (already classified)
     const autoTimed = globalAutoMap.get(d.id) || [];
     if(autoTimed.length>0){
@@ -702,15 +790,20 @@ function buildPSlide(container,idx,transOffset){
       });
       Object.entries(groupsEl).forEach(([delayStr,grp])=>{
         const absDelay=+delayStr;
-            setTimeout(()=>{
+        setTimeout(()=>{
           el.style.visibility='';
-          el.style.animation='none';
-          void el.offsetWidth;
-          el.style.animation=grp.map(a=>{
+          // Apply to ecEl if available to preserve el's rotation transform
+          const _animTarget = ecEl || el;
+          _animTarget.style.animation='none';
+          void _animTarget.offsetWidth;
+          _animTarget.style.animation=grp.map(a=>{
             const cssName=ANIM_CSS[a.name]||'el-fadein';
             const dur=(a.duration||600)/1000;
             return `${cssName} ${dur}s ease-out 0s both`;
           }).join(',');
+          // Clear animation after it completes so it doesn't stay stuck
+          const maxDur = Math.max(...grp.map(a=>a.duration||600));
+          if(_animTarget !== el) setTimeout(()=>{ _animTarget.style.animation=''; }, maxDur + 100);
         }, absDelay + transOffset);
       });
       Object.entries(groupsEc).forEach(([delayStr,grp])=>{
@@ -1474,9 +1567,12 @@ function fireAnim(el,d,a,idx,overrideDelay,_cumTx,_cumTy){
   const cssName=ANIM_CSS[a.name]||'el-fadein';
   const dur=(a.duration||600)/1000;
   const delay=typeof overrideDelay==='number' ? overrideDelay/1000 : (a.delay||0)/1000;
-  el.style.animation='';
+  // Apply to ecEl to preserve el's rotation transform, fall back to el if no ecEl
+  const _animEl = (a.cat==='emphasis' || a.cat==='entrance' || a.cat==='exit')
+    ? (el.querySelector('.ec') || el) : el;
+  _animEl.style.animation='';
   requestAnimationFrame(()=>{
-    el.style.animation=`${cssName} ${dur}s ease-out ${delay}s both`;
+    _animEl.style.animation=`${cssName} ${dur}s ease-out ${delay}s both`;
   });
   if(a.trigger==='nav'){
     const navTarget=typeof a.navTarget==='number'?a.navTarget:0;

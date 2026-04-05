@@ -178,7 +178,7 @@ function applyHoverPreset(preset){
   toast('Hover preset: '+preset,'ok');
 }
 // ══════════════ PIPETTE (STYLE COPY) ══════════════
-let pipetteMode=false,pipetteSrc=null;
+let pipetteMode=false,pipetteSrc=null,pipetteSrcSlide=0;
 function togglePipetteMode(){
   if(!sel){toast('Select a target element first');return;}
   pipetteMode=!pipetteMode;
@@ -186,6 +186,7 @@ function togglePipetteMode(){
   document.body.classList.toggle('pipette-mode',pipetteMode);
   if(pipetteMode){
     pipetteSrc=sel; // remember the element we're styling
+    pipetteSrcSlide=cur; // remember which slide the destination is on
     toast('🔬 Pipette ON — click any element to copy its style','ok');
   } else {
     pipetteSrc=null;
@@ -193,7 +194,7 @@ function togglePipetteMode(){
   }
 }
 function cancelPipetteMode(){
-  pipetteMode=false;pipetteSrc=null;
+  pipetteMode=false;pipetteSrc=null;pipetteSrcSlide=0;
   document.querySelectorAll('.pipette-btn').forEach(b=>b.classList.remove('active'));
   document.body.classList.remove('pipette-mode');
 }
@@ -203,8 +204,10 @@ function pipetteApply(srcEl){
   if(!pipetteSrc||!srcEl||srcEl===pipetteSrc)return;
   const srcType=srcEl.dataset.type;
   const dstType=pipetteSrc.dataset.type;
-  const srcData=slides[cur].els.find(e=>e.id===srcEl.dataset.id);
-  const dstData=slides[cur].els.find(e=>e.id===pipetteSrc.dataset.id);
+  // srcEl is on current slide, pipetteSrc may be on a different slide
+  const srcData=slides[cur]?.els.find(e=>e.id===srcEl.dataset.id);
+  const dstSlide=slides[pipetteSrcSlide]||slides[cur];
+  const dstData=dstSlide.els.find(e=>e.id===pipetteSrc.dataset.id);
   if(!srcData||!dstData)return;
 
   if(srcType==='text'&&dstType==='text'){
@@ -224,14 +227,22 @@ function pipetteApply(srcEl){
     if(srcEl.dataset.elOpacity){pipetteSrc.dataset.elOpacity=srcEl.dataset.elOpacity;pipetteSrc.style.opacity=srcEl.dataset.elOpacity;dstData.elOpacity=+srcEl.dataset.elOpacity;}
     if(srcEl.dataset.rx_tl){['tl','tr','bl','br'].forEach(c=>{pipetteSrc.dataset['rx_'+c]=srcEl.dataset['rx_'+c]||0;dstData['rx_'+c]=+(srcEl.dataset['rx_'+c]||0);});pipetteSrc.dataset.rxUnit=srcEl.dataset.rxUnit||'px';dstData.rxUnit=srcEl.dataset.rxUnit||'px';applyTextRadius(pipetteSrc);}
   } else if(srcType==='shape'&&dstType==='shape'){
-    // Copy all shape styles: fill, stroke, sw, rx, shadow, fillOp
-    const props=['fill','stroke','sw','rx','fillOp','shadow','shadowBlur','shadowColor','strokeStyle'];
+    // Copy all shape styles: fill, stroke, sw, rx, shadow, fillOp, gradient
+    const props=['fill','stroke','sw','rx','fillOp','shadow','shadowBlur','shadowColor','strokeStyle','fillGrad','fillGrad2','fillGradDir'];
     props.forEach(p=>{
       // Read from srcData (source of truth) first, fall back to dataset
       const val = srcData[p] != null ? srcData[p] : srcEl.dataset[p];
       if(val != null && val !== ''){
         dstData[p] = typeof val==='string' ? (val==='true'?true:val==='false'?false:isNaN(val)?val:+val) : val;
-        pipetteSrc.dataset[p] = val;
+        // fillGrad must be stored as '1'/'0' in dataset (syncProps checks === '1')
+        if(p==='fillGrad') pipetteSrc.dataset[p] = (val===true||val==='true'||val==='1') ? '1' : '0';
+        else pipetteSrc.dataset[p] = String(val);
+      } else if(p==='fillGrad'){
+        dstData.fillGrad=false; pipetteSrc.dataset.fillGrad='0';
+      } else if(p==='fillGrad2'){
+        delete dstData.fillGrad2; delete pipetteSrc.dataset.fillGrad2;
+      } else if(p==='fillGradDir'){
+        delete dstData.fillGradDir; delete pipetteSrc.dataset.fillGradDir;
       }
     });
     // Copy shape text style too
@@ -240,12 +251,19 @@ function pipetteApply(srcEl){
     renderShapeEl(pipetteSrc,dstData);
     // Update UI swatches immediately without waiting for syncProps
     try{
-      document.getElementById('sh-fill-preview').style.background=pipetteSrc.dataset.fill||'#3b82f6';
+      const _pFill=pipetteSrc.dataset.fill;
+      document.getElementById('sh-fill-preview').style.background=(_pFill&&_pFill!=='none')?_pFill:'';
       document.getElementById('sh-stroke-preview').style.background=pipetteSrc.dataset.stroke||'#1d4ed8';
       document.getElementById('sh-sw').value=pipetteSrc.dataset.sw||2;
       document.getElementById('sh-fill-op').value=pipetteSrc.dataset.fillOp||1;
       const _sst=pipetteSrc.dataset.strokeStyle||'solid';
       document.querySelectorAll('.sh-stroke-style-btn').forEach(b=>b.classList.toggle('active',b.dataset.style===_sst));
+      // Sync gradient UI
+      const _hasGrad = dstData.fillGrad === true || dstData.fillGrad === 'true';
+      const _gradChk=document.getElementById('sh-fill-grad-check');if(_gradChk)_gradChk.checked=_hasGrad;
+      const _gradRow=document.getElementById('sh-fill-grad-row');if(_gradRow)_gradRow.style.display=_hasGrad?'flex':'none';
+      if(_hasGrad && dstData.fillGrad2){const _p2=document.getElementById('sh-fill2-preview');if(_p2)_p2.style.background=dstData.fillGrad2;}
+      if(_hasGrad && dstData.fillGradDir!=null){const _di=document.getElementById('sh-fill-grad-dir');if(_di)_di.value=dstData.fillGradDir;}
     }catch(e){}
   } else if(srcType==='text'&&dstType==='shape'){
     // Cross-type: copy just color to fill
@@ -261,10 +279,22 @@ function pipetteApply(srcEl){
     dstData.hoverFx=JSON.parse(srcEl.dataset.hoverFx);
     applyHoverFxEditor(pipetteSrc,dstData.hoverFx);
   }
-  save();drawThumbs();saveState();
-  if(typeof pick==='function') pick(pipetteSrc);
-  toast('✓ Style copied','ok');
+  // If source is on a different slide, go back to destination slide
+  const dstSl = pipetteSrcSlide;
   cancelPipetteMode();
+  if(dstSl !== cur && typeof pickSlide === 'function') {
+    pickSlide(dstSl);
+    setTimeout(() => {
+      save(); drawThumbs(); saveState();
+      const destEl = document.querySelector(`.el[data-id="${pipetteSrc?.dataset?.id}"]`);
+      if(destEl && typeof pick === 'function') pick(destEl);
+      toast('✓ Стиль скопирован', 'ok');
+    }, 50);
+  } else {
+    save(); drawThumbs(); saveState();
+    if(typeof pick==='function') pick(pipetteSrc);
+    toast('✓ Стиль скопирован', 'ok');
+  }
 }
 
 // ══════════════ TEXT CORNER RADIUS ══════════════
@@ -310,4 +340,50 @@ function syncTextRadiusUI(){
   });
   document.getElementById('rx-unit-px').classList.toggle('active',u==='px');
   document.getElementById('rx-unit-pct').classList.toggle('active',u==='%');
+}
+
+// ══════════════ PADDING WITH UNIT + LOCK ══════════════
+let textPadUnit = 'px';
+function setTextPadUnit(u){
+  textPadUnit = u;
+  document.getElementById('pad-unit-px').classList.toggle('active', u==='px');
+  document.getElementById('pad-unit-pct').classList.toggle('active', u==='%');
+  if(sel) syncTextPadUI();
+}
+function setTextPad(side, val){
+  if(!sel||sel.dataset.type!=='text')return;
+  const linked = document.getElementById('pad-linked').checked;
+  if(linked){
+    ['t','r','b','l'].forEach(s=>{
+      sel.dataset['pad_'+s] = val;
+      const inp=document.getElementById('p-pad-'+s); if(inp) inp.value=val;
+    });
+  } else {
+    sel.dataset['pad_'+side] = val;
+  }
+  applyTextPad(sel);
+  save(); drawThumbs(); saveState();
+}
+function applyTextPad(el){
+  const u = el.dataset.padUnit || textPadUnit || 'px';
+  const t=el.dataset.pad_t||el.dataset.pad_t===0?el.dataset.pad_t:6;
+  const r=el.dataset.pad_r||el.dataset.pad_r===0?el.dataset.pad_r:8;
+  const b=el.dataset.pad_b||el.dataset.pad_b===0?el.dataset.pad_b:6;
+  const l=el.dataset.pad_l||el.dataset.pad_l===0?el.dataset.pad_l:8;
+  const padStr = `${t}${u} ${r}${u} ${b}${u} ${l}${u}`;
+  const c2 = el.querySelector('.tel')||el.querySelector('.ec'); if(!c2) return;
+  let cs = c2.getAttribute('style')||'';
+  cs = cs.replace(/\bpadding\s*:[^;]+;?/gi,'').trim();
+  cs = (cs.endsWith(';')||!cs ? cs : cs+';') + 'padding:'+padStr+';';
+  c2.setAttribute('style', cs);
+}
+function syncTextPadUI(){
+  if(!sel||sel.dataset.type!=='text') return;
+  const u = sel.dataset.padUnit || textPadUnit;
+  document.getElementById('pad-unit-px')?.classList.toggle('active', u==='px');
+  document.getElementById('pad-unit-pct')?.classList.toggle('active', u==='%');
+  ['t','r','b','l'].forEach(s=>{
+    const inp=document.getElementById('p-pad-'+s);
+    if(inp) inp.value = sel.dataset['pad_'+s]??({t:6,r:8,b:6,l:8}[s]);
+  });
 }

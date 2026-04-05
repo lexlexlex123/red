@@ -9,7 +9,8 @@ let _recognition = null;
 let _lastToast = null;
 // Context: last action category for context-sensitive commands
 let _lastCtx = null; // 'select' | 'move' | 'text' | null
-let _unknownCmds = []; // log of unrecognized voice commands
+let _unknownCmds = []; // log of unrecognized voice commands (legacy for export btn)
+let _voiceLog = []; // full command log: {raw, normalized, status: 'ok'|'unknown'|'noise', ts}
 
 // ── UI ─────────────────────────────────────────────────────────────
 function _voiceMsg(text, type) {
@@ -524,6 +525,28 @@ function _normalize(raw) {
     // Очистка текста
     [/^(убери|убрать|очисти|очистить|удали|стереть?)\s+(текст|надпись|содержимое|текст\s+внутри\s+блока|текст\s+внутри)\s*(блока?|элемента?)?$/, 'очистить текст'],
     [/^(заменить?|поменяй|замени)\s+текст\s+(диктовка|на\s+диктовку|голосом)$/, 'начать диктовку'],
+    // Размер через "в два раза больше" и т.п.
+    [/^(увеличить?|увеличь?)\s+(ширину?|высоту?)\s+(в\s+два\s+раза|вдвое|в\s+2\s+раза)$/, (m) => /ширин/.test(m[2]) ? 'размер + 100%w' : 'размер + 100%h'],
+    [/^(ширина?|высота?)\s+(в\s+два\s+раза|вдвое)\s+(больше)?$/, (m) => /ширин/.test(m[1]) ? 'размер + 100%w' : 'размер + 100%h'],
+    // Поворот — разные формулировки
+    [/^(поверни|повернуть?)\s+(фигуру?|объект|элемент)?\s*(на\s+)?(\d+)[°о]?\s*(градусов?)?$/, (m) => 'повернуть на '+(m[4]||'90')],
+    [/^(поворот)\s+(\d+)[°о]?$/, (m) => 'повернуть на '+m[2]],
+    // Снять выделение
+    [/^(убери|убрать|сними|снять|отменить?)\s+(выделение|выделения|выделенное)$/, 'снять выделение'],
+    [/^не\s+снимается$/, 'снять выделение'],
+    // Выделить по типу
+    [/^(выделить?|выбрать?)\s+(фигуры?|все\s+фигуры)$/, 'выбрать фигуру'],
+    [/^(выделить?|выбрать?)\s+(тексты?|все\s+тексты?)$/, 'выбрать текст'],
+    // Показ/презентация
+    [/^(покажи|показать?|начать?)\s+(презентацию|показ|слайды?)$/, 'начать показ'],
+    // Сдвинуть без "на"
+    [/^(сдвинуть?|сдвинь)\s+(вниз|вверх|влево|вправо)$/, (m) => {const dir={вниз:'вниз',вверх:'вверх',влево:'влево',вправо:'вправо'}[m[2]]; return dir+' на obj';}],
+    // Отразить/перевернуть по горизонтали/вертикали
+    [/^(поверни|повернуть?|отрази|зеркал[ья])\s+(горизонтально|по горизонтали|налево-направо)$/, 'отразить горизонтально'],
+    [/^(поверни|повернуть?|отрази|зеркал[ья])\s+(вертикально|по вертикали|вверх-вниз)$/, 'отразить вертикально'],
+    // Остановить показ
+    [/^(останови|остановить?|заверши|завершить?)\s+(презентацию|показ|слайды?)$/, 'остановить показ'],
+    [/^(выход|выйти)\s+(из показа|из презентации)?$/, 'остановить показ'],
     [/^(сохрани|сохранить)$/, 'сохранить'],
     [/^(экспортируй|экспортировать|выгрузи)$/, 'экспортировать'],
     [/^(полный экран|на весь экран|развернуть)$/, 'полный экран'],
@@ -536,8 +559,16 @@ function _normalize(raw) {
   return t; // return as-is if no mapping found
 }
 
+let _lastCmd = '', _lastCmdTime = 0;
 function _handleCommand(raw) {
   const t = _normalize(raw);
+  // Debounce: skip exact duplicate commands within 800ms
+  const now = Date.now();
+  if (t === _lastCmd && now - _lastCmdTime < 800) return;
+  _lastCmd = t; _lastCmdTime = now;
+  // Log all commands — mark as 'ok' initially, overwrite if falls through to unknown
+  const _logEntry = {raw, normalized: t, ts: new Date().toLocaleTimeString('ru-RU', {hour:'2-digit',minute:'2-digit',second:'2-digit'}), status: 'ok'};
+  _voiceLog.push(_logEntry);
   _voiceMsg(raw, 'ok');
 
   // helpers
@@ -798,7 +829,7 @@ function _handleCommand(raw) {
   }
   if (t === 'копировать') { if (typeof copyEl==='function') copyEl(); return; }
   if (t === 'сгруппировать') { if (typeof window.groupSelected==='function') window.groupSelected(); return; }
-  if (t === 'разгруппировать') { if (typeof window.groupSelected==='function') window.groupSelected(); /* ungroup uses same fn with shift */ return; }
+  if (t === 'разгруппировать') { if (typeof window.ungroupSelected==='function') window.ungroupSelected(); else if (typeof window.groupSelected==='function') window.groupSelected(); return; }
   if (t === 'вставить') { if (typeof pasteEl==='function') pasteEl(); return; }
   if (t === 'дублировать') {
     if (typeof dupEl==='function') dupEl();
@@ -1006,6 +1037,38 @@ function _handleCommand(raw) {
 
   // ── Прочее ──
   if (t === 'разместить объекты') { if (typeof autoPlaceAll==='function') autoPlaceAll(); return; }
+
+  // ── Снять выделение ──
+  if (t === 'снять выделение') {
+    if (typeof clearMultiSel==='function') clearMultiSel();
+    if (typeof desel==='function') desel();
+    return;
+  }
+
+  // ── Начать/остановить показ ──
+  if (t === 'начать показ') {
+    if (typeof startPreview==='function') startPreview();
+    else { const btn=document.getElementById('preview-btn'); if(btn) btn.click(); }
+    return;
+  }
+  if (t === 'остановить показ') {
+    const ov=document.getElementById('preview-ov');
+    if(ov&&ov.classList.contains('active')){ if(typeof stopPreview==='function') stopPreview(); else { const btn=document.getElementById('preview-close'); if(btn) btn.click(); } }
+    return;
+  }
+
+  // ── Размер по одной оси ──
+  const sizeAxisM = t.match(/^размер \+ (\d+)%(w|h)$/);
+  if (sizeAxisM && hasSel()) {
+    const pct = parseInt(sizeAxisM[1])/100;
+    const axis = sizeAxisM[2];
+    _forEachSel((elT, d) => {
+      if (axis==='w') { d.w=Math.round(d.w*(1+pct)); elT.style.width=d.w+'px'; }
+      else { d.h=Math.round(d.h*(1+pct)); elT.style.height=d.h+'px'; }
+    });
+    if (typeof syncProps==='function') syncProps();
+    return;
+  }
 
   // ── Прозрачность объекта ──
   const opM = t.match(/^прозрачность (\d+)$/);
@@ -1462,9 +1525,13 @@ function _handleCommand(raw) {
     return;
   }
 
-  // Unknown
+  // Unknown — skip noise (single punctuation, very short fragments)
+  if (raw.replace(/[.,!?\s]/g,'').length < 2) {
+    _logEntry.status = 'noise'; _voiceLog.push(_logEntry); return;
+  }
+  _logEntry.status = 'unknown';
+  _voiceLog.push(_logEntry);
   _unknownCmds.push(raw);
-  // Show export button if there are unknown commands
   const exportBtn = document.getElementById('voice-export-btn');
   if (exportBtn) exportBtn.style.display = '';
   _voiceMsg('Неизвестная команда: «' + raw + '»');
@@ -1478,13 +1545,21 @@ function _startRecognition() {
     return false;
   }
 
-  _recognition = new SpeechRecognition();
-  _recognition.lang = 'ru-RU';
-  _recognition.continuous = true;
-  _recognition.interimResults = false;
-  _recognition.maxAlternatives = 1;
+  // Reuse existing recognition object to avoid re-requesting microphone permission
+  if (!_recognition) {
+    _recognition = new SpeechRecognition();
+    _recognition.lang = 'ru-RU';
+    _recognition.continuous = true;
+    _recognition.interimResults = true; // enables live preview for dictation
+    _recognition.maxAlternatives = 1;
+    _setupRecognitionHandlers();
+  }
 
-  _recognition.interimResults = true; // enables live preview for dictation
+  try { _recognition.start(); } catch(e) {}
+  return true;
+}
+
+function _setupRecognitionHandlers() {
   let _lastResultIdx = 0;
   _recognition.onresult = (e) => {
     const result = e.results[e.resultIndex];
@@ -1539,42 +1614,47 @@ function _startRecognition() {
     if (e.error === 'no-speech') return; // ignore silence
     if (e.error === 'aborted') return;   // ignore manual stops
     if (e.error === 'network') {
-      // Network error — restart after delay
-      if (_active) setTimeout(() => { try { _recognition.start(); } catch(err) {} }, 1000);
+      if (_active) setTimeout(() => { try { _recognition.abort(); } catch(e2){} setTimeout(()=>{ try { _recognition.start(); } catch(err) {} }, 50); }, 500);
       return;
     }
     _voiceMsg('Ошибка: ' + e.error);
   };
 
-  let _restartTimeout = null;
+  let _isRestarting = false;
   _recognition.onend = () => {
-    if (!_active) return;
-    // Debounce restart to avoid rapid restart loops
-    clearTimeout(_restartTimeout);
-    _restartTimeout = setTimeout(() => {
+    if (!_active || _isRestarting) return;
+    _isRestarting = true;
+    // Use abort+start cycle: abort clears state without triggering permission dialog
+    try { _recognition.abort(); } catch(e) {}
+    // Small delay ensures abort completes before start
+    setTimeout(() => {
+      _isRestarting = false;
       if (_active) try { _recognition.start(); } catch(err) {}
-    }, 200);
+    }, 50);
   };
 
-  _recognition.start();
-  return true;
 }
 
 function _stopRecognition() {
   if (_recognition) {
     try { _recognition.stop(); } catch(e) {}
-    _recognition = null;
+    // Don't set _recognition=null — keep the object to avoid permission prompt on restart
   }
 }
 
 // ── Toggle ─────────────────────────────────────────────────────────
 window.exportVoiceUnknown = function() {
-  if (!_unknownCmds.length) {
-    if (typeof toast === 'function') toast('Нет нераспознанных команд', 'ok');
+  if (!_voiceLog.length) {
+    if (typeof toast === 'function') toast('Лог пуст', 'ok');
     return;
   }
-  const text = '=== Нераспознанные голосовые команды (' + _unknownCmds.length + ') ===\n' +
-    _unknownCmds.map((cmd, i) => (i+1) + '. ' + cmd).join('\n');
+  const icons = {ok:'✅', unknown:'❓', noise:'🔇'};
+  const text = '=== Лог голосовых команд (' + _voiceLog.length + ') ===\n' +
+    _voiceLog.map((e, i) => {
+      const icon = icons[e.status] || '?';
+      const norm = e.normalized !== e.raw ? ' → «' + e.normalized + '»' : '';
+      return (i+1) + '. [' + e.ts + '] ' + icon + ' «' + e.raw + '»' + norm;
+    }).join('\n');
   // Copy to clipboard
   if (navigator.clipboard) {
     navigator.clipboard.writeText(text).then(() => {
@@ -1603,9 +1683,9 @@ window.toggleVoiceControl = function(btn) {
     const started = _startRecognition();
     if (!started) { _active = false; return; }
     _voiceMsg('Голосовое управление включено', 'ok');
-    // Show export button if there are already unknown commands
+    // Show log button when voice is active
     const _eb = document.getElementById('voice-export-btn');
-    if (_eb && _unknownCmds.length > 0) _eb.style.display = '';
+    if (_eb) _eb.style.display = '';
     if (btn) { btn.classList.add('active'); btn.style.color = 'var(--accent)'; }
     // Switch props to show commands
     const propsPanel = document.getElementById('props-voice-panel');
@@ -1618,7 +1698,7 @@ window.toggleVoiceControl = function(btn) {
   } else {
     _stopRecognition();
     _voiceMsg('Голосовое управление выключено');
-    if (btn) { btn.classList.remove('active'); btn.style.color = ''; }
+    if (btn) { btn.classList.remove('active'); btn.style.color = ''; btn.style.outline = ''; btn.blur(); }
     const propsPanel = document.getElementById('props-voice-panel');
     if (propsPanel) propsPanel.style.display = 'none';
   }

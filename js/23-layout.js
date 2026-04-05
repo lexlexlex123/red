@@ -1394,6 +1394,323 @@ M-29,-2.5 L-47,-19 L-44,0 L-47,19 L-29,2.5 Z"/>
   },
 
   // ── BIRDS ──
+  // themes appended below
+
+  {
+    name:'Лес', nameEn:'Forest',
+    desc:'Силуэты елей в тумане, многоуровневый лес',descEn:'Misty forest silhouettes, layered depth',
+    animated: true,
+    _build:(w,h,a1,a2,isTitle,doAnimate)=>{
+      const uid='fr'+Math.random().toString(36).slice(2,7);
+      const rng=(s)=>{let x=Math.sin(s*127.1+311.7)*43758.5;return x-Math.floor(x);};
+
+      // ── Realistic spruce silhouette ──
+      // Irregular branches, pointy tip, tapers toward top
+      function spruce(tx,ty,tw,th,col,op){
+        // Build left+right profiles with irregular notches (branch gaps)
+        const steps=Math.max(8,Math.floor(th/8));
+        let leftPts=[], rightPts=[];
+        for(let i=0;i<=steps;i++){
+          const t=i/steps; // 0=tip, 1=base
+          const baseW=tw*(t*0.85+0.05); // tapers at top
+          // Irregular notch: every 2-3 steps a deeper cut (branch gap)
+          const notch=(i>0&&i<steps&&rng(i*7+op*100)*3<1)?0.25+rng(i*7+1)*0.20:0;
+          const lx=tx-(baseW/2)*(1-notch*0.6);
+          const rx=tx+(baseW/2)*(1-notch*0.55);
+          const py=ty+t*th;
+          // Add slight branch-tip bumps on the profile edges
+          const bump=(i>1&&i<steps-1)?rng(i*11+50)*baseW*0.12:0;
+          leftPts.push([lx - bump, py]);
+          rightPts.push([rx + bump*(0.5+rng(i*11)*0.5), py]);
+        }
+        // Base: flat (trunk implied)
+        const baseY=ty+th;
+        let d=`M${tx.toFixed(1)},${ty.toFixed(1)} `;
+        // Right profile
+        rightPts.forEach(([x,y])=>{ d+=`L${x.toFixed(1)},${y.toFixed(1)} `; });
+        d+=`L${tx.toFixed(1)},${baseY.toFixed(1)} `;
+        // Left profile reversed
+        for(let i=leftPts.length-1;i>=0;i--){
+          d+=`L${leftPts[i][0].toFixed(1)},${leftPts[i][1].toFixed(1)} `;
+        }
+        d+='Z';
+        return `<path d="${d}" fill="${col}" opacity="${op}"/>`;
+      }
+
+      // ── Tall pine (like the foreground tree in reference) ──
+      function pine(tx,ty,tw,th,col,op){
+        const trunkH=th*0.35, trunkW=tw*0.08;
+        // Irregular rounded crown with jagged edges
+        const n=20;
+        let pts=[];
+        for(let i=0;i<n;i++){
+          const a=(i/n)*Math.PI*2;
+          const r=(tw*0.42+rng(i*3+op*50)*tw*0.18)*(i%3===0?0.72:1.0);
+          const ry=(th*0.30+rng(i*3+1)*th*0.08)*(i%4===0?0.65:1.0);
+          pts.push([tx+Math.cos(a)*r, ty+th*0.28+Math.sin(a)*ry]);
+        }
+        let d=`M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)} `;
+        for(let i=1;i<n;i++) d+=`L${pts[i][0].toFixed(1)},${pts[i][1].toFixed(1)} `;
+        d+='Z';
+        let g=`<path d="${d}" fill="${col}" opacity="${op}"/>`;
+        g+=`<rect x="${(tx-trunkW/2).toFixed(1)}" y="${(ty+th*0.52).toFixed(1)}" width="${trunkW.toFixed(1)}" height="${trunkH.toFixed(1)}" fill="${col}" opacity="${op}"/>`;
+        return g;
+      }
+
+      // ── Leaf shape ──
+      function leaf(cx,cy,r,angle,col,op){
+        const a=angle*Math.PI/180,cs=Math.cos(a),sn=Math.sin(a);
+        const R=(x,y)=>`${(cx+x*cs-y*sn).toFixed(1)},${(cy+x*sn+y*cs).toFixed(1)}`;
+        const tip=R(0,-r*1.7), base=R(0,r*0.4), l=R(-r*0.65,-r*0.4), rr=R(r*0.65,-r*0.4);
+        const path=`M${base} C${R(-r*0.8,r*0.0)} ${l} ${tip} C${rr} ${R(r*0.8,r*0.0)} ${base} Z`;
+        const [bx,by]=[cx+0*cs-r*0.4*sn, cy+0*sn+r*0.4*cs];
+        const [tx2,ty2]=[cx+0*cs-(-r*1.7)*sn, cy+0*sn+(-r*1.7)*cs];
+        const stem=`<line x1="${bx.toFixed(1)}" y1="${by.toFixed(1)}" x2="${cx.toFixed(1)}" y2="${cy.toFixed(1)}" stroke="${col}" stroke-width="0.8" stroke-linecap="round" opacity="0.5"/>`;
+        return `<g fill="${col}" opacity="${op}"><path d="${path}"/>${stem}</g>`;
+      }
+
+      // ══ BUILD SCENE ══
+      // Multiple depth layers: far (very low opacity) → near (full opacity)
+      // Each layer: row of spruces with fog band between layers
+
+      const nLayers = isTitle ? 5 : 4;
+      // Layer config: [yFraction of base, treeHeightFraction, opacity, spacing, type]
+      // yFraction: where bottom of trees sits (as fraction of h)
+      const layerDefs = isTitle
+        ? [
+            [0.45, 0.12, 0.10, 0.035, 'spruce'],  // very far, barely visible
+            [0.52, 0.16, 0.15, 0.040, 'spruce'],  // far
+            [0.62, 0.22, 0.22, 0.055, 'spruce'],  // mid-far
+            [0.76, 0.30, 0.35, 0.070, 'spruce'],  // mid-near
+            [1.00, 0.42, 0.65, 0.095, 'spruce'],  // near foreground
+          ]
+        : [
+            [0.50, 0.14, 0.12, 0.038, 'spruce'],
+            [0.64, 0.20, 0.20, 0.055, 'spruce'],
+            [0.80, 0.30, 0.35, 0.075, 'spruce'],
+            [1.00, 0.42, 0.60, 0.10,  'spruce'],
+          ];
+
+      let layers='', fogBands='';
+
+      layerDefs.forEach(([yFrac, hFrac, op, spacing, type], li)=>{
+        const baseY = h * yFrac;
+        const maxH  = h * hFrac;
+        const step  = w * spacing;
+        const nTrees= Math.ceil(w / step) + 2;
+        let row='';
+        for(let i=0;i<nTrees;i++){
+          const tx = (i - 0.5) * step + rng(li*100+i*3)*step*0.6;
+          const th = maxH * (0.65 + rng(li*100+i*3+1)*0.45);
+          const tw = th * (0.28 + rng(li*100+i*3+2)*0.18);
+          const ty = baseY - th;
+          row += spruce(tx, ty, tw, th, a1, op.toFixed(2));
+        }
+        // Add 1-2 pine trees on front layers
+        if(li >= nLayers-2 && isTitle){
+          const pineX = li===nLayers-1 ? w*0.72 : w*0.18;
+          const pineH = maxH*(1.2+rng(li*200)*0.4);
+          const pineW = pineH*0.55;
+          row += pine(pineX, baseY-pineH, pineW, pineH, a1, (op*1.05).toFixed(2));
+        }
+        layers += `<g>${row}</g>`;
+
+        // Fog band ABOVE this layer (between layers)
+        if(li < layerDefs.length-1){
+          const nextY = h * layerDefs[li+1][0];
+          const fogY  = baseY - maxH*0.3;
+          const fogH  = nextY - fogY + maxH*0.5;
+          const fogOp = (0.06 + li*0.025).toFixed(3);
+          fogBands += `<rect x="0" y="${fogY.toFixed(1)}" width="${w}" height="${Math.max(10,fogH).toFixed(1)}" fill="${a2}" opacity="${fogOp}"/>`;
+        }
+      });
+
+      // Ground/sky gradient
+      const defs=`<defs>
+        <linearGradient id="${uid}sky" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stop-color="${a2}" stop-opacity="0.0"/>
+          <stop offset="55%" stop-color="${a2}" stop-opacity="0.06"/>
+          <stop offset="100%" stop-color="${a1}" stop-opacity="0.18"/>
+        </linearGradient>
+        <linearGradient id="${uid}fog" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stop-color="${a2}" stop-opacity="0.20"/>
+          <stop offset="100%" stop-color="${a2}" stop-opacity="0"/>
+        </linearGradient>
+      </defs>`;
+      const bgRect=`<rect width="${w}" height="${h}" fill="url(#${uid}sky)"/>`;
+      // Atmospheric haze at top of treeline
+      const hazeY=(h*(isTitle?0.35:0.40)).toFixed(0);
+      const hazeH=(h*0.22).toFixed(0);
+      const haze=`<rect x="0" y="${hazeY}" width="${w}" height="${hazeH}" fill="url(#${uid}fog)"/>`;
+
+      // ── Falling leaves ──
+      const nL=isTitle?20:6;
+      let leafSvg='';
+      for(let i=0;i<nL;i++){
+        const col=i%4===0?a2:a1;
+        const op=(0.20+rng(i*7+3)*0.22).toFixed(2);
+        const r=4+rng(i*7+2)*7;
+        const ang=rng(i*7+4)*360;
+        const dur=6+rng(i*7)*7;
+        const delay=(rng(i*7+0.3)*dur).toFixed(1);
+        const sx=(rng(i*7)*w).toFixed(1);
+        const swayA=12+rng(i*7+5)*40;
+        const phase=rng(i*7+6)*Math.PI*2;
+        if(doAnimate){
+          const xV=[], yV=[];
+          for(let k=0;k<=6;k++){
+            const t=k/6;
+            xV.push((+sx+Math.sin(phase+t*Math.PI*2.5)*swayA).toFixed(1));
+            yV.push((-r*3+(h+r*6)*t).toFixed(1));
+          }
+          const kv=xV.map((x,k)=>`${x},${yV[k]}`).join(';');
+          const ks='0.45 0 0.55 1;0.45 0 0.55 1;0.45 0 0.55 1;0.45 0 0.55 1;0.45 0 0.55 1;0.45 0 0.55 1';
+          leafSvg+=`<g>
+            <animateTransform attributeName="transform" type="translate"
+              values="${kv}" keyTimes="0;0.14;0.28;0.44;0.60;0.78;1"
+              keySplines="${ks}" dur="${dur.toFixed(1)}s" begin="-${delay}s"
+              repeatCount="indefinite" calcMode="spline"/>
+            ${leaf(0,0,r,ang,col,op)}
+          </g>`;
+        } else {
+          const lx=(rng(i*7)*w).toFixed(1),ly=(rng(i*7+1)*h*0.85).toFixed(1);
+          leafSvg+=leaf(+lx,+ly,r,ang,col,op);
+        }
+      }
+
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${defs}${bgRect}${layers}${fogBands}${haze}${leafSvg}</svg>`;
+    },
+    titleSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,true,doAnimate!==false);},
+    contentSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,false,doAnimate!==false);},
+  },
+  {
+    name:'Гроза', nameEn:'Storm',
+    desc:'Молнии, тучи, дождь',descEn:'Lightning, storm clouds, rain',
+    animated: true,
+    _build:(w,h,a1,a2,isTitle,doAnimate)=>{
+      const rng=(s)=>{let x=Math.sin(s*127.1+311.7)*43758.5;return x-Math.floor(x);};
+      function bolt(x1,segs,spread,col,op,sw){let pts=[[x1,-10]],cx=x1;const sh=(h+10)/segs;for(let i=1;i<=segs;i++){cx+=((rng(x1+i*7)-0.5)*spread);pts.push([cx.toFixed(1),(sh*i-10).toFixed(1)]);}return `<polyline points="${pts.map(p=>p.join(',')).join(' ')}" fill="none" stroke="${col}" stroke-width="${sw}" opacity="${op}" stroke-linecap="round" stroke-linejoin="round"/>`;}
+      let rain='',bolts='',anims='';
+      for(let i=0;i<(isTitle?60:35);i++){const rx=(rng(i*4)*w).toFixed(1),rl=(8+rng(i*4+2)*18).toFixed(0),op=(0.04+rng(i*4+3)*0.08).toFixed(2);if(doAnimate){const dur=(0.6+rng(i*4)*0.8).toFixed(2),delay=(rng(i*4+0.5)*2).toFixed(2);anims+=`<line x1="${rx}" y1="0" x2="${+rx+6}" y2="${rl}" stroke="${a2}" stroke-width="0.8" opacity="${op}"><animateTransform attributeName="transform" type="translate" from="0 -${rl}" to="0 ${h+rl}" dur="${dur}s" begin="${delay}s" repeatCount="indefinite"/></line>`;}else rain+=`<line x1="${rx}" y1="${(rng(i*4+1)*h).toFixed(1)}" x2="${+rx+6}" y2="${(+rng(i*4+1)*h+ +rl).toFixed(1)}" stroke="${a2}" stroke-width="0.8" opacity="${op}"/>`;}
+      if(isTitle){bolts+=bolt(w*0.25,8,w*0.06,a1,'0.55',2.5);bolts+=bolt(w*0.72,7,w*0.05,a2,'0.40',2.0);}else bolts+=bolt(w*0.2,6,w*0.05,a1,'0.35',1.8);
+      let clouds='';[[0.15,0.06,0.22,0.10],[0.6,0.03,0.25,0.08]].forEach(([cx,cy,cw,ch])=>{clouds+=`<ellipse cx="${(cx*w).toFixed(0)}" cy="${(cy*h).toFixed(0)}" rx="${(cw*w).toFixed(0)}" ry="${(ch*h).toFixed(0)}" fill="${a1}" opacity="0.09"/>`;});
+      const flash=doAnimate?`<rect width="${w}" height="${h}" fill="${a1}" opacity="0"><animate attributeName="opacity" values="0;0;0;0;0.08;0;0.04;0;0;0;0;0;0.06;0;0" dur="4s" repeatCount="indefinite"/></rect>`:'';
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${clouds}${doAnimate?anims:rain}${bolts}${flash}</svg>`;
+    },
+    titleSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,true,doAnimate!==false);},
+    contentSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,false,doAnimate!==false);},
+  },
+  {
+    name:'Город', nameEn:'City',
+    desc:'Ночной городской силуэт, огни окон',descEn:'Night city skyline, glowing windows',
+    animated: true,
+    _build:(w,h,a1,a2,isTitle,doAnimate)=>{
+      const uid='ct'+Math.random().toString(36).slice(2,7);
+      const rng=(s)=>{let x=Math.sin(s*127.1+311.7)*43758.5;return x-Math.floor(x);};
+      const nB=isTitle?28:18,hY=isTitle?h*0.62:h*0.72;
+      let buildings='',windows='',anims='';
+      for(let i=0;i<nB;i++){const bw=w/nB*(0.55+rng(i*3)*0.55),bh=hY*(0.2+rng(i*3+1)*0.65),bx=w/nB*i+(w/nB-bw)*0.5,by=hY-bh;buildings+=`<rect x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${bw.toFixed(1)}" height="${(bh+2).toFixed(1)}" fill="${i%3===0?a2:a1}" opacity="${(0.08+rng(i*3+2)*0.10).toFixed(2)}"/>`;const wC=Math.max(1,Math.floor(bw/9)),wR=Math.max(1,Math.floor(bh/11));for(let wr=0;wr<wR;wr++)for(let wc=0;wc<wC;wc++){if(rng(i*100+wr*10+wc)<0.45)continue;const wx=bx+wc*(bw/wC)+2,wy=by+wr*(bh/wR)+3,ww=Math.max(2,bw/wC-4),wh2=Math.max(2,bh/wR-4),wop=(0.25+rng(i*100+wr*10+wc+0.5)*0.45).toFixed(2),wcol=rng(i*100+wr*10+wc+0.3)>0.6?a2:a1;if(doAnimate){const dur=(1.5+rng(i*100+wr*10+wc+1)*4).toFixed(1),delay=(rng(i*100+wr*10+wc+2)*5).toFixed(1);anims+=`<rect x="${wx.toFixed(1)}" y="${wy.toFixed(1)}" width="${ww.toFixed(1)}" height="${wh2.toFixed(1)}" fill="${wcol}"><animate attributeName="opacity" values="${wop};${wop};${(+wop*0.3).toFixed(2)};${wop}" dur="${dur}s" begin="${delay}s" repeatCount="indefinite"/></rect>`;}else windows+=`<rect x="${wx.toFixed(1)}" y="${wy.toFixed(1)}" width="${ww.toFixed(1)}" height="${wh2.toFixed(1)}" fill="${wcol}" opacity="${wop}"/>`;}}
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><defs><linearGradient id="${uid}gg" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="${a1}" stop-opacity="0"/><stop offset="100%" stop-color="${a1}" stop-opacity="0.14"/></linearGradient></defs><rect y="${hY}" width="${w}" height="${h-hY}" fill="url(#${uid}gg)"/>${buildings}${doAnimate?anims:windows}</svg>`;
+    },
+    titleSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,true,doAnimate!==false);},
+    contentSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,false,doAnimate!==false);},
+  },
+  {
+    name:'Зима', nameEn:'Winter',
+    desc:'Снежинки, иней, кристаллы льда',descEn:'Snowflakes, frost crystals',
+    animated: true,
+    _build:(w,h,a1,a2,isTitle,doAnimate)=>{
+      const rng=(s)=>{let x=Math.sin(s*127.1+311.7)*43758.5;return x-Math.floor(x);};
+      function sf(cx,cy,r,col,op){let d='';for(let arm=0;arm<6;arm++){const a=arm*60*Math.PI/180,ex=cx+Math.cos(a)*r,ey=cy+Math.sin(a)*r;d+=`<line x1="${cx.toFixed(1)}" y1="${cy.toFixed(1)}" x2="${ex.toFixed(1)}" y2="${ey.toFixed(1)}" stroke="${col}" stroke-width="1" opacity="${op}"/>`;for(const t of[0.4,0.65]){const bx=cx+Math.cos(a)*r*t,by=cy+Math.sin(a)*r*t,bl=r*0.28;for(const ba of[a+Math.PI/3,a-Math.PI/3])d+=`<line x1="${bx.toFixed(1)}" y1="${by.toFixed(1)}" x2="${(bx+Math.cos(ba)*bl).toFixed(1)}" y2="${(by+Math.sin(ba)*bl).toFixed(1)}" stroke="${col}" stroke-width="0.7" opacity="${op}"/>`;}}return `<g>${d}<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${(r*0.1).toFixed(1)}" fill="${col}" opacity="${op}"/></g>`;}
+      let flakes='',anims='';
+      for(let i=0;i<(isTitle?22:14);i++){const fx=rng(i*5)*w,fy=rng(i*5+1)*h,fr=4+rng(i*5+2)*16,col=i%2===0?a1:a2,op=(0.08+rng(i*5+3)*0.16).toFixed(2);if(doAnimate){const dur=(6+rng(i*5)*8).toFixed(1),delay=(rng(i*5+0.5)*5).toFixed(1),dx=((rng(i*5+1.5)-0.5)*40).toFixed(0);anims+=`<g opacity="${op}"><animateTransform attributeName="transform" type="translate" from="${fx} -${fr*2}" to="${+fx+ +dx} ${h+fr*2}" dur="${dur}s" begin="${delay}s" repeatCount="indefinite"/>${sf(0,0,fr,col,1)}</g>`;}else flakes+=sf(fx,fy,fr,col,op);}
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${doAnimate?anims:flakes}</svg>`;
+    },
+    titleSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,true,doAnimate!==false);},
+    contentSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,false,doAnimate!==false);},
+  },
+  {
+    name:'Цветы', nameEn:'Bloom',
+    desc:'Лепестки, ботанические узоры',descEn:'Petals, botanical patterns',
+    animated: true,
+    _build:(w,h,a1,a2,isTitle,doAnimate)=>{
+      const rng=(s)=>{let x=Math.sin(s*127.1+311.7)*43758.5;return x-Math.floor(x);};
+      function petal(cx,cy,r,angle,col,op){const a=angle*Math.PI/180,ex=cx+Math.cos(a)*r*2,ey=cy+Math.sin(a)*r*2,c1x=cx+Math.cos(a-0.9)*r*1.4,c1y=cy+Math.sin(a-0.9)*r*1.4,c2x=cx+Math.cos(a+0.9)*r*1.4,c2y=cy+Math.sin(a+0.9)*r*1.4;return `<path d="M${cx.toFixed(1)},${cy.toFixed(1)} C${c1x.toFixed(1)},${c1y.toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)} C${ex.toFixed(1)},${ey.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${cx.toFixed(1)},${cy.toFixed(1)} Z" fill="${col}" opacity="${op}"/>`;}
+      function flower(cx,cy,r,c1,c2,op,n){let f='';for(let i=0;i<n;i++)f+=petal(cx,cy,r,i*(360/n),i%2===0?c1:c2,(+op*0.9).toFixed(2));f+=`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${(r*0.35).toFixed(1)}" fill="${c2}" opacity="${op}"/>`;return f;}
+      let flowers='',petals='',anims='';
+      if(isTitle){flowers+=flower(w*0.07,h*0.15,w*0.055,a1,a2,'0.18',6);flowers+=flower(w*0.93,h*0.12,w*0.045,a2,a1,'0.15',5);flowers+=flower(w*0.05,h*0.82,w*0.04,a2,a1,'0.13',7);flowers+=flower(w*0.95,h*0.80,w*0.05,a1,a2,'0.16',6);}else{flowers+=flower(w*0.04,h*0.15,w*0.045,a1,a2,'0.14',6);flowers+=flower(w*0.96,h*0.78,w*0.04,a2,a1,'0.12',5);}
+      for(let i=0;i<(isTitle?20:12);i++){const px=rng(i*6)*w,py=rng(i*6+1)*h,pr=3+rng(i*6+2)*8,pa=rng(i*6+3)*360,col=i%2===0?a1:a2,op=(0.06+rng(i*6+4)*0.12).toFixed(2);if(doAnimate){const dur=(5+rng(i*6)*6).toFixed(1),delay=(rng(i*6+0.5)*4).toFixed(1),dx=((rng(i*6+1.5)-0.5)*80).toFixed(0);anims+=`<g opacity="${op}"><animateTransform attributeName="transform" type="translate" from="${px} -20" to="${+px+ +dx} ${h+20}" dur="${dur}s" begin="${delay}s" repeatCount="indefinite"/>${petal(0,0,pr,pa,col,1)}</g>`;}else petals+=petal(px,py,pr,pa,col,op);}
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${flowers}${doAnimate?anims:petals}</svg>`;
+    },
+    titleSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,true,doAnimate!==false);},
+    contentSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,false,doAnimate!==false);},
+  },
+  {
+    name:'Цунами', nameEn:'Wave',
+    desc:'Японская волна — геометрическая',descEn:'Geometric Japanese-style wave',
+    animated: true,
+    _build:(w,h,a1,a2,isTitle,doAnimate)=>{
+      function wPath(yBase,amp,freq,phase){const n=120,pts=[];for(let i=0;i<=n;i++){const x=w*i/n;pts.push(`${x.toFixed(1)},${(yBase+Math.sin((i/n*Math.PI*2*freq)+phase)*amp).toFixed(1)}`);}return `M${pts.join(' L')} L${w},${h+10} L0,${h+10} Z`;}
+      const layers=isTitle?[[h*0.50,h*0.12,2.5,0,a1,'0.18'],[h*0.62,h*0.09,2.0,1.2,a2,'0.14'],[h*0.72,h*0.06,1.5,0.8,a1,'0.10']]:[[h*0.65,h*0.09,2.5,0,a1,'0.16'],[h*0.75,h*0.06,2.0,1.0,a2,'0.12']];
+      let waveSvg='';
+      layers.forEach(([yb,amp,freq,phase,col,op],idx)=>{if(doAnimate){const dur=(3+idx*1.2).toFixed(1);waveSvg+=`<path fill="${col}" opacity="${op}"><animate attributeName="d" values="${wPath(yb,amp,freq,phase)};${wPath(yb,amp,freq,phase+Math.PI)};${wPath(yb,amp,freq,phase)}" dur="${dur}s" repeatCount="indefinite" calcMode="linear"/></path>`;}else waveSvg+=`<path d="${wPath(yb,amp,freq,phase)}" fill="${col}" opacity="${op}"/>`;});
+      const sx=isTitle?w*0.12:w*0.08,sy=isTitle?h*0.35:h*0.55,sr=isTitle?h*0.14:h*0.10;
+      let spiral='';for(let t=0;t<720;t+=8){const a=t*Math.PI/180,r=sr*t/720;spiral+=t===0?`M${(sx+Math.cos(a)*r).toFixed(1)},${(sy-Math.sin(a)*r).toFixed(1)} `:`L${(sx+Math.cos(a)*r).toFixed(1)},${(sy-Math.sin(a)*r).toFixed(1)} `;}
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${waveSvg}<path d="${spiral}" fill="none" stroke="${a1}" stroke-width="1.5" opacity="0.20" stroke-linecap="round"/></svg>`;
+    },
+    titleSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,true,doAnimate!==false);},
+    contentSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,false,doAnimate!==false);},
+  },
+  {
+    name:'Звук', nameEn:'Sound',
+    desc:'Звуковые волны, эквалайзер',descEn:'Sound waves, equalizer bars',
+    animated: true,
+    _build:(w,h,a1,a2,isTitle,doAnimate)=>{
+      const rng=(s)=>{let x=Math.sin(s*127.1+311.7)*43758.5;return x-Math.floor(x);};
+      const cx=isTitle?w*0.5:w*0.85,cy=h*0.5,nW=isTitle?8:5;
+      let svg='';
+      for(let i=1;i<=nW;i++){const r=(i/nW)*(isTitle?Math.max(w,h)*0.65:w*0.4),op=(0.04+rng(i)*0.08*(1-i/nW)).toFixed(2),col=i%2===0?a2:a1;if(doAnimate){const dur=(1.5+i*0.3).toFixed(1),delay=(i*0.2).toFixed(1);svg+=`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="0" fill="none" stroke="${col}" stroke-width="1.2"><animate attributeName="r" from="0" to="${r.toFixed(1)}" dur="${dur}s" begin="${delay}s" repeatCount="indefinite"/><animate attributeName="opacity" from="${op}" to="0" dur="${dur}s" begin="${delay}s" repeatCount="indefinite"/></circle>`;}else svg+=`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}" fill="none" stroke="${col}" stroke-width="1.2" opacity="${op}"/>`;}
+      const nB=isTitle?32:20,bW=w/(nB*1.8),mBH=h*(isTitle?0.25:0.18);
+      for(let i=0;i<nB;i++){const bx=w*0.1+(w*0.8/nB)*i,bh=mBH*(0.15+rng(i*3+100)*0.85),col=i%2===0?a1:a2,op=(0.08+rng(i*3+101)*0.10).toFixed(2);if(doAnimate){const dur=(0.4+rng(i*3)*0.6).toFixed(2),delay=(rng(i*3+0.5)*0.5).toFixed(2),bh2=(mBH*(0.1+rng(i*3+50)*0.9)).toFixed(1);svg+=`<rect x="${bx.toFixed(1)}" y="${(h-bh).toFixed(1)}" width="${bW.toFixed(1)}" height="${bh.toFixed(1)}" fill="${col}" opacity="${op}" rx="1"><animate attributeName="height" values="${bh.toFixed(1)};${bh2};${bh.toFixed(1)}" dur="${dur}s" begin="${delay}s" repeatCount="indefinite"/><animate attributeName="y" values="${(h-bh).toFixed(1)};${(h-+bh2).toFixed(1)};${(h-bh).toFixed(1)}" dur="${dur}s" begin="${delay}s" repeatCount="indefinite"/></rect>`;}else svg+=`<rect x="${bx.toFixed(1)}" y="${(h-bh).toFixed(1)}" width="${bW.toFixed(1)}" height="${bh.toFixed(1)}" fill="${col}" opacity="${op}" rx="1"/>`;}
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${svg}</svg>`;
+    },
+    titleSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,true,doAnimate!==false);},
+    contentSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,false,doAnimate!==false);},
+  },
+  {
+    name:'Горы', nameEn:'Mountains',
+    desc:'Горные силуэты в слоях, туман',descEn:'Layered mountain silhouettes, mist',
+    animated: true,
+    _build:(w,h,a1,a2,isTitle,doAnimate)=>{
+      const uid='mt'+Math.random().toString(36).slice(2,7);
+      const rng=(s)=>{let x=Math.sin(s*127.1+311.7)*43758.5;return x-Math.floor(x);};
+      function mR(seed,yBase,yRange,nP,col,op){const pts=[`0,${h}`];for(let i=0;i<=nP*2;i++){const x=w*i/(nP*2);pts.push(`${x.toFixed(1)},${(yBase-(i%2===0?rng(seed+i)*yRange:rng(seed+i)*yRange*0.3)).toFixed(1)}`);}pts.push(`${w},${h}`);return `<polygon points="${pts.join(' ')}" fill="${col}" opacity="${op}"/>`;}
+      const layers=isTitle?[[10,h*0.55,h*0.30,8,a1,'0.20'],[20,h*0.63,h*0.20,6,a2,'0.15'],[30,h*0.71,h*0.12,5,a1,'0.11'],[40,h*0.78,h*0.06,4,a2,'0.08']]:[[10,h*0.60,h*0.28,7,a1,'0.18'],[20,h*0.70,h*0.18,5,a2,'0.13'],[30,h*0.78,h*0.08,4,a1,'0.09']];
+      let mountains='';layers.forEach(([s,yb,yr,np,col,op])=>{mountains+=mR(s,yb,yr,np,col,op);});
+      const mistY=isTitle?h*0.60:h*0.68;
+      const mist=`<defs><linearGradient id="${uid}mg" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="${a2}" stop-opacity="0"/><stop offset="50%" stop-color="${a2}" stop-opacity="0.07"/><stop offset="100%" stop-color="${a2}" stop-opacity="0"/></linearGradient></defs><rect x="-${(w*0.2).toFixed(0)}" y="${(mistY-h*0.04).toFixed(0)}" width="${(w*1.4).toFixed(0)}" height="${(h*0.08).toFixed(0)}" fill="url(#${uid}mg)"${doAnimate?`><animateTransform attributeName="transform" type="translate" from="0 0" to="${(w*0.2).toFixed(0)} 0" dur="8s" repeatCount="indefinite" calcMode="linear"/></rect>`:' />'} `;
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${mist}${mountains}</svg>`;
+    },
+    titleSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,true,doAnimate!==false);},
+    contentSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,false,doAnimate!==false);},
+  },
+  {
+    name:'ДНК', nameEn:'DNA',
+    desc:'Двойная спираль, молекулярные связи',descEn:'Double helix, molecular bonds',
+    animated: true,
+    _build:(w,h,a1,a2,isTitle,doAnimate)=>{
+      const uid='dn'+Math.random().toString(36).slice(2,7);
+      const hX=isTitle?w*0.88:w*0.92,hW=isTitle?w*0.13:w*0.10,nT=isTitle?4:3,nP=nT*24,step=h/nP;
+      const p1=[],p2=[];let rungs='';
+      for(let i=0;i<=nP;i++){const t=i/nP*nT*Math.PI*2,y=(i*step).toFixed(1),x1=(hX+Math.cos(t)*hW).toFixed(1),x2=(hX+Math.cos(t+Math.PI)*hW).toFixed(1);p1.push(`${x1},${y}`);p2.push(`${x2},${y}`);if(i%4===0&&i>0&&i<nP)rungs+=`<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${i%8===0?a2:a1}" stroke-width="1.2" opacity="${(0.10+Math.abs(Math.cos(t))*0.15).toFixed(2)}"/>`;}
+      let nodes='';for(let i=3;i<nP;i+=6){const t=i/nP*nT*Math.PI*2,y=(i*step).toFixed(1);nodes+=`<circle cx="${(hX+Math.cos(t)*hW).toFixed(1)}" cy="${y}" r="2.5" fill="${a1}" opacity="0.30"/><circle cx="${(hX+Math.cos(t+Math.PI)*hW).toFixed(1)}" cy="${y}" r="2" fill="${a2}" opacity="0.25"/>`;}
+      const tx=`<animateTransform attributeName="transform" type="translate" from="0 0" to="0 ${(-step*4).toFixed(1)}" dur="2s" repeatCount="indefinite" calcMode="linear"/>`;
+      const svg=doAnimate?`<g><polyline points="${p1.join(' ')}" fill="none" stroke="${a1}" stroke-width="1.8" opacity="0.25" stroke-linecap="round">${tx}</polyline></g><g><polyline points="${p2.join(' ')}" fill="none" stroke="${a2}" stroke-width="1.8" opacity="0.20" stroke-linecap="round">${tx}</polyline></g><g>${rungs}${tx}</g>`:`<polyline points="${p1.join(' ')}" fill="none" stroke="${a1}" stroke-width="1.8" opacity="0.25" stroke-linecap="round"/><polyline points="${p2.join(' ')}" fill="none" stroke="${a2}" stroke-width="1.8" opacity="0.20" stroke-linecap="round"/>${rungs}`;
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden"><clipPath id="${uid}cp"><rect width="${w}" height="${h}"/></clipPath><g clip-path="url(#${uid}cp)">${svg}${nodes}</g></svg>`;
+    },
+    titleSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,true,doAnimate!==false);},
+    contentSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,false,doAnimate!==false);},
+  },
 ];
 
 // ══════════════ LAYOUT ENGINE ══════════════

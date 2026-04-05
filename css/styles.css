@@ -80,7 +80,7 @@ input[type=text],input[type=number],input[type=email],textarea,[contenteditable=
 .ar-btn:hover{color:var(--text);}
 .ar-btn.active{background:var(--accent);color:#fff;}
 #ribbon-tabs{display:flex;align-items:center;padding:0 8px;gap:1px;overflow:hidden;width:100%;height:28px;}
-.rtab{background:transparent;border:none;border-bottom:2px solid transparent;color:var(--text2);padding:5px 13px;cursor:pointer;font-size:11px;font-weight:500;font-family:inherit;transition:.1s;white-space:nowrap;}
+.rtab{background:transparent;border:none;border-bottom:2px solid transparent;color:var(--text2);padding:5px 13px;cursor:pointer;font-size:11px;font-weight:500;font-family:inherit;transition:.1s;white-space:nowrap;outline:none;}
 .rtab:hover{color:var(--text);background:#ffffff08;}
 .rtab.active{color:var(--accent);border-bottom-color:var(--accent);}
 #ribbon-body{height:68px;display:flex;align-items:stretch;padding:0 4px;overflow:hidden;}

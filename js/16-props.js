@@ -154,21 +154,25 @@ function syncProps(){
     try{const _tbs=sel.dataset.textBorderStyle||'solid';document.querySelectorAll('.txt-border-style-btn').forEach(b=>b.classList.toggle('active',b.dataset.style===_tbs));}catch(e){}
     // Opacity
     try{const op=parseFloat(sel.dataset.elOpacity!=null?sel.dataset.elOpacity:1);document.getElementById('p-el-op').value=op;}catch(e){}
-    // Padding - parse 4-sided
+    // Padding - use new pad_t/r/b/l dataset or parse from style
     try{
-      const padMatch=cs.match(/\bpadding:([\d.\s]+px(?:\s[\d.\s]+px){0,3})/);
-      if(padMatch){
-        const parts=padMatch[1].trim().split(/\s+/).map(p=>parseFloat(p));
-        const t=parts[0]||0,r=parts.length>1?parts[1]:t,b=parts.length>2?parts[2]:t,l=parts.length>3?parts[3]:r;
-        document.getElementById('p-pad-t').value=t;
-        document.getElementById('p-pad-r').value=r;
-        document.getElementById('p-pad-b').value=b;
-        document.getElementById('p-pad-l').value=l;
+      if(sel.dataset.pad_t!==undefined){
+        if(typeof syncTextPadUI==='function') syncTextPadUI();
       } else {
-        document.getElementById('p-pad-t').value=6;
-        document.getElementById('p-pad-r').value=8;
-        document.getElementById('p-pad-b').value=6;
-        document.getElementById('p-pad-l').value=8;
+        const padMatch=cs.match(/\bpadding:([\d.\s]+(?:px|%)(?:\s[\d.\s]+(?:px|%)){0,3})/);
+        if(padMatch){
+          const parts=padMatch[1].trim().split(/\s+/).map(p=>parseFloat(p));
+          const t=parts[0]||0,r=parts.length>1?parts[1]:t,b=parts.length>2?parts[2]:t,l=parts.length>3?parts[3]:r;
+          document.getElementById('p-pad-t').value=t;
+          document.getElementById('p-pad-r').value=r;
+          document.getElementById('p-pad-b').value=b;
+          document.getElementById('p-pad-l').value=l;
+        } else {
+          document.getElementById('p-pad-t').value=6;
+          document.getElementById('p-pad-r').value=8;
+          document.getElementById('p-pad-b').value=6;
+          document.getElementById('p-pad-l').value=8;
+        }
       }
     }catch(e){}
   } // end if(t==='text')
@@ -182,10 +186,32 @@ function syncProps(){
   if(sel.dataset.type==='shape'){
     try{const _fsw=document.getElementById('sh-fill-preview');if(_fsw)_fsw.style.background=sel.dataset.fill||'#3b82f6';document.getElementById('sh-fill-hex').value=sel.dataset.fill||'#3b82f6';}catch(e){}
     try{const _strk=document.getElementById('sh-stroke-preview');if(_strk)_strk.style.background=sel.dataset.stroke||'#1d4ed8';document.getElementById('sh-stroke-hex').value=sel.dataset.stroke||'#1d4ed8';}catch(e){}
-    document.getElementById('sh-sw').value=sel.dataset.sw!=null?sel.dataset.sw:2;
-    const sw0=+(sel.dataset.sw!=null?sel.dataset.sw:2)===0;
-    try{const _sst=sel.dataset.strokeStyle||'solid';document.querySelectorAll('.sh-stroke-style-btn').forEach(b=>b.classList.toggle('active',b.dataset.style===_sst));}catch(e){}
+    // For curve with selected nodes: show node's sw if uniform, else show global sw
+    let _dispSw = sel.dataset.sw!=null ? sel.dataset.sw : 2;
+    let _dispStyle = sel.dataset.strokeStyle||'solid';
+    if(sel.dataset.shape==='curve' && typeof _curveSelPts!=='undefined' && _curveSelPts.size>0){
+      try{
+        const _cd=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+        if(_cd&&_cd.curvePoints){
+          const _selArr=[..._curveSelPts];
+          const _firstPt=_cd.curvePoints[_selArr[0]];
+          if(_firstPt){
+            if(_firstPt.sw!=null) _dispSw=_firstPt.sw;
+            if(_firstPt.strokeStyle) _dispStyle=_firstPt.strokeStyle;
+          }
+        }
+      }catch(e){}
+    }
+    document.getElementById('sh-sw').value=_dispSw;
+    const sw0=+_dispSw===0;
+    try{document.querySelectorAll('.sh-stroke-style-btn').forEach(b=>b.classList.toggle('active',b.dataset.style===_dispStyle));}catch(e){}
     document.getElementById('sh-rx').value=sel.dataset.rx||0;
+    // Hide rx for noFill shapes (line/wave don't support corner radius)
+    try{ const _rhide=document.getElementById('sh-rx'); const _shId=sel.dataset.shape;
+      const _shDef=typeof SHAPES!=='undefined'?SHAPES.find(s=>s.id===_shId):null;
+      const _rxRow=_rhide&&_rhide.closest('.pr');
+      if(_rxRow)_rxRow.style.display=(_shDef&&_shDef.noFill)?'none':'';
+    }catch(e){}
     document.getElementById('sh-fill-op').value=sel.dataset.fillOp||1;
     // Hide fill section for noFill shapes (line, wave)
     try{
@@ -193,6 +219,31 @@ function syncProps(){
       const _sh = typeof SHAPES!=='undefined' ? SHAPES.find(s=>s.id===_shapeId) : null;
       const _fillSec = document.getElementById('sh-fill-section');
       if(_fillSec) _fillSec.style.display = (_sh&&_sh.noFill) ? 'none' : '';
+      // Show arc controls only for ellipse
+      const _d2 = slides[cur] && slides[cur].els.find(e=>e.id===sel.dataset.id);
+      if(typeof _syncArcUI==='function') _syncArcUI(_d2);
+      if(typeof _syncPolyUI==='function') _syncPolyUI(_d2);
+      if(typeof _syncStarUI==='function') _syncStarUI(_d2);
+      if(typeof _syncParaUI==='function') _syncParaUI(_d2);
+      if(typeof _syncChevUI==='function') _syncChevUI(_d2);
+      if(typeof _syncCurveUI==='function') _syncCurveUI(_d2);
+      if(typeof _syncCloudUI==='function') _syncCloudUI(_d2);
+      // Sync shape fill gradient UI
+      try {
+        const _grad = sel.dataset.fillGrad === '1' || _d2 && _d2.fillGrad;
+        const _gradChk = document.getElementById('sh-fill-grad-check');
+        if (_gradChk) _gradChk.checked = !!_grad;
+        const _gradRow = document.getElementById('sh-fill-grad-row');
+        if (_gradRow) _gradRow.style.display = _grad ? 'flex' : 'none';
+        if (_d2 && _d2.fillGrad2) {
+          const _p = document.getElementById('sh-fill2-preview');
+          if (_p) _p.style.background = _d2.fillGrad2;
+        }
+        if (_d2 && _d2.fillGradDir != null) {
+          const _dirI = document.getElementById('sh-fill-grad-dir');
+          if (_dirI) _dirI.value = _d2.fillGradDir;
+        }
+      } catch(e) {}
     }catch(e){}
     document.getElementById('sh-shadow').checked=sel.dataset.shadow==='true';
     document.getElementById('sh-sb').value=sel.dataset.shadowBlur||8;
@@ -865,4 +916,305 @@ function setQRProp(prop, val){
   }
   if(typeof save==='function') save();
   if(typeof saveState==='function') saveState();
+}
+
+// ══════════════ ELLIPSE ARC CONTROLS ══════════════
+function _syncArcUI(d) {
+  const sec = document.getElementById('sh-arc-section');
+  if (!sec) return;
+  const isEllipse = sel && sel.dataset.shape && 
+    (typeof SHAPES !== 'undefined') && 
+    SHAPES.find(s => s.id === sel.dataset.shape)?.special === 'ellipse';
+  sec.style.display = isEllipse ? '' : 'none';
+  if (!isEllipse || !d) return;
+  const mode = d.arcMode || 'full';
+  ['full','sector','chord'].forEach(m => {
+    const b = document.getElementById('sh-arc-'+m);
+    if (b) b.classList.toggle('active', m === mode);
+  });
+  const inp1 = document.getElementById('sh-arc-start');
+  const inp2 = document.getElementById('sh-arc-end');
+  if (inp1) inp1.value = d.arcStart ?? 0;
+  if (inp2) inp2.value = d.arcEnd   ?? 360;
+}
+function setArcMode(mode) {
+  if (!sel || sel.dataset.type !== 'shape') return;
+  const d = slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (!d) return;
+  d.arcMode = mode;
+  // Initialize angles only if never set before
+  if (mode !== 'full') {
+    if (d.arcStart == null) d.arcStart = 0;
+    if (d.arcEnd   == null) d.arcEnd = 270;
+    // If both are same or full circle, set default spread
+    if (Math.abs((d.arcEnd - d.arcStart + 360) % 360) < 1)
+      d.arcEnd = ((d.arcStart + 270) % 360);
+  }
+  // Save arcMode to dataset so renderShapeEl picks it up
+  sel.dataset.arcMode = mode;
+  _syncArcUI(d);
+  renderShapeEl(sel, d);
+  if (typeof _buildArcHandles === 'function') _buildArcHandles();
+  save(); drawThumbs(); saveState();
+}
+function setArcAngle(which, val) {
+  if (!sel || sel.dataset.type !== 'shape') return;
+  const d = slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (!d) return;
+  val = parseFloat(val);
+  if (isNaN(val)) return; // ignore empty/invalid input
+  val = Math.round(((val % 360) + 360) % 360);
+  if (which === 'start') { d.arcStart = val; sel.dataset.arcStart = val; }
+  else                   { d.arcEnd   = val; sel.dataset.arcEnd   = val; }
+  // Make sure mode is not full
+  if (!d.arcMode || d.arcMode === 'full') {
+    d.arcMode = 'sector';
+    sel.dataset.arcMode = 'sector';
+    if (typeof _syncArcUI === 'function') _syncArcUI(d);
+  }
+  renderShapeEl(sel, d);
+  if (typeof _buildArcHandles === 'function') _buildArcHandles();
+  save(); drawThumbs(); saveState();
+}
+
+// ══════════════ POLYGON SIDES ══════════════
+function _syncPolyUI(d) {
+  const sec = document.getElementById('sh-poly-section');
+  if (!sec) return;
+  const isPoly = sel && sel.dataset.shape &&
+    (typeof SHAPES !== 'undefined') &&
+    SHAPES.find(s => s.id === sel.dataset.shape)?.special === 'polygon';
+  sec.style.display = isPoly ? '' : 'none';
+  if (!isPoly || !d) return;
+  const sides = d.polySides ?? 3;
+  const inp = document.getElementById('sh-poly-sides');
+  if (inp) inp.value = sides;
+}
+function setPolySides(val) {
+  if (!sel || sel.dataset.type !== 'shape') return;
+  val = Math.max(3, Math.min(16, Math.round(+val)));
+  if (isNaN(val)) return;
+  const d = slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (!d) return;
+  d.polySides = val;
+  sel.dataset.polySides = val;
+  const inp = document.getElementById('sh-poly-sides');
+  if (inp) inp.value = val;
+  if (typeof renderShapeEl === 'function') renderShapeEl(sel, d);
+  save(); drawThumbs(); saveState();
+}
+
+// ══════════════ STAR CONTROLS ══════════════
+function _syncStarUI(d) {
+  const sec = document.getElementById('sh-star-section');
+  if (!sec) return;
+  const isStar = sel && sel.dataset.shape &&
+    (typeof SHAPES !== 'undefined') &&
+    SHAPES.find(s => s.id === sel.dataset.shape)?.special === 'star';
+  sec.style.display = isStar ? '' : 'none';
+  if (!isStar || !d) return;
+  const inp = document.getElementById('sh-star-rays');
+  if (inp) inp.value = d.starRays ?? 5;
+}
+function setStarRays(val) {
+  if (!sel || sel.dataset.type !== 'shape') return;
+  val = Math.max(4, Math.min(32, Math.round(+val)));
+  if (isNaN(val)) return;
+  const d = slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (!d) return;
+  d.starRays = val;
+  sel.dataset.starRays = val;
+  const inp = document.getElementById('sh-star-rays');
+  if (inp) inp.value = val;
+  renderShapeEl(sel, d);
+  if (typeof _buildStarHandle === 'function') _buildStarHandle();
+  save(); drawThumbs(); saveState();
+}
+
+// ══════════════ PARALLELOGRAM SKEW ══════════════
+function _syncParaUI(d) {
+  const sec = document.getElementById('sh-para-section');
+  if (!sec) return;
+  const isPara = sel && sel.dataset.shape &&
+    (typeof SHAPES !== 'undefined') &&
+    SHAPES.find(s => s.id === sel.dataset.shape)?.special === 'parallelogram';
+  sec.style.display = isPara ? '' : 'none';
+  if (!isPara || !d) return;
+  const inp = document.getElementById('sh-para-skew');
+  if (inp) inp.value = d.paraSkew ?? 20;
+}
+function setParaSkew(val) {
+  if (!sel || sel.dataset.type !== 'shape') return;
+  val = Math.max(-45, Math.min(45, Math.round(+val)));
+  if (isNaN(val)) return;
+  const d = slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (!d) return;
+  d.paraSkew = val;
+  sel.dataset.paraSkew = val;
+  const inp = document.getElementById('sh-para-skew');
+  if (inp) inp.value = val;
+  renderShapeEl(sel, d);
+  if (typeof _buildParaHandle === 'function') _buildParaHandle();
+  save(); drawThumbs(); saveState();
+}
+
+// ══════════════ CHEVRON ══════════════
+function _syncChevUI(d) {
+  const sec = document.getElementById('sh-chev-section');
+  if (!sec) return;
+  const isChev = sel && sel.dataset.shape &&
+    (typeof SHAPES !== 'undefined') &&
+    SHAPES.find(s => s.id === sel.dataset.shape)?.special === 'chevron';
+  sec.style.display = isChev ? '' : 'none';
+  if (!isChev || !d) return;
+  const inp = document.getElementById('sh-chev-skew');
+  if (inp) inp.value = d.chevSkew ?? 25;
+}
+function setChevSkew(val) {
+  if (!sel || sel.dataset.type !== 'shape') return;
+  val = Math.max(0, Math.min(45, Math.round(+val)));
+  if (isNaN(val)) return;
+  const d = slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (!d) return;
+  d.chevSkew = val;
+  sel.dataset.chevSkew = val;
+  const inp = document.getElementById('sh-chev-skew');
+  if (inp) inp.value = val;
+  renderShapeEl(sel, d);
+  if (typeof _buildChevronHandle === 'function') _buildChevronHandle();
+  save(); drawThumbs(); saveState();
+}
+
+// ══════════════ CURVE ══════════════
+function _syncCurveUI(d) {
+  const sec = document.getElementById('sh-curve-section');
+  if (!sec) return;
+  const isCurve = sel && sel.dataset.shape === 'curve';
+  sec.style.display = isCurve ? '' : 'none';
+  if (!isCurve || !d) return;
+  // Edit mode button
+  const editBtn = document.getElementById('sh-curve-edit-btn');
+  const isEdit = !!window._curveEditMode;
+  if (editBtn) {
+    editBtn.classList.toggle('active', isEdit);
+    editBtn.title = isEdit ? 'Выйти из редактирования узлов' : 'Редактировать узлы';
+    const span = editBtn.querySelector('span');
+    if (span) span.textContent = isEdit ? 'Перемещение' : 'Узлы';
+  }
+  // Show node controls only in edit mode
+  const nodeBtns = document.getElementById('sh-curve-node-btns');
+  if (nodeBtns) nodeBtns.style.display = isEdit ? 'flex' : 'none';
+  // Closed button
+  const btn = document.getElementById('sh-curve-closed-btn');
+  if (btn) {
+    btn.classList.toggle('active', !!d.curveClosed);
+    btn.title = d.curveClosed ? 'Разомкнуть кривую' : 'Замкнуть кривую';
+    const span = btn.querySelector('span');
+    if (span) span.textContent = d.curveClosed ? 'Разомкнуть' : 'Замкнуть';
+  }
+}
+function toggleCurveClosed() {
+  if (!sel || sel.dataset.type !== 'shape') return;
+  const d = slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (!d) return;
+  d.curveClosed = !d.curveClosed;
+  sel.dataset.curveClosed = d.curveClosed ? '1' : '0';
+  if (d.curvePoints && typeof _normalizeCurvePoints === 'function') {
+    _normalizeCurvePoints(d.curvePoints, d.curveClosed);
+    sel.dataset.curvePoints = JSON.stringify(d.curvePoints);
+  }
+  const btn = document.getElementById('sh-curve-closed-btn');
+  if (btn) {
+    btn.classList.toggle('active', !!d.curveClosed);
+    btn.title = d.curveClosed ? 'Разомкнуть кривую' : 'Замкнуть кривую';
+    const span = btn.querySelector('span');
+    if (span) span.textContent = d.curveClosed ? 'Разомкнуть' : 'Замкнуть';
+  }
+  renderShapeEl(sel, d);
+  save(); drawThumbs(); saveState();
+}
+
+// ══════════════ CLOUD ══════════════
+function _syncCloudUI(d) {
+  const sec = document.getElementById('sh-cloud-section');
+  if (!sec) return;
+  const isCloud = sel && sel.dataset.type === 'shape' &&
+    (typeof SHAPES !== 'undefined') &&
+    SHAPES.find(s => s.id === sel.dataset.shape)?.special === 'cloud';
+  sec.style.display = isCloud ? '' : 'none';
+}
+function regenCloud() {
+  if (!sel || sel.dataset.type !== 'shape') return;
+  const d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (!d) return;
+  if (typeof pushUndo === 'function') pushUndo();
+  d.cloudSeed = Math.floor(Math.random() * 999999) + 1;
+  sel.dataset.cloudSeed = d.cloudSeed;
+  if (typeof renderShapeEl === "function") renderShapeEl(sel, d);
+  else if (typeof window.renderShapeEl === "function") window.renderShapeEl(sel, d);
+  if (typeof save === "function") save();
+  if (typeof drawThumbs === "function") drawThumbs();
+  if (typeof saveState === "function") saveState();
+}
+
+// ══════════════ SHAPE FILL GRADIENT ══════════════
+function setShapeFillGrad(on) {
+  if (!sel || sel.dataset.type !== 'shape') return;
+  const d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (!d) return;
+  pushUndo();
+  d.fillGrad = on ? true : false;
+  if (!d.fillGrad2 || d.fillGrad2 === d.fill) {
+    // Use second color from current theme palette as default
+    let _defaultGrad2 = null;
+    try {
+      const _ti = (typeof appliedThemeIdx !== 'undefined' && appliedThemeIdx >= 0) ? appliedThemeIdx
+                : ((typeof selTheme !== 'undefined' && selTheme >= 0) ? selTheme : -1);
+      if (_ti >= 0 && typeof THEMES !== 'undefined' && THEMES[_ti]) {
+        const _tc = typeof _themeColors === 'function' ? _themeColors(THEMES[_ti]) : null;
+        if (_tc && _tc.length >= 2) _defaultGrad2 = _tc[1]; // second palette color
+      }
+    } catch(e) {}
+    if (!_defaultGrad2) {
+      // Fallback: darken fill color
+      const _f = d.fill && d.fill !== 'none' ? d.fill : '#3b82f6';
+      const _hex = _f.replace('#','');
+      if (_hex.length === 6) {
+        const _r2 = Math.round(parseInt(_hex.slice(0,2),16)*0.4).toString(16).padStart(2,'0');
+        const _g2 = Math.round(parseInt(_hex.slice(2,4),16)*0.4).toString(16).padStart(2,'0');
+        const _b2 = Math.round(parseInt(_hex.slice(4,6),16)*0.4).toString(16).padStart(2,'0');
+        _defaultGrad2 = '#'+_r2+_g2+_b2;
+      } else { _defaultGrad2 = '#ffffff'; }
+    }
+    d.fillGrad2 = _defaultGrad2;
+  }
+  if (d.fillGradDir == null) d.fillGradDir = 90;
+  sel.dataset.fillGrad = on ? '1' : '0';
+  if (d.fillGrad2) sel.dataset.fillGrad2 = d.fillGrad2;
+  document.getElementById('sh-fill-grad-row').style.display = on ? 'flex' : 'none';
+  renderShapeEl(sel, d);
+  save(); drawThumbs(); saveState();
+}
+function updateShapeFillGrad2(col, schemeRef) {
+  if (!sel || sel.dataset.type !== 'shape') return;
+  const d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (!d) return;
+  debouncedPushUndo();
+  d.fillGrad2 = col;
+  d.fillGrad2Scheme = schemeRef !== undefined ? (schemeRef || null) : d.fillGrad2Scheme;
+  sel.dataset.fillGrad2 = col;
+  if(d.fillGrad2Scheme!=null) sel.dataset.fillGrad2Scheme=JSON.stringify(d.fillGrad2Scheme);
+  else delete sel.dataset.fillGrad2Scheme;
+  renderShapeEl(sel, d);
+  save(); drawThumbs(); saveState();
+}
+function updateShapeFillGradDir(deg) {
+  if (!sel || sel.dataset.type !== 'shape') return;
+  const d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (!d) return;
+  debouncedPushUndo();
+  d.fillGradDir = deg;
+  sel.dataset.fillGradDir = deg;
+  renderShapeEl(sel, d);
+  save(); drawThumbs(); saveState();
 }

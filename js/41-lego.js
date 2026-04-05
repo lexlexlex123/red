@@ -551,7 +551,7 @@ function _mkLegoEl(d) {
   el.dataset.rot       = '0';
 
   el.style.cssText = `left:${d.x}px;top:${d.y}px;width:${d.w}px;height:${d.h}px;
-    transform:rotate(0deg);overflow:visible;`;
+    transform:rotate(0deg);overflow:visible;pointer-events:auto;`;
 
   const ec_ = document.createElement('div');
   ec_.className = 'ec';
@@ -616,11 +616,20 @@ function _mkLegoDrag(el, c) {
 
     const zoom = (typeof _canvasZoom!=='undefined'&&_canvasZoom) ? _canvasZoom : 1;
 
-    // Собираем группу — все выделенные лего-элементы
+    // Собираем группу — все выделенные лего-элементы или элементы с тем же groupId
     const isGroup = multiSel.size > 1 && multiSel.has(el);
-    const targets = isGroup
-      ? Array.from(multiSel).filter(m => m.dataset.type==='lego')
-      : [el];
+    const gid = el.dataset.groupId;
+    let targets;
+    if (gid) {
+      // Move all lego elements with same groupId
+      const legoLayer = document.getElementById('lego-layer') || document.getElementById('canvas');
+      targets = Array.from(legoLayer.querySelectorAll(`.el[data-group-id="${gid}"][data-type="lego"]`));
+      if (!targets.includes(el)) targets.push(el);
+    } else if (isGroup) {
+      targets = Array.from(multiSel).filter(m => m.dataset.type==='lego');
+    } else {
+      targets = [el];
+    }
 
     // Запоминаем начальные позиции всех элементов группы
     groupStart = new Map();

@@ -326,7 +326,11 @@ function _renderConnector(conn, svg) {
   hit.setAttribute('stroke-width', Math.max(sw + 10, 16));
   hit.style.pointerEvents = 'stroke';
   hit.style.cursor = 'pointer';
-  hit.addEventListener('click', e => { e.stopPropagation(); _selectConn(conn.id); });
+  hit.addEventListener('mousedown', e => {
+    e.stopPropagation();
+    e.preventDefault();
+    _selectConn(conn.id);
+  });
 
   g.appendChild(hit);
   g.appendChild(path);
@@ -898,9 +902,27 @@ function _showConnProps(id) {
 window.cpSetColor = function(hex, schemeRef) {
   const conn = _getSelConn(); if (!conn) return;
   conn.color = hex; conn.colorScheme = schemeRef || null;
-  document.getElementById('cp-color-swatch').style.background = hex;
-  document.getElementById('cp-color-hex').value = hex;
+  const sw = document.getElementById('cp-color-swatch');
+  const hx = document.getElementById('cp-color-hex');
+  if (sw) sw.style.background = hex;
+  if (hx) hx.value = hex;
+  // Update SVG path color directly for immediate visual feedback
+  const svg = document.getElementById(SVG_LAYER_ID);
+  if (svg) {
+    const g = svg.querySelector(`[data-conn-id="${conn.id}"]`);
+    if (g) {
+      g.querySelectorAll('path[stroke]:not([stroke="transparent"])').forEach(p => {
+        p.setAttribute('stroke', hex);
+      });
+      // Update markers color
+      svg.querySelectorAll(`[id^="${conn.id}_"] path, [id^="${conn.id}_"] polygon`).forEach(p => {
+        if (p.getAttribute('fill') && p.getAttribute('fill') !== 'none') p.setAttribute('fill', hex);
+        if (p.getAttribute('stroke') && p.getAttribute('stroke') !== 'none') p.setAttribute('stroke', hex);
+      });
+    }
+  }
   _rerender();
+  if (typeof saveState === 'function') saveState();
 };
 window.cpUpdate = function() {
   const conn = _getSelConn(); if (!conn) return;
@@ -956,16 +978,20 @@ function _rerender() {
   const svg = document.getElementById(SVG_LAYER_ID);
   if (!svg) return;
   const conn = _getSelConn();
-  if (conn) { _renderConnector(conn, svg); _highlightConn(conn.id); _removeHandles(); _showHandles(conn.id); }
-  commitAll();
+  if (conn) {
+    _renderConnector(conn, svg);
+    _highlightConn(conn.id);
+    _removeHandles();
+    _showHandles(conn.id);
+  }
 }
 
-document.addEventListener('click', e => {
+document.addEventListener('mousedown', e => {
   if (!_selConnId) return;
   if (_handleDragging) return;
   if (!e.target.closest('[data-conn-id]') && !e.target.closest('#connprops') &&
       !e.target.closest('#conn-handles'))
-    setTimeout(_deselectConn, 0);
+    _deselectConn();
 });
 
 const _origApplyTheme = window.applyTheme;

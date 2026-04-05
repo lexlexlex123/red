@@ -39,6 +39,8 @@ function boot(){
   document.getElementById('canvas').addEventListener('mousedown',e=>{
     if(e.target.id==='canvas'||e.target.id==='cvbg'){
       if(pipetteMode){cancelPipetteMode();return;}
+      // Don't intercept clicks on connector layer
+      if(e.target.closest&&e.target.closest('#conn-svg-layer'))return;
       // Magnetic selection: find nearest element within 40px
       const SNAP_R = 40;
       const z = typeof _canvasZoom!=='undefined' ? _canvasZoom : 1;
@@ -60,7 +62,7 @@ function boot(){
         if(e.shiftKey && typeof pickMulti==='function') pickMulti(best, true);
         else if(typeof pick==='function') pick(best);
       }
-      else if(!e.shiftKey) desel();
+      else if(!e.shiftKey&&!window._curveEditMode) desel();
     }
   });
   // Global: clicking anywhere outside an element exits text/table editing
@@ -261,14 +263,47 @@ function buildThemeGrid(){
 }
 function buildShapeGallery(){
   const g=document.getElementById('shape-gallery');if(!g)return;g.innerHTML='';
-  SHAPES.forEach(s=>{
+  const _hiddenShapes = new Set(['calloutRound','cylinder','cube','brace','plus','badge','arc','wave']);
+  SHAPES.filter(s=>!_hiddenShapes.has(s.id)).forEach(s=>{
     const card=document.createElement('div');card.className='shape-card'+(selShape===s.id?' active':'');
     const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 100 100');
     let el;
     if(s.special==='rect'){el=document.createElementNS('http://www.w3.org/2000/svg','rect');el.setAttribute('x','5');el.setAttribute('y','5');el.setAttribute('width','90');el.setAttribute('height','90');}
     else if(s.special==='ellipse'){el=document.createElementNS('http://www.w3.org/2000/svg','ellipse');el.setAttribute('cx','50');el.setAttribute('cy','50');el.setAttribute('rx','45');el.setAttribute('ry','45');}
     else if(s.special==='callout'){el=document.createElementNS('http://www.w3.org/2000/svg','path');el.setAttribute('d','M 5 5 H 95 V 72 H 57 L 50 92 L 44 72 H 5 Z');}
-    else{el=document.createElementNS('http://www.w3.org/2000/svg','path');el.setAttribute('d',s.path);}
+    else if(s.special==='star'){
+      el=document.createElementNS('http://www.w3.org/2000/svg','path');
+      const _spts=[];for(let _i=0;_i<10;_i++){const _a=(_i/10*Math.PI*2)-Math.PI/2;const _r=_i%2===0?45:20;_spts.push((_r*Math.cos(_a)+50).toFixed(1)+','+(_r*Math.sin(_a)+50).toFixed(1));}
+      el.setAttribute('d','M '+_spts.join(' L ')+' Z');
+    }
+    else if(s.special==='polygon'){
+      el=document.createElementNS('http://www.w3.org/2000/svg','path');
+      const _pts=[];for(let _i=0;_i<3;_i++){const _a=(_i/3*Math.PI*2)-(Math.PI/2);_pts.push((50+45*Math.cos(_a)).toFixed(1)+','+(50+45*Math.sin(_a)).toFixed(1));}
+      el.setAttribute('d','M '+_pts.join(' L ')+' Z');
+    }
+    else if(s.special==='cloud'){el=document.createElementNS('http://www.w3.org/2000/svg','path');el.setAttribute('d','M 25 70 Q 5 70 5 55 Q 5 40 20 38 Q 18 20 35 18 Q 42 5 58 12 Q 70 5 80 15 Q 95 15 95 32 Q 98 50 88 58 Q 90 70 75 70 Z');}else if(s.special==='parallelogram'){
+      el=document.createElementNS('http://www.w3.org/2000/svg','path');
+      el.setAttribute('d','M 20 5 L 95 5 L 80 95 L 5 95 Z');
+    }
+    else if(s.special==='curve'){
+      el=document.createElementNS('http://www.w3.org/2000/svg','path');
+      el.setAttribute('d','M 10 70 C 10 20 45 20 50 50 C 55 80 90 20 90 30');
+      el.setAttribute('fill','none');
+      el.setAttribute('stroke-width','5');
+      el.setAttribute('stroke-linecap','round');
+    }
+    else if(s.special==='chevron'){
+      el=document.createElementNS('http://www.w3.org/2000/svg','path');
+      const _isLeft=s.id==='chevronLeft', _tip=22, _w=90, _h=90, _ox=5, _oy=5;
+      // Right: M ox oy L (ox+w-tip) oy L (ox+w) (oy+h/2) L (ox+w-tip) (oy+h) L ox (oy+h) L (ox+tip) (oy+h/2)
+      // Left mirror: M (ox+w) oy L (ox+tip) oy L ox (oy+h/2) L (ox+tip) (oy+h) L (ox+w) (oy+h) L (ox+w-tip) (oy+h/2)
+      const _d=_isLeft
+        ?`M ${_ox+_w} ${_oy} L ${_ox+_tip} ${_oy} L ${_ox} ${_oy+_h/2} L ${_ox+_tip} ${_oy+_h} L ${_ox+_w} ${_oy+_h} L ${_ox+_w-_tip} ${_oy+_h/2} Z`
+        :`M ${_ox} ${_oy} L ${_ox+_w-_tip} ${_oy} L ${_ox+_w} ${_oy+_h/2} L ${_ox+_w-_tip} ${_oy+_h} L ${_ox} ${_oy+_h} L ${_ox+_tip} ${_oy+_h/2} Z`;
+      el.setAttribute('d',_d);
+    }
+    else if(s.path){el=document.createElementNS('http://www.w3.org/2000/svg','path');el.setAttribute('d',s.path);}
+    else{el=document.createElementNS('http://www.w3.org/2000/svg','rect');el.setAttribute('x','5');el.setAttribute('y','5');el.setAttribute('width','90');el.setAttribute('height','90');}
     const _smFill=document.getElementById('sm-fill');const _fc=(_smFill&&_smFill.value)||'#3b82f6';
     el.setAttribute('fill',_fc);el.setAttribute('stroke','none');el.classList.add('sg-fill');svg.appendChild(el);
     const span=document.createElement('span');span.textContent=s.name;
@@ -277,7 +312,7 @@ function buildShapeGallery(){
       selShape=s.id;
       document.querySelectorAll('.shape-card').forEach(c2=>{
         c2.classList.toggle('active',c2===card);
-        c2.style.borderColor=''; // clear any inline override
+        c2.style.borderColor='';
       });
     };
     card.ondblclick=()=>{

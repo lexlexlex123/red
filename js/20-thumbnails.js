@@ -68,6 +68,7 @@ function renderThumbCanvas(cnv,s,slideIdx){
     else if(d.type==='icon')drawThumbIcon(ctx,d,scaleX,scaleY);
     else if(d.type==='table')drawThumbTable(ctx,d,scaleX,scaleY);
     else if(d.type==='formula')drawThumbFormula(ctx,d,scaleX,scaleY);
+    else if(d.type==='svg')drawThumbSvgEl(ctx,d,scaleX,scaleY);
     else if(d.type==='graph')drawThumbGraph(ctx,d,scaleX,scaleY);
     else if(d.type==='lego')drawThumbLego(ctx,d,scaleX,scaleY);
   });
@@ -212,25 +213,134 @@ function drawThumbShape(ctx,d,sx,sy){
   if(sw>0){ctx.strokeStyle=d.stroke||'#1d4ed8';ctx.lineWidth=sw;}
   const shape=d.shape||'rect';
   const rx=+(d.rx||0)*Math.min(sx,sy);
-  if(shape==='rect'){
+  const sh=typeof SHAPES!=='undefined'?SHAPES.find(s=>s.id===shape):null;
+  const special=sh?sh.special:null;
+  if(special==='rect'||shape==='rect'){
     if(rx>0){drawRoundRect(ctx,x,y,w,h,rx);ctx.fill();if(sw>0)ctx.stroke();}
     else{ctx.fillRect(x,y,w,h);if(sw>0)ctx.strokeRect(x,y,w,h);}
-  } else if(shape==='circle'||shape==='ellipse'){
+  } else if(special==='ellipse'||shape==='circle'||shape==='ellipse'){
     ctx.beginPath();ctx.ellipse(x+w/2,y+h/2,w/2,h/2,0,0,Math.PI*2);ctx.fill();if(sw>0)ctx.stroke();
-  } else if(shape==='triangle'){
-    ctx.beginPath();ctx.moveTo(x+w/2,y);ctx.lineTo(x+w,y+h);ctx.lineTo(x,y+h);ctx.closePath();ctx.fill();if(sw>0)ctx.stroke();
+  } else if(special==='polygon'){
+    const sides=Math.max(3,Math.min(16,+(d.polySides||3)));
+    ctx.beginPath();
+    for(let i=0;i<sides;i++){const a=(i/sides*Math.PI*2)-Math.PI/2;ctx.lineTo(x+w/2+w/2*Math.cos(a),y+h/2+h/2*Math.sin(a));}
+    ctx.closePath();ctx.fill();if(sw>0)ctx.stroke();
+  } else if(special==='star'){
+    const nR=Math.max(4,Math.min(32,+(d.starRays||5)));
+    const iR=Math.max(0.1,Math.min(0.9,+(d.starInner!=null?d.starInner:0.45)));
+    ctx.beginPath();
+    for(let i=0;i<nR*2;i++){const a=(i/(nR*2)*Math.PI*2)-Math.PI/2;const r=i%2===0?1:iR;ctx.lineTo(x+w/2+w/2*r*Math.cos(a),y+h/2+h/2*r*Math.sin(a));}
+    ctx.closePath();ctx.fill();if(sw>0)ctx.stroke();
+  } else if(special==='parallelogram'){
+    const skew=Math.max(-45,Math.min(45,+(d.paraSkew!=null?d.paraSkew:20)));
+    const off=(h/2)*Math.tan(skew*Math.PI/180);
+    ctx.beginPath();ctx.moveTo(x+off,y);ctx.lineTo(x+w,y);ctx.lineTo(x+w-off,y+h);ctx.lineTo(x,y+h);ctx.closePath();ctx.fill();if(sw>0)ctx.stroke();
   } else if(shape==='star'){
     drawStar(ctx,x+w/2,y+h/2,w/2,h/2,5);ctx.fill();if(sw>0)ctx.stroke();
-  } else if(shape==='diamond'){
-    ctx.beginPath();ctx.moveTo(x+w/2,y);ctx.lineTo(x+w,y+h/2);ctx.lineTo(x+w/2,y+h);ctx.lineTo(x,y+h/2);ctx.closePath();ctx.fill();if(sw>0)ctx.stroke();
-  } else if(shape==='arrow'){
-    const aw=w*.4,ah=h*.45;
-    ctx.beginPath();ctx.moveTo(x,y+h*.3);ctx.lineTo(x+aw,y+h*.3);ctx.lineTo(x+aw,y);ctx.lineTo(x+w,y+h/2);ctx.lineTo(x+aw,y+h);ctx.lineTo(x+aw,y+h*.7);ctx.lineTo(x,y+h*.7);ctx.closePath();ctx.fill();if(sw>0)ctx.stroke();
+  } else if(special==='curve'&&d.curvePoints&&d.curvePoints.length>=2){
+    // Draw curve using bezier path
+    const cpts=d.curvePoints;
+    const hasNSw=cpts.some(p=>p.sw!=null);
+    ctx.beginPath();
+    ctx.moveTo(x+cpts[0].x*w, y+cpts[0].y*h);
+    for(let ci=1;ci<cpts.length;ci++){
+      const pp=cpts[ci-1],cp=cpts[ci];
+      const c1x=pp.cp2x!=null?pp.cp2x:pp.x, c1y=pp.cp2y!=null?pp.cp2y:pp.y;
+      const c2x=cp.cp1x!=null?cp.cp1x:cp.x, c2y=cp.cp1y!=null?cp.cp1y:cp.y;
+      ctx.bezierCurveTo(x+c1x*w,y+c1y*h, x+c2x*w,y+c2y*h, x+cp.x*w,y+cp.y*h);
+    }
+    if(d.curveClosed)ctx.closePath();
+    if(fill&&fill!=='none'){ctx.fillStyle=fill;ctx.fill();}
+    if(sw>0&&!hasNSw){ctx.strokeStyle=d.stroke||'#1d4ed8';ctx.lineWidth=sw;ctx.lineCap='round';ctx.lineJoin='round';ctx.stroke();}
+    // Variable width: draw each segment with its own width
+    if(hasNSw&&sw>0){
+      for(let ci=1;ci<cpts.length;ci++){
+        const pp=cpts[ci-1],cp=cpts[ci];
+        const c1x=pp.cp2x!=null?pp.cp2x:pp.x, c1y=pp.cp2y!=null?pp.cp2y:pp.y;
+        const c2x=cp.cp1x!=null?cp.cp1x:cp.x, c2y=cp.cp1y!=null?cp.cp1y:cp.y;
+        const segSw=(pp.sw!=null?pp.sw:sw)*Math.min(sx,sy);
+        ctx.beginPath();ctx.moveTo(x+pp.x*w,y+pp.y*h);
+        ctx.bezierCurveTo(x+c1x*w,y+c1y*h, x+c2x*w,y+c2y*h, x+cp.x*w,y+cp.y*h);
+        ctx.strokeStyle=d.stroke||'#1d4ed8';ctx.lineWidth=segSw;ctx.lineCap='round';ctx.stroke();
+      }
+    }
+  } else if(special==='cloud') {
+    // Use _generateCloudPath to draw accurate cloud shape
+    ctx.save();
+    ctx.fillStyle=fill;
+    if(sw>0){ctx.strokeStyle=d.stroke||'#1d4ed8';ctx.lineWidth=sw;}
+    try {
+      const _cPath=typeof _generateCloudPath==='function'?_generateCloudPath(w,h,d.cloudSeed||42):null;
+      if(_cPath){
+        const _p2=new Path2D(_cPath);
+        ctx.translate(x,y);ctx.fill(_p2);if(sw>0)ctx.stroke(_p2);
+      } else {
+        ctx.beginPath();ctx.ellipse(x+w/2,y+h/2,w/2,h/2,0,0,Math.PI*2);ctx.fill();
+      }
+    } catch(e){ ctx.beginPath();ctx.ellipse(x+w/2,y+h/2,w/2,h/2,0,0,Math.PI*2);ctx.fill(); }
+    ctx.restore();
+  } else if(special==='chevron') {
+    ctx.save();
+    ctx.fillStyle=fill;
+    if(sw>0){ctx.strokeStyle=d.stroke||'#1d4ed8';ctx.lineWidth=sw;}
+    const _sk=(d.chevSkew!=null?+d.chevSkew:25)/100,_tp=Math.round(w*_sk),_mid=h/2;
+    ctx.beginPath();
+    if(d.shape==='chevronLeft'){
+      ctx.moveTo(x+w,y);ctx.lineTo(x+_tp,y);ctx.lineTo(x,y+_mid);ctx.lineTo(x+_tp,y+h);ctx.lineTo(x+w,y+h);ctx.lineTo(x+w-_tp,y+_mid);
+    }else{
+      ctx.moveTo(x,y);ctx.lineTo(x+w-_tp,y);ctx.lineTo(x+w,y+_mid);ctx.lineTo(x+w-_tp,y+h);ctx.lineTo(x,y+h);ctx.lineTo(x+_tp,y+_mid);
+    }
+    ctx.closePath();ctx.fill();if(sw>0)ctx.stroke();
+    ctx.restore();
+  } else if(special==='callout') {
+    ctx.save();
+    ctx.fillStyle=fill;if(sw>0){ctx.strokeStyle=d.stroke||'#1d4ed8';ctx.lineWidth=sw;}
+    ctx.beginPath();ctx.roundRect(x,y,w,h*0.75,+(d.rx||12)*Math.min(sx,sy));ctx.fill();if(sw>0)ctx.stroke();
+    ctx.beginPath();ctx.moveTo(x+w*0.3,y+h*0.75);ctx.lineTo(x+w*0.2,y+h);ctx.lineTo(x+w*0.45,y+h*0.75);ctx.fill();
+    ctx.restore();
+  } else if(sh&&sh.path){
+    // Generic path-based shape: parse M/L/Z and scale from 0-100 space
+    const pts=[];let mx=0,my=0;
+    const re=/([ML])\s*([\d.]+)[,\s]+([\d.]+)/g;let m2;
+    while((m2=re.exec(sh.path))!==null){const px=x+(+m2[2]-5)/90*w,py=y+(+m2[3]-5)/90*h;if(m2[1]==='M'){ctx.beginPath();ctx.moveTo(px,py);}else ctx.lineTo(px,py);}
+    ctx.closePath();ctx.fill();if(sw>0)ctx.stroke();
   } else {
-    // Fallback: draw rectangle
     ctx.fillRect(x,y,w,h);if(sw>0)ctx.strokeRect(x,y,w,h);
   }
   ctx.restore();
+  // Draw shape text if present
+  if(d.shapeHtml||d.shapeText){
+    const txt=(d.shapeText||(d.shapeHtml||'').replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim());
+    if(txt){
+      ctx.save();
+      const fs=Math.max(7,Math.min(14,(h*0.22)));
+      ctx.font=`bold ${fs}px sans-serif`;
+      // Parse text color from shapeTextCss
+      let textColor='#ffffff';
+      if(d.shapeTextCss){
+        const cm=d.shapeTextCss.match(/\bcolor\s*:\s*([^;]+)/i);
+        if(cm) textColor=cm[1].trim();
+      }
+      ctx.fillStyle=textColor;
+      ctx.textAlign='center';
+      ctx.textBaseline='middle';
+      ctx.globalAlpha=0.95;
+      // Simple word wrap for thumbnail
+      const maxW=w*0.85;
+      const words=txt.split(' ');
+      let line='',lines=[];
+      for(const word of words){
+        const test=line?line+' '+word:word;
+        if(ctx.measureText(test).width>maxW&&line){lines.push(line);line=word;}
+        else line=test;
+      }
+      if(line)lines.push(line);
+      const lh=fs*1.25;
+      const cy2=y+h/2-(lines.length-1)*lh/2;
+      lines.forEach((l,i)=>ctx.fillText(l,x+w/2,cy2+i*lh,maxW));
+      ctx.restore();
+    }
+  }
 }
 
 function drawRoundRect(ctx,x,y,w,h,r){
@@ -419,6 +529,29 @@ function drawThumbDecorSvg(ctx,d,sx,sy,TW,TH){
   const url=URL.createObjectURL(blob);
   const img=new Image();
   img.onload=()=>{_thumbImgCache[key]=img;URL.revokeObjectURL(url);drawThumbs();};
+  img.onerror=()=>{URL.revokeObjectURL(url);};
+  img.src=url;
+}
+
+const _thumbSvgElCache={};
+function drawThumbSvgEl(ctx,d,sx,sy){
+  if(!d.svgContent)return;
+  const x=Math.round(d.x*sx),y=Math.round(d.y*sy),w=Math.round(d.w*sx),h=Math.round(d.h*sy);
+  if(w<1||h<1)return;
+  const key='svgel_'+d.id+'_'+w+'x'+h;
+  if(_thumbSvgElCache[key]){ctx.drawImage(_thumbSvgElCache[key],x,y,w,h);return;}
+  // Wrap svgContent in a sized SVG so it scales to our thumbnail cell
+  let inner=d.svgContent.trim();
+  // If it already is an <svg> root, use it; otherwise wrap
+  const sized=inner.replace(/^<svg([^>]*)>/i,(m,attrs)=>{
+    // Force width/height on the root svg
+    const noWH=attrs.replace(/\s*width="[^"]*"/g,'').replace(/\s*height="[^"]*"/g,'');
+    return `<svg${noWH} width="${w}" height="${h}">`;
+  });
+  const blob=new Blob([sized],{type:'image/svg+xml'});
+  const url=URL.createObjectURL(blob);
+  const img=new Image();
+  img.onload=()=>{_thumbSvgElCache[key]=img;URL.revokeObjectURL(url);drawThumbs();};
   img.onerror=()=>{URL.revokeObjectURL(url);};
   img.src=url;
 }

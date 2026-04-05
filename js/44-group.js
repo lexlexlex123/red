@@ -182,39 +182,86 @@
 
     window._updateHandlesOverlay = function () {
       var curSel = (typeof sel !== 'undefined') ? sel : null;
+      var ms = (typeof multiSel !== 'undefined') ? multiSel : new Set();
       var gid = curSel ? getGroupId(curSel) : null;
+
+      // Check if multiSel contains elements from multiple groups or mixed (group + non-group)
+      var _groupIds = new Set();
+      ms.forEach(function(e) { var g = getGroupId(e); if(g) _groupIds.add(g); });
+      var _hasNonGroup = false;
+      ms.forEach(function(e) { if(!getGroupId(e)) _hasNonGroup = true; });
+      var _isMultiGroup = _groupIds.size > 1 || (_groupIds.size >= 1 && _hasNonGroup);
+
+      if (_isMultiGroup && ms.size > 1) {
+        // Hide all individual .rh handles on group members
+        ms.forEach(function(ge) {
+          ge.querySelectorAll('.rh').forEach(function(rh) {
+            rh.style.display = 'none'; rh.dataset.overlayHidden = '1';
+          });
+        });
+        // Clear overlay once, then draw all group outlines
+        var overlay2 = document.getElementById('handles-overlay');
+        if (overlay2) overlay2.innerHTML = '';
+        _groupIds.forEach(function(g) {
+          var gmembers = getGroupDomEls(g);
+          if (gmembers.length >= 2) _renderGroupOutlineOnly(g, gmembers);
+        });
+        // Draw standard resize handles on top (for non-group elements and overall bbox)
+        // But DON'T call _origHandles — it clears overlay
+        // Instead draw multisel resize handles manually if needed
+        return;
+      }
 
       if (gid) {
         var members = getGroupDomEls(gid);
         if (members.length >= 2) {
-          // Скрываем оригинальные handles всех элементов группы
           members.forEach(function(ge) {
             ge.querySelectorAll('.rh').forEach(function(rh) {
-              rh.style.display = 'none';
-              rh.dataset.overlayHidden = '1';
+              rh.style.display = 'none'; rh.dataset.overlayHidden = '1';
             });
           });
-          // Восстанавливаем overlay
           var overlay = document.getElementById('handles-overlay');
           if (overlay) overlay.innerHTML = '';
-          // Рисуем общий bbox + handles + рамку
           _renderGroupHandles(curSel, gid, members);
           return;
         }
       }
 
-      // Обычный элемент — стандартное поведение
+      // Normal element — standard handles
       _origHandles.apply(this, arguments);
-      // Добавляем рамку группы если нужна
-      updateGroupOutline();
     };
   })();
+
+  // Рисует только рамку группы (не очищает overlay — для нескольких групп)
+  function _renderGroupOutlineOnly(gid, members) {
+    var overlay = document.getElementById('handles-overlay');
+    if (!overlay) return;
+    // Append outline box without clearing overlay (caller manages clearing)
+    var bb = getBoundingBox(members);
+    var PAD = 8;
+    var box = document.createElement('div');
+    box.className = 'group-outline-box';
+    box.style.cssText = 'position:absolute;pointer-events:none;z-index:9990;'
+      + 'left:'+(bb.x-PAD)+'px;top:'+(bb.y-PAD)+'px;'
+      + 'width:'+(bb.w+PAD*2)+'px;height:'+(bb.h+PAD*2)+'px;'
+      + 'border:2px dashed rgba(99,102,241,0.75);border-radius:5px;'
+      + 'box-shadow:0 0 0 1px rgba(99,102,241,0.15);background:rgba(99,102,241,0.04);';
+    var lbl = document.createElement('span');
+    lbl.textContent = 'Группа';
+    lbl.style.cssText = 'position:absolute;top:-20px;left:0;font-size:10px;'
+      + 'color:rgba(99,102,241,0.9);font-weight:600;letter-spacing:0.03em;'
+      + 'line-height:1;white-space:nowrap;pointer-events:none;user-select:none;';
+    box.appendChild(lbl);
+    overlay.appendChild(box);
+    // NOTE: no _origHandles call here — caller decides whether to call it
+  }
 
   // Рисует handles на bounding box группы
   function _renderGroupHandles(selEl, gid, members) {
     var overlay = document.getElementById('handles-overlay');
     if (!overlay) return;
     overlay.innerHTML = '';
+    document.querySelectorAll('.para-handle,.star-handle,.arc-handle').forEach(function(h){h.remove();});
     overlay.style.pointerEvents = 'auto';
 
     var bb = getBoundingBox(members);
@@ -418,15 +465,27 @@
       };
     });
 
+    var isCorner = dx !== 0 && dy !== 0;
+    var groupAspect = bw / bh;
+
     function onMove(e2) {
       if (e2.buttons === 0) { onUp(); return; }
       var rdx = (e2.clientX - sx) / _z;
       var rdy = (e2.clientY - sy) / _z;
 
-      var newW = Math.max(40, bw + dx * rdx);
-      var newH = Math.max(20, bh + dy * rdy);
-      if (dx === 0) newW = bw;
-      if (dy === 0) newH = bh;
+      var newW, newH;
+      if (e2.shiftKey && isCorner) {
+        // Proportional resize — lock aspect ratio
+        var rawDx = dx * rdx, rawDy = dy * rdy;
+        var delta = Math.abs(rawDx) >= Math.abs(rawDy) ? rawDx : rawDy * groupAspect;
+        newW = Math.max(40, bw + delta);
+        newH = Math.max(20, newW / groupAspect);
+      } else {
+        newW = Math.max(40, bw + dx * rdx);
+        newH = Math.max(20, bh + dy * rdy);
+        if (dx === 0) newW = bw;
+        if (dy === 0) newH = bh;
+      }
 
       var scaleX = newW / bw;
       var scaleY = newH / bh;
@@ -537,7 +596,28 @@
     if (_origPick) {
       window.pick = function (el) {
         _origPick.apply(this, arguments);
-        // updateGroupOutline теперь вызывается внутри _updateHandlesOverlay
+        if (!el) {
+          // Remove group outline on deselect
+          var _ov = document.getElementById('handles-overlay');
+          var _ob = _ov && _ov.querySelector('.group-outline-box');
+          if (_ob) _ob.remove();
+          return;
+        }
+        // Skip group expansion during rubber-band selection (handled by 28-multisel.js)
+        if (window._rbSelecting) return;
+        // If picked element is in a group, add ALL members to multiSel
+        var gid = getGroupId(el);
+        if (gid) {
+          var members = getGroupDomEls(gid);
+          if (members.length >= 2) {
+            if (typeof clearMultiSel === 'function') clearMultiSel();
+            members.forEach(function(ge) {
+              if (typeof addToMultiSel === 'function') addToMultiSel(ge);
+              // Remove individual .sel highlight from group members
+              ge.classList.remove('sel');
+            });
+          }
+        }
       };
     }
 
@@ -551,6 +631,9 @@
   })();
 
   // ── СГРУППИРОВАТЬ ─────────────────────────────────────────────
+
+  // Flag: true only when explicitly selecting entire group (not single-element click)
+  window._groupOutlineVisible = false;
 
   window.groupSelected = function () {
     var toGroup = [];
@@ -575,8 +658,6 @@
     });
     if (typeof save === 'function') save();
     if (typeof saveState === 'function') saveState();
-    // Снимаем multiSel, выбираем первый элемент группы — триггерит _updateHandlesOverlay
-    // который нарисует общие handles на bbox группы
     if (typeof clearMultiSel === 'function') clearMultiSel();
     if (typeof pick === 'function') pick(toGroup[0]);
     if (typeof _updateHandlesOverlay === 'function') _updateHandlesOverlay();
@@ -653,7 +734,7 @@
   function updateGroupOutline() {
     var overlay = document.getElementById('handles-overlay');
     if (!overlay) return;
-    var old = overlay.querySelector('#group-outline-box');
+    var old = overlay.querySelector('.group-outline-box');
     if (old) old.remove();
     var curSel = (typeof sel !== 'undefined') ? sel : null;
     if (!curSel) return;
@@ -713,8 +794,8 @@
         if (e.button !== 0) return;
         var gid = getGroupId(el);
         if (!gid) return;
-        // Если уже идёт multi-select drag — не мешаем
-        if (typeof multiSel !== 'undefined' && multiSel.size > 1) return;
+        // If group already fully selected — just let normal drag run
+        if (typeof multiSel !== 'undefined' && multiSel.size > 1 && multiSel.has(el)) return;
         // Ждём один тик чтобы оригинальный обработчик запустил drag
         var startL = parseInt(el.style.left)||0;
         var startT = parseInt(el.style.top)||0;
@@ -731,11 +812,15 @@
             ge.style.left = (pos.x0 + dx) + 'px';
             ge.style.top  = (pos.y0 + dy) + 'px';
           });
-          if (typeof window._updateGroupOutline === 'function') window._updateGroupOutline();
+          // No group outline during single-element drag
         }
         function onUp() {
           document.removeEventListener('mousemove', onMove, true);
           document.removeEventListener('mouseup', onUp, true);
+          // Clean up any group outline left from drag
+          var _ov2 = document.getElementById('handles-overlay');
+          var _ob2 = _ov2 && _ov2.querySelector('.group-outline-box');
+          if (_ob2) _ob2.remove();
           // Сохраняем позиции участников
           var els = getSlideEls();
           members.forEach(function(pos, ge) {
@@ -820,6 +905,7 @@
             sel = null;
             var _ov = document.getElementById('handles-overlay');
             if (_ov) _ov.innerHTML = '';
+            document.querySelectorAll('.arc-handle,.star-handle,.para-handle').forEach(function(h){h.remove();});
             if (typeof save === 'function') save();
             if (typeof drawThumbs === 'function') drawThumbs();
             if (typeof saveState === 'function') saveState();
