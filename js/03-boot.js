@@ -145,6 +145,8 @@ function boot(){
     }
     // Exit text element editing
     if(sel.dataset.editing!=='true')return;
+    // Don't exit editing when clicking props panel
+    if(e.target.closest('#props')) return;
     const c=sel.querySelector('.tel');
     if(c){c.contentEditable='false';c.blur();}
     delete sel.dataset.editing;sel.style.cursor='';

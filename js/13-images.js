@@ -297,7 +297,8 @@ function mkEl(d){
     // Set font size for bullet marker rebuild
     const _fsM=(d.cs||'').match(/font-size:\s*([\d.]+)px/);
     if(_fsM&&typeof _lastBulletFontSize!=='undefined') _lastBulletFontSize=parseFloat(_fsM[1]);
-    const rawHtml=d.html||'Double-click to edit';
+    const _defPlaceholder=(typeof getLang==='function'&&getLang()==='ru')?'Дважды кликните для редактирования':'Double-click to edit';
+    const rawHtml=d.html||_defPlaceholder;
     c.innerHTML=typeof rtMigrateHtml==='function'?rtMigrateHtml(rawHtml):rawHtml;
     // Re-attach bullet icon click handlers (onclick attr stripped by innerHTML assignment in some browsers)
     if(typeof _attachBulletClickHandlers==='function') _attachBulletClickHandlers(c);

@@ -13,7 +13,7 @@ function addText(){
     _defColor = _resolveSchemeColor(_defScheme, _theme) || _defColor;
   }
   // Build html as char-objects with _schemeRef so applyTheme can remap color correctly
-  const _defText = 'Double-click to edit';
+  const _defText = (typeof getLang==='function'&&getLang()==='ru') ? '\u0414\u0432\u0430\u0436\u0434\u044b \u043a\u043b\u0438\u043a\u043d\u0438\u0442\u0435 \u0434\u043b\u044f \u0440\u0435\u0434\u0430\u043a\u0442\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u044f' : 'Double-click to edit';
   const _defHtml = typeof _charObjsToHtml==='function'
     ? _charObjsToHtml([..._defText].map(ch=>({ch, style:{color:_defColor, _schemeRef:_defScheme}})))
     : _defText;

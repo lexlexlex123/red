@@ -14,7 +14,8 @@ function _rebuildMarkerHtml(m) {
     const schemeAttr = m.iconSchemeRef ? ` data-icon-schemeref="${JSON.stringify(m.iconSchemeRef).replace(/"/g,'&quot;')}"` : '';
     return `<span data-list-bullet data-icon-id="${m.iconId}" data-icon-style="${m.iconStyle}" data-icon-color="${m.iconColor}" data-icon-sw="${m.iconSw}"${schemeAttr} contenteditable="false" style="display:inline-flex;align-items:center;margin-right:10px;cursor:pointer;user-select:none;vertical-align:-0.15em" onclick="rtChangeBulletIcon(this)">${svg}</span>`;
   } else {
-    return `<span data-list-num contenteditable="false" style="display:inline-block;margin-right:10px;min-width:1.2em;font-variant-numeric:tabular-nums;user-select:none;vertical-align:-0.1em">${m.text}</span>`;
+    const numColorStyle = m.color ? `;color:${m.color}` : '';
+    return `<span data-list-num data-num-color="${m.color||''}" contenteditable="false" style="display:inline-block;margin-right:10px;min-width:1.2em;font-variant-numeric:tabular-nums;user-select:none;vertical-align:-0.1em${numColorStyle}">${m.text}</span>`;
   }
 }
 let _lastBulletFontSize = 24;
@@ -52,9 +53,11 @@ function _toCharObjs(html) {
       return;
     }
     if (node.hasAttribute('data-list-num')) {
+      const numColor = node.style.color || node.getAttribute('data-num-color') || '';
       out.push({ ch: '\x00', _listMarker: {
         type: 'num',
         text: node.textContent || '',
+        color: numColor,
       }, style: {} });
       return;
     }
@@ -361,6 +364,8 @@ function _rtRestoreRange() {
   } catch(e) {}
 }
 
+let _rtPanelInteracting = false;
+
 function _rtOnPanelMousedown(e) {
   if (!_rtEl) return;
   // Save both Range object and char index BEFORE browser clears selection
@@ -368,18 +373,29 @@ function _rtOnPanelMousedown(e) {
 
   const tag = e.target.tagName;
   if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') {
-    // Inputs need focus — restore visual highlight after they receive it
+    // Inputs need focus — but restore focus to text element after interaction
     const savedRange = _savedRange;
     const savedEl = _rtEl;
-    setTimeout(() => {
-      if (savedEl && savedEl.isConnected && savedRange) {
-        try {
-          const s = window.getSelection();
-          s.removeAllRanges();
-          s.addRange(savedRange);
-        } catch(e) {}
+    // After input/select loses focus (on change/blur), refocus text element
+    const restoreFocus = () => {
+      if (savedEl && savedEl.isConnected) {
+        savedEl.focus();
+        if (savedRange) {
+          try {
+            const s = window.getSelection();
+            s.removeAllRanges();
+            s.addRange(savedRange);
+          } catch(e) {}
+        }
       }
-    }, 0);
+    };
+    // Save selection index now so oninput handlers can use it
+    if (!_savedSelIdx) {
+      const idx = _readSelFromDOM(_rtContent(savedEl));
+      if (idx) _savedSelIdx = idx;
+    }
+    e.target.addEventListener('change', () => setTimeout(restoreFocus, 0), {once: true});
+    e.target.addEventListener('blur', () => setTimeout(restoreFocus, 50), {once: true});
   } else {
     // Buttons — block focus steal, restore range synchronously
     e.preventDefault();
@@ -402,9 +418,15 @@ function rtAttachSelectionTracking(wrapEl, telEl) {
 
   telEl.addEventListener('keydown', _interceptEnter);
 
-  telEl.addEventListener('blur', () => {
+  telEl.addEventListener('blur', (e) => {
     // _toSaveMode is called by 13-images.js blur handler which fires first
     if (!_rtColorPickInProgress) _rtCommit();
+    // Clear saved selection when leaving text editing without clicking props panel
+    // _rtPanelInteracting is set synchronously in capture phase before this blur fires
+    if (!_rtPanelInteracting) {
+      _savedSelIdx = null;
+      _savedRange = null;
+    }
   });
 
   telEl.addEventListener('mouseup', rtUpdateToolbarState);
@@ -655,6 +677,8 @@ function rtColor(color, schemeRef) {
   const hasLive = wSel && !wSel.isCollapsed && wSel.toString().length > 0;
   const hasSaved = !!_savedSelIdx;
   const hasSelection = hasLive || hasSaved;
+  // Debug: log state to console
+  if (window._rtDebug) console.log('[rtColor]', {color, hasLive, hasSaved, _rtEl: !!_rtEl, _savedSelIdx});
 
   if (hasSelection && _rtEl) {
     _applyToSelection._schemeRef = schemeRef;
@@ -674,28 +698,24 @@ function rtColor(color, schemeRef) {
 function rtFontSize(size) {
   if (!size || size < 1) return;
   size = Math.round(size * 96 / 72); // pt -> px
-  // Check live DOM selection only — never use _savedSelIdx for font size
-  // (clicking the input field clears the text selection)
-  const hasLiveSel = (function() {
+  // Use live selection OR saved selection (same as rtColor)
+  const hasLive = (function() {
     if (!_rtEl) return false;
     const root = _rtContent(_rtEl);
-    // Verify _rtEl belongs to the currently selected canvas element
     const parentEl = _rtEl.closest('.el');
     if (!parentEl || !sel || parentEl !== sel) return false;
     const idx = _readSelFromDOM(root);
     return !!(idx && idx.end > idx.start);
   })();
+  const hasSaved = !!_savedSelIdx && !!_rtEl;
 
-  if (hasLiveSel) {
-    // Apply only to selected characters
+  if (hasLive || hasSaved) {
     _applyToSelection('font-size', size + 'px');
     _rtCommit();
   } else {
-    // Apply to whole block
     if (_rtEl) _rtCommit();
     _setTSWhole('font-size', size + 'px');
   }
-  // Keep bullet icons in sync with font size
   if (typeof rtUpdateListIconSize === 'function') rtUpdateListIconSize();
 }
 
@@ -1119,8 +1139,13 @@ function rtBulletColorPick(color, schemeRef) {
     sp.innerHTML = svg;
   });
   root.querySelectorAll('span[data-list-num]').forEach(sp => {
-    if (color !== 'currentColor') sp.style.color = color;
-    else sp.style.color = '';
+    if (color !== 'currentColor') {
+      sp.style.color = color;
+      sp.setAttribute('data-num-color', color);
+    } else {
+      sp.style.color = '';
+      sp.removeAttribute('data-num-color');
+    }
   });
 
   d.html = root.innerHTML;
@@ -1140,6 +1165,25 @@ function rtBulletColorPick(color, schemeRef) {
 document.addEventListener('DOMContentLoaded', function(){
   const props = document.getElementById('props');
   if(props) props.addEventListener('mousedown', _rtOnPanelMousedown);
+  // Capture-phase: set flag BEFORE blur fires when clicking props panel
+  document.addEventListener('mousedown', function(e) {
+    const propsEl = document.getElementById('props');
+    if (propsEl && propsEl.contains(e.target)) {
+      _rtPanelInteracting = true;
+      _rtSaveRange();
+      // For inputs/selects keep flag alive until they lose focus
+      const tag = e.target.tagName;
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') {
+        e.target.addEventListener('blur', function() {
+          _rtPanelInteracting = false;
+        }, {once: true});
+      } else {
+        setTimeout(() => { _rtPanelInteracting = false; }, 300);
+      }
+    } else {
+      _rtPanelInteracting = false;
+    }
+  }, true);
   // Keep _savedRange fresh whenever selection changes inside contenteditable
   document.addEventListener('selectionchange', function() {
     if (!_rtEl) return;
