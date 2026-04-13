@@ -95,7 +95,9 @@ function syncProps(){
     // Читаем font-size из cs (.tel style) как основной источник
     // Regex с \s* — учитываем пробелы вокруг двоеточия
     const _fsFromCs=m(/font-size\s*:\s*([\d.]+)px/,'');
-    document.getElementById('p-fs').value=_fsFromCs?parseFloat(_fsFromCs):'';
+    const _pxToPt = px => Math.round(parseFloat(px) * 72 / 96);
+    document.getElementById('p-fs').value=_fsFromCs?_pxToPt(_fsFromCs):'';
+    document.getElementById('p-fs').title='pt';
     // Проверяем span[data-ch] — если у них свои размеры, показываем их
     // (но не перезаписываем если span пустые — тогда cs уже верный)
     // Check if all chars have same font size; if mixed, blank the field
@@ -110,15 +112,42 @@ function syncProps(){
         }).filter(v=>v!==null))];
         const _inp = document.getElementById('p-fs');
         if (_fsVals.length > 1) { _inp.value = ''; _inp.placeholder = '—'; }
-        else if (_fsVals.length === 1) { _inp.value = _fsVals[0]; _inp.placeholder = ''; }
+        else if (_fsVals.length === 1) { _inp.value = _pxToPt(_fsVals[0]); _inp.placeholder = ''; }
         // Если span не содержат font-size — оставляем значение из cs (уже установлено выше)
-        else if (_fsVals.length === 0 && _fsFromCs) { _inp.value = parseFloat(_fsFromCs); _inp.placeholder = ''; } // cs fallback
+        else if (_fsVals.length === 0 && _fsFromCs) { _inp.value = _pxToPt(_fsFromCs); _inp.placeholder = ''; } // cs fallback
       }
     } catch(e){}
     const col=m(/(?:^|;|\s)color:(#[0-9a-fA-F]{3,8})/,'#ffffff');
     try{const _sw=document.getElementById('p-col-preview');if(_sw)_sw.style.background=col;document.getElementById('p-hex').value=col;}catch(e){}
     document.getElementById('p-lh').value=parseFloat(m(/line-height:([\d.]+)/,'1.2'));
     document.getElementById('p-ls').value=parseFloat(m(/letter-spacing:([-\d.]+)px/,'0'));
+    // Sync font-family selector
+    try{
+      const _ff=document.getElementById('p-ff');
+      if(_ff){
+        // Read fresh from DOM (cs may be stale if set via _setTSWhole after save)
+        const _ecEl=sel.querySelector('.tel')||sel.querySelector('.ec');
+        const _freshCs=_ecEl?(_ecEl.getAttribute('style')||''):cs;
+        let _famRaw='';
+        const _ffMatch=_freshCs.match(/font-family:\s*([^;]+)/);
+        if(_ffMatch) _famRaw=_ffMatch[1];
+        // Fallback to d.cs from data
+        if(!_famRaw){
+          const _d2=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+          if(_d2&&_d2.cs){const _mx2=(_d2.cs||'').match(/font-family:\s*([^;]+)/);if(_mx2)_famRaw=_mx2[1];}
+        }
+        // Strip quotes, take first family name, trim spaces
+        const _fam=_famRaw.replace(/['"]/g,'').split(',')[0].trim();
+        // Try exact match first, then case-insensitive, then partial
+        const _opts=Array.from(_ff.options);
+        const _opt=_fam?(
+          _opts.find(o=>o.value===_fam)||
+          _opts.find(o=>o.value.toLowerCase()===_fam.toLowerCase())||
+          _opts.find(o=>_fam.toLowerCase().includes(o.value.toLowerCase())&&o.value)
+        ):null;
+        _ff.value=_opt?_opt.value:'';
+      }
+    }catch(e){}
     document.getElementById('ft-b').classList.toggle('on',/font-weight:(700|800|900)/.test(cs));
     document.getElementById('ft-i').classList.toggle('on',cs.includes('font-style:italic'));
     document.getElementById('ft-u').classList.toggle('on',cs.includes('text-decoration:underline'));

@@ -335,13 +335,56 @@ function _restoreSelToDOM(idx, el) {
 }
 
 // ─── Panel mousedown ──────────────────────────────────────────────
-function _rtOnPanelMousedown(e) {
-  // Called on mousedown — selection still exists at this point
-  // Save it so rtColor can use it even after the click removes the selection
+// Saved Range object for visual highlight restoration
+let _savedRange = null;
+
+function _rtSaveRange() {
   if (!_rtEl) return;
-  const live = _readSelFromDOM(_rtEl);
-  if (live) _savedSelIdx = live;
-  // Don't clear here — only clear when we know it's a whole-element operation
+  const s = window.getSelection();
+  if (s && s.rangeCount > 0 && !s.isCollapsed) {
+    const r = s.getRangeAt(0);
+    if (_rtEl.contains(r.commonAncestorContainer)) {
+      _savedRange = r.cloneRange();
+      const idx = _readSelFromDOM(_rtEl);
+      if (idx) _savedSelIdx = idx;
+    }
+  }
+}
+
+function _rtRestoreRange() {
+  if (!_savedRange || !_rtEl) return;
+  try {
+    _rtEl.focus();
+    const s = window.getSelection();
+    s.removeAllRanges();
+    s.addRange(_savedRange);
+  } catch(e) {}
+}
+
+function _rtOnPanelMousedown(e) {
+  if (!_rtEl) return;
+  // Save both Range object and char index BEFORE browser clears selection
+  _rtSaveRange();
+
+  const tag = e.target.tagName;
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') {
+    // Inputs need focus — restore visual highlight after they receive it
+    const savedRange = _savedRange;
+    const savedEl = _rtEl;
+    setTimeout(() => {
+      if (savedEl && savedEl.isConnected && savedRange) {
+        try {
+          const s = window.getSelection();
+          s.removeAllRanges();
+          s.addRange(savedRange);
+        } catch(e) {}
+      }
+    }, 0);
+  } else {
+    // Buttons — block focus steal, restore range synchronously
+    e.preventDefault();
+    _rtRestoreRange();
+  }
 }
 
 // ─── Attach ───────────────────────────────────────────────────────
@@ -630,6 +673,7 @@ function rtColor(color, schemeRef) {
 
 function rtFontSize(size) {
   if (!size || size < 1) return;
+  size = Math.round(size * 96 / 72); // pt -> px
   // Check live DOM selection only — never use _savedSelIdx for font size
   // (clicking the input field clears the text selection)
   const hasLiveSel = (function() {
@@ -656,13 +700,23 @@ function rtFontSize(size) {
 }
 
 function rtFontFamily(family) {
-  const val = family ? `'${family}', sans-serif` : '';
-  if (family && _applyToSelection('font-family', val)) _rtCommit();
-  else if (family) _setTSWhole('font-family', val);
-  else {
-    // Reset: remove font-family
-    if (_applyToSelection('font-family', '')) _rtCommit();
-    else _setTSWhole('font-family', '');
+  const val = family ? `'${family}'` : '';
+  const hasSelection = _applyToSelection('font-family', val);
+  if (hasSelection) {
+    _rtCommit();
+  } else {
+    // Apply to whole block — also clear font-family from all child spans
+    // so container font-family actually takes effect
+    if (sel && sel.dataset.type === 'text') {
+      const ec = sel.querySelector('.ec');
+      if (ec) {
+        ec.querySelectorAll('span[style]').forEach(sp => {
+          sp.style.fontFamily = '';
+          if (!sp.getAttribute('style').trim().replace(/;/g,'')) sp.removeAttribute('style');
+        });
+      }
+    }
+    _setTSWhole('font-family', val);
   }
 }
 
@@ -1086,4 +1140,15 @@ function rtBulletColorPick(color, schemeRef) {
 document.addEventListener('DOMContentLoaded', function(){
   const props = document.getElementById('props');
   if(props) props.addEventListener('mousedown', _rtOnPanelMousedown);
+  // Keep _savedRange fresh whenever selection changes inside contenteditable
+  document.addEventListener('selectionchange', function() {
+    if (!_rtEl) return;
+    const s = window.getSelection();
+    if (s && s.rangeCount > 0 && !s.isCollapsed) {
+      const r = s.getRangeAt(0);
+      if (_rtEl.contains(r.commonAncestorContainer)) {
+        _savedRange = r.cloneRange();
+      }
+    }
+  });
 });

@@ -8,6 +8,54 @@ function boot(){
   if(vEl)vEl.textContent=APP_VERSION;
   if(aEl)aEl.textContent=APP_AUTHOR;
 
+  // Populate font selector from fonts
+  // Sources tried in order:
+  // 1. window._LOCAL_FONTS — set by inline <script> in index.html (most reliable)
+  // 2. document.styleSheets — parse @font-face rules from loaded CSS
+  (function _populateFontSel() {
+    const sel = document.getElementById('p-ff');
+    if (!sel) return;
+
+    function addFamilies(families) {
+      const existing = new Set(Array.from(sel.options).map(o => o.value));
+      let added = 0;
+      for (const fam of families) {
+        if (fam && !existing.has(fam)) {
+          const opt = document.createElement('option');
+          opt.value = fam; opt.textContent = fam; opt.style.fontFamily = fam;
+          sel.appendChild(opt);
+          existing.add(fam);
+          added++;
+        }
+      }
+      return added;
+    }
+
+    // Source 1: window._LOCAL_FONTS
+    if (window._LOCAL_FONTS && window._LOCAL_FONTS.length) {
+      addFamilies(window._LOCAL_FONTS);
+      return;
+    }
+
+    // Source 2: parse @font-face from styleSheets (works on HTTP server)
+    const families = new Set();
+    try {
+      for (const sheet of document.styleSheets) {
+        let rules;
+        try { rules = sheet.cssRules || sheet.rules; } catch(e) { continue; }
+        if (!rules) continue;
+        for (const rule of rules) {
+          if (rule.type === CSSRule.FONT_FACE_RULE) {
+            const fam = rule.style.getPropertyValue('font-family')
+              .trim().replace(/^['"]|['"]$/g, '');
+            if (fam) families.add(fam);
+          }
+        }
+      }
+    } catch(e) {}
+    if (families.size) { addFamilies([...families].sort()); }
+  })();
+
   buildSwatches('bgswatches');buildSwatches('bgswatches2');
   buildThemeGrid();buildShapeGallery();buildAppletGallery();
   buildPalette('cp-text-palette','text');
