@@ -352,6 +352,14 @@ function buildShapeGallery(){
         :`M ${_ox} ${_oy} L ${_ox+_w-_tip} ${_oy} L ${_ox+_w} ${_oy+_h/2} L ${_ox+_w-_tip} ${_oy+_h} L ${_ox} ${_oy+_h} L ${_ox+_tip} ${_oy+_h/2} Z`;
       el.setAttribute('d',_d);
     }
+    else if(s.special==='gear'){
+      el=document.createElementNS('http://www.w3.org/2000/svg','path');
+      if(typeof _gearPath==='function'){
+        el.setAttribute('d', _gearPath(50,50,45,45,8,0.25));
+      } else {
+        el.setAttribute('d','M 50 5 L 90 20 L 90 55 Q 90 80 50 95 Q 10 80 10 55 L 10 20 Z');
+      }
+    }
     else if(s.path){el=document.createElementNS('http://www.w3.org/2000/svg','path');el.setAttribute('d',s.path);}
     else{el=document.createElementNS('http://www.w3.org/2000/svg','rect');el.setAttribute('x','5');el.setAttribute('y','5');el.setAttribute('width','90');el.setAttribute('height','90');}
     const _smFill=document.getElementById('sm-fill');const _fc=(_smFill&&_smFill.value)||'#3b82f6';

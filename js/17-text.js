@@ -149,6 +149,15 @@ function setShapeElOpacity(op){
   const _st=sel.querySelector('.shape-text');if(_st)_st.style.opacity=op;
   save();saveState();
 }
+function setShapeElOpacity(v){
+  if(!sel||sel.dataset.type!=='shape')return;
+  v=Math.max(0,Math.min(1,+v));
+  sel.style.opacity=v===1?'':v;
+  sel.dataset.elOpacity=v;
+  const _d=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+  if(_d)_d.elOpacity=v;
+  save();saveState();
+}
 function setShapeElBlur(v){
   if(!sel||sel.dataset.type!=='shape')return;
   sel.dataset.shapeBlur=v;

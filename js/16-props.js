@@ -253,6 +253,7 @@ function syncProps(){
       if(typeof _syncArcUI==='function') _syncArcUI(_d2);
       if(typeof _syncPolyUI==='function') _syncPolyUI(_d2);
       if(typeof _syncStarUI==='function') _syncStarUI(_d2);
+      if(typeof _syncGearUI==='function') _syncGearUI(_d2);
       if(typeof _syncParaUI==='function') _syncParaUI(_d2);
       if(typeof _syncChevUI==='function') _syncChevUI(_d2);
       if(typeof _syncCurveUI==='function') _syncCurveUI(_d2);
@@ -278,6 +279,7 @@ function syncProps(){
     document.getElementById('sh-sb').value=sel.dataset.shadowBlur||8;
     try{const sc=sel.dataset.shadowColor||'#000000';document.getElementById('sh-sc-preview').style.background=sc;}catch(e){}
     try{document.getElementById('sh-el-blur').value=parseFloat(sel.dataset.shapeBlur||0);}catch(e){}
+    try{const _elOp=document.getElementById('sh-el-op');if(_elOp)_elOp.value=parseFloat(sel.dataset.elOpacity!=null?sel.dataset.elOpacity:1);}catch(e){}
     const st=sel.querySelector('.shape-text');
     if(st){
       const cs=st.getAttribute('style')||'';
@@ -1060,6 +1062,49 @@ function setStarRays(val) {
   save(); drawThumbs(); saveState();
 }
 
+// ══════════════ GEAR TEETH ══════════════
+function _syncGearUI(d) {
+  const sec = document.getElementById('sh-gear-section');
+  if (!sec) return;
+  const isGear = sel && sel.dataset.shape &&
+    (typeof SHAPES !== 'undefined') &&
+    SHAPES.find(s => s.id === sel.dataset.shape)?.special === 'gear';
+  sec.style.display = isGear ? '' : 'none';
+  if (!isGear || !d) return;
+  const t = document.getElementById('sh-gear-teeth');
+  const dep = document.getElementById('sh-gear-depth');
+  if (t && t !== document.activeElement) t.value = d.gearTeeth ?? 12;
+  if (dep && dep !== document.activeElement) dep.value = Math.round((d.gearDepth ?? 0.25) * 100);
+}
+function setGearTeeth(val) {
+  if (!sel || sel.dataset.type !== 'shape') return;
+  val = Math.max(3, Math.min(60, Math.round(+val)));
+  if (isNaN(val)) return;
+  const d = slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (!d) return;
+  d.gearTeeth = val;
+  sel.dataset.gearTeeth = val;
+  renderShapeEl(sel, d);
+  save(); drawThumbs(); saveState();
+  // Restore after drawThumbs may have called syncProps
+  const t = document.getElementById('sh-gear-teeth');
+  if (t) t.value = val;
+}
+function setGearDepth(val) {
+  if (!sel || sel.dataset.type !== 'shape') return;
+  val = Math.max(0.05, Math.min(0.6, +val));
+  if (isNaN(val)) return;
+  const d = slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (!d) return;
+  d.gearDepth = val;
+  sel.dataset.gearDepth = val;
+  renderShapeEl(sel, d);
+  save(); drawThumbs(); saveState();
+  // Restore after drawThumbs may have called syncProps
+  const dep = document.getElementById('sh-gear-depth');
+  if (dep) dep.value = Math.round(val * 100);
+}
+
 // ══════════════ PARALLELOGRAM SKEW ══════════════
 function _syncParaUI(d) {
   const sec = document.getElementById('sh-para-section');
@@ -1133,6 +1178,25 @@ function _syncCurveUI(d) {
   // Show node controls only in edit mode
   const nodeBtns = document.getElementById('sh-curve-node-btns');
   if (nodeBtns) nodeBtns.style.display = isEdit ? 'flex' : 'none';
+  // Update type toggle button
+  const typeBtn = document.getElementById('sh-curve-type-btn');
+  const typeLbl = document.getElementById('sh-curve-type-label');
+  const typeIcon = document.getElementById('sh-curve-type-icon');
+  if (typeBtn && d && typeof _curveSelPts !== 'undefined') {
+    const hasSel = _curveSelPts.size > 0;
+    typeBtn.disabled = !hasSel;
+    if (hasSel && d.curvePoints) {
+      const idx = [..._curveSelPts][0];
+      const pt = d.curvePoints[idx];
+      const isCorner = pt && pt.type === 'corner';
+      if (typeLbl) typeLbl.textContent = isCorner ? 'Сгладить' : 'Сделать острым';
+      if (typeIcon) {
+        typeIcon.innerHTML = isCorner
+          ? '<path d="M1 10 C1 4 11 4 11 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/><circle cx="1" cy="10" r="1.5" fill="currentColor"/><circle cx="11" cy="10" r="1.5" fill="currentColor"/>'
+          : '<path d="M1 10 L6 2 L11 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="1" cy="10" r="1.5" fill="currentColor"/><circle cx="6" cy="2" r="1.5" fill="currentColor"/><circle cx="11" cy="10" r="1.5" fill="currentColor"/>';
+      }
+    }
+  }
   // Closed button
   const btn = document.getElementById('sh-curve-closed-btn');
   if (btn) {
@@ -1142,6 +1206,39 @@ function _syncCurveUI(d) {
     if (span) span.textContent = d.curveClosed ? 'Разомкнуть' : 'Замкнуть';
   }
 }
+function curveToggleNodeType() {
+  if (!sel || sel.dataset.type !== 'shape') return;
+  const d = slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (!d || !d.curvePoints || typeof _curveSelPts === 'undefined' || _curveSelPts.size === 0) return;
+  _curveSelPts.forEach(idx => {
+    const pt = d.curvePoints[idx];
+    if (!pt) return;
+    if (pt.type === 'corner') {
+      // Corner → smooth: create mirrored handles
+      pt.type = 'smooth';
+      if (pt.cp1x != null && pt.cp2x != null) {
+        const dx2 = pt.cp2x - pt.x, dy2 = pt.cp2y - pt.y;
+        const len2 = Math.hypot(dx2, dy2) || 0.001;
+        const len1 = Math.hypot(pt.cp1x - pt.x, pt.cp1y - pt.y) || len2;
+        pt.cp1x = pt.x - dx2/len2*len1; pt.cp1y = pt.y - dy2/len2*len1;
+      } else if (pt.cp2x != null) {
+        pt.cp1x = pt.x*2 - pt.cp2x; pt.cp1y = pt.y*2 - pt.cp2y;
+      } else if (pt.cp1x != null) {
+        pt.cp2x = pt.x*2 - pt.cp1x; pt.cp2y = pt.y*2 - pt.cp1y;
+      }
+    } else {
+      pt.type = 'corner';
+    }
+  });
+  sel.dataset.curvePoints = JSON.stringify(d.curvePoints);
+  if (typeof _normalizeCurvePoints === 'function') _normalizeCurvePoints(d.curvePoints, d.curveClosed);
+  if (typeof renderShapeEl === 'function') renderShapeEl(sel, d);
+  if (typeof _clearCurveEditor === 'function') _clearCurveEditor();
+  if (typeof _buildCurveEditor === 'function') _buildCurveEditor();
+  save(); drawThumbs(); saveState();
+  if (typeof _syncCurveUI === 'function') _syncCurveUI(d);
+}
+
 function toggleCurveClosed() {
   if (!sel || sel.dataset.type !== 'shape') return;
   const d = slides[cur].els.find(e => e.id === sel.dataset.id);

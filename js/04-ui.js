@@ -1219,13 +1219,14 @@ function _nearCorner(el, canvasX, canvasY) {
 }
 
 function _toCanvasCoords(clientX, clientY) {
-  const cwrap = document.getElementById('cwrap');
-  if (!cwrap) return {x:0,y:0};
-  const r = cwrap.getBoundingClientRect();
+  const canvas = document.getElementById('canvas');
+  if (!canvas) return {x:0,y:0};
   const z = typeof _canvasZoom === 'number' ? _canvasZoom : 1;
+  // Use canvas element's own bounding rect — accounts for zoom, scroll, and centering
+  const r = canvas.getBoundingClientRect();
   return {
-    x: (clientX - r.left + cwrap.scrollLeft - ZOOM_PAD) / z,
-    y: (clientY - r.top  + cwrap.scrollTop  - ZOOM_PAD) / z
+    x: (clientX - r.left) / z,
+    y: (clientY - r.top)  / z
   };
 }
 
@@ -1262,6 +1263,7 @@ function _addRotationZones(overlay, el) {
   document.addEventListener('mousemove', ev => {
     if (_rotDragging || !_rotEl) return;
     if (window._anyDragging) return;
+    if (window._curveEditMode) { _setRotCursor(''); return; } // no rotation cursor in curve edit
     const cwrap2 = document.getElementById('cwrap');
     if (!cwrap2) return;
     const cr = cwrap2.getBoundingClientRect();
@@ -1278,6 +1280,7 @@ function _addRotationZones(overlay, el) {
   document.addEventListener('mousedown', ev => {
     if (ev.button !== 0 || !_rotEl) return;
     if (window._resizeDragging) return;
+    if (window._curveEditMode) return; // don't rotate while editing curve nodes
     const cwrap2 = document.getElementById('cwrap');
     if (!cwrap2) return;
     const cr = cwrap2.getBoundingClientRect();
@@ -1609,6 +1612,127 @@ function _buildCurveEditor() {
   }
   function fullRebuild() { commit(); _clearCurveEditor(); _buildCurveEditor(); }
 
+  // Drag on curve line — creates/adjusts handles of nearest segment
+  function _sampleBezier(p0, p1, p2, p3, t) {
+    const u = 1-t;
+    return {
+      x: u*u*u*p0.x + 3*u*u*t*p1.x + 3*u*t*t*p2.x + t*t*t*p3.x,
+      y: u*u*u*p0.y + 3*u*u*t*p1.y + 3*u*t*t*p2.y + t*t*t*p3.y,
+    };
+  }
+  function _closestOnCurve(cx, cy) {
+    // Returns {segIdx, t, dist} for the closest point on any segment
+    const pts = d.curvePoints;
+    let bestDist = Infinity, bestSeg = 0, bestT = 0.5;
+    const segs = d.curveClosed ? pts.length : pts.length - 1;
+    for (let si = 0; si < segs; si++) {
+      const pi = si, pj = d.curveClosed ? (si+1) % pts.length : si+1;
+      const a = pts[pi], b = pts[pj];
+      const p0 = toCanvas(a.x, a.y);
+      const p1 = toCanvas(a.cp2x != null ? a.cp2x : a.x, a.cp2y != null ? a.cp2y : a.y);
+      const p2 = toCanvas(b.cp1x != null ? b.cp1x : b.x, b.cp1y != null ? b.cp1y : b.y);
+      const p3 = toCanvas(b.x, b.y);
+      for (let k = 0; k <= 20; k++) {
+        const t = k / 20;
+        const pt = _sampleBezier(p0, p1, p2, p3, t);
+        const dx = pt.x - cx, dy = pt.y - cy;
+        const dist = Math.hypot(dx, dy);
+        if (dist < bestDist) { bestDist = dist; bestSeg = si; bestT = t; }
+      }
+    }
+    return { segIdx: bestSeg, t: bestT, dist: bestDist };
+  }
+
+  // Add canvas mousedown to detect drags on the curve line
+  const _cvLineDrag = canvas.addEventListener('mousedown', function _cvLineDragFn(ev) {
+    if (!window._curveEditMode || window._curveDragging || window._anyDragging) return;
+    if (!_curveEditing) return;
+    const cv = _toCanvasCoords(ev.clientX, ev.clientY);
+    const closest = _closestOnCurve(cv.x, cv.y);
+    if (closest.dist > 40) return; // not near the curve
+    // Check not clicking on an existing handle dot
+    const onHandle = document.elementFromPoint(ev.clientX, ev.clientY);
+    if (onHandle && onHandle.classList.contains('curve-handle')) return;
+
+    ev.stopPropagation(); ev.preventDefault();
+    window._anyDragging = true;
+    window._curveDragging = true;
+
+    const si = closest.segIdx;
+    const pts = d.curvePoints;
+    const pi = si, pj = d.curveClosed ? (si+1) % pts.length : si+1;
+    const ptA = pts[pi], ptB = pts[pj];
+    const startN = toNorm(cv.x, cv.y);
+
+    let startX = cv.x, startY = cv.y;
+    let dragged = false;
+
+    const onMove = (mv) => {
+      const c2 = _toCanvasCoords(mv.clientX, mv.clientY);
+      const dx = c2.x - startX, dy = c2.y - startY;
+      if (!dragged && Math.hypot(dx, dy) < 3) return;
+      dragged = true;
+      // Convert displacement to normalized coords
+      const n0 = toNorm(startX, startY);
+      const n1 = toNorm(c2.x, c2.y);
+      const ddx = n1.x - n0.x, ddy = n1.y - n0.y;
+      // Apply to both handles: ptA.cp2 and ptB.cp1
+      const t = closest.t;
+      // Weight by t (drag near A affects A more, near B affects B more)
+      const wA = 1 - t, wB = t;
+      const hDist = 0.3; // handle length as fraction of segment
+      if (ptA.cp2x == null) {
+        ptA.cp2x = ptA.x + (ptB.x - ptA.x) * hDist;
+        ptA.cp2y = ptA.y + (ptB.y - ptA.y) * hDist;
+      }
+      if (ptB.cp1x == null) {
+        ptB.cp1x = ptB.x + (ptA.x - ptB.x) * hDist;
+        ptB.cp1y = ptB.y + (ptA.y - ptB.y) * hDist;
+      }
+      // Apply drag to cp2 of A, respecting smooth/symmetric type
+      ptA.cp2x += ddx * wA * 2; ptA.cp2y += ddy * wA * 2;
+      if (ptA.type === 'symmetric') {
+        ptA.cp1x = ptA.x*2 - ptA.cp2x; ptA.cp1y = ptA.y*2 - ptA.cp2y;
+      } else if (ptA.type === 'smooth' && ptA.cp1x != null) {
+        const len1 = Math.hypot(ptA.cp1x - ptA.x, ptA.cp1y - ptA.y);
+        const dx2 = ptA.cp2x - ptA.x, dy2 = ptA.cp2y - ptA.y;
+        const len2 = Math.hypot(dx2, dy2) || 0.001;
+        ptA.cp1x = ptA.x - dx2/len2*len1; ptA.cp1y = ptA.y - dy2/len2*len1;
+      }
+      // Apply drag to cp1 of B, respecting smooth/symmetric type
+      ptB.cp1x += ddx * wB * 2; ptB.cp1y += ddy * wB * 2;
+      if (ptB.type === 'symmetric') {
+        ptB.cp2x = ptB.x*2 - ptB.cp1x; ptB.cp2y = ptB.y*2 - ptB.cp1y;
+      } else if (ptB.type === 'smooth' && ptB.cp2x != null) {
+        const len1b = Math.hypot(ptB.cp2x - ptB.x, ptB.cp2y - ptB.y);
+        const dx1b = ptB.cp1x - ptB.x, dy1b = ptB.cp1y - ptB.y;
+        const len1bl = Math.hypot(dx1b, dy1b) || 0.001;
+        ptB.cp2x = ptB.x - dx1b/len1bl*len1b; ptB.cp2y = ptB.y - dy1b/len1bl*len1b;
+      }
+      startX = c2.x; startY = c2.y;
+      commit();
+    };
+
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      window._anyDragging = false;
+      window._curveDragging = false;
+      if (dragged) {
+        if (typeof _normalizeCurvePoints === 'function') _normalizeCurvePoints(d.curvePoints, d.curveClosed);
+        if (typeof save === 'function') save();
+        if (typeof drawThumbs === 'function') drawThumbs();
+        if (typeof saveState === 'function') saveState();
+        fullRebuild();
+      }
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+  // Store cleanup for canvas drag handler
+  canvas._cvLineDragFn = _cvLineDrag;
+  _curveHandles.push(null); // placeholder so _clearCurveEditor knows to clean up
+
   // Update add-node button state based on selection
   function updateButtonState() {
     const addBtn = document.getElementById('sh-curve-add-btn');
@@ -1788,6 +1912,12 @@ function _clearCurveEditor(clearSel) {
   _curveHandles = [];
   _curveEditing = false;
   if (clearSel) _curveSelPts.clear();
+  // Remove canvas line-drag handler if present
+  const cv2 = document.getElementById('canvas');
+  if (cv2 && cv2._cvLineDragFn) {
+    cv2.removeEventListener('mousedown', cv2._cvLineDragFn);
+    delete cv2._cvLineDragFn;
+  }
 }
 
 function curveAddNode() {

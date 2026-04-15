@@ -57,6 +57,238 @@ function openShapeModal(){
   buildShapeGallery();
   document.getElementById('shape-modal').classList.add('open');
 }
+// Variable-width stroke for curves (smooth outline from per-node sw)
+function _expVarStroke(pts,w,h,closed,defaultSw,strokeColor,shadowAttr){
+  var STEPS=36;
+  function sample(prev,curr){
+    var hwA=(prev.sw!=null?prev.sw:defaultSw)/2,hwB=(curr.sw!=null?curr.sw:defaultSw)/2;
+    var p0={x:prev.x*w,y:prev.y*h},p3={x:curr.x*w,y:curr.y*h};
+    var p1={x:(prev.cp2x!=null?prev.cp2x:prev.x)*w,y:(prev.cp2y!=null?prev.cp2y:prev.y)*h};
+    var p2={x:(curr.cp1x!=null?curr.cp1x:curr.x)*w,y:(curr.cp1y!=null?curr.cp1y:curr.y)*h};
+    var out=[];
+    for(var k=0;k<=STEPS;k++){
+      var t=k/STEPS,u=1-t;
+      var x=u*u*u*p0.x+3*u*u*t*p1.x+3*u*t*t*p2.x+t*t*t*p3.x;
+      var y=u*u*u*p0.y+3*u*u*t*p1.y+3*u*t*t*p2.y+t*t*t*p3.y;
+      var tx=3*(u*u*(p1.x-p0.x)+2*u*t*(p2.x-p1.x)+t*t*(p3.x-p2.x));
+      var ty=3*(u*u*(p1.y-p0.y)+2*u*t*(p2.y-p1.y)+t*t*(p3.y-p2.y));
+      var tl=Math.hypot(tx,ty)||1e-9;tx/=tl;ty/=tl;
+      var hw=hwA+(hwB-hwA)*t;
+      out.push({x:x,y:y,nx:-ty,ny:tx,tx:tx,ty:ty,hw:hw});
+    }
+    return out;
+  }
+  function cmPath(arr){
+    if(!arr.length)return'';
+    var d='M '+arr[0].x.toFixed(2)+' '+arr[0].y.toFixed(2);
+    for(var i=0;i<arr.length-1;i++){
+      var p0=arr[Math.max(0,i-1)],p1=arr[i],p2=arr[i+1],p3=arr[Math.min(arr.length-1,i+2)];
+      var c1={x:p1.x+(p2.x-p0.x)/6,y:p1.y+(p2.y-p0.y)/6};
+      var c2={x:p2.x-(p3.x-p1.x)/6,y:p2.y-(p3.y-p1.y)/6};
+      d+=' C '+c1.x.toFixed(2)+' '+c1.y.toFixed(2)+' '+c2.x.toFixed(2)+' '+c2.y.toFixed(2)+' '+p2.x.toFixed(2)+' '+p2.y.toFixed(2);
+    }
+    return d;
+  }
+  function shortArc(jx,jy,r,a0,a1){
+    var da=a1-a0;
+    while(da>Math.PI)da-=2*Math.PI;while(da<-Math.PI)da+=2*Math.PI;
+    var res=[],N=10;
+    for(var k=0;k<=N;k++){var a=a0+da*k/N;res.push({x:jx+r*Math.cos(a),y:jy+r*Math.sin(a)});}
+    return res;
+  }
+  function rjoin(jx,jy,r,inTx,inTy,inNx,inNy,outTx,outTy,outNx,outNy){
+    if(r < 0.01) return{Lpts:[{x:jx,y:jy}],Rpts:[{x:jx,y:jy}]};
+    var cross=inTx*outTy-inTy*outTx;
+    var inLx=jx+inNx*r,inLy=jy+inNy*r,inRx=jx-inNx*r,inRy=jy-inNy*r;
+    var outLx=jx+outNx*r,outLy=jy+outNy*r,outRx=jx-outNx*r,outRy=jy-outNy*r;
+    function innerPtFn(ax,ay,bx,by){var a0=Math.atan2(ay-jy,ax-jx),a1=Math.atan2(by-jy,bx-jx);var da=a1-a0;while(da>Math.PI)da-=2*Math.PI;while(da<-Math.PI)da+=2*Math.PI;var am=a0+da/2;return{x:jx+r*Math.cos(am),y:jy+r*Math.sin(am)};}
+    var dot2=inTx*outTx+inTy*outTy;
+    if(Math.abs(cross)<0.02){
+      if(dot2>0.98)return{Lpts:[{x:outLx,y:outLy}],Rpts:[{x:outRx,y:outRy}]};
+      var aIn=Math.atan2(inLy-jy,inLx-jx),aOut=Math.atan2(outLy-jy,outLx-jx);
+      var aInR=Math.atan2(inRy-jy,inRx-jx),aOutR=Math.atan2(outRy-jy,outRx-jx);
+      var daL=aOut-aIn;while(daL>Math.PI)daL-=2*Math.PI;while(daL<-Math.PI)daL+=2*Math.PI;
+      var daR=aOutR-aInR;while(daR>Math.PI)daR-=2*Math.PI;while(daR<-Math.PI)daR+=2*Math.PI;
+      if(Math.abs(daL)>=Math.abs(daR)){return{Lpts:shortArc(jx,jy,r,aIn,aOut),Rpts:[innerPtFn(inRx,inRy,outRx,outRy)]};}
+      else{return{Lpts:[innerPtFn(inLx,inLy,outLx,outLy)],Rpts:shortArc(jx,jy,r,aInR,aOutR)};}
+    }
+    if(cross<0){var ip=innerPtFn(inRx,inRy,outRx,outRy);return{Lpts:shortArc(jx,jy,r,Math.atan2(inLy-jy,inLx-jx),Math.atan2(outLy-jy,outLx-jx)),Rpts:[ip]};}
+    else{var ip=innerPtFn(inLx,inLy,outLx,outLy);return{Lpts:[ip],Rpts:shortArc(jx,jy,r,Math.atan2(inRy-jy,inRx-jx),Math.atan2(outRy-jy,outRx-jx))};}
+  }
+  function endCap(cx,cy,r,fromA,toA,n){
+    var da=toA-fromA;
+    while(da>Math.PI)da-=2*Math.PI;while(da<-Math.PI)da+=2*Math.PI;
+    var res=[];
+    for(var k=1;k<n;k++){var a=fromA+da*k/n;res.push({x:cx+r*Math.cos(a),y:cy+r*Math.sin(a)});}
+    return res;
+  }
+  function endCapDa(cx,cy,r,fromA,da,n){
+    var res=[];
+    for(var k=1;k<n;k++){var a=fromA+da*k/n;res.push({x:cx+r*Math.cos(a),y:cy+r*Math.sin(a)});}
+    return res;
+  }
+  var allPts=closed?pts.concat([pts[0]]):pts,nSegs=allPts.length-1,SS=[];
+  for(var si=0;si<nSegs;si++)SS.push(sample(pts[si],allPts[si+1]));
+  var L=[],R=[];
+  for(var si=0;si<nSegs;si++){
+    var samp=SS[si],isFirst=si===0,isLast=si===nSegs-1;
+    for(var k=(isFirst?0:1);k<(isLast?samp.length:samp.length-1);k++){
+      var s=samp[k];if(s.hw<0.01){L.push({x:s.x,y:s.y});R.push({x:s.x,y:s.y});}else{L.push({x:s.x+s.nx*s.hw,y:s.y+s.ny*s.hw});R.push({x:s.x-s.nx*s.hw,y:s.y-s.ny*s.hw});}
+    }
+    if(!isLast){
+      var cur=samp[samp.length-1],next=SS[si+1][0];
+      var j=rjoin(cur.x,cur.y,cur.hw,cur.tx,cur.ty,cur.nx,cur.ny,next.tx,next.ty,next.nx,next.ny);
+      j.Lpts.forEach(function(p){L.push(p);});j.Rpts.forEach(function(p){R.push(p);});
+    }
+  }
+  if(L.length<2)return'';
+  var firstS=SS[0][0],lastS=SS[nSegs-1][SS[nSegs-1].length-1];
+  var Rrev=R.slice().reverse(),d;
+  if(closed){d=cmPath(L)+' Z '+cmPath(Rrev)+' Z';}
+  else{
+    // Start cap: path goes R→cap→L. Cap sweeps from R[0] to L[0] going AROUND the tip.
+    // "Around the tip" means going in the direction OPPOSITE to the curve tangent.
+    // The correct arc is the one that passes through the tip point (center - tangent*hw).
+    var aR0=Math.atan2(R[0].y-firstS.y,R[0].x-firstS.x);
+    var aL0=Math.atan2(L[0].y-firstS.y,L[0].x-firstS.x);
+    // Tip of start cap is opposite to forward direction
+    var tipAng0 = Math.atan2(-firstS.ty, -firstS.tx);
+    // Choose the sweep direction that passes through tipAng0
+    var da0 = aL0 - aR0; while(da0>Math.PI)da0-=2*Math.PI; while(da0<-Math.PI)da0+=2*Math.PI;
+    var daTip0 = tipAng0 - aR0; while(daTip0>Math.PI)daTip0-=2*Math.PI; while(daTip0<-Math.PI)daTip0+=2*Math.PI;
+    // If tip is not in the same angular direction as da0, flip direction
+    if(da0 !== 0 && daTip0 !== 0 && (da0 > 0) !== (daTip0 > 0)) { da0 = da0 > 0 ? da0 - 2*Math.PI : da0 + 2*Math.PI; }
+    var sa=endCapDa(firstS.x,firstS.y,firstS.hw,aR0,da0,8);
+
+    // End cap: path goes L[last]→cap→R[last]. Cap sweeps from L to R around the end tip.
+    var aLe=Math.atan2(L[L.length-1].y-lastS.y,L[L.length-1].x-lastS.x);
+    var aRe=Math.atan2(Rrev[0].y-lastS.y,Rrev[0].x-lastS.x);
+    var tipAngE = Math.atan2(lastS.ty, lastS.tx);
+    var daE = aRe - aLe; while(daE>Math.PI)daE-=2*Math.PI; while(daE<-Math.PI)daE+=2*Math.PI;
+    var daTipE = tipAngE - aLe; while(daTipE>Math.PI)daTipE-=2*Math.PI; while(daTipE<-Math.PI)daTipE+=2*Math.PI;
+    if(daE !== 0 && daTipE !== 0 && (daE > 0) !== (daTipE > 0)) { daE = daE > 0 ? daE - 2*Math.PI : daE + 2*Math.PI; }
+    var ea=endCapDa(lastS.x,lastS.y,lastS.hw,aLe,daE,8);
+    d=cmPath([R[0]].concat(sa,L,ea,Rrev))+' Z';
+  }
+  return '<path d="'+d+'" fill="'+strokeColor+'" fill-rule="nonzero" stroke="none" '+(shadowAttr||'')+'/>';
+}
+
+// Normalize curve points: manage cp1/cp2 handles based on open/closed state and position
+// Build only the OUTER boundary of a variable-width stroke as a filled shape
+function _expVarStrokeOuter(pts, w, h, closed, defaultSw, fillColor) {
+  var STEPS = 36;
+  function sample(prev, curr) {
+    var hwA = Math.max(0.001, (prev.sw != null ? prev.sw : defaultSw) / 2);
+    var hwB = Math.max(0.001, (curr.sw != null ? curr.sw : defaultSw) / 2);
+    var p0={x:prev.x*w,y:prev.y*h}, p3={x:curr.x*w,y:curr.y*h};
+    var p1={x:(prev.cp2x!=null?prev.cp2x:prev.x)*w, y:(prev.cp2y!=null?prev.cp2y:prev.y)*h};
+    var p2={x:(curr.cp1x!=null?curr.cp1x:curr.x)*w, y:(curr.cp1y!=null?curr.cp1y:curr.y)*h};
+    var out = [];
+    for (var k = 0; k <= STEPS; k++) {
+      var t=k/STEPS, u=1-t;
+      var x=u*u*u*p0.x+3*u*u*t*p1.x+3*u*t*t*p2.x+t*t*t*p3.x;
+      var y=u*u*u*p0.y+3*u*u*t*p1.y+3*u*t*t*p2.y+t*t*t*p3.y;
+      var tx=3*(u*u*(p1.x-p0.x)+2*u*t*(p2.x-p1.x)+t*t*(p3.x-p2.x));
+      var ty=3*(u*u*(p1.y-p0.y)+2*u*t*(p2.y-p1.y)+t*t*(p3.y-p2.y));
+      var tl=Math.hypot(tx,ty)||1e-9; tx/=tl; ty/=tl;
+      var hw = hwA + (hwB - hwA) * t;
+      out.push({x:x, y:y, nx:-ty, ny:tx, hw:hw});
+    }
+    return out;
+  }
+  function cmPath(arr) {
+    if (!arr.length) return '';
+    var d = 'M '+arr[0].x.toFixed(2)+' '+arr[0].y.toFixed(2);
+    for (var i = 0; i < arr.length-1; i++) {
+      var p0=arr[Math.max(0,i-1)], p1=arr[i], p2=arr[i+1], p3=arr[Math.min(arr.length-1,i+2)];
+      var c1={x:p1.x+(p2.x-p0.x)/6, y:p1.y+(p2.y-p0.y)/6};
+      var c2={x:p2.x-(p3.x-p1.x)/6, y:p2.y-(p3.y-p1.y)/6};
+      d+=' C '+c1.x.toFixed(2)+' '+c1.y.toFixed(2)+' '+c2.x.toFixed(2)+' '+c2.y.toFixed(2)+' '+p2.x.toFixed(2)+' '+p2.y.toFixed(2);
+    }
+    return d;
+  }
+  var allPts = closed ? pts.concat([pts[0]]) : pts;
+  var nSegs = allPts.length - 1;
+  var SS = [];
+  for (var si = 0; si < nSegs; si++) SS.push(sample(pts[si], allPts[si+1]));
+  // Build only LEFT (outer) boundary
+  var L = [];
+  for (var si = 0; si < nSegs; si++) {
+    var samp = SS[si], isFirst = si===0, isLast = si===nSegs-1;
+    for (var k = (isFirst?0:1); k < samp.length; k++) {
+      var s = samp[k];
+      L.push({x: s.x + s.nx * s.hw, y: s.y + s.ny * s.hw});
+    }
+  }
+  if (L.length < 2) return '';
+  var d = cmPath(L) + ' Z';
+  return '<path d="'+d+'" '+fillColor+' stroke="none"/>';
+}
+
+function _normalizeCurvePoints(pts, closed) {
+  if (!pts || pts.length < 2) return;
+  pts.forEach((pt, i) => {
+    const isFirst = i === 0;
+    const isLast = i === pts.length - 1;
+    if (closed) {
+      // Closed curve: all points need both handles
+      // If missing cp1, create it by reflecting cp2
+      if (pt.cp1x == null && pt.cp2x != null) {
+        pt.cp1x = pt.x * 2 - pt.cp2x;
+        pt.cp1y = pt.y * 2 - pt.cp2y;
+      }
+      // If missing cp2, create it by reflecting cp1
+      if (pt.cp2x == null && pt.cp1x != null) {
+        pt.cp2x = pt.x * 2 - pt.cp1x;
+        pt.cp2y = pt.y * 2 - pt.cp1y;
+      }
+      // If both missing, create default handles
+      if (pt.cp1x == null && pt.cp2x == null) {
+        const prev = pts[(i - 1 + pts.length) % pts.length];
+        const next = pts[(i + 1) % pts.length];
+        const dx = (next.x - prev.x) * 0.25;
+        const dy = (next.y - prev.y) * 0.25;
+        pt.cp1x = pt.x - dx; pt.cp1y = pt.y - dy;
+        pt.cp2x = pt.x + dx; pt.cp2y = pt.y + dy;
+      }
+    } else {
+      // Open curve: first point has no cp1, last point has no cp2
+      if (isFirst) { delete pt.cp1x; delete pt.cp1y; }
+      if (isLast)  { delete pt.cp2x; delete pt.cp2y; }
+      // Middle points: ensure both handles exist
+      if (!isFirst && !isLast) {
+        if (pt.cp1x == null && pt.cp2x != null) {
+          pt.cp1x = pt.x * 2 - pt.cp2x; pt.cp1y = pt.y * 2 - pt.cp2y;
+        }
+        if (pt.cp2x == null && pt.cp1x != null) {
+          pt.cp2x = pt.x * 2 - pt.cp1x; pt.cp2y = pt.y * 2 - pt.cp1y;
+        }
+      }
+      // First point only needs cp2
+      if (isFirst && pt.cp2x == null) {
+        const next = pts[1];
+        pt.cp2x = pt.x + (next.x - pt.x) * 0.4;
+        pt.cp2y = pt.y + (next.y - pt.y) * 0.4;
+      }
+      // Last point only needs cp1
+      if (isLast && pt.cp1x == null) {
+        const prev = pts[pts.length - 2];
+        pt.cp1x = pt.x + (prev.x - pt.x) * 0.4;
+        pt.cp1y = pt.y + (prev.y - pt.y) * 0.4;
+      }
+    }
+  });
+}
+
+// Default curve points: S-curve with 3 nodes and smooth bezier handles
+function _defaultCurvePoints() {
+  return [
+    { x: 0.1, y: 0.7, type: 'smooth', cp2x: 0.2, cp2y: 0.3 },
+    { x: 0.5, y: 0.3, type: 'smooth', cp1x: 0.3, cp1y: 0.3, cp2x: 0.7, cp2y: 0.3 },
+    { x: 0.9, y: 0.7, type: 'smooth', cp1x: 0.8, cp1y: 0.3 }
+  ];
+}
+
 function insertShapeSelected(){
   const sh=SHAPES.find(s=>s.id===selShape)||SHAPES[0];
   const fill=document.getElementById('sm-fill').value;
@@ -84,7 +316,6 @@ function insertShapeSelected(){
       // Для callout — добавляем хвост если нет
       const _replIsCallout=sh.special==='callout';
       if(_replIsCallout&&d.tailX===undefined){d.tailX=0;d.tailY=(d.h||200)/2+30;d.rx=d.rx||12;}
-      if(sh.special==='chevron'&&d.chevSkew===undefined){d.chevSkew=25;}
       sel.dataset.shape=sh.id;
       const svgDiv=sel.querySelector('.ec>div>div');
       if(svgDiv)svgDiv.innerHTML=buildShapeSVG(d,d.w,d.h);
@@ -103,13 +334,14 @@ function insertShapeSelected(){
   const _isCallout=sh.special==='callout';
   const _insertFill = sh.noFill ? 'none' : fill;
   const _isCloud = sh.special === 'cloud';
+  const _isCurve = sh.special === 'curve';
   const d={id:'e'+(++ec),type:'shape',x:snapV((canvasW-200)/2),y:snapV((canvasH-200)/2),w:snapV(200),h:snapV(200),
     shape:sh.id,fill:_insertFill,stroke,sw,rx:_isCallout?12:0,fillOp:1,shadow:false,shadowBlur:8,shadowColor:'#000000',
     shapeHtml:'',shapeTextCss:'font-size:24px;font-weight:700;color:#ffffff;text-align:center;',
     tailX:_isCallout?0:undefined,tailY:_isCallout?130:undefined,rot:0,anims:[],
     cloudSeed:_isCloud?(Math.floor(Math.random()*999999)+1):undefined,
-    chevSkew:sh.special==='chevron'?25:undefined,
-    curvePoints:sh.special==='curve'?(typeof _defaultCurvePoints==='function'?_defaultCurvePoints():undefined):undefined};
+    curvePoints:_isCurve?_defaultCurvePoints():undefined,
+    curveClosed:_isCurve?false:undefined};
   slides[cur].els.push(d);mkEl(d);save();drawThumbs();saveState();
   document.getElementById('shape-modal').classList.remove('open');
 }
@@ -378,400 +610,179 @@ function _roundedPolygonPath(pts, rx) {
   return d;
 }
 
-// Extract polygon points from a simple M/L/Z SVG path string
+// Rounds only sharp (L) corners of an SVG path, preserving Q/C curve segments intact.
+function _roundedMixedPath(pathStr, rx) {
+  if (!pathStr || rx <= 0) return pathStr;
+
+  // Parse into segments
+  const segRe = /([MLQCZz])\s*((?:[-\d.e]+[\s,]+)*[-\d.e]+)?/g;
+  const raw = [];
+  let m;
+  while ((m = segRe.exec(pathStr)) !== null) {
+    const cmd = m[1].toUpperCase();
+    const nums = m[2] ? m[2].trim().split(/[\s,]+/).map(parseFloat).filter(n => !isNaN(n)) : [];
+    raw.push({ cmd, nums });
+  }
+
+  // Build flat list of nodes with their type
+  // type: 'M' | 'L' | 'Q' | 'C' | 'Z'
+  // For rounding we only care about L-type corners
+  // A corner at node i is roundable if both incoming and outgoing edges are L
+  const nodes = [];
+  let cx = 0, cy = 0, mx = 0, my = 0;
+  for (const seg of raw) {
+    if (seg.cmd === 'M') {
+      cx = seg.nums[0]; cy = seg.nums[1];
+      mx = cx; my = cy;
+      nodes.push({ cmd: 'M', x: cx, y: cy });
+    } else if (seg.cmd === 'L') {
+      const x = seg.nums[0], y = seg.nums[1];
+      nodes.push({ cmd: 'L', x, y, fromX: cx, fromY: cy });
+      cx = x; cy = y;
+    } else if (seg.cmd === 'Q') {
+      nodes.push({ cmd: 'Q', nums: seg.nums, fromX: cx, fromY: cy });
+      cx = seg.nums[2]; cy = seg.nums[3];
+    } else if (seg.cmd === 'C') {
+      nodes.push({ cmd: 'C', nums: seg.nums, fromX: cx, fromY: cy });
+      cx = seg.nums[4]; cy = seg.nums[5];
+    } else if (seg.cmd === 'Z') {
+      nodes.push({ cmd: 'Z', x: mx, y: my });
+    }
+  }
+
+  // Build output
+  // For each L node, check if prev output point and next node are both L-type
+  // If so, insert rounding arc
+  const n = nodes.length;
+  const out = [];
+
+  // Helper: get the "arrival point" of node i (where it ends)
+  function endPt(i) {
+    const nd = nodes[i];
+    if (nd.cmd === 'M' || nd.cmd === 'L' || nd.cmd === 'Z') return { x: nd.x, y: nd.y };
+    if (nd.cmd === 'Q') return { x: nd.nums[2], y: nd.nums[3] };
+    if (nd.cmd === 'C') return { x: nd.nums[4], y: nd.nums[5] };
+    return null;
+  }
+
+  // Find M node start point and last L before Z for wrap-around rounding
+  let startIdx = nodes.findIndex(nd => nd.cmd === 'M');
+  let zIdx = nodes.findIndex(nd => nd.cmd === 'Z');
+
+  // For each node, compute whether we should pre-shorten the line to it
+  const rounded = {};
+
+  function makeRound(i, vx, vy, prevX, prevY, nextX, nextY) {
+    const e1x = vx - prevX, e1y = vy - prevY;
+    const e2x = nextX - vx, e2y = nextY - vy;
+    const len1 = Math.hypot(e1x, e1y), len2 = Math.hypot(e2x, e2y);
+    if (len1 < 0.1 || len2 < 0.1) return;
+    const r = Math.min(rx, len1 / 2, len2 / 2);
+    const p1x = vx - (e1x / len1) * r, p1y = vy - (e1y / len1) * r;
+    const p2x = vx + (e2x / len2) * r, p2y = vy + (e2y / len2) * r;
+    rounded[i] = { p1x, p1y, p2x, p2y, vx, vy };
+  }
+
+  for (let i = 0; i < n; i++) {
+    const nd = nodes[i];
+
+    // Round L corners
+    if (nd.cmd === 'L') {
+      // Find prev endpoint
+      let prevEnd = null;
+      for (let j = i - 1; j >= 0; j--) {
+        prevEnd = endPt(j);
+        if (prevEnd) break;
+      }
+      if (!prevEnd) continue;
+
+      const nextNd = nodes[i + 1];
+      if (!nextNd) continue;
+
+      if (nextNd.cmd === 'L') {
+        // L -> L corner: round
+        makeRound(i, nd.x, nd.y, prevEnd.x, prevEnd.y, nextNd.x, nextNd.y);
+      } else if (nextNd.cmd === 'Z' || nextNd.cmd === 'M') {
+        // L -> Z: closing line goes back to M start point
+        const startPt = endPt(startIdx);
+        if (startPt) {
+          // Next after Z is the first L (first outgoing edge from M)
+          const firstL = nodes.find((nd2, j) => j > startIdx && nd2.cmd === 'L');
+          if (firstL) makeRound(i, nd.x, nd.y, prevEnd.x, prevEnd.y, startPt.x, startPt.y);
+        }
+      }
+    }
+
+    // Round the M start point if it's a corner between last L and first L
+    if (nd.cmd === 'M' && zIdx >= 0) {
+      // Incoming: last L before Z
+      const lastL = [...nodes].slice(0, zIdx).reverse().find(nd2 => nd2.cmd === 'L');
+      // Outgoing: first L after M
+      const firstL = nodes.find((nd2, j) => j > i && nd2.cmd === 'L');
+      if (lastL && firstL) {
+        makeRound(i, nd.x, nd.y, lastL.x, lastL.y, firstL.x, firstL.y);
+      }
+    }
+  }
+
+  // Emit path
+  for (let i = 0; i < n; i++) {
+    const nd = nodes[i];
+    const rnd = rounded[i];
+    if (nd.cmd === 'M') {
+      if (rnd) {
+        // M point is a rounded corner — start at p2 (after rounding arc)
+        out.push(`M ${rnd.p2x.toFixed(2)} ${rnd.p2y.toFixed(2)}`);
+      } else {
+        out.push(`M ${nd.x.toFixed(2)} ${nd.y.toFixed(2)}`);
+      }
+    } else if (nd.cmd === 'L') {
+      if (rnd) {
+        // Stop before vertex, emit rounding arc
+        out.push(`L ${rnd.p1x.toFixed(2)} ${rnd.p1y.toFixed(2)}`);
+        out.push(`Q ${rnd.vx.toFixed(2)} ${rnd.vy.toFixed(2)} ${rnd.p2x.toFixed(2)} ${rnd.p2y.toFixed(2)}`);
+      } else {
+        out.push(`L ${nd.x.toFixed(2)} ${nd.y.toFixed(2)}`);
+      }
+    } else if (nd.cmd === 'Q') {
+      out.push(`Q ${nd.nums[0].toFixed(2)} ${nd.nums[1].toFixed(2)} ${nd.nums[2].toFixed(2)} ${nd.nums[3].toFixed(2)}`);
+    } else if (nd.cmd === 'C') {
+      out.push(`C ${nd.nums[0].toFixed(2)} ${nd.nums[1].toFixed(2)} ${nd.nums[2].toFixed(2)} ${nd.nums[3].toFixed(2)} ${nd.nums[4].toFixed(2)} ${nd.nums[5].toFixed(2)}`);
+    } else if (nd.cmd === 'Z') {
+      // If M was rounded, we need to close to p1 of M rounding, then arc to p2
+      const mRnd = rounded[startIdx];
+      if (mRnd) {
+        out.push(`L ${mRnd.p1x.toFixed(2)} ${mRnd.p1y.toFixed(2)}`);
+        out.push(`Q ${mRnd.vx.toFixed(2)} ${mRnd.vy.toFixed(2)} ${mRnd.p2x.toFixed(2)} ${mRnd.p2y.toFixed(2)}`);
+      }
+      out.push('Z');
+    }
+  }
+  return out.join(' ');
+}
+
+// Extract polygon points from SVG path string (handles M, L, Q, C, T, S commands)
 function _extractPolygonPts(pathStr) {
   const pts = [];
-  const re = /[MLml]\s*([-\d.]+)[,\s]+([-\d.]+)/g;
+  // Match any path command followed by coordinate pairs
+  // For Q (quadratic): take the endpoint (last pair)
+  // For C (cubic): take the endpoint (last pair)
+  // For M, L: take the point directly
+  const re = /([MLQCSTAmlqcsta])\s*((?:[-\d.]+[\s,]+)*[-\d.]+)/g;
   let m;
   while ((m = re.exec(pathStr)) !== null) {
-    pts.push({ x: parseFloat(m[1]), y: parseFloat(m[2]) });
+    const cmd = m[1].toUpperCase();
+    if (cmd === 'Z') continue;
+    const nums = m[2].trim().split(/[\s,]+/).map(parseFloat).filter(n => !isNaN(n));
+    // Each command ends at its last x,y pair
+    if (nums.length >= 2) {
+      // Take the last pair (destination point)
+      const x = nums[nums.length - 2];
+      const y = nums[nums.length - 1];
+      pts.push({ x, y });
+    }
   }
   return pts;
-}
-
-
-// Build chevron path for given width/height and skew (0-45, default 25)
-// skew = depth of the notch/tip as % of width (0=flat rectangle tip, 45=very pointed)
-function _chevronPath(w, h, skew, isLeft) {
-  const s = Math.max(0, Math.min(45, +skew)) / 100; // 0..0.45 fraction of w
-  const tip = Math.round(w * s);   // horizontal depth of nose/notch
-  const mid = Math.round(h / 2);
-  if (isLeft) {
-    // ← left-facing chevron: exact mirror of right (x -> w-x)
-    // Right: M 0 0 L (w-tip) 0 L w mid L (w-tip) h L 0 h L tip mid
-    // Mirror: M w 0 L tip 0 L 0 mid L tip h L w h L (w-tip) mid
-    return `M ${w} 0 L ${tip} 0 L 0 ${mid} L ${tip} ${h} L ${w} ${h} L ${w - tip} ${mid} Z`;
-  } else {
-    // → right-facing chevron: nose points right
-    return `M 0 0 L ${w - tip} 0 L ${w} ${mid} L ${w - tip} ${h} L 0 ${h} L ${tip} ${mid} Z`;
-  }
-}
-
-// Build SVG path from curve control points
-// pts: [{x,y,cp1x,cp1y,cp2x,cp2y,type}] type: 'smooth'|'corner'|'symmetric'
-// coords are in 0-1 normalized space, scaled to w,h
-
-// Compute bounding box of a bezier curve from its control points
-// Returns {minX, minY, maxX, maxY} in normalized [0-1] space
-function _curveBBox(pts, closed) {
-  if (!pts || pts.length < 2) return null;
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  function expand(x, y) {
-    if (x < minX) minX = x; if (x > maxX) maxX = x;
-    if (y < minY) minY = y; if (y > maxY) maxY = y;
-  }
-  function cubicBBox(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y) {
-    expand(p0x, p0y); expand(p3x, p3y);
-    // Find extrema of cubic bezier
-    for (let axis = 0; axis < 2; axis++) {
-      const [a0, a1, a2, a3] = axis === 0
-        ? [p0x, p1x, p2x, p3x] : [p0y, p1y, p2y, p3y];
-      const c = 3*(a1-a0), b = 3*(a2-a1)-c, a = a3-a0-c-b;
-      const disc = b*b - a*c;
-      if (disc >= 0) {
-        const sq = Math.sqrt(disc);
-        for (const t of [(-b+sq)/(a||1e-9), (-b-sq)/(a||1e-9)]) {
-          if (t > 0 && t < 1) {
-            const v = a0*(1-t)**3 + 3*a1*t*(1-t)**2 + 3*a2*t**2*(1-t) + a3*t**3;
-            if (axis === 0) expand(v, 0); else expand(0, v);
-          }
-        }
-      }
-    }
-  }
-  const allPts = closed ? [...pts, pts[0]] : pts;
-  for (let i = 1; i < allPts.length; i++) {
-    const prev = pts[i-1] ?? pts[pts.length-1];
-    const curr = allPts[i];
-    const c1x = prev.cp2x ?? prev.x, c1y = prev.cp2y ?? prev.y;
-    const c2x = curr.cp1x ?? curr.x, c2y = curr.cp1y ?? curr.y;
-    cubicBBox(prev.x, prev.y, c1x, c1y, c2x, c2y, curr.x, curr.y);
-  }
-  return { minX, minY, maxX, maxY };
-}
-
-function _buildCurvePath(pts, w, h, closed) {
-  if (!pts || pts.length < 2) return null;
-  const px = (v) => (v * w).toFixed(2);
-  const py = (v) => (v * h).toFixed(2);
-  let d = `M ${px(pts[0].x)} ${py(pts[0].y)}`;
-  for (let i = 1; i < pts.length; i++) {
-    const prev = pts[i - 1], curr = pts[i];
-    const c1x = prev.cp2x != null ? prev.cp2x : prev.x;
-    const c1y = prev.cp2y != null ? prev.cp2y : prev.y;
-    const c2x = curr.cp1x != null ? curr.cp1x : curr.x;
-    const c2y = curr.cp1y != null ? curr.cp1y : curr.y;
-    d += ` C ${px(c1x)} ${py(c1y)} ${px(c2x)} ${py(c2y)} ${px(curr.x)} ${py(curr.y)}`;
-  }
-  if (closed) {
-    // Close back to first point using last cp2 and first cp1
-    const last = pts[pts.length - 1], first = pts[0];
-    const c1x = last.cp2x != null ? last.cp2x : last.x;
-    const c1y = last.cp2y != null ? last.cp2y : last.y;
-    const c2x = first.cp1x != null ? first.cp1x : first.x;
-    const c2y = first.cp1y != null ? first.cp1y : first.y;
-    d += ` C ${px(c1x)} ${py(c1y)} ${px(c2x)} ${py(c2y)} ${px(first.x)} ${py(first.y)} Z`;
-  }
-  return d;
-}
-
-// Default curve points (2 points with handles, S-curve)
-function _defaultCurvePoints() {
-  return [
-    { x: 0.15, y: 0.7,  cp2x: 0.15, cp2y: 0.2,  type: 'smooth' },
-    { x: 0.85, y: 0.3,  cp1x: 0.85, cp1y: 0.8,  type: 'smooth' }
-  ];
-}
-
-// Normalize curve points: enforce single handle at endpoints for open curves,
-// ensure both handles at all points for closed curves
-function _normalizeCurvePoints(pts, closed) {
-  if (!pts || pts.length < 2) return pts;
-  pts.forEach((pt, i) => {
-    if (!closed) {
-      // Open curve: first point has only cp2 (outgoing), last point has only cp1 (incoming)
-      if (i === 0) { delete pt.cp1x; delete pt.cp1y; }
-      if (i === pts.length - 1) { delete pt.cp2x; delete pt.cp2y; }
-    } else {
-      // Closed curve: all points need both handles
-      // Add missing cp1 by mirroring cp2, or generate a default
-      if (pt.cp1x == null) {
-        if (pt.cp2x != null) {
-          // Mirror cp2 through anchor
-          pt.cp1x = pt.x * 2 - pt.cp2x;
-          pt.cp1y = pt.y * 2 - pt.cp2y;
-        } else {
-          pt.cp1x = pt.x - 0.1; pt.cp1y = pt.y;
-        }
-      }
-      if (pt.cp2x == null) {
-        if (pt.cp1x != null) {
-          pt.cp2x = pt.x * 2 - pt.cp1x;
-          pt.cp2y = pt.y * 2 - pt.cp1y;
-        } else {
-          pt.cp2x = pt.x + 0.1; pt.cp2y = pt.y;
-        }
-      }
-    }
-  });
-  return pts;
-}
-
-
-// Sample a cubic bezier at parameter t → point
-function _bezierPt(p0, p1, p2, p3, t) {
-  const u=1-t;
-  return {
-    x: u*u*u*p0.x + 3*u*u*t*p1.x + 3*u*t*t*p2.x + t*t*t*p3.x,
-    y: u*u*u*p0.y + 3*u*u*t*p1.y + 3*u*t*t*p2.y + t*t*t*p3.y
-  };
-}
-// Tangent of cubic bezier at t
-function _bezierTan(p0, p1, p2, p3, t) {
-  const u=1-t;
-  const x = 3*(u*u*(p1.x-p0.x) + 2*u*t*(p2.x-p1.x) + t*t*(p3.x-p2.x));
-  const y = 3*(u*u*(p1.y-p0.y) + 2*u*t*(p2.y-p1.y) + t*t*(p3.y-p2.y));
-  const len = Math.hypot(x,y) || 1e-9;
-  return { x: x/len, y: y/len };
-}
-
-// Build variable-width stroke.
-// At junctions: inscribe a circle, draw tangent lines from offset edges to the circle,
-// connect with an arc. This gives smooth "pen nib" joins.
-function _buildVariableStroke(pts, w, h, closed, defaultSw) {
-  if (!pts || pts.length < 2) return '';
-  const STEPS = 36;
-  const f = v => v.toFixed(2);
-
-  function sample(prev, curr) {
-    const hwA = (prev.sw != null ? prev.sw : defaultSw) / 2;
-    const hwB = (curr.sw != null ? curr.sw : defaultSw) / 2;
-    const p0 = {x:prev.x*w, y:prev.y*h};
-    const p3 = {x:curr.x*w, y:curr.y*h};
-    const p1 = {x:(prev.cp2x??prev.x)*w, y:(prev.cp2y??prev.y)*h};
-    const p2 = {x:(curr.cp1x??curr.x)*w, y:(curr.cp1y??curr.y)*h};
-    const out = [];
-    for (let k = 0; k <= STEPS; k++) {
-      const t=k/STEPS, u=1-t;
-      const x=u*u*u*p0.x+3*u*u*t*p1.x+3*u*t*t*p2.x+t*t*t*p3.x;
-      const y=u*u*u*p0.y+3*u*u*t*p1.y+3*u*t*t*p2.y+t*t*t*p3.y;
-      let tx=3*(u*u*(p1.x-p0.x)+2*u*t*(p2.x-p1.x)+t*t*(p3.x-p2.x));
-      let ty=3*(u*u*(p1.y-p0.y)+2*u*t*(p2.y-p1.y)+t*t*(p3.y-p2.y));
-      const tl=Math.hypot(tx,ty)||1e-9; tx/=tl; ty/=tl;
-      const hw=hwA+(hwB-hwA)*t;
-      out.push({x,y,nx:-ty,ny:tx,tx,ty,hw});
-    }
-    return out;
-  }
-
-  // Catmull-Rom smooth path through {x,y} array
-  function cmPath(arr) {
-    if (!arr.length) return '';
-    let d = `M ${f(arr[0].x)} ${f(arr[0].y)}`;
-    for (let i=0;i<arr.length-1;i++) {
-      const p0=arr[Math.max(0,i-1)],p1=arr[i],p2=arr[i+1],p3=arr[Math.min(arr.length-1,i+2)];
-      const c1={x:p1.x+(p2.x-p0.x)/6,y:p1.y+(p2.y-p0.y)/6};
-      const c2={x:p2.x-(p3.x-p1.x)/6,y:p2.y-(p3.y-p1.y)/6};
-      d+=` C ${f(c1.x)} ${f(c1.y)} ${f(c2.x)} ${f(c2.y)} ${f(p2.x)} ${f(p2.y)}`;
-    }
-    return d;
-  }
-
-  // Sample arc from angle a0 to a1 around (cx,cy,r), n points
-  function arcPts(cx,cy,r,a0,a1,n) {
-    let da=a1-a0;
-    // take shorter arc
-    while(da>Math.PI)  da-=2*Math.PI;
-    while(da<-Math.PI) da+=2*Math.PI;
-    const res=[];
-    for(let k=0;k<=n;k++) {
-      const a=a0+da*k/n;
-      res.push({x:cx+r*Math.cos(a), y:cy+r*Math.sin(a)});
-    }
-    return res;
-  }
-
-  // Build round join between two segments at junction point (jx,jy).
-  // inN: normal at END of incoming segment (points left)
-  // outN: normal at START of outgoing segment (points left)
-  // r: half-width (circle radius)
-  // Returns {Lpts, Rpts} to splice into L and R arrays.
-  function roundJoin(jx,jy,r, inTx,inTy,inNx,inNy, outTx,outTy,outNx,outNy) {
-    const cross = inTx*outTy - inTy*outTx;
-
-    const inLx=jx+inNx*r, inLy=jy+inNy*r;
-    const inRx=jx-inNx*r, inRy=jy-inNy*r;
-    const outLx=jx+outNx*r, outLy=jy+outNy*r;
-    const outRx=jx-outNx*r, outRy=jy-outNy*r;
-
-    const ARC_N=10;
-
-    function shortArc(a0, a1) {
-      let da = a1 - a0;
-      while (da >  Math.PI) da -= 2*Math.PI;
-      while (da < -Math.PI) da += 2*Math.PI;
-      const res = [];
-      for (let k=0; k<=ARC_N; k++) {
-        const a = a0 + da*k/ARC_N;
-        res.push({x: jx + r*Math.cos(a), y: jy + r*Math.sin(a)});
-      }
-      return res;
-    }
-
-    // Inner side join: find the point on the inscribed circle closest to the bisector
-    // This avoids spikes when miter would go outside the circle
-    function innerPtFn(ax,ay, bx,by) {
-      // Bisector angle between the two inner offset points
-      const a0 = Math.atan2(ay-jy, ax-jx);
-      const a1 = Math.atan2(by-jy, bx-jx);
-      let da = a1 - a0;
-      while (da >  Math.PI) da -= 2*Math.PI;
-      while (da < -Math.PI) da += 2*Math.PI;
-      const amid = a0 + da/2;
-      // Point on circle at bisector angle — this is always inside, never spikes
-      return {x: jx + r*Math.cos(amid), y: jy + r*Math.sin(amid)};
-    }
-
-    const dot = inTx*outTx + inTy*outTy;
-
-    if (Math.abs(cross) < 0.02) {
-      if (dot > 0.98) {
-        // Truly straight (same direction): just connect
-        return {Lpts:[{x:outLx,y:outLy}], Rpts:[{x:outRx,y:outRy}]};
-      }
-      // Near 180° U-turn (dot ≈ -1, cross ≈ 0): add semicircle
-      // Determine outside: the side where inL and outL are further from each other
-      // At 180° turn inNx≈-outNx, so outL is on opposite side
-      // Outside = the side where offset points are farther from centre
-      // Use inN direction to place arc: arc sweeps from inL around to outL
-      const aIn  = Math.atan2(inLy-jy, inLx-jx);
-      const aOut = Math.atan2(outLy-jy, outLx-jx);
-      const aInR = Math.atan2(inRy-jy, inRx-jx);
-      const aOutR= Math.atan2(outRy-jy, outRx-jx);
-      // Check which side has a larger angular span (= outside of turn)
-      let daL = aOut-aIn; while(daL>Math.PI)daL-=2*Math.PI; while(daL<-Math.PI)daL+=2*Math.PI;
-      let daR = aOutR-aInR; while(daR>Math.PI)daR-=2*Math.PI; while(daR<-Math.PI)daR+=2*Math.PI;
-      if (Math.abs(daL) >= Math.abs(daR)) {
-        // Larger span on L → arc on L, inner point on R
-        return {
-          Lpts: shortArc(aIn, aOut),
-          Rpts: [innerPtFn(inRx,inRy, outRx,outRy)]
-        };
-      } else {
-        return {
-          Lpts: [innerPtFn(inLx,inLy, outLx,outLy)],
-          Rpts: shortArc(aInR, aOutR)
-        };
-      }
-    }
-
-    // NOTE: screen Y-down → cross<0 = left turn, cross>0 = right turn
-    if (cross < 0) {
-      // Left turn: outside = LEFT → arc; inside = RIGHT → miter
-      const a0=Math.atan2(inLy-jy, inLx-jx);
-      const a1=Math.atan2(outLy-jy, outLx-jx);
-      // Inner miter: incoming right edge direction = inTx,inTy; outgoing right edge direction = outTx,outTy
-      const innerPt = innerPtFn(inRx,inRy, outRx,outRy);
-      return {
-        Lpts: shortArc(a0, a1),
-        Rpts: [innerPt]
-      };
-    } else {
-      // Right turn: outside = RIGHT → arc; inside = LEFT → miter
-      const a0=Math.atan2(inRy-jy, inRx-jx);
-      const a1=Math.atan2(outRy-jy, outRx-jx);
-      const innerPt = innerPtFn(inLx,inLy, outLx,outLy);
-      return {
-        Lpts: [innerPt],
-        Rpts: shortArc(a0, a1)
-      };
-    }
-  }
-
-  // Round end cap: arc around (cx,cy,r) from L side to R side (semicircle)
-  function endCapPts(cx,cy,r,fromAngle,n) {
-    // Sweep BACKWARD (-PI) so cap bulges away from curve direction
-    const res=[];
-    for(let k=1;k<=n;k++) {
-      const a=fromAngle - Math.PI*k/n;
-      res.push({x:cx+r*Math.cos(a),y:cy+r*Math.sin(a)});
-    }
-    return res;
-  }
-
-  const allPts = closed ? [...pts,pts[0]] : pts;
-  const nSegs  = allPts.length-1;
-  const SS=[];
-  for(let si=0;si<nSegs;si++) SS.push(sample(pts[si],allPts[si+1]));
-
-  // Collect L and R points
-  const L=[],R=[];
-
-  for (let si=0;si<nSegs;si++) {
-    const samp=SS[si];
-    const isFirst=si===0, isLast=si===nSegs-1;
-
-    // Add interior points (exclude last — handled at junction)
-    for(let k=(isFirst?0:1);k<(isLast?samp.length:samp.length-1);k++){
-      const s=samp[k];
-      L.push({x:s.x+s.nx*s.hw,y:s.y+s.ny*s.hw});
-      R.push({x:s.x-s.nx*s.hw,y:s.y-s.ny*s.hw});
-    }
-
-    // Add junction join
-    if (!isLast) {
-      const cur =samp[samp.length-1];
-      const next=SS[si+1][0];
-      const join=roundJoin(
-        cur.x,cur.y,cur.hw,
-        cur.tx,cur.ty,cur.nx,cur.ny,
-        next.tx,next.ty,next.nx,next.ny
-      );
-      join.Lpts.forEach(p=>L.push(p));
-      join.Rpts.forEach(p=>R.push(p));
-    }
-  }
-
-  if(L.length<2) return '';
-
-  const firstS=SS[0][0], lastS=SS[nSegs-1][SS[nSegs-1].length-1];
-  const Rrev=[...R].reverse();
-
-  let d;
-  if(closed){
-    d=cmPath(L)+' Z '+cmPath(Rrev)+' Z';
-  } else {
-    // Start cap: semicircle from R[0] to L[0]
-    const startA=Math.atan2(R[0].y-firstS.y,R[0].x-firstS.x);
-    const scPts=endCapPts(firstS.x,firstS.y,firstS.hw,startA,8);
-    // End cap: semicircle from L[last] to R[last]
-    const endA=Math.atan2(L[L.length-1].y-lastS.y,L[L.length-1].x-lastS.x);
-    const ecPts=endCapPts(lastS.x,lastS.y,lastS.hw,endA,8);
-    d=cmPath([R[0],...scPts,...L,...ecPts,...Rrev])+' Z';
-  }
-  return d;
-}
-// Keep old _buildCurveSegments for strokeStyle (dashed/dotted) fallback
-function _buildCurveSegments(pts, w, h, closed, defaultSw, stroke, strokeStyle) {
-  if (!pts || pts.length < 2) return '';
-  const px = v => (v * w).toFixed(2);
-  const py = v => (v * h).toFixed(2);
-  const segments = [];
-  const allPts = closed ? [...pts, pts[0]] : pts;
-  for (let i = 1; i < allPts.length; i++) {
-    const prev = pts[i-1];
-    const curr = allPts[i];
-    const c1x = prev.cp2x != null ? prev.cp2x : prev.x;
-    const c1y = prev.cp2y != null ? prev.cp2y : prev.y;
-    const c2x = curr.cp1x != null ? curr.cp1x : curr.x;
-    const c2y = curr.cp1y != null ? curr.cp1y : curr.y;
-    const segPath = `M ${px(prev.x)} ${py(prev.y)} C ${px(c1x)} ${py(c1y)} ${px(c2x)} ${py(c2y)} ${px(curr.x)} ${py(curr.y)}`;
-    const segSw = prev.sw != null ? prev.sw : defaultSw;
-    const da = strokeStyle === 'dashed' ? `stroke-dasharray="${segSw*4} ${segSw*3}"` :
-               strokeStyle === 'dotted' ? `stroke-dasharray="${segSw} ${segSw*3}" stroke-linecap="round"` : '';
-    segments.push(`<path d="${segPath}" fill="none" stroke="${stroke}" stroke-width="${segSw}" stroke-linecap="round" stroke-linejoin="round" ${da}/>`);
-  }
-  return segments.join('');
 }
 
 
@@ -793,17 +804,8 @@ function buildShapeSVG(d, w, h) {
   // op applied as SVG opacity so both fill AND stroke are transparent together
   // Shape fill gradient support
   let _gradDef = '';
-  let fillAttr = hasFill ? `fill="${fill}"` : 'fill="none"';
-  // Sync fillGrad from DOM element if not on d object (robustness)
-  if (!d.fillGrad && d.id) {
-    const _el = document.querySelector(`[data-id="${d.id}"]`);
-    if (_el && _el.dataset.fillGrad === '1') {
-      d.fillGrad = true;
-      if (_el.dataset.fillGrad2) d.fillGrad2 = d.fillGrad2 || _el.dataset.fillGrad2;
-      if (_el.dataset.fillGradDir != null) d.fillGradDir = d.fillGradDir != null ? d.fillGradDir : +_el.dataset.fillGradDir;
-    }
-  }
-  if (hasFill && (d.fillGrad === true || d.fillGrad === '1' || d.fillGrad === 1) && d.fillGrad2) {
+  let fillAttr = hasFill ? `fill="${fill}"${op < 1 ? ` fill-opacity="${op.toFixed(3)}"` : ''}` : 'fill="none"';
+  if (hasFill && d.fillGrad && d.fillGrad2) {
     const _gid = 'sg_' + d.id;
     const _dir = d.fillGradDir != null ? +d.fillGradDir : 90;
     const _rad = (_dir - 90) * Math.PI / 180;
@@ -811,26 +813,11 @@ function buildShapeSVG(d, w, h) {
     const _y1 = (50 - 50 * Math.sin(_rad)).toFixed(1);
     const _x2 = (50 + 50 * Math.cos(_rad)).toFixed(1);
     const _y2 = (50 + 50 * Math.sin(_rad)).toFixed(1);
-    function _parseStop(col, fallbackHex) {
-      if (!col || col === 'transparent') return { color: fallbackHex || '#000000', opacity: 0 };
-      const rgba = col.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)$/);
-      if (rgba) {
-        const r = (+rgba[1]).toString(16).padStart(2,'0');
-        const g = (+rgba[2]).toString(16).padStart(2,'0');
-        const b = (+rgba[3]).toString(16).padStart(2,'0');
-        return { color: `#${r}${g}${b}`, opacity: rgba[4] != null ? +rgba[4] : 1 };
-      }
-      return { color: col, opacity: 1 };
-    }
-    const _s1 = _parseStop(fill, fill);
-    const _s2 = _parseStop(d.fillGrad2, fill);
-    const _s1color = _s1.opacity === 0 ? _s2.color : _s1.color;
-    const _s2color = _s2.opacity === 0 ? _s1.color : _s2.color;
     _gradDef = `<linearGradient id="${_gid}" x1="${_x1}%" y1="${_y1}%" x2="${_x2}%" y2="${_y2}%">`
-      + `<stop offset="0%" stop-color="${_s1color}" stop-opacity="${_s1.opacity}"/>`
-      + `<stop offset="100%" stop-color="${_s2color}" stop-opacity="${_s2.opacity}"/>`
+      + `<stop offset="0%" stop-color="${fill}"/>`
+      + `<stop offset="100%" stop-color="${d.fillGrad2}"/>`
       + `</linearGradient>`;
-    fillAttr = `fill="url(#${_gid})"`;
+    fillAttr = `fill="url(#${_gid})"${op < 1 ? ` fill-opacity="${op.toFixed(3)}"` : ''}`;
   }
 
   // ── shape geometry helpers ──────────────────────────────────────
@@ -884,11 +871,75 @@ function buildShapeSVG(d, w, h) {
     const _offC = Math.round((h/2) * Math.tan(_skewC*Math.PI/180));
     return `polygon(${_offC}px 0px, ${w}px 0px, ${w-_offC}px ${h}px, 0px ${h}px)`;
   }
+  if (sh.special === 'gear') {
+      const nTeeth = Math.max(3, Math.min(60, +(d.gearTeeth||12)));
+      const toothD = Math.max(0.05, Math.min(0.6, +(d.gearDepth!=null?d.gearDepth:0.25)));
+      const sp = _gearPath(w/2, h/2, ew/2, eh/2, nTeeth, toothD);
+      return `<path d="${sp}" ${fAttr} ${sAttr} ${extra} ${shadow}/>`;
+  }
+  if (sh.special === 'curve') {
+    const cpts = d.curvePoints;
+    if (!cpts || cpts.length < 2) return null;
+    const hasNSw = cpts.some(p => p.sw != null);
+    if(window._rtDebug) console.log('[curve] hasNSw='+hasNSw+' cpts sw:', cpts.map(p=>p.sw));
+    // Build base bezier path for fill
+    let _cd = `M ${(cpts[0].x*w).toFixed(2)} ${(cpts[0].y*h).toFixed(2)}`;
+    for (let ci = 1; ci < cpts.length; ci++) {
+      const pp = cpts[ci-1], cp = cpts[ci];
+      const c1x = pp.cp2x != null ? pp.cp2x : pp.x, c1y = pp.cp2y != null ? pp.cp2y : pp.y;
+      const c2x = cp.cp1x != null ? cp.cp1x : cp.x, c2y = cp.cp1y != null ? cp.cp1y : cp.y;
+      _cd += ` C ${(c1x*w).toFixed(2)} ${(c1y*h).toFixed(2)} ${(c2x*w).toFixed(2)} ${(c2y*h).toFixed(2)} ${(cp.x*w).toFixed(2)} ${(cp.y*h).toFixed(2)}`;
+    }
+    // Build bezier closing segment for both open and closed curves
+    // For closed: _normalizeCurvePoints adds cp1/cp2 to all points so handles exist
+    // For open: mirror the existing endpoint handles
+    function _makeBezierClose(cpts, w, h) {
+      const last = cpts[cpts.length - 1], first = cpts[0];
+      // Outgoing from last: use cp2 if exists (closed curve), else mirror cp1
+      const fc1x = last.cp2x != null ? last.cp2x : (last.cp1x != null ? last.x*2-last.cp1x : last.x+(first.x-last.x)*0.33);
+      const fc1y = last.cp2y != null ? last.cp2y : (last.cp1y != null ? last.y*2-last.cp1y : last.y+(first.y-last.y)*0.33);
+      // Arriving at first: use cp1 if exists (closed curve), else mirror cp2
+      const fc2x = first.cp1x != null ? first.cp1x : (first.cp2x != null ? first.x*2-first.cp2x : first.x+(last.x-first.x)*0.33);
+      const fc2y = first.cp1y != null ? first.cp1y : (first.cp2y != null ? first.y*2-first.cp2y : first.y+(last.y-first.y)*0.33);
+      return ` C ${(fc1x*w).toFixed(2)} ${(fc1y*h).toFixed(2)} ${(fc2x*w).toFixed(2)} ${(fc2y*h).toFixed(2)} ${(first.x*w).toFixed(2)} ${(first.y*h).toFixed(2)} Z`;
+    }
+    // _cd: stroke path — open curves have open path, closed curves get bezier close
+    if (d.curveClosed) _cd += _makeBezierClose(cpts, w, h);
+    // _cdClosed: fill path — always bezier closed
+    const _cdClosed = _cd.endsWith(' Z') ? _cd : (_cd + _makeBezierClose(cpts, w, h));
+
+    if (hasNSw && sw > 0 && typeof _expVarStroke === 'function') {
+      const varStrokeSvg = _expVarStroke(cpts, w, h, !!d.curveClosed, sw, strokeColor, shadow);
+      const _gradDefsStr = _gradDef ? `<defs>${_gradDef}</defs>` : '';
+      if (hasFill) {
+        const _fillCpts = cpts.map(p => Object.assign({}, p));
+        const _fl = _fillCpts[_fillCpts.length - 1];
+        const _ff = _fillCpts[0];
+        if (_fl.cp2x == null && _fl.cp1x != null) { _fl.cp2x = _fl.x*2-_fl.cp1x; _fl.cp2y = _fl.y*2-_fl.cp1y; }
+        if (_ff.cp1x == null && _ff.cp2x != null) { _ff.cp1x = _ff.x*2-_ff.cp2x; _ff.cp1y = _ff.y*2-_ff.cp2y; }
+        const fillOuterPath = _expVarStrokeOuter(_fillCpts, w, h, true, sw, fillAttr);
+        return _gradDefsStr + fillOuterPath + varStrokeSvg;
+      }
+      return _gradDefsStr + varStrokeSvg;
+    }
+    // Uniform width — fill closed, stroke open
+    if (hasFill && sw > 0) {
+      return `<path d="${_cdClosed}" ${fAttr} stroke="none" ${extra} ${shadow}/>`
+           + `<path d="${_cd}" fill="none" ${sAttr} ${extra} ${shadow} stroke-linecap="round" stroke-linejoin="round"/>`;
+    }
+    if (hasFill) return `<path d="${_cdClosed}" ${fAttr} stroke="none" ${extra} ${shadow}/>`;
+    return `<path d="${_cd}" fill="none" ${sAttr} ${extra} ${shadow} stroke-linecap="round" stroke-linejoin="round"/>`;
+  }
   if (sh.special === 'star') {
       const nRays = Math.max(4, Math.min(32, +(d.starRays||5)));
       const innerR = Math.max(0.1, Math.min(0.9, +(d.starInner!=null?d.starInner:0.45)));
       const sp = _starPath(w/2, h/2, ew/2, eh/2, nRays, innerR, d.rx||0);
       return `<path d="${sp}" ${fAttr} ${sAttr} ${extra} ${shadow}/>`;
+    }
+    if (sh.special === 'gear') {
+      const nTeeth2 = Math.max(3, Math.min(60, +(d.gearTeeth||12)));
+      const toothD2 = Math.max(0.05, Math.min(0.6, +(d.gearDepth!=null?d.gearDepth:0.25)));
+      return _gearPath(w/2, h/2, ew/2, eh/2, nTeeth2, toothD2);
     }
     if (sh.special === 'star') {
       const nRays2 = Math.max(4, Math.min(32, +(d.starRays||5)));
@@ -931,55 +982,6 @@ function buildShapeSVG(d, w, h) {
       }
       return `<path d="${_arcPath(w/2,h/2,w/2,h/2,a1,a2,mode,m,d.rx||0)}" ${fAttr} ${sAttr} ${extra} ${shadow}/>`;
     }
-    if (sh.special === 'curve') {
-      const pts = d.curvePoints || _defaultCurvePoints();
-      const _hasPerNodeSw = pts.some(p => p.sw != null);
-      if (_hasPerNodeSw) {
-        const _isDashed = strokeStyle === 'dashed' || strokeStyle === 'dotted' || strokeStyle === 'wave' || strokeStyle === 'zigzag';
-        let _out = '';
-        if (hasFill) {
-          // Fill with the curve path
-          const _fp = _buildCurvePath(pts, w, h, d.curveClosed);
-          if (_fp) _out += `<path d="${_fp}" ${fAttr} stroke="none" ${extra} ${shadow}/>`;
-        }
-        if (sw > 0) {
-          if (_isDashed) {
-            // Dashed/dotted: use segment-per-segment approach
-            _out += _buildCurveSegments(pts, w, h, d.curveClosed, sw, strokeColor, strokeStyle);
-          } else {
-            // Variable width: build filled polygon that looks like a tapered stroke
-            const _varPath = _buildVariableStroke(pts, w, h, d.curveClosed, sw);
-            if (_varPath) _out += `<path d="${_varPath}" fill="${strokeColor}" stroke="none" opacity="${d.fillOp||1}" pointer-events="visibleFill" ${shadow}/>`;
-          }
-        }
-        return _out || null;
-      }
-      const pathStr = _buildCurvePath(pts, w, h, d.curveClosed);
-      if (!pathStr) return null;
-      const _curveFill = hasFill ? fAttr : 'fill="none"';
-      const _curveEvents = hasFill ? '' : 'pointer-events="visibleStroke"';
-      return `<path d="${pathStr}" ${_curveFill} ${sAttr} ${extra} ${shadow} stroke-linecap="round" stroke-linejoin="round" ${_curveEvents}/>`;
-    }
-    if (sh.special === 'chevron') {
-      const _cskew = d.chevSkew != null ? +d.chevSkew : 25;
-      const _isLeft = d.shape === 'chevronLeft';
-      const _cpath = _chevronPath(ew, eh, _cskew, _isLeft);
-      let _cpFinal;
-      const _crx = d.rx || 0;
-      if (_crx > 0) {
-        // Extract polygon points and apply rounding
-        const _chevPts = [];
-        const _chevRe = /(-?[\d.]+) (-?[\d.]+)/g;
-        let _cm;
-        while ((_cm = _chevRe.exec(_cpath)) !== null)
-          _chevPts.push({ x: +_cm[1] + m, y: +_cm[2] + m });
-        _cpFinal = _chevPts.length >= 3 ? _roundedPolygonPath(_chevPts, _crx) : _cpath;
-      } else {
-        _cpFinal = _cpath.replace(/(-?[\d.]+) (-?[\d.]+)/g, (_m2, x, y) =>
-          `${(+x + m).toFixed(1)} ${(+y + m).toFixed(1)}`);
-      }
-      return `<path d="${_cpFinal}" ${fAttr} ${sAttr} ${extra} ${shadow}/>`;
-    }
     if (sh.special === 'callout') return null;
     if (!sh.path) return null; // no path defined (e.g. parametric shapes)
     // Scale path points and apply corner rounding
@@ -992,8 +994,12 @@ function buildShapeSVG(d, w, h) {
     });
     let sp = rawPath;
     if (rx > 0) {
-      const polyPts = _extractPolygonPts(rawPath);
-      if (polyPts.length >= 3) sp = _roundedPolygonPath(polyPts, rx);
+      if (/[QqCc]/.test(rawPath)) {
+        sp = _roundedMixedPath(rawPath, rx);
+      } else {
+        const polyPts = _extractPolygonPts(rawPath);
+        if (polyPts.length >= 3) sp = _roundedPolygonPath(polyPts, rx);
+      }
     }
     return `<path d="${sp}" ${fAttr} ${sAttr} ${extra} ${shadow}/>`;
   }
@@ -1034,42 +1040,6 @@ function buildShapeSVG(d, w, h) {
       const _offP = Math.round((eh/2) * Math.tan(_skewP*Math.PI/180));
       return `M ${_offP} 0 L ${ew} 0 L ${ew-_offP} ${eh} L 0 ${eh} Z`;
     }
-    if (sh.special === 'curve') {
-      const pts = d.curvePoints || _defaultCurvePoints();
-      const _hasPerNodeSw = pts.some(p => p.sw != null);
-      if (_hasPerNodeSw) {
-        const _isDashed = strokeStyle === 'dashed' || strokeStyle === 'dotted' || strokeStyle === 'wave' || strokeStyle === 'zigzag';
-        let _out = '';
-        if (hasFill) {
-          // Fill with the curve path
-          const _fp = _buildCurvePath(pts, w, h, d.curveClosed);
-          if (_fp) _out += `<path d="${_fp}" ${fAttr} stroke="none" ${extra} ${shadow}/>`;
-        }
-        if (sw > 0) {
-          if (_isDashed) {
-            // Dashed/dotted: use segment-per-segment approach
-            _out += _buildCurveSegments(pts, w, h, d.curveClosed, sw, strokeColor, strokeStyle);
-          } else {
-            // Variable width: build filled polygon that looks like a tapered stroke
-            const _varPath = _buildVariableStroke(pts, w, h, d.curveClosed, sw);
-            if (_varPath) _out += `<path d="${_varPath}" fill="${strokeColor}" stroke="none" opacity="${d.fillOp||1}" pointer-events="visibleFill" ${shadow}/>`;
-          }
-        }
-        return _out || null;
-      }
-      const pathStr = _buildCurvePath(pts, w, h, d.curveClosed);
-      if (!pathStr) return null;
-      const _curveFill = hasFill ? fAttr : 'fill="none"';
-      const _curveEvents = hasFill ? '' : 'pointer-events="visibleStroke"';
-      return `<path d="${pathStr}" ${_curveFill} ${sAttr} ${extra} ${shadow} stroke-linecap="round" stroke-linejoin="round" ${_curveEvents}/>`;
-    }
-    if (sh.special === 'curve') {
-      return _buildCurvePath(d.curvePoints || _defaultCurvePoints(), w, h, d.curveClosed) || '';
-    }
-    if (sh.special === 'chevron') {
-      const _cskew2 = d.chevSkew != null ? +d.chevSkew : 25;
-      return _chevronPath(ew, eh, _cskew2, d.shape === 'chevronLeft');
-    }
     if (sh.special === 'callout') return null;
     if (!sh.path) return null; // no path defined
     const sx = ew/90, sy = eh/90;
@@ -1080,6 +1050,8 @@ function buildShapeSVG(d, w, h) {
         : String(Math.round((+v - 5) * sy + m));
     });
     if (rx > 0) {
+      // If path has curves (Q/C), preserve them and only round L corners
+      if (/[QqCc]/.test(rawPath)) return _roundedMixedPath(rawPath, rx);
       const polyPts = _extractPolygonPts(rawPath);
       if (polyPts.length >= 3) return _roundedPolygonPath(polyPts, rx);
     }
@@ -1155,17 +1127,19 @@ function buildShapeSVG(d, w, h) {
     }
   }
 
-  let _shadowDef = '';
+  let filterDef = '';
+  // Prepend gradient def to defs
+  if (_gradDef) filterDef = _gradDef + filterDef;
   if (d.shadow) {
     const sc = d.shadowColor || '#000000', sb = d.shadowBlur || 8;
     const pad = Math.max(30, Math.ceil(sb * 3));
-    _shadowDef = `<filter id="sh_${d.id}" x="-${pad}%" y="-${pad}%" width="${100+pad*2}%" height="${100+pad*2}%">` +
+    filterDef = `<filter id="sh_${d.id}" x="-${pad}%" y="-${pad}%" width="${100+pad*2}%" height="${100+pad*2}%">` +
       `<feDropShadow dx="3" dy="3" stdDeviation="${sb}" flood-color="${sc}" flood-opacity="0.6"/></filter>`;
   }
-  const defsContent = (_gradDef || '') + (_shadowDef || '') + (defBlock || '');
+  const defsContent = (filterDef || '') + (defBlock || '');
   const defs = defsContent ? `<defs>${defsContent}</defs>` : '';
   // For noFill (line/wave) the bounding-box div hit area handles clicks
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="overflow:visible" opacity="${op}">${defs}${shapeDef}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="overflow:visible">${defs}${shapeDef}</svg>`;
 }
 
 
@@ -1197,22 +1171,27 @@ function _shapeClipPath(d, w, h) {
     if (mode2 === 'sector') pts.push(`${cx2}px ${cy2}px`);
     return `polygon(${pts.join(', ')})`;
   }
-  if (sh.special === 'chevron') {
-    const _cskew3 = d.chevSkew != null ? +d.chevSkew : 25;
-    const _cpath3 = _chevronPath(w, h, _cskew3, d.shape === 'chevronLeft');
-    const _pts3 = [];
-    const _re3 = /(-?[\d.]+) (-?[\d.]+)/g;
-    let _m3;
-    while ((_m3 = _re3.exec(_cpath3)) !== null) _pts3.push(`${_m3[1]}px ${_m3[2]}px`);
-    return _pts3.length >= 3 ? `polygon(${_pts3.join(', ')})` : 'none';
-  }
-  if (sh.special === 'curve') {
-    // For stroke-only curve (no fill): element itself passes clicks through
-    // SVG path handles clicks via pointer-events="visibleStroke"
-    return 'curve-nofill';
-  }
-  if (sh.special === 'cloud') return 'cloud'; // cloud uses SVG-based blur, handled specially
   if (sh.special === 'callout') return 'none'; // callout uses full bounding box (tail extends outside)
+  if (sh.special === 'curve' && d.curvePoints && d.curvePoints.length >= 2) {
+    const cpts = d.curvePoints;
+    const sw2 = (d.sw != null ? +d.sw : 2);
+    // Build bezier path for clip
+    let pd = `M ${(cpts[0].x*w).toFixed(1)} ${(cpts[0].y*h).toFixed(1)}`;
+    for (let ci = 1; ci < cpts.length; ci++) {
+      const pp = cpts[ci-1], cp = cpts[ci];
+      const c1x = pp.cp2x != null ? pp.cp2x : pp.x, c1y = pp.cp2y != null ? pp.cp2y : pp.y;
+      const c2x = cp.cp1x != null ? cp.cp1x : cp.x, c2y = cp.cp1y != null ? cp.cp1y : cp.y;
+      pd += ` C ${(c1x*w).toFixed(1)} ${(c1y*h).toFixed(1)} ${(c2x*w).toFixed(1)} ${(c2y*h).toFixed(1)} ${(cp.x*w).toFixed(1)} ${(cp.y*h).toFixed(1)}`;
+    }
+    // Close with bezier using handles (same logic as fill)
+    const _clipLast = cpts[cpts.length-1], _clipFirst = cpts[0];
+    const _cfc1x = _clipLast.cp2x != null ? _clipLast.cp2x : (_clipLast.cp1x != null ? _clipLast.x*2-_clipLast.cp1x : _clipLast.x+(_clipFirst.x-_clipLast.x)*0.33);
+    const _cfc1y = _clipLast.cp2y != null ? _clipLast.cp2y : (_clipLast.cp1y != null ? _clipLast.y*2-_clipLast.cp1y : _clipLast.y+(_clipFirst.y-_clipLast.y)*0.33);
+    const _cfc2x = _clipFirst.cp1x != null ? _clipFirst.cp1x : (_clipFirst.cp2x != null ? _clipFirst.x*2-_clipFirst.cp2x : _clipFirst.x+(_clipLast.x-_clipFirst.x)*0.33);
+    const _cfc2y = _clipFirst.cp1y != null ? _clipFirst.cp1y : (_clipFirst.cp2y != null ? _clipFirst.y*2-_clipFirst.cp2y : _clipFirst.y+(_clipLast.y-_clipFirst.y)*0.33);
+    pd += ` C ${(_cfc1x*w).toFixed(1)} ${(_cfc1y*h).toFixed(1)} ${(_cfc2x*w).toFixed(1)} ${(_cfc2y*h).toFixed(1)} ${(_clipFirst.x*w).toFixed(1)} ${(_clipFirst.y*h).toFixed(1)} Z`;
+    return `path('${pd}')`;
+  }
   // Polygon shapes — scale path points from 0-100 space to actual px
   if (sh.path) {
     const ew = Math.max(1, w - m * 2), eh = Math.max(1, h - m * 2);
@@ -1252,48 +1231,6 @@ function _applyShapeBlur(el) {
   const h = parseInt(el.style.height) || d.h;
   const cp = _shapeClipPath(d, w, h);
 
-  // Cloud: use an SVG overlay with feGaussianBlur + clip to shape
-  if (cp === 'cloud') {
-    const cloudD = slides[cur] && slides[cur].els.find(x => x.id === el.dataset.id);
-    const seed = cloudD && cloudD.cloudSeed || 42;
-    const cloudPath = typeof _generateCloudPath === 'function' ? _generateCloudPath(w, h, seed) : null;
-    if (cloudPath) {
-      const clipId = `cblur_${el.dataset.id}`;
-      const svgNS = 'http://www.w3.org/2000/svg';
-      const svg = document.createElementNS(svgNS, 'svg');
-      svg.setAttribute('width', w); svg.setAttribute('height', h);
-      svg.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:0;overflow:visible;';
-      const defs = document.createElementNS(svgNS, 'defs');
-      const filterId = `cblur_f_${el.dataset.id}`;
-      const filter = document.createElementNS(svgNS, 'filter');
-      filter.setAttribute('id', filterId);
-      filter.setAttribute('x', '-20%'); filter.setAttribute('y', '-20%');
-      filter.setAttribute('width', '140%'); filter.setAttribute('height', '140%');
-      const fe = document.createElementNS(svgNS, 'feGaussianBlur');
-      fe.setAttribute('stdDeviation', blur);
-      fe.setAttribute('in', 'SourceGraphic');
-      filter.appendChild(fe);
-      const clipPathEl = document.createElementNS(svgNS, 'clipPath');
-      clipPathEl.setAttribute('id', clipId);
-      const clipShape = document.createElementNS(svgNS, 'path');
-      clipShape.setAttribute('d', cloudPath);
-      clipShape.setAttribute('fill-rule', 'nonzero');
-      clipPathEl.appendChild(clipShape);
-      defs.appendChild(filter);
-      defs.appendChild(clipPathEl);
-      svg.appendChild(defs);
-      const rect = document.createElementNS(svgNS, 'rect');
-      rect.setAttribute('width', w); rect.setAttribute('height', h);
-      rect.setAttribute('fill', 'transparent');
-      rect.setAttribute('clip-path', `url(#${clipId})`);
-      rect.setAttribute('filter', `url(#${filterId})`);
-      svg.appendChild(rect);
-      svg.className = 'shape-blur-overlay';
-      el.insertBefore(svg, el.firstChild);
-      return;
-    }
-  }
-
   const overlay = document.createElement('div');
   overlay.className = 'shape-blur-overlay';
   overlay.style.cssText = (
@@ -1325,44 +1262,20 @@ function _applyShapeClipPath(el, d) {
     el.appendChild(hit);
     return;
   }
-  // Curve: when no fill, el passes clicks through; SVG path handles via visibleStroke
-  if (sh && sh.special === 'curve') {
-    // Element bbox passes clicks through to elements below
-    el.style.pointerEvents = 'none';
-    const svgEl = el.querySelector('svg');
-    if (svgEl) {
-      // Set pointer-events as SVG attribute on SVG element:
-      // 'none' makes SVG transparent, but child path attributes still work
-      svgEl.setAttribute('pointer-events', 'none');
-      svgEl.style.pointerEvents = '';
-      svgEl.querySelectorAll('path').forEach(path => {
-        const fillAttr = path.getAttribute('fill');
-        const hasFill2 = fillAttr && fillAttr !== 'none';
-        // Use SVG attribute on paths to override parent 'none'
-        path.setAttribute('pointer-events', hasFill2 ? 'visibleFill' : 'visibleStroke');
-        path.style.cursor = 'move';
-      });
-    }
-    return;
-  }
-  // Cloud: SVG paths handle accurate hit detection
+  // Cloud: el passes through clicks, SVG paths handle hit testing via visibleFill
   if (sh && sh.special === 'cloud') {
-    // Keep el.pointerEvents AUTO so elementsFromPoint can find cloud
     el.style.pointerEvents = 'none';
+    // Make the SVG wrapper pass through but paths catch clicks
+    const selEl = el.querySelector('.sel-el');
+    if (selEl) selEl.style.pointerEvents = 'none';
+    const svgDiv = el.querySelector('.shape-svg');
+    if (svgDiv) svgDiv.style.pointerEvents = 'none';
     const svgEl = el.querySelector('svg');
     if (svgEl) {
-      svgEl.setAttribute('pointer-events', 'none');
-      svgEl.style.pointerEvents = '';
-      // Only the fill path catches clicks (accurate cloud shape hit-testing)
+      svgEl.style.pointerEvents = 'none';
+      // Only the fill path (first path = the cloud union) catches clicks
       const paths = svgEl.querySelectorAll('path');
-      paths.forEach((p, idx) => {
-        if (idx === 0) {
-          p.setAttribute('pointer-events', 'visibleFill');
-          p.style.cursor = 'move';
-        } else {
-          p.setAttribute('pointer-events', 'none');
-        }
-      });
+      if (paths[0]) { paths[0].style.pointerEvents = 'visibleFill'; paths[0].style.cursor = 'move'; }
     }
     return;
   }
@@ -1495,6 +1408,57 @@ function _arcPath(cx, cy, rx, ry, a1, a2, mode, m, cornerR) {
 }
 
 
+
+// Build gear path: nTeeth teeth with straight radial sides and arc top/bottom
+function _gearPath(cx, cy, erx, ery, nTeeth, toothDepth) {
+  nTeeth = Math.max(3, Math.min(60, nTeeth));
+  toothDepth = Math.max(0.05, Math.min(0.6, toothDepth));
+
+  const outerRx = erx, outerRy = ery;
+  const innerRx = erx * (1 - toothDepth);
+  const innerRy = ery * (1 - toothDepth);
+
+  const seg = Math.PI / nTeeth;
+  const da = seg * 0.10; // rounding offset on tooth top corners
+
+  let d = '';
+
+  for (let i = 0; i < nTeeth; i++) {
+    const base = i * 2 * seg - Math.PI / 2;
+    const gS = base;           // gap start angle
+    const gE = base + seg;     // gap end / tooth start angle
+    const tE = base + 2 * seg; // tooth end angle
+
+    // Points
+    const igSx = cx + innerRx * Math.cos(gS),  igSy = cy + innerRy * Math.sin(gS);
+    const igEx = cx + innerRx * Math.cos(gE),   igEy = cy + innerRy * Math.sin(gE);
+    const ogLx = cx + outerRx * Math.cos(gE),   ogLy = cy + outerRy * Math.sin(gE);
+    const ogL1x= cx + outerRx * Math.cos(gE+da),ogL1y= cy + outerRy * Math.sin(gE+da);
+    const ogR1x= cx + outerRx * Math.cos(tE-da),ogR1y= cy + outerRy * Math.sin(tE-da);
+    const ogRx = cx + outerRx * Math.cos(tE),   ogRy = cy + outerRy * Math.sin(tE);
+    const irRx = cx + innerRx * Math.cos(tE),   irRy = cy + innerRy * Math.sin(tE);
+
+    if (i === 0) d += `M ${igSx.toFixed(2)} ${igSy.toFixed(2)} `;
+    else         d += `L ${igSx.toFixed(2)} ${igSy.toFixed(2)} `;
+
+    // Inner arc (gap)
+    d += `A ${innerRx.toFixed(2)} ${innerRy.toFixed(2)} 0 0 1 ${igEx.toFixed(2)} ${igEy.toFixed(2)} `;
+    // Straight line up (left side of tooth) - ends before top-left corner
+    d += `L ${ogLx.toFixed(2)} ${ogLy.toFixed(2)} `;
+    // Rounded top-left corner: Q from ogL through ogL to ogL1
+    // (short arc to da position gives the rounding feel)
+    d += `A ${outerRx.toFixed(2)} ${outerRy.toFixed(2)} 0 0 1 ${ogL1x.toFixed(2)} ${ogL1y.toFixed(2)} `;
+    // Outer arc (tooth top)
+    d += `A ${outerRx.toFixed(2)} ${outerRy.toFixed(2)} 0 0 1 ${ogR1x.toFixed(2)} ${ogR1y.toFixed(2)} `;
+    // Rounded top-right corner
+    d += `A ${outerRx.toFixed(2)} ${outerRy.toFixed(2)} 0 0 1 ${ogRx.toFixed(2)} ${ogRy.toFixed(2)} `;
+    // Straight line down (right side of tooth)
+    d += `L ${irRx.toFixed(2)} ${irRy.toFixed(2)} `;
+  }
+  d += 'Z';
+  return d;
+}
+
 // Build star path: n rays, outer radius erx/ery, inner radius ratio innerR
 function _starPath(cx, cy, erx, ery, nRays, innerR, cornerR) {
   nRays = Math.max(4, Math.min(32, nRays));
@@ -1572,7 +1536,6 @@ function _generateCloudPath(w, h, seed) {
 }
 
 
-
 function renderShapeEl(el,d){
   const w=parseInt(el.style.width),h=parseInt(el.style.height);
   // Keep dataset in sync so syncProps reads correct values
@@ -1584,18 +1547,10 @@ function renderShapeEl(el,d){
     svgDiv.innerHTML=buildShapeSVG(d,w,h);
     const svgEl=svgDiv.querySelector('svg');
     if(svgEl){
-      const _isCurveEl = d.shape==='curve';
-      if(_isCurveEl){
-        // SVG attr 'none' makes element transparent; child paths override with their own attrs
-        svgEl.setAttribute('pointer-events','none');
-        svgEl.style.pointerEvents='';
-        // paths already have pointer-events in their SVG markup from buildShapeSVG
-      } else {
-        svgEl.style.pointerEvents='none';
-        svgEl.querySelectorAll('path,rect,ellipse,circle,polygon,polyline').forEach(p=>{
-          p.style.pointerEvents='visibleFill';p.style.cursor='move';
-        });
-      }
+      svgEl.style.pointerEvents='none';
+      svgEl.querySelectorAll('path,rect,ellipse,circle,polygon,polyline').forEach(p=>{
+        p.style.pointerEvents='visibleFill';p.style.cursor='move';
+      });
     }
   }
   // Re-apply blur overlay after re-render (size may change)
@@ -1609,63 +1564,53 @@ function updateShapeStyle(prop,val){
   if(!sel||sel.dataset.type!=='shape')return;
   debouncedPushUndo();
   const d=slides[cur].els.find(e=>e.id===sel.dataset.id);if(!d)return;
-  // For curve: per-node or global sw handling
-  const _isCurve = d.shape==='curve' && d.curvePoints;
-  const _selNodes = typeof _curveSelPts!=='undefined' && _curveSelPts.size>0;
-  if(_isCurve && (prop==='sw'||prop==='strokeStyle')) {
-    // Per-node only when in edit mode AND nodes selected
-    const _inEditMode = !!window._curveEditMode;
-    if(_inEditMode && _selNodes) {
-      // Apply to selected nodes only
-      _curveSelPts.forEach(i=>{
-        const pt=d.curvePoints[i]; if(!pt)return;
-        if(prop==='sw') pt.sw=+val;
-        else if(prop==='strokeStyle') pt.strokeStyle=val;
-      });
-    } else {
-      // Not in edit mode, or no nodes selected: apply globally — clear all per-node overrides
-      if(prop==='sw') {
-        d.sw=+val; sel.dataset.sw=val;
-        d.curvePoints.forEach(pt=>{ delete pt.sw; });
-      } else {
-        d.strokeStyle=val; sel.dataset.strokeStyle=val;
-        d.curvePoints.forEach(pt=>{ delete pt.strokeStyle; });
-      }
-    }
-    sel.dataset.curvePoints=JSON.stringify(d.curvePoints);
-    renderShapeEl(sel,d);save();drawThumbs();saveState();
-    if(typeof syncProps==='function') syncProps();
-    return;
-  }
   if(prop==='fill'){d.fill=val;sel.dataset.fill=val;}
   else if(prop==='stroke'){d.stroke=val;sel.dataset.stroke=val;}
-  else if(prop==='sw'){d.sw=+val;sel.dataset.sw=val;}
+  else if(prop==='sw'){
+    if(d.shape==='curve' && d.curvePoints){
+      if(typeof _curveSelPts!=='undefined' && _curveSelPts.size>0){
+        // Initialize ALL nodes with current sw first (so hasNSw stays consistent)
+        const _globalSw = d.sw != null ? +d.sw : 2;
+        d.curvePoints.forEach((pt, idx) => {
+          if(pt.sw == null) pt.sw = _globalSw;
+        });
+        // Then set selected nodes to new value
+        _curveSelPts.forEach(idx=>{
+          if(d.curvePoints[idx]) d.curvePoints[idx].sw=+val;
+        });
+        d.sw=+val; sel.dataset.sw=val;
+      } else {
+        // No selection: set global sw, remove per-node overrides so curve is uniform
+        d.sw=+val; sel.dataset.sw=val;
+        d.curvePoints.forEach(pt=>{ delete pt.sw; });
+      }
+      sel.dataset.curvePoints=JSON.stringify(d.curvePoints);
+    } else {
+      d.sw=+val;sel.dataset.sw=val;
+    }
+    // Rebuild curve editor so its closure d matches updated slides data
+    if(typeof _buildCurveEditor==='function' && window._curveEditMode) {
+      renderShapeEl(sel,d);save();drawThumbs();saveState();
+      if(typeof _clearCurveEditor==='function') _clearCurveEditor();
+      _buildCurveEditor();
+      return;
+    }
+  }
   else if(prop==='strokeStyle'){d.strokeStyle=val;sel.dataset.strokeStyle=val;}
   else if(prop==='rx'){d.rx=+val;sel.dataset.rx=val;}
   else if(prop==='fillOp'){d.fillOp=+val;sel.dataset.fillOp=val;}
   else if(prop==='shadow'){d.shadow=val;sel.dataset.shadow=val;}
   else if(prop==='shadowBlur'){d.shadowBlur=+val;sel.dataset.shadowBlur=val;}
-  else if(prop==='shadowColor'){d.shadowColor=val;sel.dataset.shadowColor=val;if(d.shadowColorScheme===undefined)d.shadowColorScheme=null;}
+  else if(prop==='shadowColor'){d.shadowColor=val;sel.dataset.shadowColor=val;}
   renderShapeEl(sel,d);save();drawThumbs();saveState();
-  if(typeof syncProps==='function') syncProps();
 }
 function updateShapeStyleScheme(prop, val, schemeRef) {
   if(sel && slides[cur]) {
     const d = slides[cur].els.find(e=>e.id===sel.dataset.id);
     if(d) {
-      const _sr = schemeRef !== undefined ? (schemeRef || null) : undefined;
-      if(prop==='fill') {
-        d.fillScheme = _sr !== undefined ? _sr : d.fillScheme;
-        d.fill = val; sel.dataset.fill = val;
-      } else if(prop==='stroke') {
-        d.strokeScheme = _sr !== undefined ? _sr : d.strokeScheme;
-        d.stroke = val; sel.dataset.stroke = val;
-      } else if(prop==='shadowColor') {
-        d.shadowColorScheme = _sr !== undefined ? _sr : d.shadowColorScheme;
-        d.shadowColor = val; sel.dataset.shadowColor = val;
-        if(d.shadowColorScheme!=null) sel.dataset.shadowColorScheme = JSON.stringify(d.shadowColorScheme);
-        else delete sel.dataset.shadowColorScheme;
-      }
+      if(prop==='fill') { d.fillScheme = schemeRef || null; d.fill = val; sel.dataset.fill = val; }
+      else if(prop==='stroke') { d.strokeScheme = schemeRef || null; d.stroke = val; sel.dataset.stroke = val; }
+      console.log('[DBG schemeRef] prop='+prop+' val='+val+' schemeRef='+JSON.stringify(schemeRef)+' d.fillScheme='+JSON.stringify(d.fillScheme));
     }
   }
   updateShapeStyle(prop, val);
