@@ -195,6 +195,20 @@ function save(){
       else if(_ods&&_ods.starRays) d.starRays=_ods.starRays;
       if(el.dataset.starInner) d.starInner=+el.dataset.starInner;
       else if(_ods&&_ods.starInner!=null) d.starInner=_ods.starInner;
+      if(el.dataset.gearTeeth) d.gearTeeth=+el.dataset.gearTeeth;
+      else if(_ods&&_ods.gearTeeth!=null) d.gearTeeth=_ods.gearTeeth;
+      if(el.dataset.gearDepth) d.gearDepth=+el.dataset.gearDepth;
+      else if(_ods&&_ods.gearDepth!=null) d.gearDepth=_ods.gearDepth;
+      if(el.dataset.shapeFlipH==='true') d.shapeFlipH=true;
+      else if(_ods&&_ods.shapeFlipH) d.shapeFlipH=_ods.shapeFlipH;
+      if(el.dataset.shapeFlipV==='true') d.shapeFlipV=true;
+      else if(_ods&&_ods.shapeFlipV) d.shapeFlipV=_ods.shapeFlipV;
+      if(el.dataset.moonPhase!=null&&el.dataset.moonPhase!=='') d.moonPhase=+el.dataset.moonPhase;
+      else if(_ods&&_ods.moonPhase!=null) d.moonPhase=_ods.moonPhase;
+      if(el.dataset.trapTop!=null&&el.dataset.trapTop!=='') d.trapTop=+el.dataset.trapTop;
+      else if(_ods&&_ods.trapTop!=null) d.trapTop=_ods.trapTop;
+      if(el.dataset.trapBot!=null&&el.dataset.trapBot!=='') d.trapBot=+el.dataset.trapBot;
+      else if(_ods&&_ods.trapBot!=null) d.trapBot=_ods.trapBot;
       // Polygon sides
       if(el.dataset.polySides) d.polySides=+el.dataset.polySides;
       else if(_ods&&_ods.polySides) d.polySides=_ods.polySides;

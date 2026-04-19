@@ -279,7 +279,7 @@ function deleteSelected(){
     if(typeof renderAnimPanel==="function")renderAnimPanel();
     if(typeof renderMotionOverlay==="function")renderMotionOverlay();
     if(typeof toast==="function")toast('Deleted elements','ok');
-    _rotEl=null;const _ov2=document.getElementById('handles-overlay');if(_ov2)_ov2.innerHTML='';document.querySelectorAll('.arc-handle').forEach(h=>h.remove()); document.querySelectorAll('.star-handle').forEach(h=>h.remove()); document.querySelectorAll('.para-handle').forEach(h=>h.remove());
+    _rotEl=null;const _ov2=document.getElementById('handles-overlay');if(_ov2)_ov2.innerHTML='';document.querySelectorAll('.arc-handle,.star-handle,.para-handle,.chev-handle,.moon-handle,.trap-handle').forEach(h=>h.remove());
   } else if(sel){
     const s=slides[cur];if(!s)return;
     if(typeof pushUndo==="function")pushUndo();
@@ -291,11 +291,11 @@ function deleteSelected(){
     // htmlframe: delete linked code; code: unlink parent
     if(typeof _hfOnDelete==='function'){ const _d=s.els[idx2]; if(_d)_hfOnDelete(_d); }
     if(idx2>=0)s.els.splice(idx2,1);
-    sel.remove();sel=null;_rotEl=null;const _ov=document.getElementById('handles-overlay');if(_ov)_ov.innerHTML='';document.querySelectorAll('.arc-handle,.star-handle,.para-handle').forEach(h=>h.remove());save();if(typeof drawThumbs==="function")drawThumbs();if(typeof saveState==="function")saveState();syncProps();
+    sel.remove();sel=null;_rotEl=null;const _ov=document.getElementById('handles-overlay');if(_ov)_ov.innerHTML='';document.querySelectorAll('.arc-handle,.star-handle,.para-handle,.chev-handle,.moon-handle,.trap-handle').forEach(h=>h.remove());save();if(typeof drawThumbs==="function")drawThumbs();if(typeof saveState==="function")saveState();syncProps();
     if(typeof renderAnimPanel==="function")renderAnimPanel();
     if(typeof renderMotionOverlay==="function")renderMotionOverlay();
     // Final cleanup — syncProps may have rebuilt handles
-    document.querySelectorAll('.arc-handle,.star-handle,.para-handle').forEach(h=>h.remove());
+    document.querySelectorAll('.arc-handle,.star-handle,.para-handle,.chev-handle,.moon-handle,.trap-handle').forEach(h=>h.remove());
   }
 }
 

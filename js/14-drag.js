@@ -33,38 +33,30 @@ function mkDrag(el,c){
     // For shapes: allow drag on SVG fill, shape-text, or the transparent hit-area overlay
     if(el.dataset.type==='shape'){
       if(el.dataset.shape==='curve'){
-        const _isCurvePath = e.target.tagName==='path' && e.target.closest('.el')===el;
+        const _isCurvePath = e.target.closest('.el')===el && 
+          (e.target.tagName==='path' || 
+           (e.target.tagName==='svg' && e.target.classList.contains('shape-hit-area')));
         const _isCurveSel = el.classList.contains('sel') && !window._curveEditMode;
         // If curve is part of multi-selection, always drag the whole group
 
         // Helper: find element below curve by checking DOM elements at point
         // Uses both elementsFromPoint AND canvas DOM order to handle pointer-events:none elements
         const _findBelow = () => {
-          const canvas = document.getElementById('canvas');
-          if (!canvas) return null;
-          const rect = canvas.getBoundingClientRect();
-          const scaleX = (typeof canvasW !== 'undefined' ? canvasW : canvas.offsetWidth) / rect.width;
-          const scaleY = (typeof canvasH !== 'undefined' ? canvasH : canvas.offsetHeight) / rect.height;
-          const cx = (e.clientX - rect.left) * scaleX;
-          const cy = (e.clientY - rect.top) * scaleY;
-          // Walk canvas children in reverse DOM order (top z first), find one under cursor
-          const children = Array.from(canvas.querySelectorAll('.el:not(.decor-el)'));
-          for(let i = children.length - 1; i >= 0; i--){
-            const _p = children[i];
-            if(_p === el) continue;
-            const px = parseInt(_p.style.left)||0, py = parseInt(_p.style.top)||0;
-            const pw = parseInt(_p.style.width)||0, ph = parseInt(_p.style.height)||0;
-            const rot = parseFloat(_p.dataset.rot||0);
-            if(rot !== 0) {
-              // For rotated: just use elementsFromPoint as fallback
-              const _elems = document.elementsFromPoint(e.clientX, e.clientY);
-              for(const elem of _elems){
-                const _ep = elem.closest('.el');
-                if(_ep && _ep !== el && !_ep.classList.contains('decor-el')) return _ep;
-              }
-              return null;
+          // Use elementsFromPoint to find what's actually under the cursor
+          // This correctly handles curves with SVG hit-areas (not just bounding boxes)
+          const _elems = document.elementsFromPoint(e.clientX, e.clientY);
+          for(const elem of _elems){
+            const _ep = elem.closest('.el');
+            if(!_ep || _ep === el || _ep.classList.contains('decor-el')) continue;
+            // For curves: only match if click is on their actual stroke/fill path
+            if(_ep.dataset.shape === 'curve') {
+              // Check if the clicked element is actually part of this curve's SVG
+              if(elem.tagName === 'path' && elem.closest('.el') === _ep) return _ep;
+              // or its hit-area SVG
+              if(elem.tagName === 'svg' && elem.classList.contains('shape-hit-area') && elem.closest('.el') === _ep) return _ep;
+              continue; // clicked in empty bbox of another curve — skip
             }
-            if(cx >= px && cx <= px+pw && cy >= py && cy <= py+ph) return _p;
+            return _ep;
           }
           return null;
         };
@@ -74,47 +66,27 @@ function mkDrag(el,c){
           // Clicked on curve stroke or multi-drag: drag the curve, stop propagation
           if(_isCurvePath) e.stopPropagation();
         } else {
-          // Clicked in empty bbox area (single selection)
-          const _below = _findBelow();
+          // Click not on stroke path
+          // If curve IS selected: just drag it (don't switch to element below)
+          // If curve NOT selected: look for element below to switch to
+          const _below = _isCurveSel ? null : _findBelow();
           if(_below){
             e.preventDefault(); e.stopPropagation();
+            // Switch selection to element below, then let its own drag handler take over
+            // Set flag so _below's drag handler knows to start immediately
+            window._pendingDragEl = _below;
+            window._pendingDragX = e.clientX;
+            window._pendingDragY = e.clientY;
             if(typeof pickMulti==='function') pickMulti(_below, false);
             else if(typeof pick==='function') pick(_below);
-            // Start drag on element below immediately using the drag system
-            const _bl = parseInt(_below.style.left)||0, _bt = parseInt(_below.style.top)||0;
-            window._anyDragging = true;
-            const _ox = e.clientX, _oy = e.clientY;
-            let _moved = false;
-            const _mm = mv => {
-              if(!_moved){ _moved=true; if(typeof pushUndo==='function')pushUndo(); }
-              const _dx = mv.clientX - _ox, _dy = mv.clientY - _oy;
-              const _zoom = (typeof zoom!=='undefined'?zoom:1);
-              let _nl=_bl+_dx/_zoom, _nt=_bt+_dy/_zoom;
-              const _snChk=document.getElementById('snap-chk');
-              if(_snChk&&_snChk.checked&&typeof snapV==='function'){_nl=snapV(_nl);_nt=snapV(_nt);}
-              _below.style.left = _nl + 'px';
-              _below.style.top  = _nt + 'px';
-              if(typeof drawGuides==='function') drawGuides(_below);
-              if(typeof _updateHandlesOverlay==='function') _updateHandlesOverlay();
-            };
-            const _mu = () => {
-              window._anyDragging = false;
-              document.removeEventListener('mousemove', _mm);
-              document.removeEventListener('mouseup', _mu);
-              if(_moved){
-                if(typeof clearGuides==='function') clearGuides();
-                if(typeof commitAll==='function') commitAll();
-                const _bd = slides[cur]&&slides[cur].els.find(e=>e.id===_below.dataset.id);
-                if(_bd){
-                  _bd.x=parseInt(_below.style.left); _bd.y=parseInt(_below.style.top);
-                }
-                if(typeof save==='function') save();
-                if(typeof drawThumbs==='function') drawThumbs();
-                if(typeof saveState==='function') saveState();
-              }
-            };
-            document.addEventListener('mousemove', _mm);
-            document.addEventListener('mouseup', _mu);
+            // Dispatch a new mousedown on _below so its drag handler activates naturally
+            const _synth = new MouseEvent('mousedown', {
+              bubbles: true, cancelable: true,
+              clientX: e.clientX, clientY: e.clientY,
+              button: 0, buttons: 1
+            });
+            _below.dispatchEvent(_synth);
+            window._pendingDragEl = null;
             return;
           }
           // No element below — if curve not selected, allow picking it; else keep drag
@@ -167,7 +139,7 @@ function mkDrag(el,c){
               if(_snc3&&_snc3.checked&&typeof snapV==='function'){_nl3b=snapV(_nl3b);_nt3b=snapV(_nt3b);}
               _below3.style.left=_nl3b+'px';_below3.style.top=_nt3b+'px';
               if(typeof drawGuides==='function')drawGuides(_below3);
-              if(typeof _updateHandlesOverlay==='function')_updateHandlesOverlay();
+              if(typeof _updateHandlesOverlay==='function' && !window._curveDragging)_updateHandlesOverlay();
             };
             const _mu3b=()=>{
               window._anyDragging=false;
@@ -234,13 +206,13 @@ function mkDrag(el,c){
           mEl.style.left=nx+'px';mEl.style.top=ny+'px';
         });
         if(typeof renderMotionOverlay==='function') renderMotionOverlay();
-        if(typeof _updateHandlesOverlay==='function')_updateHandlesOverlay();
+        if(typeof _updateHandlesOverlay==='function' && !window._curveDragging)_updateHandlesOverlay();
       } else {
         let nx=ol+dx,ny=ot+dy;
         if(document.getElementById('snap-chk').checked){nx=snapV(nx);ny=snapV(ny);}
         el.style.left=nx+'px';el.style.top=ny+'px';showGuides(el);syncPos();
         if(typeof renderMotionOverlay==='function') renderMotionOverlay();
-        if(typeof _updateHandlesOverlay==='function')_updateHandlesOverlay();
+        if(typeof _updateHandlesOverlay==='function' && !window._curveDragging)_updateHandlesOverlay();
       }
     };
     const mu=()=>{on=false;window._anyDragging=false;groupStart=null;clearGuides();document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);commitAll();};
@@ -349,7 +321,7 @@ function mkResize(el,rh,cfg){
         const img=el.querySelector('img');if(img)img.style.objectFit='fill';
       }
       syncPos();
-      if(typeof _updateHandlesOverlay==='function')_updateHandlesOverlay();
+      if(typeof _updateHandlesOverlay==='function' && !window._curveDragging)_updateHandlesOverlay();
     };
     const mu=()=>{
       window._resizeDragging=false;window._anyDragging=false;
@@ -385,7 +357,7 @@ function mkResize(el,rh,cfg){
           _dmu2.rotPivotX=_cxp; _dmu2.rotPivotY=_cyp;
         }
       }
-      if(typeof _updateHandlesOverlay==='function') _updateHandlesOverlay();
+      if(typeof _updateHandlesOverlay==='function' && !window._curveDragging) _updateHandlesOverlay();
       commitAll();
     };
     document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);

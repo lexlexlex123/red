@@ -648,6 +648,28 @@
             </div>
           </div>
           <!-- Gear teeth (shown only for gear shape) -->
+          <div id="sh-trap-section" style="display:none">
+            <div class="pr" style="margin-bottom:4px">
+              <label style="font-size:10px;color:var(--text3)">Сужение сверху (%)</label>
+              <input type="number" id="sh-trap-top" min="0" max="49" value="15"
+                oninput="setTrapTop(+this.value)"
+                style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 8px;font-size:12px;font-family:inherit;box-sizing:border-box;margin-top:3px">
+            </div>
+            <div class="pr" style="margin-bottom:4px">
+              <label style="font-size:10px;color:var(--text3)">Сужение снизу (%)</label>
+              <input type="number" id="sh-trap-bot" min="0" max="49" value="0"
+                oninput="setTrapBot(+this.value)"
+                style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 8px;font-size:12px;font-family:inherit;box-sizing:border-box;margin-top:3px">
+            </div>
+          </div>
+          <div id="sh-moon-section" style="display:none">
+            <div class="pr" style="margin-bottom:4px">
+              <label style="font-size:10px;color:var(--text3)">Фаза луны (-100…100)</label>
+              <input type="number" id="sh-moon-phase" min="-100" max="100" value="-50"
+                oninput="setMoonPhase(+this.value)"
+                style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 8px;font-size:12px;font-family:inherit;box-sizing:border-box;margin-top:3px">
+            </div>
+          </div>
           <div id="sh-gear-section" style="display:none">
             <div class="pr" style="margin-bottom:4px">
               <label style="font-size:10px;color:var(--text3)">Количество зубцов</label>
@@ -735,6 +757,12 @@
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:6px">
               <div class="pr" style="margin:0"><label data-i18n="labelArcStart" style="font-size:9px;color:var(--text3)">↺ Начало (°)</label><input type="number" id="sh-arc-start" min="0" max="360" value="0" oninput="setArcAngle('start',+this.value)"></div>
               <div class="pr" style="margin:0"><label data-i18n="labelArcEnd" style="font-size:9px;color:var(--text3)">↻ Конец (°)</label><input type="number" id="sh-arc-end" min="0" max="360" value="360" oninput="setArcAngle('end',+this.value)"></div>
+            </div>
+          </div>
+          <div class="pr" style="margin-bottom:4px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
+              <button id="sh-flip-h" class="mbtn-sm" onclick="flipShape('h')" onmousedown="event.preventDefault()" title="Отразить по горизонтали" style="display:flex;align-items:center;justify-content:center;gap:5px;padding:5px 0"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="3" width="6" height="10" rx="1" fill="currentColor" opacity=".4"/><rect x="9" y="3" width="6" height="10" rx="1" fill="currentColor"/><line x1="8" y1="1" x2="8" y2="15" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2 2"/></svg></button>
+              <button id="sh-flip-v" class="mbtn-sm" onclick="flipShape('v')" onmousedown="event.preventDefault()" title="Отразить по вертикали" style="display:flex;align-items:center;justify-content:center;gap:5px;padding:5px 0"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="1" width="10" height="6" rx="1" fill="currentColor" opacity=".4"/><rect x="3" y="9" width="10" height="6" rx="1" fill="currentColor"/><line x1="1" y1="8" x2="15" y2="8" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2 2"/></svg></button>
             </div>
           </div>
           <div class="pr" id="sh-fill-section"><label data-i18n="propFillColor">Заливка</label>

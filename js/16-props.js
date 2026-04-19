@@ -254,6 +254,9 @@ function syncProps(){
       if(typeof _syncPolyUI==='function') _syncPolyUI(_d2);
       if(typeof _syncStarUI==='function') _syncStarUI(_d2);
       if(typeof _syncGearUI==='function') _syncGearUI(_d2);
+      if(typeof _syncShapeFlipBtns==='function') _syncShapeFlipBtns(_d2);
+      if(typeof _syncTrapUI==='function') _syncTrapUI(_d2);
+      if(typeof _syncMoonUI==='function') _syncMoonUI(_d2);
       if(typeof _syncParaUI==='function') _syncParaUI(_d2);
       if(typeof _syncChevUI==='function') _syncChevUI(_d2);
       if(typeof _syncCurveUI==='function') _syncCurveUI(_d2);
@@ -348,7 +351,12 @@ function syncProps(){
 }
 function setES(prop,val,u){if(!sel)return;sel.style[prop]=val+u;save();drawThumbs();}
 function setElRotation(deg){
-  if(!sel)return;sel.style.transform='rotate('+deg+'deg)';sel.dataset.rot=deg;
+  if(!sel)return;
+  const _rot_d=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+  const _rfx=(_rot_d&&_rot_d.shapeFlipH)?-1:1;
+  const _rfy=(_rot_d&&_rot_d.shapeFlipV)?-1:1;
+  const _rsft=(_rfx===-1||_rfy===-1)?` scale(${_rfx},${_rfy})`:'';
+  sel.style.transform='rotate('+deg+'deg)'+_rsft;sel.dataset.rot=deg;
   const pRot=document.getElementById('p-rot');if(pRot)pRot.value=deg;
   if(typeof _updateHandlesOverlay==='function')_updateHandlesOverlay();
   if(typeof updateConnectorsFor==='function')updateConnectorsFor(sel.dataset.id);
@@ -1076,6 +1084,111 @@ function _syncGearUI(d) {
   if (t && t !== document.activeElement) t.value = d.gearTeeth ?? 12;
   if (dep && dep !== document.activeElement) dep.value = Math.round((d.gearDepth ?? 0.25) * 100);
 }
+
+
+
+function flipShape(axis) {
+  if (!sel || sel.dataset.type !== 'shape') return;
+  pushUndo();
+  const d = slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (!d) return;
+  if (axis === 'h') {
+    d.shapeFlipH = !d.shapeFlipH;
+    sel.dataset.shapeFlipH = d.shapeFlipH ? 'true' : '';
+  } else {
+    d.shapeFlipV = !d.shapeFlipV;
+    sel.dataset.shapeFlipV = d.shapeFlipV ? 'true' : '';
+  }
+  const rot = d.rot || 0;
+  const fx = d.shapeFlipH ? -1 : 1;
+  const fy = d.shapeFlipV ? -1 : 1;
+  const sft = (fx === -1 || fy === -1) ? ` scale(${fx},${fy})` : '';
+  sel.style.transform = `rotate(${rot}deg)${sft}`;
+  _syncShapeFlipBtns(d);
+  if (typeof renderShapeEl === 'function') renderShapeEl(sel, d);
+  if (typeof _applyShapeBlur === 'function') _applyShapeBlur(sel);
+  if (typeof _applyShapeClipPath === 'function') _applyShapeClipPath(sel, d);
+  commitAll();
+}
+
+function _syncShapeFlipBtns(d) {
+  const bh = document.getElementById('sh-flip-h');
+  const bv = document.getElementById('sh-flip-v');
+  if (bh) bh.classList.toggle('active', !!(d && d.shapeFlipH));
+  if (bv) bv.classList.toggle('active', !!(d && d.shapeFlipV));
+}
+function _syncTrapUI(d) {
+  const sec = document.getElementById('sh-trap-section');
+  if (!sec) return;
+  const sh = typeof SHAPES !== 'undefined' ? SHAPES.find(s => s.id === (d && d.shape)) : null;
+  const isTrap = sh && sh.special === 'trapezoid';
+  sec.style.display = isTrap ? '' : 'none';
+  if (!isTrap || !d) return;
+  const t = document.getElementById('sh-trap-top');
+  const b = document.getElementById('sh-trap-bot');
+  if (t && t !== document.activeElement) t.value = Math.round((d.trapTop != null ? +d.trapTop : 0.15) * 100);
+  if (b && b !== document.activeElement) b.value = Math.round((d.trapBot != null ? +d.trapBot : 0.0) * 100);
+}
+
+function setTrapTop(val) {
+  if (!sel || sel.dataset.type !== 'shape') return;
+  val = Math.max(0, Math.min(49, Math.round(+val)));
+  if (isNaN(val)) return;
+  const inset = val / 100;
+  const d = slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (!d) return;
+  d.trapTop = inset; sel.dataset.trapTop = inset;
+  renderShapeEl(sel, d);
+  if (typeof _applyShapeClipPath === 'function') _applyShapeClipPath(sel, d);
+  if (typeof _buildTrapHandles === 'function') _buildTrapHandles();
+  save(); drawThumbs(); saveState();
+  const inp = document.getElementById('sh-trap-top');
+  if (inp && inp !== document.activeElement) inp.value = val;
+}
+
+function setTrapBot(val) {
+  if (!sel || sel.dataset.type !== 'shape') return;
+  val = Math.max(0, Math.min(49, Math.round(+val)));
+  if (isNaN(val)) return;
+  const inset = val / 100;
+  const d = slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (!d) return;
+  d.trapBot = inset; sel.dataset.trapBot = inset;
+  renderShapeEl(sel, d);
+  if (typeof _applyShapeClipPath === 'function') _applyShapeClipPath(sel, d);
+  if (typeof _buildTrapHandles === 'function') _buildTrapHandles();
+  save(); drawThumbs(); saveState();
+  const inp = document.getElementById('sh-trap-bot');
+  if (inp && inp !== document.activeElement) inp.value = val;
+}
+function _syncMoonUI(d) {
+  const sec = document.getElementById('sh-moon-section');
+  if (!sec) return;
+  const sh = typeof SHAPES !== 'undefined' ? SHAPES.find(s => s.id === (d && d.shape)) : null;
+  const isMoon = sh && sh.special === 'moon';
+  sec.style.display = isMoon ? '' : 'none';
+  if (!isMoon || !d) return;
+  const inp = document.getElementById('sh-moon-phase');
+  if (inp && inp !== document.activeElement) inp.value = Math.round((d.moonPhase != null ? +d.moonPhase : -0.5) * 100);
+}
+
+function setMoonPhase(val) {
+  if (!sel || sel.dataset.type !== 'shape') return;
+  val = Math.max(-100, Math.min(100, Math.round(+val)));
+  if (isNaN(val)) return;
+  const phase = val / 100;
+  const d = slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (!d) return;
+  d.moonPhase = phase;
+  sel.dataset.moonPhase = phase;
+  renderShapeEl(sel, d);
+  if (typeof _applyShapeBlur === 'function') _applyShapeBlur(sel);
+  if (typeof _applyShapeClipPath === 'function') _applyShapeClipPath(sel, d);
+  if (typeof _buildMoonHandle === 'function') _buildMoonHandle();
+  save(); drawThumbs(); saveState();
+  const inp = document.getElementById('sh-moon-phase');
+  if (inp && inp !== document.activeElement) inp.value = val;
+}
 function setGearTeeth(val) {
   if (!sel || sel.dataset.type !== 'shape') return;
   val = Math.max(3, Math.min(60, Math.round(+val)));
@@ -1318,6 +1431,11 @@ function setShapeFillGrad(on) {
   sel.dataset.fillGrad = on ? '1' : '0';
   if (d.fillGrad2) sel.dataset.fillGrad2 = d.fillGrad2;
   document.getElementById('sh-fill-grad-row').style.display = on ? 'flex' : 'none';
+  // Update preview box immediately
+  if (d.fillGrad2) {
+    const _p2 = document.getElementById('sh-fill2-preview');
+    if (_p2) _p2.style.background = d.fillGrad2;
+  }
   renderShapeEl(sel, d);
   save(); drawThumbs(); saveState();
 }

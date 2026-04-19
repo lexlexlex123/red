@@ -352,6 +352,22 @@ function buildShapeGallery(){
         :`M ${_ox} ${_oy} L ${_ox+_w-_tip} ${_oy} L ${_ox+_w} ${_oy+_h/2} L ${_ox+_w-_tip} ${_oy+_h} L ${_ox} ${_oy+_h} L ${_ox+_tip} ${_oy+_h/2} Z`;
       el.setAttribute('d',_d);
     }
+    else if(s.special==='trapezoid'){
+      el=document.createElementNS('http://www.w3.org/2000/svg','path');
+      if(typeof _trapPath==='function'){
+        el.setAttribute('d',_trapPath(5,5,90,90,0.15,0.0,0));
+      } else {
+        el.setAttribute('d','M 19 5 L 81 5 L 95 95 L 5 95 Z');
+      }
+    }
+    else if(s.special==='moon'){
+      el=document.createElementNS('http://www.w3.org/2000/svg','path');
+      if(typeof _moonPath==='function'){
+        el.setAttribute('d',_moonPath(50,50,45,45,-0.5,0));
+      } else {
+        el.setAttribute('d','M 72 5 C 35 5 10 25 10 50 C 10 75 35 95 72 95 C 55 85 45 68 45 50 C 45 32 55 15 72 5 Z');
+      }
+    }
     else if(s.special==='gear'){
       el=document.createElementNS('http://www.w3.org/2000/svg','path');
       if(typeof _gearPath==='function'){
@@ -359,6 +375,28 @@ function buildShapeGallery(){
       } else {
         el.setAttribute('d','M 50 5 L 90 20 L 90 55 Q 90 80 50 95 Q 10 80 10 55 L 10 20 Z');
       }
+    }
+    else if(s.special==='noSymbol'){
+      const _smFillNs=document.getElementById('sm-fill');const _fcNs=(_smFillNs&&_smFillNs.value)||'#3b82f6';
+      // Ring (no fill) + diagonal
+      const _circ=document.createElementNS('http://www.w3.org/2000/svg','circle');
+      _circ.setAttribute('cx','50');_circ.setAttribute('cy','50');_circ.setAttribute('r','42');
+      _circ.setAttribute('fill','none');_circ.setAttribute('stroke',_fcNs);_circ.setAttribute('stroke-width','13');
+      _circ.classList.add('sg-fill'); // sg-fill targets stroke on circle for color sync
+      svg.appendChild(_circ);
+      const _line=document.createElementNS('http://www.w3.org/2000/svg','line');
+      // Diagonal top-right to bottom-left at 45°
+      _line.setAttribute('x1','80');_line.setAttribute('y1','8');
+      _line.setAttribute('x2','20');_line.setAttribute('y2','92');
+      _line.setAttribute('stroke',_fcNs);_line.setAttribute('stroke-width','13');_line.setAttribute('stroke-linecap','butt');
+      svg.appendChild(_line);
+      const _span2=document.createElement('span');_span2.textContent=s.name;
+      card.append(svg,_span2);
+      card.onclick=()=>{selShape=s.id;document.querySelectorAll('.shape-card').forEach(c2=>{c2.classList.toggle('active',c2===card);c2.style.borderColor='';});};
+      card.ondblclick=()=>{selShape=s.id;if(typeof insertShapeSelected==='function')insertShapeSelected();};
+      if(selShape===s.id)card.classList.add('active');
+      g.appendChild(card);
+      return;
     }
     else if(s.path){el=document.createElementNS('http://www.w3.org/2000/svg','path');el.setAttribute('d',s.path);}
     else{el=document.createElementNS('http://www.w3.org/2000/svg','rect');el.setAttribute('x','5');el.setAttribute('y','5');el.setAttribute('width','90');el.setAttribute('height','90');}

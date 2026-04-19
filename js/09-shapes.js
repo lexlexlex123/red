@@ -1,6 +1,15 @@
 // ══════════════ SHAPES ══════════════
 function _smSyncGalleryColor(color){
-  document.querySelectorAll('#shape-gallery .sg-fill').forEach(el=>el.setAttribute('fill',color));
+  document.querySelectorAll('#shape-gallery .sg-fill').forEach(el=>{
+    if(el.tagName==='circle'&&el.getAttribute('fill')==='none'){
+      el.setAttribute('stroke',color);
+      // also update sibling line
+      const _sib=el.nextSibling;
+      if(_sib&&_sib.tagName==='line') _sib.setAttribute('stroke',color);
+    } else {
+      el.setAttribute('fill',color);
+    }
+  });
 }
 function editShapeText(){
   if(!sel||sel.dataset.type!=='shape')return;
@@ -59,7 +68,7 @@ function openShapeModal(){
 }
 // Variable-width stroke for curves (smooth outline from per-node sw)
 function _expVarStroke(pts,w,h,closed,defaultSw,strokeColor,shadowAttr){
-  var STEPS=36;
+  var STEPS=48;
   function sample(prev,curr){
     var hwA=(prev.sw!=null?prev.sw:defaultSw)/2,hwB=(curr.sw!=null?curr.sw:defaultSw)/2;
     var p0={x:prev.x*w,y:prev.y*h},p3={x:curr.x*w,y:curr.y*h};
@@ -74,6 +83,7 @@ function _expVarStroke(pts,w,h,closed,defaultSw,strokeColor,shadowAttr){
       var ty=3*(u*u*(p1.y-p0.y)+2*u*t*(p2.y-p1.y)+t*t*(p3.y-p2.y));
       var tl=Math.hypot(tx,ty)||1e-9;tx/=tl;ty/=tl;
       var hw=hwA+(hwB-hwA)*t;
+
       out.push({x:x,y:y,nx:-ty,ny:tx,tx:tx,ty:ty,hw:hw});
     }
     return out;
@@ -92,28 +102,86 @@ function _expVarStroke(pts,w,h,closed,defaultSw,strokeColor,shadowAttr){
   function shortArc(jx,jy,r,a0,a1){
     var da=a1-a0;
     while(da>Math.PI)da-=2*Math.PI;while(da<-Math.PI)da+=2*Math.PI;
-    var res=[],N=10;
+    var N=Math.max(8,Math.ceil(Math.abs(da)*r/4));// more steps for larger arcs
+    var res=[];
     for(var k=0;k<=N;k++){var a=a0+da*k/N;res.push({x:jx+r*Math.cos(a),y:jy+r*Math.sin(a)});}
     return res;
   }
-  function rjoin(jx,jy,r,inTx,inTy,inNx,inNy,outTx,outTy,outNx,outNy){
-    if(r < 0.01) return{Lpts:[{x:jx,y:jy}],Rpts:[{x:jx,y:jy}]};
+  // Segment intersection: returns t in [0,1] along (ax,ay)->(bx,by) or -1
+  function segIsect(ax,ay,bx,by,cx,cy,dx,dy){
+    var r1x=bx-ax,r1y=by-ay,r2x=dx-cx,r2y=dy-cy;
+    var denom=r1x*r2y-r1y*r2x;
+    if(Math.abs(denom)<1e-9)return -1;
+    var t=((cx-ax)*r2y-(cy-ay)*r2x)/denom;
+    var u=((cx-ax)*r1y-(cy-ay)*r1x)/denom;
+    if(t>=0&&t<=1&&u>=0&&u<=1)return t;
+    return -1;
+  }
+  function rjoin(jx,jy,hwIn,hwOut,inTx,inTy,inNx,inNy,outTx,outTy,outNx,outNy){
+    if(hwIn < 0.01 && hwOut < 0.01) return{Lpts:[{x:jx,y:jy}],Rpts:[{x:jx,y:jy}]};
+    var r=(hwIn+hwOut)/2; // average for arc radius
     var cross=inTx*outTy-inTy*outTx;
-    var inLx=jx+inNx*r,inLy=jy+inNy*r,inRx=jx-inNx*r,inRy=jy-inNy*r;
-    var outLx=jx+outNx*r,outLy=jy+outNy*r,outRx=jx-outNx*r,outRy=jy-outNy*r;
-    function innerPtFn(ax,ay,bx,by){var a0=Math.atan2(ay-jy,ax-jx),a1=Math.atan2(by-jy,bx-jx);var da=a1-a0;while(da>Math.PI)da-=2*Math.PI;while(da<-Math.PI)da+=2*Math.PI;var am=a0+da/2;return{x:jx+r*Math.cos(am),y:jy+r*Math.sin(am)};}
+    // Use hwIn for incoming side points, hwOut for outgoing side points
+    var inLx=jx+inNx*hwIn,inLy=jy+inNy*hwIn,inRx=jx-inNx*hwIn,inRy=jy-inNy*hwIn;
+    var outLx=jx+outNx*hwOut,outLy=jy+outNy*hwOut,outRx=jx-outNx*hwOut,outRy=jy-outNy*hwOut;
+    function innerArcFn(ax,ay,bx,by){
+      // Inner (concave) side: short arc from a to b via junction center
+      var a0=Math.atan2(ay-jy,ax-jx),a1=Math.atan2(by-jy,bx-jx);
+      var da=a1-a0;while(da>Math.PI)da-=2*Math.PI;while(da<-Math.PI)da+=2*Math.PI;
+      if(Math.abs(da)>Math.PI) da=da>0?da-2*Math.PI:da+2*Math.PI;
+      // Use same shortArc for smooth inner join (1-4 points depending on angle)
+      var N=Math.max(1,Math.ceil(Math.abs(da)*r/8));
+      var res=[];
+      for(var k=1;k<N;k++){var a=a0+da*k/N;res.push({x:jx+r*Math.cos(a),y:jy+r*Math.sin(a)});}
+      var am=a0+da;res.push({x:jx+r*Math.cos(am),y:jy+r*Math.sin(am)});
+      return res;
+    }
     var dot2=inTx*outTx+inTy*outTy;
     if(Math.abs(cross)<0.02){
-      if(dot2>0.98)return{Lpts:[{x:outLx,y:outLy}],Rpts:[{x:outRx,y:outRy}]};
+      if(dot2>0.98){
+        // Straight line with changing width: interpolate between in/out offsets
+        var midLx=(inLx+outLx)/2,midLy=(inLy+outLy)/2;
+        var midRx=(inRx+outRx)/2,midRy=(inRy+outRy)/2;
+        return{Lpts:[midLx===outLx&&midLy===outLy?{x:outLx,y:outLy}:{x:midLx,y:midLy},{x:outLx,y:outLy}],Rpts:[{x:midRx,y:midRy},{x:outRx,y:outRy}]};
+      }
       var aIn=Math.atan2(inLy-jy,inLx-jx),aOut=Math.atan2(outLy-jy,outLx-jx);
       var aInR=Math.atan2(inRy-jy,inRx-jx),aOutR=Math.atan2(outRy-jy,outRx-jx);
       var daL=aOut-aIn;while(daL>Math.PI)daL-=2*Math.PI;while(daL<-Math.PI)daL+=2*Math.PI;
       var daR=aOutR-aInR;while(daR>Math.PI)daR-=2*Math.PI;while(daR<-Math.PI)daR+=2*Math.PI;
-      if(Math.abs(daL)>=Math.abs(daR)){return{Lpts:shortArc(jx,jy,r,aIn,aOut),Rpts:[innerPtFn(inRx,inRy,outRx,outRy)]};}
-      else{return{Lpts:[innerPtFn(inLx,inLy,outLx,outLy)],Rpts:shortArc(jx,jy,r,aInR,aOutR)};}
+      if(Math.abs(daL)>=Math.abs(daR)){
+        var outerL = useArc ? shortArc(jx,jy,r,aIn,aOut) : [{x:inLx,y:inLy},{x:outLx,y:outLy}];
+        return{Lpts:outerL,Rpts:innerArcFn(inRx,inRy,outRx,outRy)};
+      } else {
+        var outerR = useArc ? shortArc(jx,jy,r,aInR,aOutR) : [{x:inRx,y:inRy},{x:outRx,y:outRy}];
+        return{Lpts:innerArcFn(inLx,inLy,outLx,outLy),Rpts:outerR};
+      }
     }
-    if(cross<0){var ip=innerPtFn(inRx,inRy,outRx,outRy);return{Lpts:shortArc(jx,jy,r,Math.atan2(inLy-jy,inLx-jx),Math.atan2(outLy-jy,outLx-jx)),Rpts:[ip]};}
-    else{var ip=innerPtFn(inLx,inLy,outLx,outLy);return{Lpts:[ip],Rpts:shortArc(jx,jy,r,Math.atan2(inRy-jy,inRx-jx),Math.atan2(outRy-jy,outRx-jx))};}
+    var hwRatio = hwIn > 0.01 ? hwOut/hwIn : 1;
+    var useArc = hwRatio > 0.7 && hwRatio < 1.43;
+    if(cross<0){
+      // Check if outer L line crosses inner R line (self-intersection)
+      var t=segIsect(inLx,inLy,outLx,outLy,inRx,inRy,outRx,outRy);
+      if(t>=0){
+        // Lines cross — use intersection point for both
+        var ix=inLx+(outLx-inLx)*t, iy=inLy+(outLy-inLy)*t;
+        return{Lpts:[{x:ix,y:iy}],Rpts:[{x:ix,y:iy}]};
+      }
+      var outerPts = useArc
+        ? shortArc(jx,jy,r,Math.atan2(inLy-jy,inLx-jx),Math.atan2(outLy-jy,outLx-jx))
+        : [{x:inLx,y:inLy},{x:outLx,y:outLy}];
+      return{Lpts:outerPts,Rpts:innerArcFn(inRx,inRy,outRx,outRy)};
+    } else {
+      // Check if outer R line crosses inner L line
+      var t=segIsect(inRx,inRy,outRx,outRy,inLx,inLy,outLx,outLy);
+      if(t>=0){
+        var ix=inRx+(outRx-inRx)*t, iy=inRy+(outRy-inRy)*t;
+        return{Lpts:[{x:ix,y:iy}],Rpts:[{x:ix,y:iy}]};
+      }
+      var outerPts = useArc
+        ? shortArc(jx,jy,r,Math.atan2(inRy-jy,inRx-jx),Math.atan2(outRy-jy,outRx-jx))
+        : [{x:inRx,y:inRy},{x:outRx,y:outRy}];
+      return{Lpts:innerArcFn(inLx,inLy,outLx,outLy),Rpts:outerPts};
+    }
   }
   function endCap(cx,cy,r,fromA,toA,n){
     var da=toA-fromA;
@@ -129,18 +197,32 @@ function _expVarStroke(pts,w,h,closed,defaultSw,strokeColor,shadowAttr){
   }
   var allPts=closed?pts.concat([pts[0]]):pts,nSegs=allPts.length-1,SS=[];
   for(var si=0;si<nSegs;si++)SS.push(sample(pts[si],allPts[si+1]));
-  var L=[],R=[];
+  var L=[],R=[],C=[];
   for(var si=0;si<nSegs;si++){
     var samp=SS[si],isFirst=si===0,isLast=si===nSegs-1;
     for(var k=(isFirst?0:1);k<(isLast?samp.length:samp.length-1);k++){
-      var s=samp[k];if(s.hw<0.01){L.push({x:s.x,y:s.y});R.push({x:s.x,y:s.y});}else{L.push({x:s.x+s.nx*s.hw,y:s.y+s.ny*s.hw});R.push({x:s.x-s.nx*s.hw,y:s.y-s.ny*s.hw});}
+      var s=samp[k];
+      if(s.hw<0.01){
+        L.push({x:s.x,y:s.y});R.push({x:s.x,y:s.y});C.push(s);
+      } else {
+        var lp={x:s.x+s.nx*s.hw,y:s.y+s.ny*s.hw};
+        var rp={x:s.x-s.nx*s.hw,y:s.y-s.ny*s.hw};
+        // Clamp to correct side to prevent inner-offset crossing
+        var lOk=(lp.x-s.x)*s.nx+(lp.y-s.y)*s.ny>0;
+        var rOk=(rp.x-s.x)*s.nx+(rp.y-s.y)*s.ny<0;
+        if(lOk&&rOk){L.push(lp);R.push(rp);}
+        else{L.push({x:s.x,y:s.y});R.push({x:s.x,y:s.y});}
+        C.push(s);
+      }
     }
     if(!isLast){
       var cur=samp[samp.length-1],next=SS[si+1][0];
-      var j=rjoin(cur.x,cur.y,cur.hw,cur.tx,cur.ty,cur.nx,cur.ny,next.tx,next.ty,next.nx,next.ny);
-      j.Lpts.forEach(function(p){L.push(p);});j.Rpts.forEach(function(p){R.push(p);});
+      var j=rjoin(cur.x,cur.y,cur.hw,next.hw,cur.tx,cur.ty,cur.nx,cur.ny,next.tx,next.ty,next.nx,next.ny);
+      j.Lpts.forEach(function(p){L.push(p);C.push(null);});
+      j.Rpts.forEach(function(p){R.push(p);});
     }
   }
+
   if(L.length<2)return'';
   var firstS=SS[0][0],lastS=SS[nSegs-1][SS[nSegs-1].length-1];
   var Rrev=R.slice().reverse(),d;
@@ -871,6 +953,75 @@ function buildShapeSVG(d, w, h) {
     const _offC = Math.round((h/2) * Math.tan(_skewC*Math.PI/180));
     return `polygon(${_offC}px 0px, ${w}px 0px, ${w-_offC}px ${h}px, 0px ${h}px)`;
   }
+  if (sh.special === 'trapezoid') {
+    const tTop = d.trapTop != null ? +d.trapTop : 0.15;
+    const tBot = d.trapBot != null ? +d.trapBot : 0.0;
+    const tp = _trapPath(m, m, ew, eh, tTop, tBot, d.rx||0);
+    return `<path d="${tp}" ${fAttr} ${sAttr} ${extra} ${shadow}/>`;
+  }
+  if (sh.special === 'noSymbol') {
+    const cr  = Math.min(ew, eh) / 2;
+    const ccx = w / 2, ccy = h / 2;
+    const lw  = Math.max(3, Math.round(cr * 0.28));
+    const ir  = cr - lw;
+    const hw  = lw / 2;
+    const s2  = Math.SQRT1_2;
+    const f2  = v => v.toFixed(2);
+    const tIn = Math.sqrt(ir*ir - hw*hw);
+
+    const R1x=ccx+tIn*s2-hw*s2, R1y=ccy-tIn*s2-hw*s2;
+    const R2x=ccx-tIn*s2-hw*s2, R2y=ccy+tIn*s2-hw*s2;
+    const L1x=ccx+tIn*s2+hw*s2, L1y=ccy-tIn*s2+hw*s2;
+    const L2x=ccx-tIn*s2+hw*s2, L2y=ccy+tIn*s2+hw*s2;
+
+    // Cardinal points on inner circle
+    const itX=ccx,    itY=ccy-ir;  // top
+    const ilX=ccx-ir, ilY=ccy;     // left
+    const ieX=ccx+ir, ieY=ccy;     // east/right
+    const ibX=ccx,    ibY=ccy+ir;  // bottom
+
+    // Outer circle CCW
+    const outerPath =
+      `M ${f2(ccx+cr)},${f2(ccy)} A ${f2(cr)} ${f2(cr)} 0 1 0 ${f2(ccx-cr)},${f2(ccy)} A ${f2(cr)} ${f2(cr)} 0 1 0 ${f2(ccx+cr)},${f2(ccy)} Z`;
+
+    // Hole 1: inner_TOP → CW arc→R1 → line→R2 → CW arc→inner_LEFT → CW arc→inner_TOP
+    const hole1 =
+      `M ${f2(itX)},${f2(itY)}` +
+      ` A ${f2(ir)} ${f2(ir)} 0 0 1 ${f2(R1x)},${f2(R1y)}` +
+      ` L ${f2(R2x)},${f2(R2y)}` +
+      ` A ${f2(ir)} ${f2(ir)} 0 0 1 ${f2(ilX)},${f2(ilY)}` +
+      ` A ${f2(ir)} ${f2(ir)} 0 0 1 ${f2(itX)},${f2(itY)} Z`;
+
+    // Hole 2: L1 → CW arc→inner_EAST → CW arc→inner_BOTTOM → CW arc→L2 → line→L1
+    const hole2 =
+      `M ${f2(L1x)},${f2(L1y)}` +
+      ` A ${f2(ir)} ${f2(ir)} 0 0 1 ${f2(ieX)},${f2(ieY)}` +
+      ` A ${f2(ir)} ${f2(ir)} 0 0 1 ${f2(ibX)},${f2(ibY)}` +
+      ` A ${f2(ir)} ${f2(ir)} 0 0 1 ${f2(L2x)},${f2(L2y)}` +
+      ` L ${f2(L1x)},${f2(L1y)} Z`;
+
+    let strokeEl = '';
+    if (sw > 0) {
+      const tOut = Math.sqrt(cr*cr - hw*hw);
+      const Ro1x=ccx+tOut*s2-hw*s2, Ro1y=ccy-tOut*s2-hw*s2;
+      const Ro2x=ccx-tOut*s2-hw*s2, Ro2y=ccy+tOut*s2-hw*s2;
+      const Lo1x=ccx+tOut*s2+hw*s2, Lo1y=ccy-tOut*s2+hw*s2;
+      const Lo2x=ccx-tOut*s2+hw*s2, Lo2y=ccy+tOut*s2+hw*s2;
+      strokeEl =
+        `<circle cx="${f2(ccx)}" cy="${f2(ccy)}" r="${f2(cr)}" fill="none" ${sAttr}/>` +
+        `<circle cx="${f2(ccx)}" cy="${f2(ccy)}" r="${f2(ir)}" fill="none" ${sAttr}/>` +
+        `<path d="M ${f2(Ro1x)},${f2(Ro1y)} L ${f2(R1x)},${f2(R1y)} M ${f2(R2x)},${f2(R2y)} L ${f2(Ro2x)},${f2(Ro2y)} M ${f2(Lo1x)},${f2(Lo1y)} L ${f2(L1x)},${f2(L1y)} M ${f2(L2x)},${f2(L2y)} L ${f2(Lo2x)},${f2(Lo2y)}" fill="none" ${sAttr} stroke-linecap="butt"/>`;
+    }
+
+    return (
+      `<path d="${outerPath} ${hole1} ${hole2}" ${fAttr} fill-rule="nonzero" stroke="none" ${extra} ${shadow}/>` +
+      strokeEl
+    );
+  }
+  if (sh.special === 'moon') {
+    const phase = d.moonPhase != null ? +d.moonPhase : -0.5;
+    return _moonSVG(w/2, h/2, ew/2, eh/2, phase, d.rx||0, fAttr, sAttr, extra, shadow, d.id);
+  }
   if (sh.special === 'gear') {
       const nTeeth = Math.max(3, Math.min(60, +(d.gearTeeth||12)));
       const toothD = Math.max(0.05, Math.min(0.6, +(d.gearDepth!=null?d.gearDepth:0.25)));
@@ -881,7 +1032,8 @@ function buildShapeSVG(d, w, h) {
     const cpts = d.curvePoints;
     if (!cpts || cpts.length < 2) return null;
     const hasNSw = cpts.some(p => p.sw != null);
-    if(window._rtDebug) console.log('[curve] hasNSw='+hasNSw+' cpts sw:', cpts.map(p=>p.sw));
+    // Use max sw across nodes for rendering decision (not d.sw which may be 0)
+    const effectiveSw = hasNSw ? Math.max(...cpts.map(p => p.sw != null ? p.sw : sw), sw) : sw;
     // Build base bezier path for fill
     let _cd = `M ${(cpts[0].x*w).toFixed(2)} ${(cpts[0].y*h).toFixed(2)}`;
     for (let ci = 1; ci < cpts.length; ci++) {
@@ -908,17 +1060,14 @@ function buildShapeSVG(d, w, h) {
     // _cdClosed: fill path — always bezier closed
     const _cdClosed = _cd.endsWith(' Z') ? _cd : (_cd + _makeBezierClose(cpts, w, h));
 
-    if (hasNSw && sw > 0 && typeof _expVarStroke === 'function') {
-      const varStrokeSvg = _expVarStroke(cpts, w, h, !!d.curveClosed, sw, strokeColor, shadow);
+    if (hasNSw && effectiveSw > 0 && typeof _expVarStroke === 'function') {
+      // Use effectiveSw (max across nodes) as default so stroke renders even when d.sw=0
+      const varStrokeSvg = _expVarStroke(cpts, w, h, !!d.curveClosed, effectiveSw, strokeColor, shadow);
       const _gradDefsStr = _gradDef ? `<defs>${_gradDef}</defs>` : '';
       if (hasFill) {
-        const _fillCpts = cpts.map(p => Object.assign({}, p));
-        const _fl = _fillCpts[_fillCpts.length - 1];
-        const _ff = _fillCpts[0];
-        if (_fl.cp2x == null && _fl.cp1x != null) { _fl.cp2x = _fl.x*2-_fl.cp1x; _fl.cp2y = _fl.y*2-_fl.cp1y; }
-        if (_ff.cp1x == null && _ff.cp2x != null) { _ff.cp1x = _ff.x*2-_ff.cp2x; _ff.cp1y = _ff.y*2-_ff.cp2y; }
-        const fillOuterPath = _expVarStrokeOuter(_fillCpts, w, h, true, sw, fillAttr);
-        return _gradDefsStr + fillOuterPath + varStrokeSvg;
+        // Fill: always use simple bezier path — reliable regardless of per-node sw
+        const fillPath = `<path d="${_cdClosed}" ${fAttr} stroke="none" ${extra}/>`;
+        return _gradDefsStr + fillPath + varStrokeSvg;
       }
       return _gradDefsStr + varStrokeSvg;
     }
@@ -935,6 +1084,15 @@ function buildShapeSVG(d, w, h) {
       const innerR = Math.max(0.1, Math.min(0.9, +(d.starInner!=null?d.starInner:0.45)));
       const sp = _starPath(w/2, h/2, ew/2, eh/2, nRays, innerR, d.rx||0);
       return `<path d="${sp}" ${fAttr} ${sAttr} ${extra} ${shadow}/>`;
+    }
+    if (sh.special === 'trapezoid') {
+      const tTop2 = d.trapTop != null ? +d.trapTop : 0.15;
+      const tBot2 = d.trapBot != null ? +d.trapBot : 0.0;
+      return _trapPath(m, m, ew, eh, tTop2, tBot2, 0);
+    }
+    if (sh.special === 'moon') {
+      // For path string, return outer ellipse (moon SVG uses clipPath, not a simple path)
+      return `M ${(w/2+ew/2).toFixed(2)},${(h/2).toFixed(2)} A ${(ew/2).toFixed(2)} ${(eh/2).toFixed(2)} 0 1 0 ${(w/2-ew/2).toFixed(2)},${(h/2).toFixed(2)} A ${(ew/2).toFixed(2)} ${(eh/2).toFixed(2)} 0 1 0 ${(w/2+ew/2).toFixed(2)},${(h/2).toFixed(2)} Z`;
     }
     if (sh.special === 'gear') {
       const nTeeth2 = Math.max(3, Math.min(60, +(d.gearTeeth||12)));
@@ -1128,12 +1286,11 @@ function buildShapeSVG(d, w, h) {
   }
 
   let filterDef = '';
-  // Prepend gradient def to defs
-  if (_gradDef) filterDef = _gradDef + filterDef;
+  if (_gradDef) filterDef += _gradDef;
   if (d.shadow) {
     const sc = d.shadowColor || '#000000', sb = d.shadowBlur || 8;
     const pad = Math.max(30, Math.ceil(sb * 3));
-    filterDef = `<filter id="sh_${d.id}" x="-${pad}%" y="-${pad}%" width="${100+pad*2}%" height="${100+pad*2}%">` +
+    filterDef += `<filter id="sh_${d.id}" x="-${pad}%" y="-${pad}%" width="${100+pad*2}%" height="${100+pad*2}%">` +
       `<feDropShadow dx="3" dy="3" stdDeviation="${sb}" flood-color="${sc}" flood-opacity="0.6"/></filter>`;
   }
   const defsContent = (filterDef || '') + (defBlock || '');
@@ -1191,6 +1348,36 @@ function _shapeClipPath(d, w, h) {
     const _cfc2y = _clipFirst.cp1y != null ? _clipFirst.cp1y : (_clipFirst.cp2y != null ? _clipFirst.y*2-_clipFirst.cp2y : _clipFirst.y+(_clipLast.y-_clipFirst.y)*0.33);
     pd += ` C ${(_cfc1x*w).toFixed(1)} ${(_cfc1y*h).toFixed(1)} ${(_cfc2x*w).toFixed(1)} ${(_cfc2y*h).toFixed(1)} ${(_clipFirst.x*w).toFixed(1)} ${(_clipFirst.y*h).toFixed(1)} Z`;
     return `path('${pd}')`;
+  }
+  if (sh.special === 'trapezoid') {
+    const _tTop = d.trapTop != null ? +d.trapTop : 0.15;
+    const _tBot = d.trapBot != null ? +d.trapBot : 0.0;
+    return `path('${_trapPath(m, m, w-m*2, h-m*2, _tTop, _tBot, 0)}')`;
+  }
+  if (sh.special === 'noSymbol') {
+    const _sw=d&&d.sw!=null?+d.sw:2;
+    const _cr=Math.min(w,h)/2-_sw/2,_ir=_cr-Math.max(3,Math.round(_cr*0.28));
+    const _hw=Math.max(3,Math.round(_cr*0.28))/2,_s2=Math.SQRT1_2;
+    const f2=v=>v.toFixed(2),_ccx=w/2,_ccy=h/2;
+    const _tIn=Math.sqrt(Math.max(0,_ir*_ir-_hw*_hw));
+    const _R1x=_ccx+_tIn*_s2-_hw*_s2,_R1y=_ccy-_tIn*_s2-_hw*_s2;
+    const _R2x=_ccx-_tIn*_s2-_hw*_s2,_R2y=_ccy+_tIn*_s2-_hw*_s2;
+    const _L1x=_ccx+_tIn*_s2+_hw*_s2,_L1y=_ccy-_tIn*_s2+_hw*_s2;
+    const _L2x=_ccx-_tIn*_s2+_hw*_s2,_L2y=_ccy+_tIn*_s2+_hw*_s2;
+    const _o=`M ${f2(_ccx+_cr)},${f2(_ccy)} A ${f2(_cr)} ${f2(_cr)} 0 1 0 ${f2(_ccx-_cr)},${f2(_ccy)} A ${f2(_cr)} ${f2(_cr)} 0 1 0 ${f2(_ccx+_cr)},${f2(_ccy)} Z`;
+    const _h1=`M ${f2(_ccx)},${f2(_ccy-_ir)} A ${f2(_ir)} ${f2(_ir)} 0 0 1 ${f2(_R1x)},${f2(_R1y)} L ${f2(_R2x)},${f2(_R2y)} A ${f2(_ir)} ${f2(_ir)} 0 0 1 ${f2(_ccx-_ir)},${f2(_ccy)} A ${f2(_ir)} ${f2(_ir)} 0 0 1 ${f2(_ccx)},${f2(_ccy-_ir)} Z`;
+    const _h2=`M ${f2(_L1x)},${f2(_L1y)} A ${f2(_ir)} ${f2(_ir)} 0 0 1 ${f2(_ccx+_ir)},${f2(_ccy)} A ${f2(_ir)} ${f2(_ir)} 0 0 1 ${f2(_ccx)},${f2(_ccy+_ir)} A ${f2(_ir)} ${f2(_ir)} 0 0 1 ${f2(_L2x)},${f2(_L2y)} L ${f2(_L1x)},${f2(_L1y)} Z`;
+    return `path('${_o} ${_h1} ${_h2}')`;
+  }
+  if (sh.special === 'moon') {
+    const _mPhase = d.moonPhase != null ? +d.moonPhase : -0.5;
+    return _moonClipPath(w/2, h/2, (w-m*2)/2, (h-m*2)/2, _mPhase);
+  }
+  if (sh.special === 'gear') {
+    const _gTeeth = Math.max(3, Math.min(60, +(d.gearTeeth||12)));
+    const _gDepth = Math.max(0.05, Math.min(0.6, +(d.gearDepth!=null?d.gearDepth:0.25)));
+    const _gp = _gearPath(w/2, h/2, (w-m*2)/2, (h-m*2)/2, _gTeeth, _gDepth);
+    return `path('${_gp}')`;
   }
   // Polygon shapes — scale path points from 0-100 space to actual px
   if (sh.path) {
@@ -1260,6 +1447,53 @@ function _applyShapeClipPath(el, d) {
     hit.className = 'shape-hit-area';
     hit.style.cssText = 'position:absolute;inset:0;z-index:10;pointer-events:auto;cursor:move;background:transparent;';
     el.appendChild(hit);
+    return;
+  }
+  // Curve: transparent hit overlay covering stroke + fill area
+  if (sh && sh.special === 'curve') {
+    const d2 = slides[cur] && slides[cur].els.find(x => x.id === el.dataset.id);
+    if (d2 && d2.curvePoints) {
+      // Build an SVG hit area using the stroke path with wide transparent stroke
+      const hitSw = Math.max(20, (d2.sw || 2) + 16);
+      const cpts2 = d2.curvePoints;
+      let hitPath = `M ${(cpts2[0].x*w).toFixed(1)} ${(cpts2[0].y*h).toFixed(1)}`;
+      for (let ci = 1; ci < cpts2.length; ci++) {
+        const pp = cpts2[ci-1], cp = cpts2[ci];
+        const c1x = pp.cp2x != null ? pp.cp2x : pp.x, c1y = pp.cp2y != null ? pp.cp2y : pp.y;
+        const c2x = cp.cp1x != null ? cp.cp1x : cp.x, c2y = cp.cp1y != null ? cp.cp1y : cp.y;
+        hitPath += ` C ${(c1x*w).toFixed(1)} ${(c1y*h).toFixed(1)} ${(c2x*w).toFixed(1)} ${(c2y*h).toFixed(1)} ${(cp.x*w).toFixed(1)} ${(cp.y*h).toFixed(1)}`;
+      }
+      // Also close for fill area
+      const last2 = cpts2[cpts2.length-1], first2 = cpts2[0];
+      const fc1x = last2.cp2x != null ? last2.cp2x : (last2.cp1x != null ? last2.x*2-last2.cp1x : last2.x+(first2.x-last2.x)*0.33);
+      const fc1y = last2.cp2y != null ? last2.cp2y : (last2.cp1y != null ? last2.y*2-last2.cp1y : last2.y+(first2.y-last2.y)*0.33);
+      const fc2x = first2.cp1x != null ? first2.cp1x : (first2.cp2x != null ? first2.x*2-first2.cp2x : first2.x+(last2.x-first2.x)*0.33);
+      const fc2y = first2.cp1y != null ? first2.cp1y : (first2.cp2y != null ? first2.y*2-first2.cp2y : first2.y+(last2.y-first2.y)*0.33);
+      const closedPath = hitPath + ` C ${(fc1x*w).toFixed(1)} ${(fc1y*h).toFixed(1)} ${(fc2x*w).toFixed(1)} ${(fc2y*h).toFixed(1)} ${(first2.x*w).toFixed(1)} ${(first2.y*h).toFixed(1)} Z`;
+      const svgHit = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svgHit.style.cssText = `position:absolute;left:0;top:0;width:${w}px;height:${h}px;overflow:visible;pointer-events:none;z-index:10;cursor:move;`;
+      svgHit.setAttribute('viewBox', `0 0 ${w} ${h}`);
+      // Stroke path for hit testing (wide transparent stroke)
+      const hitStrokePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      hitStrokePath.setAttribute('d', hitPath);
+      hitStrokePath.setAttribute('fill', 'none');
+      hitStrokePath.setAttribute('stroke', 'transparent');
+      hitStrokePath.setAttribute('stroke-width', hitSw);
+      hitStrokePath.style.pointerEvents = 'stroke';
+      hitStrokePath.style.cursor = 'move';
+      // Fill path for hit testing
+      const hitFillPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      hitFillPath.setAttribute('d', closedPath);
+      hitFillPath.setAttribute('fill', 'transparent');
+      hitFillPath.setAttribute('stroke', 'none');
+      hitFillPath.style.pointerEvents = 'fill';
+      hitFillPath.style.cursor = 'move';
+      svgHit.appendChild(hitStrokePath);
+      svgHit.appendChild(hitFillPath);
+      svgHit.classList.add('shape-hit-area');
+      el.appendChild(svgHit);
+    }
+    el.style.pointerEvents = 'none';
     return;
   }
   // Cloud: el passes through clicks, SVG paths handle hit testing via visibleFill
@@ -1407,6 +1641,62 @@ function _arcPath(cx, cy, rx, ry, a1, a2, mode, m, cornerR) {
     +` L ${eS.lax.toFixed(2)} ${eS.lay.toFixed(2)} Z`;
 }
 
+
+
+
+// Build moon SVG using clipPath: outer circle minus offset inner circle
+// phase: 0=full circle, 0.5=half, 1=thin crescent right, -1=thin crescent left, wraps
+// Returns an SVG string (not path), or path string for clip-path use
+
+// Build trapezoid path from top-inset and bottom-inset parameters
+// trapTop: inset from each side at top (0=full width, 0.5=triangle)
+// trapBot: inset from each side at bottom
+function _trapPath(x, y, w, h, trapTop, trapBot, rx) {
+  const tl = Math.max(0, Math.min(w*0.49, trapTop * w));  // top-left x offset
+  const tr = Math.max(0, Math.min(w*0.49, trapTop * w));  // top-right x offset  
+  const bl = Math.max(0, Math.min(w*0.49, trapBot * w));
+  const br = Math.max(0, Math.min(w*0.49, trapBot * w));
+  const pts = [
+    {x: x+tl,   y: y},
+    {x: x+w-tr, y: y},
+    {x: x+w-br, y: y+h},
+    {x: x+bl,   y: y+h},
+  ];
+  if (rx > 0) return _roundedPolygonPath(pts, rx);
+  return `M ${pts[0].x},${pts[0].y} L ${pts[1].x},${pts[1].y} L ${pts[2].x},${pts[2].y} L ${pts[3].x},${pts[3].y} Z`;
+}
+function _moonPath(cx, cy, rx, ry, phase, cornerR) {
+  const p = Math.max(-1, Math.min(1, phase));
+  const absP = Math.abs(p);
+
+  const fe = `M ${(cx+rx).toFixed(2)},${cy.toFixed(2)} A ${rx.toFixed(2)} ${ry.toFixed(2)} 0 1 0 ${(cx-rx).toFixed(2)},${cy.toFixed(2)} A ${rx.toFixed(2)} ${ry.toFixed(2)} 0 1 0 ${(cx+rx).toFixed(2)},${cy.toFixed(2)} Z`;
+  if (absP >= 0.98) return fe;
+
+  const sign = p > 0 ? 1 : -1;
+  const ix = cx + sign * absP * rx;
+  const iyPart = 1 - absP * absP;
+  if (iyPart <= 0) return fe;
+  const iy = Math.sqrt(iyPart) * ry;
+  if (iy < 0.5) return fe;
+
+  const outerSweep = sign > 0 ? 0 : 1;
+  const innerSweep = 1 - outerSweep;
+  const f = v => v.toFixed(2);
+
+  return `M ${f(ix)},${f(cy-iy)} A ${f(rx)} ${f(ry)} 0 1 ${outerSweep} ${f(ix)},${f(cy+iy)} A ${f(rx)} ${f(ry)} 0 0 ${innerSweep} ${f(ix)},${f(cy-iy)} Z`;
+}
+
+function _moonSVG(cx, cy, rx, ry, phase, cornerR, fAttr, sAttr, extra, shadow, uid) {
+  const p = Math.max(-1, Math.min(1, phase));
+  const moonPath = _moonPath(cx, cy, rx, ry, p, cornerR);
+  return `<path d="${moonPath}" ${fAttr} ${sAttr} ${extra} ${shadow}/>`;
+}
+
+function _moonClipPath(cx, cy, rx, ry, phase) {
+  const p = Math.max(-1, Math.min(1, phase));
+  const moonPath = _moonPath(cx, cy, rx, ry, p, 0);
+  return `path('${moonPath}')`;
+}
 
 
 // Build gear path: nTeeth teeth with straight radial sides and arc top/bottom

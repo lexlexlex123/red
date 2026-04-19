@@ -575,6 +575,108 @@ function _repositionHandlesOverlay(el) {
 
 
 // ══════════════ STAR INNER-RADIUS HANDLE ══════════════
+
+// ══════════════ TRAPEZOID HANDLES ══════════════
+function _buildTrapHandles() {
+  document.querySelectorAll('.trap-handle').forEach(h => h.remove());
+  if (!sel || sel.dataset.type !== 'shape') return;
+  const d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (!d) return;
+  const isTrap = typeof SHAPES !== 'undefined' && SHAPES.find(s => s.id === d.shape)?.special === 'trapezoid';
+  if (!isTrap) return;
+  const canvas = document.getElementById('canvas');
+  if (!canvas) return;
+  const L=parseInt(sel.style.left)||0, T=parseInt(sel.style.top)||0;
+  const W=parseInt(sel.style.width)||1, H=parseInt(sel.style.height)||1;
+  const rot=parseFloat(sel.dataset.rot||0)*Math.PI/180;
+  const cosr=Math.cos(rot), sinr=Math.sin(rot);
+  const ecx=L+W/2, ecy=T+H/2;
+  function toCanvas(lx,ly){return{x:ecx+lx*cosr-ly*sinr,y:ecy+lx*sinr+ly*cosr};}
+  function makeTrapHandle(which) {
+    const isTop=which==='top';
+    const inset=isTop?(d.trapTop!=null?+d.trapTop:0.15):(d.trapBot!=null?+d.trapBot:0.0);
+    const lx=-W/2+inset*W, ly=isTop?-H/2:H/2;
+    const pos=toCanvas(lx,ly);
+    const h=document.createElement('div');
+    h.className='trap-handle'; h.dataset.which=which;
+    h.style.cssText=`position:absolute;width:12px;height:12px;border-radius:50%;background:#fbbf24;border:2px solid #fff;box-shadow:0 0 0 1.5px #f59e0b,0 2px 5px rgba(0,0,0,.5);left:${pos.x-6}px;top:${pos.y-6}px;cursor:ew-resize;z-index:10003;pointer-events:auto;`;
+    h.addEventListener('mousedown',ev=>{
+      ev.stopPropagation();ev.preventDefault();window._anyDragging=true;
+      const onMove=mv=>{
+        const freshD=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+        if(!freshD)return;
+        const cv=_toCanvasCoords(mv.clientX,mv.clientY);
+        const dx=cv.x-ecx,dy=cv.y-ecy;
+        const lx2=dx*cosr+dy*sinr;
+        let newInset=(lx2+W/2)/W;
+        newInset=Math.max(0,Math.min(0.49,Math.round(newInset*100)/100));
+        if(which==='top'){freshD.trapTop=newInset;sel.dataset.trapTop=newInset;}
+        else{freshD.trapBot=newInset;sel.dataset.trapBot=newInset;}
+        const nlx=-W/2+newInset*W, nly=isTop?-H/2:H/2;
+        const np=toCanvas(nlx,nly);
+        h.style.left=(np.x-6)+'px';h.style.top=(np.y-6)+'px';
+        renderShapeEl(sel,freshD);
+        if(typeof _applyShapeClipPath==='function')_applyShapeClipPath(sel,freshD);
+        document.querySelectorAll('.trap-handle').forEach(th=>{
+          if(th!==h){const tw=th.dataset.which;const ti=tw==='top'?(freshD.trapTop||0.15):(freshD.trapBot||0);const tlx=-W/2+ti*W;const tly=tw==='top'?-H/2:H/2;const tp2=toCanvas(tlx,tly);th.style.left=(tp2.x-6)+'px';th.style.top=(tp2.y-6)+'px';}
+        });
+        const inp=document.getElementById(which==='top'?'sh-trap-top':'sh-trap-bot');
+        if(inp)inp.value=Math.round(newInset*100);
+      };
+      const onUp=()=>{window._anyDragging=false;document.removeEventListener('mousemove',onMove);document.removeEventListener('mouseup',onUp);if(typeof save==='function')save();if(typeof drawThumbs==='function')drawThumbs();if(typeof saveState==='function')saveState();};
+      document.addEventListener('mousemove',onMove);document.addEventListener('mouseup',onUp);
+    });
+    canvas.appendChild(h);
+  }
+  makeTrapHandle('top');makeTrapHandle('bot');
+}
+
+// ══════════════ MOON PHASE HANDLE ══════════════
+function _buildMoonHandle() {
+  document.querySelectorAll('.moon-handle').forEach(h => h.remove());
+  if (!sel || sel.dataset.type !== 'shape') return;
+  const d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (!d) return;
+  const isMoon = typeof SHAPES !== 'undefined' && SHAPES.find(s => s.id === d.shape)?.special === 'moon';
+  if (!isMoon) return;
+  const canvas = document.getElementById('canvas');
+  if (!canvas) return;
+  const L=parseInt(sel.style.left)||0, T=parseInt(sel.style.top)||0;
+  const W=parseInt(sel.style.width)||1, H=parseInt(sel.style.height)||1;
+  const rot=parseFloat(sel.dataset.rot||0)*Math.PI/180;
+  const cosr=Math.cos(rot), sinr=Math.sin(rot);
+  const ecx=L+W/2, ecy=T+H/2;
+  function handlePosFromPhase(phase){const lx=phase*(W/2),ly=0;return{x:ecx+lx*cosr-ly*sinr,y:ecy+lx*sinr+ly*cosr};}
+  const phase=d.moonPhase!=null?+d.moonPhase:-0.5;
+  const pos=handlePosFromPhase(phase);
+  const h=document.createElement('div');
+  h.className='moon-handle';
+  h.style.cssText=`position:absolute;width:12px;height:12px;border-radius:50%;background:#fbbf24;border:2px solid #fff;box-shadow:0 0 0 1.5px #f59e0b,0 2px 5px rgba(0,0,0,.5);left:${pos.x-6}px;top:${pos.y-6}px;cursor:ew-resize;z-index:10003;pointer-events:auto;`;
+  h.addEventListener('mousedown',ev=>{
+    ev.stopPropagation();ev.preventDefault();window._anyDragging=true;
+    const onMove=mv=>{
+      const freshD=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+      if(!freshD)return;
+      const cv=_toCanvasCoords(mv.clientX,mv.clientY);
+      const dx=cv.x-ecx,dy=cv.y-ecy;
+      const lx=dx*cosr+dy*sinr;
+      let newPhase=Math.max(-1,Math.min(1,lx/(W/2)));
+      newPhase=Math.round(newPhase*100)/100;
+      freshD.moonPhase=newPhase;sel.dataset.moonPhase=newPhase;
+      const np=handlePosFromPhase(newPhase);
+      h.style.left=(np.x-6)+'px';h.style.top=(np.y-6)+'px';
+      renderShapeEl(sel,freshD);
+      if(typeof _applyShapeBlur==='function')_applyShapeBlur(sel);
+      if(typeof _applyShapeClipPath==='function')_applyShapeClipPath(sel,freshD);
+      const inp=document.getElementById('sh-moon-phase');
+      if(inp)inp.value=Math.round(newPhase*100);
+    };
+    const onUp=()=>{window._anyDragging=false;document.removeEventListener('mousemove',onMove);document.removeEventListener('mouseup',onUp);if(typeof save==='function')save();if(typeof drawThumbs==='function')drawThumbs();if(typeof saveState==='function')saveState();};
+    document.addEventListener('mousemove',onMove);document.addEventListener('mouseup',onUp);
+  });
+  canvas.appendChild(h);
+}
+
 function _buildStarHandle() {
   document.querySelectorAll('.star-handle').forEach(h => h.remove());
   if (!sel || sel.dataset.type !== 'shape') return;
@@ -822,7 +924,7 @@ function _updateHandlesOverlay(){
   overlay.style.pointerEvents = 'none'; // container passes through, only handles have pointer-events:auto
 
   const el = typeof sel !== 'undefined' ? sel : null;
-  if (!el) { overlay.style.pointerEvents = 'none'; document.querySelectorAll('.arc-handle').forEach(h=>h.remove()); document.querySelectorAll('.star-handle').forEach(h=>h.remove()); document.querySelectorAll('.para-handle').forEach(h=>h.remove()); document.querySelectorAll('.chev-handle').forEach(h=>h.remove()); return; }
+  if (!el) { overlay.style.pointerEvents = 'none'; document.querySelectorAll('.arc-handle,.star-handle,.para-handle,.chev-handle,.trap-handle,.moon-handle').forEach(h=>h.remove()); return; }
   // Don't show overlay handles during crop mode — crop handles take over
   if (el.dataset.cropMode === 'true') return;
   // In curve edit mode: hide resize/rotation handles (only curve editor handles shown)
@@ -933,6 +1035,10 @@ function _updateHandlesOverlay(){
   // Reposition if exists, rebuild if missing or shape changed
   // ── Chevron depth handle ──
   _buildChevronHandle();
+  // ── Trapezoid handles ──
+  _buildTrapHandles();
+  // ── Moon phase handle ──
+  _buildMoonHandle();
   // ── Curve bezier editor ──
   _buildCurveEditor();
 
@@ -1605,7 +1711,12 @@ function _buildCurveEditor() {
   function commit() {
     sel.dataset.curvePoints = JSON.stringify(d.curvePoints);
     sel.dataset.curveClosed = d.curveClosed ? '1' : '0';
-    if (typeof renderShapeEl === 'function') renderShapeEl(sel, d);
+    // Always use fresh d from slides for rendering (preserves fill, stroke etc. changes)
+    const _freshD = (slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id)) || d;
+    // Sync curvePoints from closure into freshD
+    _freshD.curvePoints = d.curvePoints;
+    _freshD.curveClosed = d.curveClosed;
+    if (typeof renderShapeEl === 'function') renderShapeEl(sel, _freshD);
   }
   function commitFinal() {
     commit();
@@ -1643,10 +1754,12 @@ function _buildCurveEditor() {
     return { segIdx: bestSeg, t: bestT, dist: bestDist };
   }
 
-  // Add canvas mousedown to detect drags on the curve line
-  const _cvLineDrag = canvas.addEventListener('mousedown', function _cvLineDragFn(ev) {
+  // Add curve line drag handler on document in CAPTURE phase
+  // so it fires before element-level listeners (14-drag.js)
+  function _cvLineDragFn(ev) {
     if (!window._curveEditMode || window._curveDragging || window._anyDragging) return;
     if (!_curveEditing) return;
+    if (ev.button !== 0) return;
     const cv = _toCanvasCoords(ev.clientX, ev.clientY);
     const closest = _closestOnCurve(cv.x, cv.y);
     if (closest.dist > 40) return; // not near the curve
@@ -1664,23 +1777,23 @@ function _buildCurveEditor() {
     const ptA = pts[pi], ptB = pts[pj];
     const startN = toNorm(cv.x, cv.y);
 
-    let startX = cv.x, startY = cv.y;
+    // Track position in normalized coords to avoid drift
+    let prevNorm = toNorm(cv.x, cv.y);
+    let startCanvas = {x: cv.x, y: cv.y};
     let dragged = false;
 
     const onMove = (mv) => {
       const c2 = _toCanvasCoords(mv.clientX, mv.clientY);
-      const dx = c2.x - startX, dy = c2.y - startY;
-      if (!dragged && Math.hypot(dx, dy) < 3) return;
+      if (!dragged && Math.hypot(c2.x - startCanvas.x, c2.y - startCanvas.y) < 3) return;
       dragged = true;
-      // Convert displacement to normalized coords
-      const n0 = toNorm(startX, startY);
-      const n1 = toNorm(c2.x, c2.y);
-      const ddx = n1.x - n0.x, ddy = n1.y - n0.y;
+      // Delta in normalized coords — computed from previous frame to avoid accumulation
+      const curNorm = toNorm(c2.x, c2.y);
+      const ddx = curNorm.x - prevNorm.x, ddy = curNorm.y - prevNorm.y;
+      prevNorm = curNorm;
       // Apply to both handles: ptA.cp2 and ptB.cp1
       const t = closest.t;
-      // Weight by t (drag near A affects A more, near B affects B more)
       const wA = 1 - t, wB = t;
-      const hDist = 0.3; // handle length as fraction of segment
+      const hDist = 0.3;
       if (ptA.cp2x == null) {
         ptA.cp2x = ptA.x + (ptB.x - ptA.x) * hDist;
         ptA.cp2y = ptA.y + (ptB.y - ptA.y) * hDist;
@@ -1709,7 +1822,6 @@ function _buildCurveEditor() {
         const len1bl = Math.hypot(dx1b, dy1b) || 0.001;
         ptB.cp2x = ptB.x - dx1b/len1bl*len1b; ptB.cp2y = ptB.y - dy1b/len1bl*len1b;
       }
-      startX = c2.x; startY = c2.y;
       commit();
     };
 
@@ -1719,24 +1831,52 @@ function _buildCurveEditor() {
       window._anyDragging = false;
       window._curveDragging = false;
       if (dragged) {
-        if (typeof _normalizeCurvePoints === 'function') _normalizeCurvePoints(d.curvePoints, d.curveClosed);
+        // Sync closure d.curvePoints back to slides and dataset
+        // Read fresh d from slides to preserve any sw changes made during this session
+        const freshD = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
+        if (freshD) {
+          // Merge our edited curvePoints into freshD (preserve sw from freshD)
+          const editedPts = d.curvePoints;
+          if (freshD.curvePoints && editedPts) {
+            freshD.curvePoints.forEach((fp, i) => {
+              if (editedPts[i]) {
+                fp.x = editedPts[i].x; fp.y = editedPts[i].y;
+                fp.cp1x = editedPts[i].cp1x; fp.cp1y = editedPts[i].cp1y;
+                fp.cp2x = editedPts[i].cp2x; fp.cp2y = editedPts[i].cp2y;
+                // Preserve sw from freshD (don't overwrite with closure's sw)
+              }
+            });
+            sel.dataset.curvePoints = JSON.stringify(freshD.curvePoints);
+          }
+        } else {
+          commit(); // fallback
+        }
         if (typeof save === 'function') save();
         if (typeof drawThumbs === 'function') drawThumbs();
         if (typeof saveState === 'function') saveState();
-        fullRebuild();
+        if (typeof _clearCurveEditor === 'function') _clearCurveEditor();
+        if (typeof _buildCurveEditor === 'function') _buildCurveEditor();
       }
     };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
-  });
-  // Store cleanup for canvas drag handler
-  canvas._cvLineDragFn = _cvLineDrag;
-  _curveHandles.push(null); // placeholder so _clearCurveEditor knows to clean up
+  }
+  // Store cleanup: use capture phase so we intercept before element listeners
+  document.addEventListener('mousedown', _cvLineDragFn, true);
+  canvas._cvLineDragFn = _cvLineDragFn;
+  _curveHandles.push(null);
 
   // Update add-node button state based on selection
   function updateButtonState() {
     const addBtn = document.getElementById('sh-curve-add-btn');
-    if (addBtn) addBtn.disabled = _curveSelPts.size !== 2;
+    if (addBtn) {
+      // Enable when 2 adjacent selected, OR when 1 endpoint selected (for extension)
+      const selArr = [..._curveSelPts].sort((a,b)=>a-b);
+      const n = d.curvePoints.length;
+      const twoAdj = selArr.length === 2 && (selArr[1]===selArr[0]+1 || (d.curveClosed && selArr[0]===0 && selArr[1]===n-1));
+      const oneEndpoint = selArr.length === 1 && !d.curveClosed && (selArr[0]===0 || selArr[0]===n-1);
+      addBtn.disabled = !(twoAdj || oneEndpoint);
+    }
     const delBtn = document.getElementById('sh-curve-del-btn');
     if (delBtn) delBtn.disabled = _curveSelPts.size !== 1 || d.curvePoints.length <= 2;
   }
@@ -1915,7 +2055,7 @@ function _clearCurveEditor(clearSel) {
   // Remove canvas line-drag handler if present
   const cv2 = document.getElementById('canvas');
   if (cv2 && cv2._cvLineDragFn) {
-    cv2.removeEventListener('mousedown', cv2._cvLineDragFn);
+    document.removeEventListener('mousedown', cv2._cvLineDragFn, true);
     delete cv2._cvLineDragFn;
   }
 }
@@ -1925,18 +2065,77 @@ function curveAddNode() {
   const d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
   if (!d || !d.curvePoints) return;
   const pts = d.curvePoints;
+  const n = pts.length;
+  const w = d.w || 200, h = d.h || 200;
+  // 50px in normalized coords
+  const dist50x = 50 / w, dist50y = 50 / h;
 
-  // Need exactly 2 selected adjacent points
   const selArr = [..._curveSelPts].sort((a,b) => a-b);
+
+  // ── Endpoint extension: single selected point at start or end ──
+  if (selArr.length === 1 && !d.curveClosed) {
+    const idx = selArr[0];
+    const isFirst = idx === 0;
+    const isLast  = idx === n - 1;
+
+    if (isFirst || isLast) {
+      const ep  = pts[idx];                          // endpoint
+      const adj = pts[isFirst ? 1 : n - 2];         // adjacent point
+
+      // Tangent direction at endpoint: from adj toward ep
+      let tx = ep.x - adj.x, ty = ep.y - adj.y;
+      const len = Math.hypot(tx, ty);
+      if (len > 0.0001) { tx /= len; ty /= len; }
+      else { tx = isFirst ? -1 : 1; ty = 0; }
+
+      // New point 50px further along the tangent direction
+      const nx = ep.x + tx * dist50x;
+      const ny = ep.y + ty * dist50y;
+
+      // Handle for the new endpoint (continues in same direction)
+      const cpDist = 0.33;
+      const newPt = {
+        x: nx, y: ny,
+        cp1x: nx - tx * cpDist * dist50x * 3,
+        cp1y: ny - ty * cpDist * dist50y * 3,
+        cp2x: nx + tx * cpDist * dist50x * 3,
+        cp2y: ny + ty * cpDist * dist50y * 3,
+        type: 'smooth'
+      };
+      // Also update the outgoing/incoming handle on the existing endpoint
+      if (isLast) {
+        if (!ep.cp2x) ep.cp2x = ep.x + tx * cpDist * dist50x * 3;
+        if (!ep.cp2y) ep.cp2y = ep.y + ty * cpDist * dist50y * 3;
+        pts.push(newPt);
+        _curveSelPts.clear();
+        _curveSelPts.add(n); // new last index
+      } else {
+        if (!ep.cp1x) ep.cp1x = ep.x - tx * cpDist * dist50x * 3;
+        if (!ep.cp1y) ep.cp1y = ep.y - ty * cpDist * dist50y * 3;
+        pts.unshift(newPt);
+        _curveSelPts.clear();
+        _curveSelPts.add(0);
+      }
+
+      if (typeof _normalizeCurvePoints === 'function') _normalizeCurvePoints(pts, d.curveClosed);
+      d.curvePoints = pts;
+      sel.dataset.curvePoints = JSON.stringify(pts);
+      if (typeof renderShapeEl === 'function') renderShapeEl(sel, d);
+      _clearCurveEditor();
+      _buildCurveEditor();
+      if (typeof save === 'function') save();
+      if (typeof saveState === 'function') saveState();
+      return;
+    }
+  }
+
+  // ── Default: insert midpoint between two selected adjacent points ──
   if (selArr.length === 2) {
     const [ia, ib] = selArr;
-    const n = pts.length;
-    // Adjacent check (also handles closed wrap-around)
     const adjacent = (ib === ia + 1) || (d.curveClosed && ia === 0 && ib === n-1);
     if (adjacent) {
-      const [pi, pj] = ib === ia + 1 ? [ia, ib] : [ib, ia]; // pi is "before" pj on the curve
+      const [pi, pj] = ib === ia + 1 ? [ia, ib] : [ib, ia];
       const a = pts[pi], b = pts[pj];
-      // Insert midpoint between a and b
       const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
       const newPt = {
         x: mx, y: my,
@@ -1944,7 +2143,7 @@ function curveAddNode() {
         cp2x: mx + (b.x - a.x) * 0.1, cp2y: my + (b.y - a.y) * 0.1,
         type: 'smooth'
       };
-      const insertIdx = ib === ia + 1 ? ib : 1; // insert after pi
+      const insertIdx = ib === ia + 1 ? ib : 1;
       pts.splice(insertIdx, 0, newPt);
       _curveSelPts.clear();
       _curveSelPts.add(insertIdx);

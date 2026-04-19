@@ -292,11 +292,93 @@ function drawThumbShape(ctx,d,sx,sy){
     }
     ctx.closePath();ctx.fill();if(sw>0)ctx.stroke();
     ctx.restore();
+  } else if(special==='gear') {
+    // Gear shape using _gearPath
+    ctx.save();
+    ctx.fillStyle=fill;
+    if(sw>0){ctx.strokeStyle=d.stroke||'#1d4ed8';ctx.lineWidth=sw;}
+    try {
+      const _nT=Math.max(3,Math.min(60,+(d.gearTeeth||12)));
+      const _gD=Math.max(0.05,Math.min(0.6,+(d.gearDepth!=null?d.gearDepth:0.25)));
+      if(typeof _gearPath==='function'){
+        const _gp=_gearPath(x+w/2,y+h/2,w/2,h/2,_nT,_gD);
+        const _p2=new Path2D(_gp);ctx.fill(_p2);if(sw>0)ctx.stroke(_p2);
+      } else {
+        ctx.beginPath();ctx.ellipse(x+w/2,y+h/2,w/2,h/2,0,0,Math.PI*2);ctx.fill();
+      }
+    } catch(e){ ctx.beginPath();ctx.ellipse(x+w/2,y+h/2,w/2,h/2,0,0,Math.PI*2);ctx.fill(); }
+    ctx.restore();
+  } else if(special==='trapezoid') {
+    const tTop=d.trapTop!=null?+d.trapTop:0.15;
+    const tBot=d.trapBot!=null?+d.trapBot:0.0;
+    const tl=tTop*w, bl=tBot*w;
+    ctx.save();ctx.fillStyle=fill;
+    if(sw>0){ctx.strokeStyle=d.stroke||'#1d4ed8';ctx.lineWidth=sw;}
+    ctx.beginPath();
+    ctx.moveTo(x+tl,y);ctx.lineTo(x+w-tl,y);ctx.lineTo(x+w-bl,y+h);ctx.lineTo(x+bl,y+h);
+    ctx.closePath();ctx.fill();if(sw>0)ctx.stroke();
+    ctx.restore();
+  } else if(special==='moon') {
+    const phase=d.moonPhase!=null?+d.moonPhase:-0.5;
+    ctx.save();ctx.fillStyle=fill;
+    if(sw>0){ctx.strokeStyle=d.stroke||'#1d4ed8';ctx.lineWidth=sw;}
+    try {
+      if(typeof _moonPath==='function'){
+        const _mp=_moonPath(x+w/2,y+h/2,w/2,h/2,phase,0);
+        const _p2=new Path2D(_mp);ctx.fill(_p2);if(sw>0)ctx.stroke(_p2);
+      } else {
+        ctx.beginPath();ctx.ellipse(x+w/2,y+h/2,w/2,h/2,0,0,Math.PI*2);ctx.fill();
+      }
+    } catch(e){ ctx.beginPath();ctx.ellipse(x+w/2,y+h/2,w/2,h/2,0,0,Math.PI*2);ctx.fill(); }
+    ctx.restore();
+  } else if(special==='noSymbol') {
+    // No-entry sign: ring + diagonal band using same path structure as shapeEl
+    ctx.save();ctx.fillStyle=fill;
+    if(sw>0){ctx.strokeStyle=d.stroke||'#1d4ed8';ctx.lineWidth=sw;}
+    const _lw=Math.max(1,Math.round(Math.min(w,h)/2*0.28));
+    const _ir=Math.min(w,h)/2-_lw, _hw=_lw/2, _s2=Math.SQRT1_2;
+    const _ccx=x+w/2, _ccy=y+h/2, _cr=Math.min(w,h)/2;
+    const _tIn=Math.sqrt(Math.max(0,_ir*_ir-_hw*_hw));
+    const _R1x=_ccx+_tIn*_s2-_hw*_s2,_R1y=_ccy-_tIn*_s2-_hw*_s2;
+    const _R2x=_ccx-_tIn*_s2-_hw*_s2,_R2y=_ccy+_tIn*_s2-_hw*_s2;
+    const _L1x=_ccx+_tIn*_s2+_hw*_s2,_L1y=_ccy-_tIn*_s2+_hw*_s2;
+    const _L2x=_ccx-_tIn*_s2+_hw*_s2,_L2y=_ccy+_tIn*_s2+_hw*_s2;
+    const _outerPath=`M ${_ccx+_cr} ${_ccy} A ${_cr} ${_cr} 0 1 0 ${_ccx-_cr} ${_ccy} A ${_cr} ${_cr} 0 1 0 ${_ccx+_cr} ${_ccy} Z`;
+    const _h1=`M ${_ccx} ${_ccy-_ir} A ${_ir} ${_ir} 0 0 1 ${_R1x} ${_R1y} L ${_R2x} ${_R2y} A ${_ir} ${_ir} 0 0 1 ${_ccx-_ir} ${_ccy} A ${_ir} ${_ir} 0 0 1 ${_ccx} ${_ccy-_ir} Z`;
+    const _h2=`M ${_L1x} ${_L1y} A ${_ir} ${_ir} 0 0 1 ${_ccx+_ir} ${_ccy} A ${_ir} ${_ir} 0 0 1 ${_ccx} ${_ccy+_ir} A ${_ir} ${_ir} 0 0 1 ${_L2x} ${_L2y} L ${_L1x} ${_L1y} Z`;
+    try {
+      const _p=new Path2D(_outerPath+' '+_h1+' '+_h2);
+      ctx.fill(_p,'nonzero');
+      if(sw>0){
+        ctx.beginPath();ctx.arc(_ccx,_ccy,_cr,0,Math.PI*2);ctx.stroke();
+        ctx.beginPath();ctx.arc(_ccx,_ccy,_ir,0,Math.PI*2);ctx.stroke();
+        const _tOut=Math.sqrt(_cr*_cr-_hw*_hw);
+        ctx.beginPath();
+        ctx.moveTo(_ccx+_tOut*_s2-_hw*_s2,_ccy-_tOut*_s2-_hw*_s2);ctx.lineTo(_R1x,_R1y);
+        ctx.moveTo(_R2x,_R2y);ctx.lineTo(_ccx-_tOut*_s2-_hw*_s2,_ccy+_tOut*_s2-_hw*_s2);
+        ctx.moveTo(_ccx+_tOut*_s2+_hw*_s2,_ccy-_tOut*_s2+_hw*_s2);ctx.lineTo(_L1x,_L1y);
+        ctx.moveTo(_L2x,_L2y);ctx.lineTo(_ccx-_tOut*_s2+_hw*_s2,_ccy+_tOut*_s2+_hw*_s2);
+        ctx.stroke();
+      }
+    } catch(e){ ctx.beginPath();ctx.ellipse(x+w/2,y+h/2,w/2,h/2,0,0,Math.PI*2);ctx.fill(); }
+    ctx.restore();
   } else if(special==='callout') {
     ctx.save();
     ctx.fillStyle=fill;if(sw>0){ctx.strokeStyle=d.stroke||'#1d4ed8';ctx.lineWidth=sw;}
     ctx.beginPath();ctx.roundRect(x,y,w,h*0.75,+(d.rx||12)*Math.min(sx,sy));ctx.fill();if(sw>0)ctx.stroke();
     ctx.beginPath();ctx.moveTo(x+w*0.3,y+h*0.75);ctx.lineTo(x+w*0.2,y+h);ctx.lineTo(x+w*0.45,y+h*0.75);ctx.fill();
+    ctx.restore();
+  } else if(sh&&sh.path&&/[QqCc]/.test(sh.path)) {
+    // Path with curves (Q/C): use Path2D with scaled coordinates
+    ctx.save();ctx.fillStyle=fill;
+    if(sw>0){ctx.strokeStyle=d.stroke||'#1d4ed8';ctx.lineWidth=sw;}
+    try {
+      const _scaledPath=sh.path.replace(/([-\d.]+(?:\.\d+)?)/g,(v,_,off,str)=>{
+        const nums=(str.slice(0,off).match(/([-\d.]+(?:\.\d+)?)/g)||[]).length;
+        return nums%2===0?String(x+(+v-5)/90*w):String(y+(+v-5)/90*h);
+      });
+      const _p2=new Path2D(_scaledPath);ctx.fill(_p2);if(sw>0)ctx.stroke(_p2);
+    } catch(e){ ctx.fillRect(x,y,w,h); }
     ctx.restore();
   } else if(sh&&sh.path){
     // Generic path-based shape: parse M/L/Z and scale from 0-100 space

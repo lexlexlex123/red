@@ -215,8 +215,7 @@ const SHAPES=[
   {id:'chevronLeft',name:'Шеврон ←',path:'M 95 5 L 30 5 L 5 50 L 30 95 L 95 95 L 70 50 Z'},
   {id:'callout',name:'Выноска',path:null,special:'callout'},
   {id:'calloutRound',name:'Выноска О',path:null,special:'callout'},
-  {id:'trapezoid',name:'Трапеция',path:'M 15 95 L 85 95 L 95 5 L 5 5 Z'},
-  {id:'trapezoidFlip',name:'Трапеция ↕',path:'M 5 95 L 95 95 L 85 5 L 15 5 Z'},
+  {id:'trapezoid',name:'Трапеция',path:null,special:'trapezoid'},
   {id:'cylinder',name:'Цилиндр',path:'M 5 20 Q 5 5 50 5 Q 95 5 95 20 L 95 80 Q 95 95 50 95 Q 5 95 5 80 Z'},
   {id:'cube',name:'Куб',path:'M 25 5 L 95 5 L 95 70 L 25 70 Z M 25 5 L 5 25 L 5 90 L 25 70 Z M 5 90 L 75 90 L 95 70'},
   {id:'brace',name:'Скобка',path:'M 70 5 Q 50 5 50 25 L 50 42 Q 50 50 35 50 Q 50 50 50 58 L 50 75 Q 50 95 70 95'},
@@ -230,7 +229,7 @@ const SHAPES=[
   {id:'badge',name:'Значок',path:'M 50 5 L 63 15 L 80 12 L 85 28 L 95 38 L 88 55 L 95 70 L 83 80 L 80 95 L 63 90 L 50 95 L 37 90 L 20 95 L 17 80 L 5 70 L 12 55 L 5 38 L 15 28 L 20 12 L 37 15 Z'},
   {id:'funnel',name:'Воронка',path:'M 5 5 L 95 5 L 65 50 L 65 90 L 35 90 L 35 50 Z'},
   {id:'gear',name:'Шестерня',path:null,special:'gear'},
-  {id:'moon',name:'Луна',path:'M 80 15 Q 45 20 40 50 Q 35 80 65 90 Q 30 95 15 70 Q 5 50 20 28 Q 35 5 80 15 Z'},
-  {id:'noSymbol',name:'Запрет',path:'M 50 5 A 45 45 0 1 0 50 95 A 45 45 0 1 0 50 5 Z M 20 20 L 80 80'},
+  {id:'moon',name:'Луна',path:null,special:'moon'},
+  {id:'noSymbol',name:'Запрет',path:null,special:'noSymbol'},
 ];
 // APPLETS defined in 02-applets.js (after getXHTML functions)
