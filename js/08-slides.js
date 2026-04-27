@@ -63,6 +63,9 @@ function save(){
       // Strip layout/background props from cs (stored separately or computed dynamically)
       let cs=c.getAttribute('style')||'';
       cs=cs.replace(/\bbackground\s*:[^;]+;?/gi,'')
+           .replace(/-webkit-background-clip\s*:[^;]+;?/gi,'')
+           .replace(/\bbackground-clip\s*:[^;]+;?/gi,'')
+           .replace(/-webkit-text-fill-color\s*:[^;]+;?/gi,'')
            .replace(/\bdisplay\s*:[^;]+;?/gi,'')
            .replace(/\bflex-direction\s*:[^;]+;?/gi,'')
            .replace(/\bjustify-content\s*:[^;]+;?/gi,'')
@@ -85,6 +88,7 @@ function save(){
       if(el.dataset.textBgGrad==='1'){d.textBgGrad=true;} else {delete d.textBgGrad;}
       if(el.dataset.textBgCol2)d.textBgCol2=el.dataset.textBgCol2; else delete d.textBgCol2;
       if(el.dataset.textBgDir!=null)d.textBgDir=+el.dataset.textBgDir; else delete d.textBgDir;
+      if(el.dataset.textColorGrad==='1'){d.textColorGrad=true;d.textColorGrad1=el.dataset.textColorGrad1||'';d.textColorGrad2=el.dataset.textColorGrad2||'';d.textColorGradDir=+(el.dataset.textColorGradDir||90);}else{delete d.textColorGrad;delete d.textColorGrad1;delete d.textColorGrad2;delete d.textColorGradDir;}
       // Table bg opacity/blur — stored in dataset.tableData via _tblSaveToDataset
       if(d.type==='table'&&_od){
         if(_od.tableBgOp!=null)d.tableBgOp=_od.tableBgOp;
@@ -249,6 +253,7 @@ function save(){
       if(el.dataset.textBgGrad==='1'){d.textBgGrad=true;} else {delete d.textBgGrad;}
       if(el.dataset.textBgCol2)d.textBgCol2=el.dataset.textBgCol2; else delete d.textBgCol2;
       if(el.dataset.textBgDir!=null)d.textBgDir=+el.dataset.textBgDir; else delete d.textBgDir;
+      if(el.dataset.textColorGrad==='1'){d.textColorGrad=true;d.textColorGrad1=el.dataset.textColorGrad1||'';d.textColorGrad2=el.dataset.textColorGrad2||'';d.textColorGradDir=+(el.dataset.textColorGradDir||90);}else{delete d.textColorGrad;delete d.textColorGrad1;delete d.textColorGrad2;delete d.textColorGradDir;}
       if(el.dataset.textBorderW&&+el.dataset.textBorderW>0){d.textBorderW=+el.dataset.textBorderW;d.textBorderColor=el.dataset.textBorderColor||'#ffffff';d.textBorderStyle=el.dataset.textBorderStyle||'solid';}
       if(el.dataset.rx_tl||el.dataset.rx_tr||el.dataset.rx_bl||el.dataset.rx_br){d.rx_tl=+(el.dataset.rx_tl||0);d.rx_tr=+(el.dataset.rx_tr||0);d.rx_bl=+(el.dataset.rx_bl||0);d.rx_br=+(el.dataset.rx_br||0);}
       const _odmd=oldElsById[d.id];if(_odmd){if(_odmd.textBgScheme!==undefined)d.textBgScheme=_odmd.textBgScheme;if(_odmd.borderScheme!==undefined)d.borderScheme=_odmd.borderScheme;}

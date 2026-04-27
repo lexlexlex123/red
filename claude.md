@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # claude.md — Документация проекта «Слайды»
 
 ## Обзор
@@ -12,13 +16,37 @@
 
 ---
 
+## Запуск
+
+Открыть `index.html` напрямую в браузере. Интернет не требуется.
+
+Для корректной работы некоторых фич (CORS, SharedArrayBuffer) — через HTTP-сервер:
+```
+run.bat          # запускает python -m http.server 8000 и открывает браузер
+```
+
+После добавления новых изображений в `images/` — обновить индекс:
+```
+update-gallery.bat
+```
+
+---
+
 ## Структура файлов
 
 ```
 project/
-├── index.html              # Разметка интерфейса
+├── index.html              # Разметка интерфейса и порядок подключения скриптов
 ├── css/
 │   └── styles.css          # Все стили приложения
+├── config/                 # Конфигурационные модули (см. раздел ниже)
+│   ├── canvas.js           # CFG_CANVAS — размер слайда, сетка
+│   ├── animations.js       # CFG_ANIMATIONS — настройки анимаций
+│   ├── themes.js           # CFG_THEMES — кастомные темы
+│   ├── shapes.js           # CFG_SHAPES — кастомные/скрытые фигуры
+│   ├── ui.js               # CFG_UI — тема, язык, undo-лимит
+│   ├── persist.js          # CFG_PERSIST — ключ localStorage
+│   └── loader.js           # Применяет все CFG_* к приложению
 ├── libs/
 │   ├── jszip.min.js        # Импорт PPTX
 │   ├── qrcode.min.js       # QR-аплет
@@ -40,12 +68,50 @@ project/
     ├── 22-undo.js          # doUndo(), doRedo(), pushUndo()
     ├── 24-preview.js       # Показ, fireAnim, float/swing/dance на child wrapper
     ├── 26-export.js        # Экспорт в HTML (inline buildShapeSVG)
+    ├── 27-persist.js       # saveState(), loadState(), localStorage
     ├── 28-multisel.js      # Множественное выделение, rubber-band + магнит
+    ├── 33-objects.js       # Панель объектов, слои, z-order
+    ├── 33b-autoplace.js    # autoPlaceAll() — автоматическая компоновка
+    ├── 36-formula.js       # LaTeX-формулы через MathJax
+    ├── 37-graph.js         # Графики Chart.js
+    ├── 38-connectors.js    # Bezier-соединители
     ├── 41-lego.js          # LEGO: #lego-layer, slope/stair, коллизии, z-order
     ├── 44-group.js         # Группировка: groupSelected(), resize, вращение
     ├── 45-media.js         # Аудио/видео, триггеры
     └── 50-voice.js         # Голосовое управление (Web Speech API ru-RU)
 ```
+
+Порядок загрузки скриптов в `index.html`: сначала все `js/*.js` (в числовом порядке),
+затем `config/*.js` (по надобности), затем `config/loader.js`, затем `boot()`.
+
+---
+
+## Система конфигурации (config/)
+
+Файлы в `config/` — независимые модули для настройки без правки ядра.
+Каждый определяет `window.CFG_*` объект. `config/loader.js` применяет их все к приложению.
+
+**Подключение:** добавить `<script>` теги в `index.html` перед `boot()`:
+```html
+<script src="config/canvas.js"></script>
+<script src="config/loader.js"></script>
+<script>boot();</script>
+```
+
+Каждый блок в `loader.js` обёрнут в `try/catch` — ошибка в одном конфиге не ломает другие.
+
+Доступные конфиги:
+| Файл | Объект | Что настраивает |
+|------|--------|-----------------|
+| `canvas.js` | `CFG_CANVAS` | Размер слайда, шаг сетки, snap |
+| `animations.js` | `CFG_ANIMATIONS` | Доступные анимации, дефолты |
+| `themes.js` | `CFG_THEMES` | Добавить/заменить встроенные темы |
+| `shapes.js` | `CFG_SHAPES` | Кастомные фигуры, скрытие встроенных |
+| `backgrounds.js` | `CFG_BACKGROUNDS` | Кастомные фоны |
+| `ui.js` | `CFG_UI` | Тема (light/dark), язык, скрыть вкладки |
+| `persist.js` | `CFG_PERSIST` | Ключ localStorage (`storageKey`) |
+| `pagenum.js` | `CFG_PAGENUM` | Нумерация слайдов по умолчанию |
+| `applets.js` | `CFG_APPLETS` | Кастомные HTML-аплеты |
 
 ---
 

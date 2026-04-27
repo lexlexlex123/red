@@ -742,11 +742,22 @@ function mkEl(d){
     if(d.textBgCol2)el.dataset.textBgCol2=d.textBgCol2; else delete el.dataset.textBgCol2;
     if(d.textBgDir!=null)el.dataset.textBgDir=d.textBgDir;
     if(d.textBgBlur>0)el.dataset.textBgBlur=d.textBgBlur;
+    if(d.textColorGrad){
+      el.dataset.textColorGrad='1';
+      if(d.textColorGrad1)el.dataset.textColorGrad1=d.textColorGrad1;
+      if(d.textColorGrad2)el.dataset.textColorGrad2=d.textColorGrad2;
+      if(d.textColorGradDir!=null)el.dataset.textColorGradDir=d.textColorGradDir;
+    }
     if(typeof applyTextBg==='function'){
       applyTextBg(el);
-      // Second pass in next frame in case first call ran before layout
-      requestAnimationFrame(()=>{ if(el.isConnected&&typeof applyTextBg==='function')applyTextBg(el); });
+      // Second pass in next frame; also re-apply text color gradient after bg clears
+      requestAnimationFrame(()=>{
+        if(!el.isConnected)return;
+        if(typeof applyTextBg==='function')applyTextBg(el);
+        if(el.dataset.textColorGrad==='1'&&typeof applyTextColorGrad==='function')applyTextColorGrad(el);
+      });
     }
+    if(d.textColorGrad&&typeof applyTextColorGrad==='function')applyTextColorGrad(el);
   }
   if(d.valign&&d.type==='text'&&typeof applyTextVAlign==='function')applyTextVAlign(el,d.valign);
   if(d.type==='table'&&d.tableBgBlur>0){

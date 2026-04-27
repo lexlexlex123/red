@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Слайды</title>
 <link rel="stylesheet" href="fonts/fonts.css">
+<script src="fonts/fonts-list.js"></script>
+<script src="fonts/fonts-data.js"></script>
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
@@ -416,6 +418,26 @@
             </div>
           </div>
           <div id="cp-text-slot" class="cp-slot" style="display:none;margin-bottom:6px" onmousedown="event.preventDefault()"></div>
+          <!-- Text color gradient -->
+          <div style="margin-bottom:5px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text2);cursor:pointer">
+              <label class="tog"><input type="checkbox" id="p-tc-grad-check" onchange="setTextColorGrad(this.checked)"><span class="tog-track"></span><span class="tog-thumb"></span></label>
+              Градиент цвета
+            </label>
+            <div id="p-tc-grad-row" style="display:none;flex-direction:column;gap:4px;margin-top:4px">
+              <div style="display:flex;gap:4px;align-items:center">
+                <span style="font-size:10px;color:var(--text2);white-space:nowrap;min-width:38px">Цвет 2:</span>
+                <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;background:repeating-conic-gradient(#aaa 0% 25%,#fff 0% 50%) 0 0/8px 8px;" onmousedown="event.preventDefault();openColorPanel('cp-tc2-slot','tc2',function(c){document.getElementById('p-tc-grad2-inner').style.background=c;setTextColorGrad2(c);})" title="Второй цвет градиента текста"><div id="p-tc-grad2-inner" style="width:100%;height:100%;background:#000000;"></div></div>
+                <button onclick="setTextColorGrad2('');document.getElementById('p-tc-grad2-inner').style.background='';" title="Убрать цвет 2" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:2px 6px;cursor:pointer;font-size:10px;white-space:nowrap">✕</button>
+              </div>
+              <div id="cp-tc2-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
+              <div style="display:flex;gap:4px;align-items:center">
+                <span style="font-size:10px;color:var(--text2);white-space:nowrap">Направление:</span>
+                <input type="number" id="p-tc-grad-dir" min="0" max="360" value="90" style="width:72px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:2px 4px;font-size:10px" oninput="setTextColorGradDir(+this.value)" title="Угол градиента текста">
+                <span style="font-size:10px;color:var(--text3)">°</span>
+              </div>
+            </div>
+          </div>
           <!-- Bullet/list marker color — shown when element has list markers -->
           <div id="bullet-color-row" style="display:none;margin-bottom:7px">
             <div class="pr" style="margin:0"><label>Цвет маркеров</label>
@@ -908,7 +930,7 @@
             <button class="mbtn-sm" onclick="imgCoverSlide()" title="Покрыть весь слайд (фон)" style="width:100%" data-i18n="btnCoverSlide">📐 На весь слайд (фон)</button>
             <div class="pr" style="margin:0"><label data-i18n="propStrokeColor">Обводка</label>
               <div style="display:flex;gap:4px;align-items:center;margin-bottom:4px">
-                <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;overflow:hidden;flex-shrink:0" onmousedown="openColorPanel('cp-img-bc-slot','img-bc',function(c){document.getElementById('img-bc-hex').value=c;document.getElementById('img-bc-preview').style.background=c;updateImgStyle('bc',c);})"><div id="img-bc-preview" style="width:100%;height:100%;background:#ffffff;"></div></div>
+                <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;overflow:hidden;flex-shrink:0" onmousedown="openColorPanel('cp-img-bc-slot','img-bc',function(c){document.getElementById('img-bc-preview').style.background=c;updateImgStyle('bc',c);})"><div id="img-bc-preview" style="width:100%;height:100%;background:#ffffff;"></div></div>
                 
                 <button title="Сбросить" onmousedown="event.preventDefault()" onclick="document.getElementById('img-bw').value=0;updateImgStyle('bw',0);" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;line-height:1" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">✕</button>
               </div>
@@ -1960,171 +1982,63 @@
 </div>
 <!-- RUBBER-BAND SELECTION -->
 <script src="libs/qrcode.min.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/00-i18n.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/01-state.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/02-applets.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/02b-icons.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/03-boot.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/04-ui.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/05-backgrounds.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/06-themes.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/07-transitions.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/08-slides.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/09-shapes.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/10-animations.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/11-elements.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/12-markdown.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/13-images.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/13b-imgcrop.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/14-drag.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/15-align.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/16-props.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/18-motion.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/17-text.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/19-hover.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/20-thumbnails.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/21-keyboard.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/22-undo.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/23-layout.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/24-preview.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/25-links.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/26-export.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/27-persist.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/31-table.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/28-multisel.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/29-icons.js"></script>
   <script src="images/image-index.js"></script>
-  <!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/40-images-modal.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/30-rich-text.js"></script>
 
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/32-scrubber.js"></script>
-  <!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/33-objects.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/33b-autoplace.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/33c-autofit.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/39-improvements.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/40-local-ai.js"></script>
 <!-- WebLLM: обычный скрипт, работает с file:// -->
 <script src="libs/web-llm/web-llm-iife.js" onload="window._WebLLM=window._WebLLMLib;console.log('[WebLLM] Загружен локально')" onerror="console.log('[WebLLM] Локальный файл не найден')"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/33-pagenum.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/34-config.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/35-htmlframe.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/35-ai.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/28-filedrop.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/36-formula.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/37-graph.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/38-connectors.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/41-lego.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/42-dictation.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/44-group.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/45-media.js"></script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/50-voice.js"></script>
 <script>
 // ── Inline code editor with syntax highlighting + line numbers ──────────────
@@ -2232,8 +2146,6 @@
 })();
 </script>
 <script>boot();</script>
-<!-- FONTS-LIST -->
-  <script>window._LOCAL_FONTS=['Blast Bold Hollow','Bw Surco','josefkpaneuropean2','Neuzeit Antiqua','Preciosa','Preciosa Valeria','Rodondo RUS','Tobi Greek','Transita Modern','VMVTZARCARI'];</script>
   <script src="js/36-ai.js"></script>
 <!-- ── Version History Modal ── -->
 <div id="version-history-modal" onclick="if(event.target===this)closeVersionHistory()">

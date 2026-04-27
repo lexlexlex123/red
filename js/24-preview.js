@@ -149,8 +149,10 @@ function stopPreview(){
           if(d.textBgGrad)el.dataset.textBgGrad='1'; else delete el.dataset.textBgGrad;
           if(d.textBgCol2)el.dataset.textBgCol2=d.textBgCol2; else delete el.dataset.textBgCol2;
           if(d.textBgDir!=null)el.dataset.textBgDir=d.textBgDir; else delete el.dataset.textBgDir;
+          if(d.textColorGrad){el.dataset.textColorGrad='1';if(d.textColorGrad1)el.dataset.textColorGrad1=d.textColorGrad1;if(d.textColorGrad2)el.dataset.textColorGrad2=d.textColorGrad2;if(d.textColorGradDir!=null)el.dataset.textColorGradDir=d.textColorGradDir;}else{delete el.dataset.textColorGrad;}
         }
         if(typeof applyTextBg==='function') applyTextBg(el);
+        if(typeof applyTextColorGrad==='function') applyTextColorGrad(el);
       }
       // Force-rebuild icon SVG from data so shadow is always correct after preview
       if(el.dataset.type==='icon'){
@@ -452,6 +454,11 @@ function buildPSlide(container,idx,transOffset){
       const c=document.createElement('div');
       const csStr=(d.cs||'').trim();
       c.style.cssText=(csStr?(csStr.endsWith(';')?csStr:csStr+';'):'')+'width:100%;height:100%;overflow:hidden;padding:6px 8px;display:flex;flex-direction:column;justify-content:'+jc+';pointer-events:none;user-select:none;position:relative;z-index:1;';
+      if(d.textColorGrad&&d.textColorGrad1){
+        const _tcgDir=d.textColorGradDir!=null?d.textColorGradDir:90;
+        c.style.background=`linear-gradient(${_tcgDir}deg,${d.textColorGrad1},${d.textColorGrad2||'transparent'})`;
+        c.style.webkitBackgroundClip='text';c.style.backgroundClip='text';c.style.webkitTextFillColor='transparent';
+      }
       if(d.textBg||d.textBgGrad){
         const op2=d.textBgOp!=null?d.textBgOp:1;
         const toRgba2=(hex,a)=>{if(!hex)return`rgba(0,0,0,0)`;const rv=parseInt(hex.slice(1,3),16),gv=parseInt(hex.slice(3,5),16),bv=parseInt(hex.slice(5,7),16);return`rgba(${rv},${gv},${bv},${a})`;};

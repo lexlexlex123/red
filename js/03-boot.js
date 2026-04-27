@@ -879,6 +879,15 @@ function addRecentColor(c){
 function applyTextColor(c, schemeRef){
   if(!sel||sel.dataset.type!=='text')return;
   const d = slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+  // When text color gradient is on — main picker sets color 1
+  if(sel.dataset.textColorGrad==='1'){
+    sel.dataset.textColorGrad1=c;
+    if(d){d.textColorGrad1=c;}
+    if(typeof applyTextColorGrad==='function')applyTextColorGrad(sel);
+    try{const _sw=document.getElementById('p-col-preview');if(_sw)_sw.style.background=c;document.getElementById('p-hex').value=c;}catch(e){}
+    save();saveState();
+    return;
+  }
   // Check if there's an active fragment selection
   const _wSel = window.getSelection();
   const _hasFragSel = _wSel && !_wSel.isCollapsed && _wSel.toString().length > 0;

@@ -119,6 +119,17 @@ function syncProps(){
     } catch(e){}
     const col=m(/(?:^|;|\s)color:(#[0-9a-fA-F]{3,8})/,'#ffffff');
     try{const _sw=document.getElementById('p-col-preview');if(_sw)_sw.style.background=col;document.getElementById('p-hex').value=col;}catch(e){}
+    // Sync text color gradient UI
+    try{
+      const _tcGrad=sel.dataset.textColorGrad==='1';
+      const _tcGradChk=document.getElementById('p-tc-grad-check');if(_tcGradChk)_tcGradChk.checked=_tcGrad;
+      const _tcGradRow=document.getElementById('p-tc-grad-row');if(_tcGradRow)_tcGradRow.style.display=_tcGrad?'flex':'none';
+      if(_tcGrad){
+        const _tcG2=sel.dataset.textColorGrad2||'';
+        const _sw2=document.getElementById('p-tc-grad2-inner');if(_sw2)_sw2.style.background=_tcG2;
+        const _dirI=document.getElementById('p-tc-grad-dir');if(_dirI)_dirI.value=sel.dataset.textColorGradDir!=null?+sel.dataset.textColorGradDir:90;
+      }
+    }catch(e){}
     document.getElementById('p-lh').value=parseFloat(m(/line-height:([\d.]+)/,'1.2'));
     document.getElementById('p-ls').value=parseFloat(m(/letter-spacing:([-\d.]+)px/,'0'));
     // Sync font-family selector
@@ -437,8 +448,8 @@ function clearTextBg(){
   if(!sel||sel.dataset.type!=='text')return;
   delete sel.dataset.textBg;delete sel.dataset.textBgOp;delete sel.dataset.textBgBlur;
   delete sel.dataset.textBgGrad;delete sel.dataset.textBgCol2;delete sel.dataset.textBgDir;
-  // Clear both .ec and .el styles
-  const c=sel.querySelector('.ec');if(c)c.style.background='';
+  // Clear both .ec and .el styles (skip .ec background if text color gradient is active — it owns that)
+  const c=sel.querySelector('.ec');if(c&&sel.dataset.textColorGrad!=='1')c.style.background='';
   sel.style.background='';sel.style.backdropFilter='';sel.style.webkitBackdropFilter='';
   try{
     document.getElementById('p-bg-hex').value='';
@@ -501,7 +512,8 @@ function applyTextBg(el){
   const isGrad=el.dataset.textBgGrad==='1';
   // Always clear el.style.background — use bg-layer div instead to avoid white-strip under text
   el.style.background='';
-  c.style.background='';
+  // Don't clear .ec background when text color gradient is active (it holds the gradient)
+  if(el.dataset.textColorGrad!=='1')c.style.background='';
   if(!col && !blur && !isGrad){
     const old=el.querySelector('.el-bg-layer');if(old)old.remove();
     el.style.backdropFilter='';el.style.webkitBackdropFilter='';
@@ -528,6 +540,58 @@ function applyTextBg(el){
     el.style.backdropFilter='';
     el.style.webkitBackdropFilter='';
   }
+}
+// ══════════════ TEXT COLOR GRADIENT ══════════════
+function applyTextColorGrad(el){
+  const c=el.querySelector('.ec');if(!c)return;
+  const isGrad=el.dataset.textColorGrad==='1';
+  if(!isGrad){
+    c.style.background='';c.style.webkitBackgroundClip='';c.style.backgroundClip='';c.style.webkitTextFillColor='';
+    return;
+  }
+  const col1=el.dataset.textColorGrad1||'#ffffff';
+  const col2=el.dataset.textColorGrad2||'transparent';
+  const dir=el.dataset.textColorGradDir!=null?+el.dataset.textColorGradDir:90;
+  c.style.background=`linear-gradient(${dir}deg,${col1},${col2})`;
+  c.style.webkitBackgroundClip='text';c.style.backgroundClip='text';c.style.webkitTextFillColor='transparent';
+}
+function setTextColorGrad(on){
+  if(!sel||sel.dataset.type!=='text')return;
+  const d=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+  if(on){
+    sel.dataset.textColorGrad='1';
+    // Init col1 from current element-level color
+    if(!sel.dataset.textColorGrad1){
+      const _ecEl=sel.querySelector('.tel')||sel.querySelector('.ec');
+      const _cs=_ecEl?(_ecEl.getAttribute('style')||''):'';
+      const _m=_cs.match(/(?:^|;)\s*color:\s*(#[0-9a-fA-F]{3,8})/);
+      sel.dataset.textColorGrad1=_m?_m[1]:'#ffffff';
+    }
+    const _sw2=document.getElementById('p-tc-grad2-inner');if(_sw2)_sw2.style.background=sel.dataset.textColorGrad2||'';
+    document.getElementById('p-tc-grad-row').style.display='flex';
+  } else {
+    delete sel.dataset.textColorGrad;delete sel.dataset.textColorGrad1;delete sel.dataset.textColorGrad2;delete sel.dataset.textColorGradDir;
+    document.getElementById('p-tc-grad-row').style.display='none';
+  }
+  applyTextColorGrad(sel);
+  if(d){d.textColorGrad=on||false;d.textColorGrad1=sel.dataset.textColorGrad1||'';d.textColorGrad2=sel.dataset.textColorGrad2||'';d.textColorGradDir=+(sel.dataset.textColorGradDir||90);}
+  save();saveState();
+}
+function setTextColorGrad2(col){
+  if(!sel||sel.dataset.type!=='text')return;
+  if(col)sel.dataset.textColorGrad2=col; else delete sel.dataset.textColorGrad2;
+  applyTextColorGrad(sel);
+  const d=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+  if(d)d.textColorGrad2=col||'';
+  save();saveState();
+}
+function setTextColorGradDir(deg){
+  if(!sel||sel.dataset.type!=='text')return;
+  sel.dataset.textColorGradDir=deg;
+  applyTextColorGrad(sel);
+  const d=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+  if(d)d.textColorGradDir=+deg;
+  save();saveState();
 }
 // ══════════════ TEXT ROLE ══════════════
 function setTextRole(role){
@@ -616,11 +680,14 @@ function resetTextFormatting() {
   d.cs = 'font-size:' + fs + ';font-weight:400;color:'+_rstColor+';text-align:left;line-height:1.3;';
   d.textColorScheme = _rstScheme;
 
-  // 3. Clear text background
+  // 3. Clear text background and text color gradient
   delete d.textBg; delete d.textBgOp; delete d.textBgBlur;
   sel.dataset.textBg = ''; sel.dataset.textBgOp = ''; sel.dataset.textBgBlur = '';
   sel.style.backdropFilter=''; sel.style.webkitBackdropFilter='';
-  const ec2 = sel.querySelector('.ec'); if (ec2) ec2.style.background = '';
+  delete d.textColorGrad; delete d.textColorGrad1; delete d.textColorGrad2; delete d.textColorGradDir;
+  delete sel.dataset.textColorGrad; delete sel.dataset.textColorGrad1; delete sel.dataset.textColorGrad2; delete sel.dataset.textColorGradDir;
+  const ec2 = sel.querySelector('.ec');
+  if (ec2) { ec2.style.background='';ec2.style.webkitBackgroundClip='';ec2.style.backgroundClip='';ec2.style.webkitTextFillColor=''; }
 
   // 4. Re-render element
   const ecEl = sel.querySelector('.tel') || sel.querySelector('.ec');
