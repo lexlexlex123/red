@@ -130,18 +130,8 @@ for (const cat of CATS) {
         console.warn('  ОШИБКА чтения:', file, e.message);
       }
     } else {
-      // Embed as base64 data URL so alpha hit-testing works without HTTP server
-      try {
-        const buf = fs.readFileSync(path.join(catDir, file));
-        const mime = ext === '.png' ? 'image/png' : ext === '.gif' ? 'image/gif' :
-                     ext === '.webp' ? 'image/webp' : 'image/jpeg';
-        const b64 = 'data:' + mime + ';base64,' + buf.toString('base64');
-        entries.push({ id, cat: cat.id, file, name, path: filePath, isSvg: false, src: b64 });
-        console.log('  Изображение (base64):', file, Math.round(buf.length/1024) + 'KB');
-      } catch(e) {
-        entries.push({ id, cat: cat.id, file, name, path: filePath, isSvg: false });
-        console.warn('  Изображение (путь):', file);
-      }
+      entries.push({ id, cat: cat.id, file, name, path: filePath, isSvg: false });
+      console.log('  Изображение (путь):', file);
     }
   }
 }
@@ -167,11 +157,7 @@ for (const e of entries) {
     outIndex += `    svgContent: \`${escapeBacktick(e.svgContent)}\`,\n`;
     outIndex += `  },\n`;
   } else {
-    if (e.src) {
-      outIndex += `  {id:${JSON.stringify(e.id)}, cat:${JSON.stringify(e.cat)}, file:${JSON.stringify(e.file)}, name:${JSON.stringify(e.name)}, path:${JSON.stringify(e.path)}, isSvg:false, src:${JSON.stringify(e.src)}},\n`;
-    } else {
-      outIndex += `  {id:${JSON.stringify(e.id)}, cat:${JSON.stringify(e.cat)}, file:${JSON.stringify(e.file)}, name:${JSON.stringify(e.name)}, path:${JSON.stringify(e.path)}, isSvg:false},\n`;
-    }
+    outIndex += `  {id:${JSON.stringify(e.id)}, cat:${JSON.stringify(e.cat)}, file:${JSON.stringify(e.file)}, name:${JSON.stringify(e.name)}, path:${JSON.stringify(e.path)}, isSvg:false},\n`;
   }
 }
 

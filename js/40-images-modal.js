@@ -152,12 +152,9 @@ function _renderImgCells(grid, imgs){
     const preview = document.createElement('div');
     preview.style.cssText = 'position:absolute;inset:0;background-size:contain;background-position:center;background-repeat:no-repeat;pointer-events:none;';
     // Кодируем спецсимволы в пути
-    // Use base64 src if available (works without HTTP server), else file path
-    const previewUrl = img.src ? img.src : (function(){
-      return img.path.split('/').map(function(p, i){
-        return i === 0 ? p : encodeURIComponent(decodeURIComponent(p));
-      }).join('/');
-    })();
+    const previewUrl = img.path.split('/').map(function(p, i){
+      return i === 0 ? p : encodeURIComponent(decodeURIComponent(p));
+    }).join('/');
     preview.style.backgroundImage = 'url("' + previewUrl + '")';
     const ext = (img.path||'').split('.').pop().toUpperCase();
     const fb = document.createElement('div');
@@ -180,8 +177,7 @@ function _renderImgCells(grid, imgs){
     cell.onmouseenter = () => lbl.style.opacity = '1';
     cell.onmouseleave = () => lbl.style.opacity = '0';
     // Сохраняем path в dataset чтобы не зависеть от замыкания
-    // Store base64 src if available — used for insertion and alpha hit-testing
-    cell.dataset.imgPath = img.src || img.path;
+    cell.dataset.imgPath = img.path;
     cell.dataset.imgIsSvg = img.isSvg ? '1' : '0';
     // Выбор
     cell.onclick = function(){
