@@ -201,13 +201,13 @@ function insertIconSelected(){
   const s=document.createElement('style');
   s.textContent=`
 .icon-cell{
-  width:52px;height:52px;display:flex;align-items:center;justify-content:center;
+  width:100%;height:100%;display:flex;align-items:center;justify-content:center;
   border-radius:8px;cursor:pointer;border:1.5px solid transparent;
-  background:var(--surface2);transition:.12s;flex-direction:column;gap:2px;
+  background:var(--surface2);transition:.12s;flex-direction:column;gap:2px;box-sizing:border-box;
 }
 .icon-cell:hover{background:var(--surface3);border-color:var(--border);}
 .icon-cell.selected{border-color:var(--accent4);background:color-mix(in srgb,var(--accent4) 15%,transparent);}
-.icon-cell svg{width:28px;height:28px;pointer-events:none;}
+.icon-cell svg{width:30px;height:30px;pointer-events:none;}
   `;
   document.head.appendChild(s);
 })();

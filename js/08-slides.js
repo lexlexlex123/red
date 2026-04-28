@@ -189,6 +189,8 @@ function save(){
       // Chevron depth
       if(el.dataset.chevSkew!=null) d.chevSkew=+el.dataset.chevSkew;
       else if(_ods&&_ods.chevSkew!=null) d.chevSkew=_ods.chevSkew;
+      if(el.dataset.chevInner!=null) d.chevInner=+el.dataset.chevInner;
+      else if(_ods&&_ods.chevInner!=null) d.chevInner=_ods.chevInner;
       // Curve bezier points
       if(el.dataset.curvePoints){try{d.curvePoints=JSON.parse(el.dataset.curvePoints);}catch(e){}}
       else if(_ods&&_ods.curvePoints) d.curvePoints=_ods.curvePoints;

@@ -1,7 +1,7 @@
 // ══════════════ IMAGE CATEGORIES ══════════════
 // Сгенерировано автоматически: node images/build-index.js
 // НЕ РЕДАКТИРУЙТЕ ВРУЧНУЮ — изменения будут перезаписаны при следующем запуске
-// Дата: 23.04.2026, 06:45:37
+// Дата: 27.04.2026, 20:00:11
 // Загружается в браузере перед 40-images-modal.js и переопределяет список категорий.
 
 window._IMAGE_CATS_GENERATED = [
@@ -9,6 +9,7 @@ window._IMAGE_CATS_GENERATED = [
   {id:"animals", name:"Животные"},
   {id:"birds", name:"Птицы"},
   {id:"business", name:"Бизнес"},
+  {id:"textures", name:"Текстуры"},
   {id:"people", name:"Люди"},
   {id:"smiles", name:"Смайлики"},
   {id:"fish", name:"Fish"},

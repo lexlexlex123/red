@@ -556,19 +556,21 @@ function _repositionHandlesOverlay(el) {
     _ph2.style.left = (ecx + plx*cosr - ply*sinr - 6)+'px';
     _ph2.style.top  = (ecy + plx*sinr + ply*cosr - 6)+'px';
   }
-  // Reposition chevron handle
-  const _ch2 = document.querySelector('.chev-handle');
-  if (_ch2 && d2) {
+  // Reposition chevron handles (two: outer tip + inner notch)
+  const _chHandles = document.querySelectorAll('.chev-handle');
+  if (_chHandles.length === 2 && d2) {
     const _sh2 = typeof SHAPES !== 'undefined' && SHAPES.find(s => s.id === d2.shape);
     if (_sh2 && _sh2.special === 'chevron') {
-      const cskew = Math.max(0, Math.min(45, +(d2.chevSkew??25)));
-      const s = cskew / 100;
-      const tip = elW * s;
-      const isLeft = d2.shape === 'chevronLeft';
-      const clx = isLeft ? (elW/2 - tip) : (-elW/2 + tip);
-      const cly = 0;
-      _ch2.style.left = (ecx + clx*cosr - cly*sinr - 6)+'px';
-      _ch2.style.top  = (ecy + clx*sinr + cly*cosr - 6)+'px';
+      const _cfx = (d2.shapeFlipH === true) ? -1 : 1;
+      const _isLeft2 = _sh2.id === 'chevronLeft';
+      const cskew2  = Math.max(0, Math.min(45, +(d2.chevSkew ??25)));
+      const cinner2 = Math.max(0, Math.min(45, +(d2.chevInner??cskew2)));
+      const _olx = _cfx * (_isLeft2 ? (-elW/2 + elW*cskew2/100)  : (elW/2 - elW*cskew2/100));
+      const _ilx = _cfx * (_isLeft2 ? (elW/2  - elW*cinner2/100) : (-elW/2 + elW*cinner2/100));
+      _chHandles[0].style.left = (ecx + _olx*cosr - 6)+'px';
+      _chHandles[0].style.top  = (ecy + _olx*sinr - 6)+'px';
+      _chHandles[1].style.left = (ecx + _ilx*cosr - 6)+'px';
+      _chHandles[1].style.top  = (ecy + _ilx*sinr - 6)+'px';
     }
   }
 }
@@ -850,70 +852,92 @@ function _buildChevronHandle() {
   const canvas = document.getElementById('canvas');
   if (!canvas) return;
 
-  // Snapshot geometry at build time (same approach as _buildParaHandle)
   const L = parseInt(sel.style.left)||0, T = parseInt(sel.style.top)||0;
   const W = parseInt(sel.style.width)||1, H = parseInt(sel.style.height)||1;
   const rot = parseFloat(sel.dataset.rot||0) * Math.PI / 180;
   const cosr = Math.cos(rot), sinr = Math.sin(rot);
   const ecx = L + W/2, ecy = T + H/2;
-  const isLeft = d.shape === 'chevronLeft';
+  // fx = -1 when horizontally flipped — negates x offsets in canvas space
+  const fx = (d.shapeFlipH === true || sel.dataset.shapeFlipH === 'true') ? -1 : 1;
+  const isLeft = sh.id === 'chevronLeft'; // toCanvas(lx) already applies fx — no XOR needed
 
-  function skewToHandle(skewVal) {
-    const s = Math.max(0, Math.min(45, +skewVal)) / 100;
-    const tip = W * s;
-    const lx = isLeft ? (W/2 - tip) : (-W/2 + tip);
-    return {
-      x: ecx + lx*cosr,
-      y: ecy + lx*sinr
-    };
+  // Convert element-local x offset → canvas position (accounts for flip and rotation)
+  function toCanvas(lx) {
+    const cx = fx * lx;  // apply flip to get canvas-space local x
+    return { x: ecx + cx*cosr, y: ecy + cx*sinr };
+  }
+  // Convert mouse canvas coords → flip-corrected element-local x
+  function toLocal(cv) {
+    const raw = (cv.x - ecx)*cosr + (cv.y - ecy)*sinr;
+    return fx * raw;  // un-flip
   }
 
-  const skew = d.chevSkew != null ? +d.chevSkew : 25;
-  const pos = skewToHandle(skew);
+  // outer tip handle: on the pointing side
+  function outerPos(skewVal) {
+    const s = Math.max(0, Math.min(45, +skewVal)) / 100;
+    const lx = isLeft ? (-W/2 + W*s) : (W/2 - W*s);
+    return toCanvas(lx);
+  }
+  // inner notch handle: on the back side
+  function innerPos(innerVal) {
+    const s = Math.max(0, Math.min(45, +innerVal)) / 100;
+    const lx = isLeft ? (W/2 - W*s) : (-W/2 + W*s);
+    return toCanvas(lx);
+  }
 
-  const h = document.createElement('div');
-  h.className = 'chev-handle';
-  h.style.cssText = `position:absolute;width:12px;height:12px;border-radius:50%;
-    background:#fbbf24;border:2px solid #fff;
-    box-shadow:0 0 0 1.5px #f59e0b,0 2px 5px rgba(0,0,0,.5);
-    left:${pos.x-6}px;top:${pos.y-6}px;
-    cursor:ew-resize;z-index:10003;pointer-events:auto;`;
+  function makeHandle(pos, title, onDrag) {
+    const h = document.createElement('div');
+    h.className = 'chev-handle';
+    h.title = title;
+    h.style.cssText = `position:absolute;width:12px;height:12px;border-radius:3px;
+      background:#fbbf24;border:2px solid #fff;
+      box-shadow:0 0 0 1.5px #f59e0b,0 2px 5px rgba(0,0,0,.5);
+      left:${pos.x-6}px;top:${pos.y-6}px;
+      cursor:ew-resize;z-index:10003;pointer-events:auto;`;
+    h.addEventListener('mousedown', ev => {
+      ev.stopPropagation(); ev.preventDefault();
+      window._anyDragging = true;
+      const onMove = mv => {
+        const freshD = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
+        if (!freshD) return;
+        const cv = _toCanvasCoords(mv.clientX, mv.clientY);
+        const lx = toLocal(cv);  // flip-corrected local x
+        onDrag(freshD, lx, h);
+        renderShapeEl(sel, freshD);
+      };
+      const onUp = () => {
+        window._anyDragging = false;
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        if (typeof save === 'function') save();
+        if (typeof drawThumbs === 'function') drawThumbs();
+        if (typeof saveState === 'function') saveState();
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+    canvas.appendChild(h);
+    return h;
+  }
 
-  h.addEventListener('mousedown', ev => {
-    ev.stopPropagation(); ev.preventDefault();
-    window._anyDragging = true;
+  const skew  = d.chevSkew  != null ? +d.chevSkew  : 25;
+  const inner = d.chevInner != null ? +d.chevInner : skew;
 
-    const onMove = mv => {
-      const freshD = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
-      if (!freshD) return;
-      const cv = _toCanvasCoords(mv.clientX, mv.clientY);
-      const dx = cv.x - ecx, dy = cv.y - ecy;
-      const lx = dx*cosr + dy*sinr;
-      const tip = isLeft ? (W/2 - lx) : (lx + W/2);
-      let skewNew = Math.round((tip / W) * 100);
-      skewNew = Math.max(0, Math.min(45, skewNew));
-      freshD.chevSkew = skewNew;
-      sel.dataset.chevSkew = skewNew;
-      const inp = document.getElementById('sh-chev-skew');
-      if (inp) inp.value = skewNew;
-      const np = skewToHandle(skewNew);
-      h.style.left = (np.x-6)+'px'; h.style.top = (np.y-6)+'px';
-      renderShapeEl(sel, freshD);
-    };
-
-    const onUp = () => {
-      window._anyDragging = false;
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      if (typeof save === 'function') save();
-      if (typeof drawThumbs === 'function') drawThumbs();
-      if (typeof saveState === 'function') saveState();
-    };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+  // Outer handle — controls chevSkew (tip depth)
+  makeHandle(outerPos(skew), 'Внешний угол', (freshD, lx, h) => {
+    const raw = isLeft ? Math.round((lx + W/2) / W * 100) : Math.round((W/2 - lx) / W * 100);
+    const v = Math.max(0, Math.min(45, raw));
+    freshD.chevSkew = v; sel.dataset.chevSkew = v;
+    const np = outerPos(v); h.style.left=(np.x-6)+'px'; h.style.top=(np.y-6)+'px';
   });
 
-  canvas.appendChild(h);
+  // Inner handle — controls chevInner (indent depth)
+  makeHandle(innerPos(inner), 'Внутренний угол', (freshD, lx, h) => {
+    const raw = isLeft ? Math.round((W/2 - lx) / W * 100) : Math.round((lx + W/2) / W * 100);
+    const v = Math.max(0, Math.min(45, raw));
+    freshD.chevInner = v; sel.dataset.chevInner = v;
+    const np = innerPos(v); h.style.left=(np.x-6)+'px'; h.style.top=(np.y-6)+'px';
+  });
 }
 
 function _updateHandlesOverlay(){
@@ -947,12 +971,14 @@ function _updateHandlesOverlay(){
   const elH = parseInt(el.style.height)||0;
 
   // Read actual rotation from computed transform matrix (handles CSS animation)
+  // When shape is flipped (scale(-1,1)), mat.a = -cos(rot), mat.b = -sin(rot).
+  // Multiplying by fx before atan2 recovers the true rotation angle.
   let elDeg = parseFloat(el.dataset.rot)||0;
   try {
+    const _mfx = (el.dataset.shapeFlipH === 'true') ? -1 : 1;
     const mat = new DOMMatrix(getComputedStyle(el).transform);
     if (mat && !isNaN(mat.a)) {
-      const computedDeg = Math.atan2(mat.b, mat.a) * 180 / Math.PI;
-      // Only use computed if animation is running or differs significantly
+      const computedDeg = Math.atan2(_mfx * mat.b, _mfx * mat.a) * 180 / Math.PI;
       if (Math.abs(computedDeg - elDeg) > 0.5) elDeg = computedDeg;
     }
   } catch(e) {}

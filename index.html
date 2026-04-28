@@ -412,7 +412,7 @@
             <div class="pr" style="margin:0"><label data-i18n="propTextColor">Цвет <span id="sel-hint" style="font-size:9px;color:var(--accent4);display:none">· выделение</span></label>
               <div style="display:flex;gap:4px;align-items:center">
                 <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;" onmousedown="event.preventDefault();_rtOnPanelMousedown(event);openColorPanel('cp-text-slot','text',function(c,sr){onColorPick(c,'text',sr);})" title="Цвет текста"><div id="p-col-preview" style="width:100%;height:100%;background:#ffffff;pointer-events:none;"></div></div>
-                
+                <input type="text" id="p-hex" maxlength="7" placeholder="#ffffff" style="flex:1;min-width:0;height:28px;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:0 6px;font-size:11px;font-family:monospace" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){onColorHex(this.value,'text');document.getElementById('p-col-preview').style.background=this.value;}">
                 <button onclick="togglePipetteMode()" id="eye-text" class="pipette-btn" title="Пипетка" style="background:var(--surface2);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:3px 6px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;width:26px;height:26px"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M20.71 5.63l-2.34-2.34a1 1 0 0 0-1.41 0l-3.12 3.12-1.41-1.42-1.42 1.42 1.41 1.41-6.6 6.6A2 2 0 0 0 5 16v3h3a2 2 0 0 0 1.42-.59l6.6-6.6 1.41 1.42 1.42-1.42-1.42-1.41 3.12-3.12a1 1 0 0 0 0-1.65z"/></svg></button>
               </div>
             </div>
@@ -427,8 +427,9 @@
             <div id="p-tc-grad-row" style="display:none;flex-direction:column;gap:4px;margin-top:4px">
               <div style="display:flex;gap:4px;align-items:center">
                 <span style="font-size:10px;color:var(--text2);white-space:nowrap;min-width:38px">Цвет 2:</span>
-                <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;background:repeating-conic-gradient(#aaa 0% 25%,#fff 0% 50%) 0 0/8px 8px;" onmousedown="event.preventDefault();openColorPanel('cp-tc2-slot','tc2',function(c){document.getElementById('p-tc-grad2-inner').style.background=c;setTextColorGrad2(c);})" title="Второй цвет градиента текста"><div id="p-tc-grad2-inner" style="width:100%;height:100%;background:#000000;"></div></div>
-                <button onclick="setTextColorGrad2('');document.getElementById('p-tc-grad2-inner').style.background='';" title="Убрать цвет 2" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:2px 6px;cursor:pointer;font-size:10px;white-space:nowrap">✕</button>
+                <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;background:repeating-conic-gradient(#aaa 0% 25%,#fff 0% 50%) 0 0/8px 8px;" onmousedown="event.preventDefault();openColorPanel('cp-tc2-slot','tc2',function(c){document.getElementById('p-tc-grad2-inner').style.background=c;try{document.getElementById('p-tc-grad2-hex').value=c;}catch(e){}setTextColorGrad2(c);})" title="Второй цвет градиента текста"><div id="p-tc-grad2-inner" style="width:100%;height:100%;background:#000000;"></div></div>
+                <input type="text" id="p-tc-grad2-hex" maxlength="7" placeholder="#000000" style="flex:1;min-width:0;height:28px;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:0 6px;font-size:11px;font-family:monospace" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('p-tc-grad2-inner').style.background=this.value;setTextColorGrad2(this.value);}">
+                <button onclick="setTextColorGrad2('');document.getElementById('p-tc-grad2-inner').style.background='';try{document.getElementById('p-tc-grad2-hex').value='';}catch(e){}" title="Убрать цвет 2" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:2px 6px;cursor:pointer;font-size:10px;white-space:nowrap">✕</button>
               </div>
               <div id="cp-tc2-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
               <div style="display:flex;gap:4px;align-items:center">
@@ -472,18 +473,16 @@
               <!-- Color 1 row -->
               <div style="display:flex;gap:4px;align-items:center">
                 <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;background:repeating-conic-gradient(#aaa 0% 25%,#fff 0% 50%) 0 0/8px 8px;" onmousedown="openColorPanel('cp-bg-slot','bg',function(c,sr){document.getElementById('p-bg-hex').value=c;document.getElementById('p-bg-swatch-inner').style.background=c;setTextBg(c,sr);})" title="Цвет фона"><div id="p-bg-swatch-inner" style="width:100%;height:100%;"></div></div>
-                
+                <input type="text" id="p-bg-hex" maxlength="7" placeholder="" style="flex:1;min-width:0;height:28px;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:0 6px;font-size:11px;font-family:monospace" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('p-bg-swatch-inner').style.background=this.value;setTextBg(this.value,null);}">
                 <button onclick="clearTextBgCol1()" title="Убрать цвет 1" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:2px 6px;cursor:pointer;font-size:10px;white-space:nowrap">✕</button>
               </div>
               <div id="cp-bg-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
-              <input type="hidden" id="p-bg-hex" value="">
-              <input type="hidden" id="p-bg-hex2" value="">
               <!-- Gradient row: color2 + direction -->
               <div id="p-bg-grad-row" style="display:none;flex-direction:column;gap:4px;margin-top:2px;margin-bottom:2px">
                 <!-- Color 2 row -->
                 <div style="display:flex;gap:4px;align-items:center">
                   <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;background:repeating-conic-gradient(#aaa 0% 25%,#fff 0% 50%) 0 0/8px 8px;" onmousedown="openColorPanel('cp-bg2-slot','bg2',function(c){document.getElementById('p-bg-hex2').value=c;document.getElementById('p-bg-swatch2-inner').style.background=c;setTextBgCol2(c);})" title="Цвет 2"><div id="p-bg-swatch2-inner" style="width:100%;height:100%;"></div></div>
-                  
+                  <input type="text" id="p-bg-hex2" maxlength="7" placeholder="" style="flex:1;min-width:0;height:28px;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:0 6px;font-size:11px;font-family:monospace" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('p-bg-swatch2-inner').style.background=this.value;setTextBgCol2(this.value);}">
                   <button onclick="setTextBgCol2('');document.getElementById('p-bg-hex2').value='';document.getElementById('p-bg-swatch2-inner').style.background='';" title="Убрать цвет 2" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:2px 6px;cursor:pointer;font-size:10px;white-space:nowrap">✕</button>
                 </div>
                 <div id="cp-bg2-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
@@ -789,8 +788,9 @@
           </div>
           <div class="pr" id="sh-fill-section"><label data-i18n="propFillColor">Заливка</label>
             <div style="display:flex;gap:4px;align-items:center;margin-bottom:4px">
-              <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;background:repeating-conic-gradient(#aaa 0% 25%,transparent 0% 50%) 0 0/8px 8px;" onmousedown="openColorPanel('cp-fill-slot','fill',function(c,sr){document.getElementById('sh-fill-preview').style.background=c;updateShapeStyleScheme('fill',c,sr);})" title="Цвет заливки"><div id="sh-fill-preview" style="width:100%;height:100%;background:#3b82f6;"></div></div>
-              <button onmousedown="event.preventDefault()" onclick="document.getElementById('sh-fill-preview').style.background='transparent';updateShapeStyleScheme('fill','none',null);" title="Убрать заливку" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;line-height:1" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">✕</button>
+              <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;background:repeating-conic-gradient(#aaa 0% 25%,transparent 0% 50%) 0 0/8px 8px;" onmousedown="openColorPanel('cp-fill-slot','fill',function(c,sr){document.getElementById('sh-fill-preview').style.background=c;try{document.getElementById('sh-fill-hex').value=c;}catch(e){}updateShapeStyleScheme('fill',c,sr);})" title="Цвет заливки"><div id="sh-fill-preview" style="width:100%;height:100%;background:#3b82f6;"></div></div>
+              <input type="text" id="sh-fill-hex" maxlength="7" placeholder="#3b82f6" style="flex:1;min-width:0;height:28px;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:0 6px;font-size:11px;font-family:monospace" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('sh-fill-preview').style.background=this.value;updateShapeStyleScheme('fill',this.value,null);}">
+              <button onmousedown="event.preventDefault()" onclick="document.getElementById('sh-fill-preview').style.background='transparent';try{document.getElementById('sh-fill-hex').value='';}catch(e){}updateShapeStyleScheme('fill','none',null);" title="Убрать заливку" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;line-height:1" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">✕</button>
               <button onclick="togglePipetteMode()" id="eye-fill" class="pipette-btn" title="Пипетка" style="background:var(--surface2);border:1px solid var(--border2);color:var(--text2);border-radius:3px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;width:26px;height:26px"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M20.71 5.63l-2.34-2.34a1 1 0 0 0-1.41 0l-3.12 3.12-1.41-1.42-1.42 1.42 1.41 1.41-6.6 6.6A2 2 0 0 0 5 16v3h3a2 2 0 0 0 1.42-.59l6.6-6.6 1.41 1.42 1.42-1.42-1.42-1.41 3.12-3.12a1 1 0 0 0 0-1.65z"/></svg></button>
             </div>
             <div id="cp-fill-slot" class="cp-slot" style="display:none;margin-bottom:4px" onmousedown="event.preventDefault()"></div>
@@ -816,8 +816,8 @@
           <!-- Stroke row: swatch + hex + width + rx -->
           <div class="pr"><label data-i18n="propStrokeColor">Обводка</label>
             <div style="display:flex;gap:4px;align-items:center;margin-bottom:4px">
-              <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;overflow:hidden;flex-shrink:0" onmousedown="openColorPanel('cp-stroke-slot','stroke',function(c){document.getElementById('sh-stroke-preview').style.background=c;updateShapeStyle('stroke',c);})"><div id="sh-stroke-preview" style="width:100%;height:100%;background:#1d4ed8;"></div></div>
-              
+              <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;overflow:hidden;flex-shrink:0" onmousedown="openColorPanel('cp-stroke-slot','stroke',function(c){document.getElementById('sh-stroke-preview').style.background=c;try{document.getElementById('sh-stroke-hex').value=c;}catch(e){}updateShapeStyle('stroke',c);})"><div id="sh-stroke-preview" style="width:100%;height:100%;background:#1d4ed8;"></div></div>
+              <input type="text" id="sh-stroke-hex" maxlength="7" placeholder="#1d4ed8" style="flex:1;min-width:0;height:24px;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:0 6px;font-size:11px;font-family:monospace" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('sh-stroke-preview').style.background=this.value;updateShapeStyle('stroke',this.value);}">
               <button title="Сбросить" onmousedown="event.preventDefault()" onclick="document.getElementById('sh-sw').value=0;updateShapeStyle('sw',0);" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;line-height:1" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">✕</button>
             </div>
             <div id="cp-stroke-slot" class="cp-slot" style="display:none;margin-bottom:4px" onmousedown="event.preventDefault()"></div>
@@ -1675,7 +1675,6 @@
   </div>
 </div>
 <div id="preview-ov">
-  <div id="p-prog"></div>
   <button id="p-exit" onclick="if(typeof pidx!=='undefined')cur=pidx;stopPreview()">✕ Esc</button>
   <div id="preview-stage"><div id="psa"></div><div id="psb"></div></div>
   <button id="p-prev" onclick="prevPreview()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg></button>
@@ -1821,7 +1820,7 @@
 <div class="modal-ov" id="icon-modal">
   <div class="modal" style="max-width:760px;width:760px;min-width:580px">
     <h3 data-i18n="modalIcon">🔍 Значки</h3>
-    <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap">
+    <div style="display:flex;gap:8px;margin-bottom:22px;align-items:center;flex-wrap:wrap">
       <input type="text" id="icon-search" id="icon-search-input" data-i18n-placeholder="iconSearch" placeholder="Поиск значков…" oninput="filterIcons(this.value)"
         style="flex:1;min-width:140px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:12px;font-family:inherit">
       <div style="display:flex;align-items:center;gap:5px">
@@ -1839,8 +1838,8 @@
           style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 6px;font-size:11px;width:56px">
       </div>
     </div>
-    <div id="icon-cat-tabs" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px"></div>
-    <div id="icon-grid" style="display:grid;grid-template-columns:repeat(11,52px);grid-template-rows:repeat(6,52px);gap:4px;overflow:hidden;padding:2px 0;flex-shrink:0;justify-content:start"></div>
+    <div id="icon-cat-tabs" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:22px"></div>
+    <div id="icon-grid" style="display:grid;grid-template-columns:repeat(12,1fr);grid-template-rows:repeat(6,56px);gap:4px;overflow:hidden;flex-shrink:0"></div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px">
       <span id="icon-count" style="font-size:10px;color:var(--text3)"></span>
       <span id="icon-sel-name" style="font-size:11px;color:var(--accent4);font-weight:600"></span>

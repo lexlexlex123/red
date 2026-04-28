@@ -1140,6 +1140,20 @@ function buildShapeSVG(d, w, h) {
       }
       return `<path d="${_arcPath(w/2,h/2,w/2,h/2,a1,a2,mode,m,d.rx||0)}" ${fAttr} ${sAttr} ${extra} ${shadow}/>`;
     }
+    if (sh.special === 'chevron') {
+      const _csk = Math.max(0, Math.min(45, d.chevSkew  != null ? +d.chevSkew  : 25));
+      const _cin = Math.max(0, Math.min(45, d.chevInner != null ? +d.chevInner : _csk));
+      const _tip = Math.round(ew * _csk / 100);
+      const _ind = Math.round(ew * _cin / 100);
+      const _mid = m + Math.round(eh / 2);
+      const _isL = sh.id === 'chevronLeft';
+      const _pts = _isL
+        ? [{x:m+ew,y:m},{x:m+_tip,y:m},{x:m,y:_mid},{x:m+_tip,y:m+eh},{x:m+ew,y:m+eh},{x:m+ew-_ind,y:_mid}]
+        : [{x:m,y:m},{x:m+ew-_tip,y:m},{x:m+ew,y:_mid},{x:m+ew-_tip,y:m+eh},{x:m,y:m+eh},{x:m+_ind,y:_mid}];
+      let _cp = 'M ' + _pts.map(p=>`${p.x} ${p.y}`).join(' L ') + ' Z';
+      if ((d.rx||0)>0 && typeof _roundedPolygonPath==='function') _cp = _roundedPolygonPath(_pts, d.rx);
+      return `<path d="${_cp}" ${fAttr} ${sAttr} ${extra} ${shadow}/>`;
+    }
     if (sh.special === 'callout') return null;
     if (!sh.path) return null; // no path defined (e.g. parametric shapes)
     // Scale path points and apply corner rounding

@@ -283,12 +283,14 @@ function drawThumbShape(ctx,d,sx,sy){
     ctx.save();
     ctx.fillStyle=fill;
     if(sw>0){ctx.strokeStyle=d.stroke||'#1d4ed8';ctx.lineWidth=sw;}
+    if(d.shapeFlipH||d.shapeFlipV){const _fx=d.shapeFlipH?-1:1,_fy=d.shapeFlipV?-1:1;ctx.translate(x+w/2,y+h/2);ctx.scale(_fx,_fy);ctx.translate(-(x+w/2),-(y+h/2));}
     const _sk=(d.chevSkew!=null?+d.chevSkew:25)/100,_tp=Math.round(w*_sk),_mid=h/2;
+    const _ind=Math.round(w*(d.chevInner!=null?+d.chevInner:d.chevSkew!=null?+d.chevSkew:25)/100);
     ctx.beginPath();
     if(d.shape==='chevronLeft'){
-      ctx.moveTo(x+w,y);ctx.lineTo(x+_tp,y);ctx.lineTo(x,y+_mid);ctx.lineTo(x+_tp,y+h);ctx.lineTo(x+w,y+h);ctx.lineTo(x+w-_tp,y+_mid);
+      ctx.moveTo(x+w,y);ctx.lineTo(x+_tp,y);ctx.lineTo(x,y+_mid);ctx.lineTo(x+_tp,y+h);ctx.lineTo(x+w,y+h);ctx.lineTo(x+w-_ind,y+_mid);
     }else{
-      ctx.moveTo(x,y);ctx.lineTo(x+w-_tp,y);ctx.lineTo(x+w,y+_mid);ctx.lineTo(x+w-_tp,y+h);ctx.lineTo(x,y+h);ctx.lineTo(x+_tp,y+_mid);
+      ctx.moveTo(x,y);ctx.lineTo(x+w-_tp,y);ctx.lineTo(x+w,y+_mid);ctx.lineTo(x+w-_tp,y+h);ctx.lineTo(x,y+h);ctx.lineTo(x+_ind,y+_mid);
     }
     ctx.closePath();ctx.fill();if(sw>0)ctx.stroke();
     ctx.restore();

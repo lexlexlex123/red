@@ -211,8 +211,8 @@ const SHAPES=[
   {id:'parallelogram',name:'Параллелогр.',path:null,special:'parallelogram'},
   {id:'cloud',name:'Облако',path:null,special:'cloud'},
   // Extended shapes for better PPTX import coverage
-  {id:'chevron',name:'Шеврон →',path:'M 5 5 L 70 5 L 95 50 L 70 95 L 5 95 L 30 50 Z'},
-  {id:'chevronLeft',name:'Шеврон ←',path:'M 95 5 L 30 5 L 5 50 L 30 95 L 95 95 L 70 50 Z'},
+  {id:'chevron',name:'Шеврон →',path:null,special:'chevron'},
+  {id:'chevronLeft',name:'Шеврон ←',path:null,special:'chevron'},
   {id:'callout',name:'Выноска',path:null,special:'callout'},
   {id:'calloutRound',name:'Выноска О',path:null,special:'callout'},
   {id:'trapezoid',name:'Трапеция',path:null,special:'trapezoid'},
