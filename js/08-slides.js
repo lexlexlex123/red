@@ -5,8 +5,10 @@ function addSlide(tmpl){
   const curSlide=slides[cur];
   const inheritBg=curSlide?curSlide.bg:'b1';
   const inheritBgc=curSlide?curSlide.bgc:null;
+  const inheritBgImg=curSlide&&curSlide.bgImg?JSON.parse(JSON.stringify(curSlide.bgImg)):null;
   const s={title:'Slide '+(slides.length+1),bg:inheritBg,bgc:inheritBgc,ar,trans:'',auto:0,els:[]};
-  if(tmpl){const t=JSON.parse(JSON.stringify(tmpl));s.bg=t.bg;s.bgc=t.bgc;s.els=t.els;s.trans=t.trans||'';}
+  if(inheritBgImg)s.bgImg=inheritBgImg;
+  if(tmpl){const t=JSON.parse(JSON.stringify(tmpl));s.bg=t.bg;s.bgc=t.bgc;s.els=t.els;s.trans=t.trans||'';if(t.bgImg)s.bgImg=JSON.parse(JSON.stringify(t.bgImg));}
   // Вставляем ПОСЛЕ текущего слайда, а не в конец
   const insertAt = slides.length > 0 ? cur + 1 : 0;
   slides.splice(insertAt, 0, s);
@@ -116,7 +118,10 @@ function save(){
     if(el.dataset.groupId)d.groupId=el.dataset.groupId;else delete d.groupId;
     if(d.type==='image'){
       const dd=oldElsById[d.id];
-      d.src=el.querySelector('img').src;
+      const _imgEl=el.querySelector('img');
+      const _imgAttr=_imgEl?_imgEl.getAttribute('src'):'';
+      d.src=(_imgAttr&&!_imgAttr.startsWith('blob:'))?_imgAttr:(_imgEl?_imgEl.src:(dd&&dd.src)||'');
+      if(dd&&dd.src&&dd.src.startsWith('data:')&&(!d.src||!d.src.startsWith('data:'))) d.src=dd.src;
       d.imgFit=el.dataset.imgFit||(dd&&dd.imgFit)||'contain';
       d.imgRx=el.dataset.imgRx!=null?+el.dataset.imgRx:(dd&&dd.imgRx)||0;
       d.imgBw=el.dataset.imgBw!=null?+el.dataset.imgBw:(dd&&dd.imgBw)||0;

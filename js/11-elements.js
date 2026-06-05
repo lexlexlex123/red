@@ -36,7 +36,7 @@ function handleImg(e){
       let w=tmp.naturalWidth||400,h=tmp.naturalHeight||300;
       const scale=Math.min(maxW/w,maxH/h,1);
       w=Math.round(w*scale);h=Math.round(h*scale);
-      const d={id:'e'+(++ec),type:'image',x:Math.round((canvasW-w)/2),y:Math.round((canvasH-h)/2),w,h,src,rot:0,anims:[],imgFit:'fill',imgRx:0,imgBw:0,imgBc:'#ffffff',imgShadow:false,imgShadowBlur:15,imgShadowColor:'#000000',imgOpacity:1};
+      const d={id:'e'+(++ec),type:'image',x:Math.round((canvasW-w)/2),y:Math.round((canvasH-h)/2),w,h,src,imgName:f.name,rot:0,anims:[],imgFit:'fill',imgRx:0,imgBw:0,imgBc:'#ffffff',imgShadow:false,imgShadowBlur:15,imgShadowColor:'#000000',imgOpacity:1};
       slides[cur].els.push(d);mkEl(d);
       const el=document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
       if(el)pick(el);

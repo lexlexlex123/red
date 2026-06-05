@@ -86,7 +86,7 @@ function _mediaRenderVideo(wrap, d) {
   const src = d.mediaSrc || '';
   if (src) {
     const v = document.createElement('video');
-    v.src = src; v.muted = true; v.preload = 'metadata';
+    v.src = typeof assetUrl==='function'?assetUrl(src):src; v.muted = true; v.preload = 'metadata';
     v.style.cssText = 'width:100%;height:100%;object-fit:contain;display:block;flex:1;';
     wrap.appendChild(v);
   } else {
@@ -383,7 +383,7 @@ function _pvVideo(el, d) {
     if (auto) setTimeout(open, 80); else el.addEventListener('click', e => { e.stopPropagation(); open(); });
   } else {
     const video = document.createElement('video');
-    video.src = src; video.style.cssText = 'width:100%;height:100%;object-fit:contain;display:block;background:#000;';
+    video.src = typeof assetUrl==='function'?assetUrl(src):src; video.style.cssText = 'width:100%;height:100%;object-fit:contain;display:block;background:#000;';
     if (ctrl) video.controls = true; if (auto) { video.autoplay = true; video.muted = true; }
     el.appendChild(video);
     if (!auto && !ctrl) { el.style.cursor='pointer'; el.addEventListener('click', e => { e.stopPropagation(); video.paused ? video.play() : video.pause(); }); }
@@ -393,7 +393,7 @@ function _pvVideo(el, d) {
 function _pvFullscreen(src, ctrl) {
   const ov = document.createElement('div');
   ov.style.cssText = 'position:fixed;inset:0;background:#000;z-index:99999;display:flex;align-items:center;justify-content:center;';
-  const v = document.createElement('video'); v.src=src; v.autoplay=true; if(ctrl)v.controls=true;
+  const v = document.createElement('video'); v.src=typeof assetUrl==='function'?assetUrl(src):src; v.autoplay=true; if(ctrl)v.controls=true;
   v.style.cssText='max-width:100%;max-height:100%;outline:none;';
   const btn = document.createElement('button'); btn.textContent='✕';
   btn.style.cssText='position:absolute;top:16px;right:20px;background:rgba(255,255,255,.15);border:none;color:#fff;font-size:20px;cursor:pointer;padding:6px 12px;border-radius:6px;';

@@ -56,6 +56,30 @@ function renderThumbCanvas(cnv,s,slideIdx){
   }
   ctx.fillRect(0,0,TW,TH);
 
+  if(s.bgImg&&s.bgImg.src){
+    const thumbBg=typeof _scaleBgImgForCanvas==='function'
+      ?_scaleBgImgForCanvas(s.bgImg,TW,TH,canvasW,canvasH)
+      :s.bgImg;
+    const drawBgImg=(img)=>{
+      if(typeof drawSlideBgImgOnCanvas==='function') drawSlideBgImgOnCanvas(ctx,thumbBg,TW,TH,img);
+      else{
+        const ir=img.naturalWidth/img.naturalHeight||1;
+        const tr=TW/TH;
+        let dw,dh,dx,dy;
+        if(ir>tr){dh=TH;dw=dh*ir;dx=(TW-dw)/2;dy=0;}
+        else{dw=TW;dh=dw/ir;dx=0;dy=(TH-dh)/2;}
+        ctx.drawImage(img,dx,dy,dw,dh);
+      }
+    };
+    if(_thumbImgCache[s.bgImg.src]) drawBgImg(_thumbImgCache[s.bgImg.src]);
+    else{
+      const img=new Image();
+      img.onload=()=>{_thumbImgCache[s.bgImg.src]=img;drawThumbs();};
+      img.onerror=()=>{};
+      img.src=typeof assetUrl==='function'?assetUrl(s.bgImg.src):s.bgImg.src;
+    }
+  }
+
   // Draw elements (sorted by z, decor first)
   const els=s.els||[];
   els.forEach(d=>{
@@ -457,7 +481,7 @@ function drawThumbImage(ctx,d,sx,sy){
   const img=new Image();
   img.onload=()=>{_thumbImgCache[d.src]=img;drawThumbs();};
   img.onerror=()=>{};
-  img.src=d.src;
+  img.src=typeof assetUrl==='function'?assetUrl(d.src):d.src;
   ctx.save();ctx.fillStyle="rgba(255,255,255,0.1)";ctx.fillRect(x,y,w,h);ctx.restore();
 }
 
@@ -689,7 +713,7 @@ function drawThumbGraph(ctx,d,sx,sy){
   Object.keys(_thumbGraphCache).forEach(k=>{ if(k.startsWith('graph_'+d.id+'_')) delete _thumbGraphCache[k]; });
   const img=new Image();
   img.onload=()=>{_thumbGraphCache[key]=img;drawThumbs();};
-  img.src=d.graphImg;
+  img.src=typeof assetUrl==='function'?assetUrl(d.graphImg):d.graphImg;
 }
 
 function drawThumbLego(ctx, d, sx, sy) {

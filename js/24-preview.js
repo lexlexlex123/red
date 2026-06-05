@@ -324,12 +324,15 @@ function buildPSlide(container,idx,transOffset){
   container.innerHTML='';container.style.width=canvasW+'px';container.style.height=canvasH+'px';
   container.style.transform='scale('+sc+')';container.style.transformOrigin='top left';
   const bg=document.createElement('div');bg.style.cssText='position:absolute;inset:0;z-index:0;';
-  if(s.bg==='custom'||s.bg==='theme'){
-    const _ti2=typeof appliedThemeIdx!=='undefined'&&appliedThemeIdx>=0?appliedThemeIdx:-1;
-    const _tb2=_ti2>=0?THEMES[_ti2].bg:'#1a1a2e';
-    bg.style.background=s.bgc||_tb2;
+  if(typeof _applySlideBgToEl==='function')_applySlideBgToEl(bg,s);
+  else{
+    if(s.bg==='custom'||s.bg==='theme'){
+      const _ti2=typeof appliedThemeIdx!=='undefined'&&appliedThemeIdx>=0?appliedThemeIdx:-1;
+      const _tb2=_ti2>=0?THEMES[_ti2].bg:'#1a1a2e';
+      bg.style.background=s.bgc||_tb2;
+    }
+    else{const b=BGS.find(b=>b.id===s.bg);bg.style.background=b?b.s:'#ddd';}
   }
-  else{const b=BGS.find(b=>b.id===s.bg);bg.style.background=b?b.s:'#ddd';}
   container.appendChild(bg);
 
   const hiddenSet=hiddenElsPerSlide[idx]||new Set();
@@ -480,7 +483,7 @@ function buildPSlide(container,idx,transOffset){
       // Border for text boxes
       if(d.textBorderW&&+d.textBorderW>0){el.style.outline=(d.textBorderW||0)+'px solid '+(d.textBorderColor||'#ffffff');el.style.outlineOffset='0px';}
     }else if(d.type==='image'){
-      const img=document.createElement('img');img.src=d.src;
+      const img=document.createElement('img');img.src=typeof assetUrl==='function'?assetUrl(d.src):d.src;
       const cL=d.imgCropL||0,cT=d.imgCropT||0,cR=d.imgCropR||0,cB=d.imgCropB||0;
       const hasCrop=cL||cT||cR||cB;
       if(hasCrop){
