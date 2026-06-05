@@ -269,6 +269,7 @@ function syncSlideBgPreview(){
   }
 }
 
+<<<<<<< HEAD
 function _syncNumScrubber(inp,val){
   if(!inp)return;
   inp.value=val;
@@ -280,11 +281,18 @@ function syncSlideBgImageUI(){
   const s = slides[cur];
   const row = document.getElementById('slide-bg-img-row');
   const thumbEl = document.getElementById('slide-bg-img-thumb');
+=======
+function syncSlideBgImageUI(){
+  const s = slides[cur];
+  const row = document.getElementById('slide-bg-img-row');
+  const nameEl = document.getElementById('slide-bg-img-name');
+>>>>>>> 884f6a84255b5cd68329d7481ea09b06f90c15a8
   const modesRow = document.getElementById('slide-bg-img-modes');
   const tileProps = document.getElementById('slide-bg-tile-props');
   const customProps = document.getElementById('slide-bg-custom-props');
   const hasBg = !!(s && s.bgImg && s.bgImg.src);
 
+<<<<<<< HEAD
   if(row && thumbEl){
     if(hasBg){
       row.style.display='block';
@@ -295,6 +303,18 @@ function syncSlideBgImageUI(){
       row.style.display='none';
       thumbEl.removeAttribute('src');
       thumbEl.alt='';
+=======
+  if(row && nameEl){
+    if(hasBg){
+      row.style.display='block';
+      const nm=s.bgImg.name||_imgDisplayName(s.bgImg.src);
+      nameEl.textContent=nm;
+      nameEl.title=nm;
+    } else {
+      row.style.display='none';
+      nameEl.textContent='';
+      nameEl.title='';
+>>>>>>> 884f6a84255b5cd68329d7481ea09b06f90c15a8
     }
   }
 
@@ -335,9 +355,15 @@ function syncSlideBgImageUI(){
       if(btn) btn.classList.toggle('active',m===bg.mode);
     });
     const opInp=document.getElementById('sbg-opacity');
+<<<<<<< HEAD
     _syncNumScrubber(opInp, Math.round((bg.opacity!=null?bg.opacity:1)*100));
     const blurInp=document.getElementById('sbg-blur');
     _syncNumScrubber(blurInp, bg.blur!=null?bg.blur:0);
+=======
+    if(opInp) opInp.value=Math.round((bg.opacity!=null?bg.opacity:1)*100);
+    const blurInp=document.getElementById('sbg-blur');
+    if(blurInp) blurInp.value=bg.blur!=null?bg.blur:0;
+>>>>>>> 884f6a84255b5cd68329d7481ea09b06f90c15a8
   }
 }
 

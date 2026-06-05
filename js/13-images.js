@@ -221,7 +221,11 @@ function imgSetAsSlideBg(){
   if(!d||!d.src)return;
   const name=d.imgName||_imgDisplayName(d.src);
   const resolvedBg=typeof _resolveSlideColorBg==='function'?_resolveSlideColorBg(slides[cur]):null;
+<<<<<<< HEAD
   slides[cur].bgImg={src:d.src,name,mode:'cover',opacity:1,blur:0,tileSize:120,tileGap:10,tileRot:0};
+=======
+  slides[cur].bgImg={src:d.src,name,mode:'cover',opacity:1,tileSize:120,tileGap:10,tileRot:0};
+>>>>>>> 884f6a84255b5cd68329d7481ea09b06f90c15a8
   slides[cur].bg='custom';
   if(!slides[cur].bgc&&resolvedBg)slides[cur].bgc=resolvedBg;
   slides[cur].els=slides[cur].els.filter(e=>e.id!==id);
