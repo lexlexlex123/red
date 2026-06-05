@@ -792,6 +792,13 @@
       // Добавляем перехват mousedown в capture-фазе ПОВЕРХ оригинала
       el.addEventListener('mousedown', function (e) {
         if (e.button !== 0) return;
+        // Curve stroke drag — only the curve unless user explicitly multi-selected (Shift/rubber-band)
+        if (el.dataset.shape === 'curve') {
+          var _ct = e.target;
+          var _curveStroke = _ct.tagName === 'path' ||
+            (_ct.tagName === 'svg' && _ct.classList && _ct.classList.contains('shape-hit-area'));
+          if (_curveStroke && !window._explicitMultiSel) return;
+        }
         var gid = getGroupId(el);
         if (!gid) return;
         // If group already fully selected — just let normal drag run

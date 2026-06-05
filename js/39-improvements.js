@@ -17,6 +17,17 @@
   const MAX_SNAP = 20; // максимум снапшотов в истории
   let _db = null;
 
+  // sessionStorage → localStorage до boot()/loadState() (свежие данные после F5)
+  try{
+    const ssRaw=sessionStorage.getItem('sf_v4_session');
+    const ssTs=+(sessionStorage.getItem('sf_v4_ts')||0);
+    const lsTs=+(localStorage.getItem('sf_v4_ts')||0);
+    if(ssRaw&&ssTs>lsTs){
+      localStorage.setItem('sf_v4',ssRaw);
+      localStorage.setItem('sf_v4_ts',String(ssTs));
+    }
+  }catch(e){}
+
   function openDB(){
     return new Promise((res, rej)=>{
       if(_db){ res(_db); return; }
@@ -178,28 +189,9 @@
     }catch(e){ toast('Ошибка восстановления'); }
   };
 
-  // При загрузке: sessionStorage имеет приоритет если содержит timestamp новее
+  // При загрузке: если localStorage пуст — пробуем IndexedDB
   window.addEventListener('load', async ()=>{
     const lsRaw = localStorage.getItem('sf_v4');
-    const ssRaw = sessionStorage.getItem('sf_v4_session');
-    const ssTsRaw = sessionStorage.getItem('sf_v4_ts');
-    const lsTsRaw = localStorage.getItem('sf_v4_ts');
-    const ssTs = ssTsRaw ? +ssTsRaw : 0;
-    const lsTs = lsTsRaw ? +lsTsRaw : 0;
-
-    // sessionStorage актуальнее localStorage (импорт и потом F5)
-    if(ssRaw && ssTs > lsTs){
-      try{
-        localStorage.setItem('sf_v4', ssRaw);
-        localStorage.setItem('sf_v4_ts', String(ssTs));
-        // boot() уже отработал с устаревшим localStorage — перезагружаем данные
-        if(typeof loadState==='function') loadState();
-        if(typeof renderAll==='function') renderAll();
-        if(typeof pnApplyAll==='function') requestAnimationFrame(pnApplyAll);
-        toast('📂 Презентация восстановлена');
-        return;
-      }catch(e){}
-    }
 
     // localStorage пуст — пробуем IDB
     if(!lsRaw){

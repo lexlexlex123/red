@@ -47,6 +47,7 @@ let _imgCurCat = IMAGE_CATS[0].id;
 let _imgSearchVal = '';
 let _imgSelectedPath = null;
 let _imgReplaceMode = false;
+let _imgSlideBgMode = false;
 
 function _refreshRegistry(){
   const raw = (typeof IMAGE_INDEX !== 'undefined') ? IMAGE_INDEX : [];
@@ -68,9 +69,19 @@ function _refreshRegistry(){
 }
 
 // ── Открыть модал ──────────────────────────────────────────────────
-function openImageModal(replaceMode){
-  _imgReplaceMode = !!replaceMode;
-  _imgSelectedPath = null;
+function _syncImgModalOkLabel(){
+  const ok=document.getElementById('img-modal-ok');
+  const lbl=ok&&ok.querySelector('span');
+  if(!lbl)return;
+  lbl.textContent=_imgSlideBgMode
+    ?(typeof t==='function'?t('btnSetSlideBg'):'Установить фон')
+    :(typeof t==='function'?t('btnInsert'):'Вставить');
+}
+
+function openImageModal(replaceMode,mode){
+  _imgReplaceMode=!!replaceMode;
+  _imgSlideBgMode=mode==='slideBg';
+  _imgSelectedPath=null;
   _imgSearchVal = '';
   const si = document.getElementById('img-search');
   if(si) si.value = '';
@@ -89,11 +100,18 @@ function openImageModal(replaceMode){
   // Сбрасываем кнопку вставки
   const ok = document.getElementById('img-modal-ok');
   if(ok) ok.disabled = true;
+  _syncImgModalOkLabel();
+}
+
+function openImageModalForSlideBg(){
+  openImageModal(false,'slideBg');
 }
 
 function closeImageModal(){
   document.getElementById('img-modal').classList.remove('open');
   _imgSelectedPath = null;
+  _imgSlideBgMode = false;
+  _syncImgModalOkLabel();
 }
 
 // ── Вкладки категорий ──────────────────────────────────────────────
@@ -152,7 +170,7 @@ function _renderImgCells(grid, imgs){
     const preview = document.createElement('div');
     preview.style.cssText = 'position:absolute;inset:0;background-size:contain;background-position:center;background-repeat:no-repeat;pointer-events:none;';
     // Кодируем спецсимволы в пути
-    const previewUrl = img.path.split('/').map(function(p, i){
+    const previewUrl = typeof assetUrl==='function' ? assetUrl(img.path) : img.path.split('/').map(function(p, i){
       return i === 0 ? p : encodeURIComponent(decodeURIComponent(p));
     }).join('/');
     preview.style.backgroundImage = 'url("' + previewUrl + '")';
@@ -224,7 +242,14 @@ function _insertSelectedImage(){
   const srcPath = _imgSelectedPath;
   const isSvg = _imgSelectedIsSvg;
   const replaceMode = _imgReplaceMode;
+  const slideBgMode = _imgSlideBgMode;
   closeImageModal();
+  if(slideBgMode){
+    const entry=IMAGE_REGISTRY.find(x=>x.path===srcPath);
+    const name=entry?entry.name:(typeof _imgDisplayName==='function'?_imgDisplayName(srcPath):srcPath.split('/').pop());
+    if(typeof setSlideBgImage==='function')setSlideBgImage(srcPath,name);
+    return;
+  }
   if(replaceMode && typeof sel !== 'undefined' && sel){
     // Заменяем src выбранного элемента
     const d = slides[cur].els.find(e => e.id === sel.dataset.id);
@@ -328,7 +353,7 @@ function _insertAsImage(src){
     if(el) pick(el);
     save(); drawThumbs(); saveState();
   };
-  tmp.src = src;
+  tmp.src = typeof assetUrl==='function' ? assetUrl(src) : src;
 }
 
 // ── Загрузка с компьютера (из модала) ─────────────────────────────
@@ -339,15 +364,23 @@ function imgModalUpload(){
   inp.onchange = e => {
     const file = e.target.files[0];
     if(!file) return;
+    const slideBgMode = _imgSlideBgMode;
     closeImageModal();
+    if(slideBgMode){
+      const reader = new FileReader();
+      reader.onload = ev => {
+        if(typeof setSlideBgImage==='function')setSlideBgImage(ev.target.result,file.name);
+      };
+      reader.readAsDataURL(file);
+      inp.value = '';
+      return;
+    }
     const isSvg = file.type === 'image/svg+xml' || file.name.endsWith('.svg');
     if(isSvg){
-      // SVG — читаем как текст и передаём в insertSvgElement (как в 28-filedrop.js)
       const reader = new FileReader();
       reader.onload = ev => {
         if(typeof insertSvgElement === 'function') insertSvgElement(ev.target.result);
         else {
-          // Fallback: SVG как data URL
           const blob = new Blob([ev.target.result], {type:'image/svg+xml'});
           const url = URL.createObjectURL(blob);
           _insertAsImage(url);

@@ -36,7 +36,7 @@ function handleImg(e){
       let w=tmp.naturalWidth||400,h=tmp.naturalHeight||300;
       const scale=Math.min(maxW/w,maxH/h,1);
       w=Math.round(w*scale);h=Math.round(h*scale);
-      const d={id:'e'+(++ec),type:'image',x:Math.round((canvasW-w)/2),y:Math.round((canvasH-h)/2),w,h,src,rot:0,anims:[],imgFit:'fill',imgRx:0,imgBw:0,imgBc:'#ffffff',imgShadow:false,imgShadowBlur:15,imgShadowColor:'#000000',imgOpacity:1};
+      const d={id:'e'+(++ec),type:'image',x:Math.round((canvasW-w)/2),y:Math.round((canvasH-h)/2),w,h,src,imgName:f.name,rot:0,anims:[],imgFit:'fill',imgRx:0,imgBw:0,imgBc:'#ffffff',imgShadow:false,imgShadowBlur:15,imgShadowColor:'#000000',imgOpacity:1};
       slides[cur].els.push(d);mkEl(d);
       const el=document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
       if(el)pick(el);
@@ -121,15 +121,62 @@ function syntaxHighlight(code,lang,theme='dark'){
   return h;
 }
 
+function getCodeBlockTheme(d){
+  if(d && d.codeTheme) return d.codeTheme;
+  return getCodeThemeForPresTheme();
+}
+
+function codeBlockSurfaceCss(d, T){
+  const theme = getCodeBlockTheme(d);
+  T = T || CODE_THEMES[theme] || CODE_THEMES.dark;
+  const fs = d.codeFs || 13;
+  let bg = T.bg;
+  let glass = '';
+  if(d.codeGlass){
+    bg = theme === 'light' ? 'rgba(248,249,250,0.58)' : 'rgba(13,17,23,0.58)';
+    glass = 'backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);';
+  }
+  return `width:100%;height:100%;overflow:auto;border-radius:6px;font-family:'JetBrains Mono',monospace;font-size:${fs}px;line-height:1.6;padding:14px 16px;box-sizing:border-box;background:${bg};color:${T.text};border:1px solid rgba(128,128,128,${d.codeGlass ? 0.22 : 0.15});${glass}`;
+}
+
+function applyCodeModalChrome(){
+  const wrap = document.getElementById('cm-editor-wrap');
+  const lines = document.getElementById('cm-lines');
+  const pre = document.getElementById('cm-highlight');
+  const ta = document.getElementById('cm-code');
+  const themeEl = document.getElementById('cm-theme');
+  const glassEl = document.getElementById('cm-glass');
+  if(!wrap) return;
+  const th = themeEl ? themeEl.value : 'dark';
+  const T = CODE_THEMES[th] || CODE_THEMES.dark;
+  const isGlass = !!(glassEl && glassEl.checked);
+  const bg = isGlass ? (th === 'light' ? 'rgba(248,249,250,0.58)' : 'rgba(13,17,23,0.58)') : T.bg;
+  const borderC = th === 'light' ? '#d0d7de' : '#21262d';
+  const lineNumC = th === 'light' ? '#8c959f' : '#4a5568';
+  wrap.style.background = bg;
+  wrap.style.borderColor = borderC;
+  wrap.style.backdropFilter = isGlass ? 'blur(10px)' : '';
+  wrap.style.webkitBackdropFilter = isGlass ? 'blur(10px)' : '';
+  if(lines){
+    lines.style.background = bg;
+    lines.style.borderRight = '1px solid ' + borderC;
+    lines.style.color = lineNumC;
+  }
+  if(pre) pre.style.color = T.text;
+  if(ta) ta.style.caretColor = T.text;
+}
+window.applyCodeModalChrome = applyCodeModalChrome;
+window.codeBlockSurfaceCss = codeBlockSurfaceCss;
+
 function refreshAllCodeBlocks(){
-  const newTheme = getCodeThemeForPresTheme();
-  const T = CODE_THEMES[newTheme] || CODE_THEMES.dark;
   slides.forEach(s=>{
     s.els.forEach(d=>{
       if(d.type==='code' && d.codeRaw){
-        d.codeTheme = newTheme;
+        const theme = getCodeBlockTheme(d);
+        const T = CODE_THEMES[theme] || CODE_THEMES.dark;
+        d.codeTheme = theme;
         d.codeBg = T.bg;
-        d.codeHtml = syntaxHighlight(d.codeRaw, d.codeLang||'js', newTheme);
+        d.codeHtml = syntaxHighlight(d.codeRaw, d.codeLang||'js', theme);
       }
     });
   });
@@ -146,10 +193,12 @@ function addCodeBlock(){
   _codeEditId=null;
   document.getElementById('cm-lang').value='js';
   document.getElementById('cm-code').value='// Your code here\nconsole.log("Hello, World!");';
-  const th=getCodeThemeForPresTheme();
-  const thNames={dark:'GitHub Dark',monokai:'Monokai',dracula:'Dracula',light:'Light'};
-  const lbl=document.getElementById('cm-theme-label');
-  if(lbl)lbl.textContent='Theme: '+(thNames[th]||th);
+  const thEl=document.getElementById('cm-theme');
+  if(thEl) thEl.value=getCodeThemeForPresTheme();
+  const gEl=document.getElementById('cm-glass');
+  if(gEl) gEl.checked=false;
+  if(typeof _cmRefreshHL==='function') _cmRefreshHL();
+  applyCodeModalChrome();
   document.getElementById('code-modal').classList.add('open');
 }
 
@@ -159,28 +208,38 @@ function openCodeEditor(){
   _codeEditId=d.id;
   document.getElementById('cm-lang').value=d.codeLang||'js';
   document.getElementById('cm-code').value=d.codeRaw||'';
-  const th=getCodeThemeForPresTheme();
-  const thNames={dark:'GitHub Dark',monokai:'Monokai',dracula:'Dracula',light:'Light'};
-  const lbl=document.getElementById('cm-theme-label');
-  if(lbl)lbl.textContent='Theme: '+(thNames[th]||th);
+  const thEl=document.getElementById('cm-theme');
+  if(thEl) thEl.value=d.codeTheme||getCodeThemeForPresTheme();
+  const gEl=document.getElementById('cm-glass');
+  if(gEl) gEl.checked=!!d.codeGlass;
+  if(typeof _cmRefreshHL==='function') _cmRefreshHL();
+  applyCodeModalChrome();
   document.getElementById('code-modal').classList.add('open');
 }
 
 function insertCodeBlock(){
   const lang=document.getElementById('cm-lang').value;
-  const theme=getCodeThemeForPresTheme();
+  const themeEl=document.getElementById('cm-theme');
+  const theme=themeEl?themeEl.value:getCodeThemeForPresTheme();
+  const glassEl=document.getElementById('cm-glass');
+  const codeGlass=!!(glassEl&&glassEl.checked);
   const raw=document.getElementById('cm-code').value;
   document.getElementById('code-modal').classList.remove('open');
   pushUndo();
   if(_codeEditId){
     const d=slides[cur].els.find(e=>e.id===_codeEditId);
-    if(d){d.codeLang=lang;d.codeTheme=theme;d.codeRaw=raw;d.codeHtml=syntaxHighlight(raw,lang,theme);
+    if(d){
+      d.codeLang=lang;d.codeTheme=theme;d.codeGlass=codeGlass;d.codeRaw=raw;
+      d.codeHtml=syntaxHighlight(raw,lang,theme);
+      const T=CODE_THEMES[theme]||CODE_THEMES.dark;
+      d.codeBg=T.bg;
       const domEl=document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
-      if(domEl)renderCodeEl(domEl,d);}
+      if(domEl)renderCodeEl(domEl,d);
+    }
   } else {
     const T=CODE_THEMES[theme]||CODE_THEMES.dark;
     const d={id:'e'+(++ec),type:'code',x:snapV(60),y:snapV(60),w:snapV(680),h:snapV(400),
-      codeLang:lang,codeTheme:theme,codeRaw:raw,codeHtml:syntaxHighlight(raw,lang,theme),
+      codeLang:lang,codeTheme:theme,codeGlass:codeGlass,codeRaw:raw,codeHtml:syntaxHighlight(raw,lang,theme),
       codeBg:T.bg,codeFs:13,rot:0,anims:[]};
     slides[cur].els.push(d);mkEl(d);
   }
@@ -189,9 +248,9 @@ function insertCodeBlock(){
 
 function renderCodeEl(el,d){
   const c=el.querySelector('.ec');if(!c)return;
-  const theme=d.codeTheme||getCodeThemeForPresTheme();
+  const theme=getCodeBlockTheme(d);
   const T=CODE_THEMES[theme]||CODE_THEMES.dark;
-  c.style.cssText=`width:100%;height:100%;overflow:auto;border-radius:6px;font-family:'JetBrains Mono',monospace;font-size:${d.codeFs||13}px;line-height:1.6;padding:14px 16px;box-sizing:border-box;background:${T.bg};color:${T.text};border:1px solid rgba(128,128,128,.15);`;
+  c.style.cssText=codeBlockSurfaceCss(d,T);
   c.innerHTML=`<div style="font-size:9px;color:${T.cmt};margin-bottom:8px;text-transform:uppercase;letter-spacing:.8px">${d.codeLang||''}</div><pre style="margin:0;white-space:pre;overflow:visible">${d.codeHtml||''}</pre>`;
 }
 

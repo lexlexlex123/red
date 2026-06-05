@@ -77,8 +77,11 @@
         _row(box, 'Длительность перехода (мс)', _inp('number', _get('transitionDur', 500), 0, 5000, 50, v => {
           _set('transitionDur', v);
           _safe(() => {
-            const el = document.getElementById('trans-dur');
-            if (el) el.value = v;
+            if (typeof setTransitionDur === 'function') setTransitionDur(v);
+            else {
+              const el = document.getElementById('trans-dur');
+              if (el) el.value = v;
+            }
             _call('saveState');
           });
         }));

@@ -360,7 +360,14 @@ function syncProps(){
   // Sync text radius
   if(sel.dataset.type==='text')syncTextRadiusUI();
 }
-function setES(prop,val,u){if(!sel)return;sel.style[prop]=val+u;save();drawThumbs();}
+function setES(prop,val,u){
+  if(!sel)return;
+  sel.style[prop]=val+u;
+  if(prop==='left'||prop==='top'||prop==='width'||prop==='height'){
+    if(typeof _updateHandlesOverlay==='function')_updateHandlesOverlay();
+  }
+  save();drawThumbs();
+}
 function setElRotation(deg){
   if(!sel)return;
   const _rot_d=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);

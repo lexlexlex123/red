@@ -63,7 +63,6 @@ function mkDrag(el,c){
         // Skip passthrough logic if curve is in a multi-selection
         const _inMultiSel = typeof multiSel!=='undefined' && multiSel.size>1 && multiSel.has(el);
         if(_isCurvePath || _inMultiSel){
-          // Clicked on curve stroke or multi-drag: drag the curve, stop propagation
           if(_isCurvePath) e.stopPropagation();
         } else {
           // Click not on stroke path
@@ -139,7 +138,8 @@ function mkDrag(el,c){
               if(_snc3&&_snc3.checked&&typeof snapV==='function'){_nl3b=snapV(_nl3b);_nt3b=snapV(_nt3b);}
               _below3.style.left=_nl3b+'px';_below3.style.top=_nt3b+'px';
               if(typeof drawGuides==='function')drawGuides(_below3);
-              if(typeof _updateHandlesOverlay==='function' && !window._curveDragging)_updateHandlesOverlay();
+              if(typeof _scheduleHandlesOverlayUpdate==='function') _scheduleHandlesOverlayUpdate();
+              else if(typeof _updateHandlesOverlay==='function' && !window._curveDragging)_updateHandlesOverlay();
             };
             const _mu3b=()=>{
               window._anyDragging=false;
@@ -186,9 +186,13 @@ function mkDrag(el,c){
     // Block figure drag in curve edit mode
     if(window._curveEditMode && el.dataset.shape==='curve') return;
     e.preventDefault();on=true;window._anyDragging=true;ox=e.clientX;oy=e.clientY;ol=parseInt(el.style.left);ot=parseInt(el.style.top);
-    pushUndo(); // Record state before drag starts
-    // Capture group positions if multi-selecting
-    if(multiSel.size>1&&multiSel.has(el)){
+    let _dragUndo=false;
+    // Capture group positions if multi-selecting; curve stroke alone moves only the curve
+    const _curveStrokeDrag=el.dataset.shape==='curve'&&(
+      e.target.tagName==='path'||
+      (e.target.tagName==='svg'&&e.target.classList&&e.target.classList.contains('shape-hit-area'))
+    );
+    if(multiSel.size>1&&multiSel.has(el)&&(!_curveStrokeDrag||window._explicitMultiSel)){
       groupStart=new Map();
       multiSel.forEach(mEl=>groupStart.set(mEl,{x:parseInt(mEl.style.left),y:parseInt(mEl.style.top)}));
     } else {
@@ -197,6 +201,7 @@ function mkDrag(el,c){
     const mm=e2=>{
       if(!on)return;
       if(e2.buttons===0){mu();return;}
+      if(!_dragUndo){_dragUndo=true;if(typeof pushUndo==='function')pushUndo();}
       const _z=typeof _canvasZoom==='number'?_canvasZoom:1;
       let dx=(e2.clientX-ox)/_z,dy=(e2.clientY-oy)/_z;
       if(groupStart){
@@ -206,13 +211,15 @@ function mkDrag(el,c){
           mEl.style.left=nx+'px';mEl.style.top=ny+'px';
         });
         if(typeof renderMotionOverlay==='function') renderMotionOverlay();
-        if(typeof _updateHandlesOverlay==='function' && !window._curveDragging)_updateHandlesOverlay();
+        if(typeof _scheduleHandlesOverlayUpdate==='function') _scheduleHandlesOverlayUpdate();
+        else if(typeof _updateHandlesOverlay==='function' && !window._curveDragging)_updateHandlesOverlay();
       } else {
         let nx=ol+dx,ny=ot+dy;
         if(document.getElementById('snap-chk').checked){nx=snapV(nx);ny=snapV(ny);}
         el.style.left=nx+'px';el.style.top=ny+'px';showGuides(el);syncPos();
         if(typeof renderMotionOverlay==='function') renderMotionOverlay();
-        if(typeof _updateHandlesOverlay==='function' && !window._curveDragging)_updateHandlesOverlay();
+        if(typeof _scheduleHandlesOverlayUpdate==='function') _scheduleHandlesOverlayUpdate();
+        else if(typeof _updateHandlesOverlay==='function' && !window._curveDragging)_updateHandlesOverlay();
       }
     };
     const mu=()=>{on=false;window._anyDragging=false;groupStart=null;clearGuides();document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);commitAll();};
@@ -225,7 +232,7 @@ function mkResize(el,rh,cfg){
     e.preventDefault();e.stopPropagation();
     window._resizeDragging=true;window._anyDragging=true;
     const _cwrap=document.getElementById('cwrap');if(_cwrap)_cwrap.style.cursor='';
-    pushUndo();
+    let _resizeUndo=false;
     const cv=document.getElementById('canvas');
     cv.querySelectorAll('.el').forEach(other=>{if(other!==el)other.style.pointerEvents='none';});
     const sx=e.clientX,sy=e.clientY,sw=parseInt(el.style.width),sh=parseInt(el.style.height),sl=parseInt(el.style.left),st=parseInt(el.style.top);
@@ -237,6 +244,7 @@ function mkResize(el,rh,cfg){
     const appletAspect=_appletD&&_appletD._appletAspect||null;
     const mm=e2=>{
       if(e2.buttons===0){mu();return;}
+      if(!_resizeUndo){_resizeUndo=true;if(typeof pushUndo==='function')pushUndo();}
       const _z=typeof _canvasZoom==='number'?_canvasZoom:1;
       let nw,nh;
       const _rdx=(e2.clientX-sx)/_z, _rdy=(e2.clientY-sy)/_z;
@@ -321,7 +329,8 @@ function mkResize(el,rh,cfg){
         const img=el.querySelector('img');if(img)img.style.objectFit='fill';
       }
       syncPos();
-      if(typeof _updateHandlesOverlay==='function' && !window._curveDragging)_updateHandlesOverlay();
+      if(typeof _scheduleHandlesOverlayUpdate==='function') _scheduleHandlesOverlayUpdate();
+      else if(typeof _updateHandlesOverlay==='function' && !window._curveDragging)_updateHandlesOverlay();
     };
     const mu=()=>{
       window._resizeDragging=false;window._anyDragging=false;
@@ -357,7 +366,8 @@ function mkResize(el,rh,cfg){
           _dmu2.rotPivotX=_cxp; _dmu2.rotPivotY=_cyp;
         }
       }
-      if(typeof _updateHandlesOverlay==='function' && !window._curveDragging) _updateHandlesOverlay();
+      if(typeof _scheduleHandlesOverlayUpdate==='function') _scheduleHandlesOverlayUpdate();
+      else if(typeof _updateHandlesOverlay==='function' && !window._curveDragging) _updateHandlesOverlay();
       commitAll();
     };
     document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);

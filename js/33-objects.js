@@ -280,5 +280,12 @@
     }
   });
 
+  window.morphMatchKey = function (d, allEls) {
+    if (!d) return '';
+    if (d.morphName && String(d.morphName).trim()) return String(d.morphName).trim();
+    return elLabel(d, allEls || []);
+  };
+  window.morphElLabel = elLabel;
+
   window.renderObjectsPanel = renderObjectsPanel;
 })();

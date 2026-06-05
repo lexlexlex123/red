@@ -1,9 +1,12 @@
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=Запустить локальный сервер
-Comment=Запускает Python сервер и открывает браузер
-Exec=/bin/bash -c "cd %f && python3 -m http.server 8000 & sleep 1 && xdg-open http://localhost:8000 && wait"
-Icon=network-workgroup
+Name=RED — локальный сервер
+Comment=Запускает Python HTTP-сервер и открывает редактор в браузере
+Exec=/home/kab27/Desktop/red-main/run.sh
+Path=/home/kab27/Desktop/red-main
+Icon=network-server
 Terminal=true
 Categories=Development;
+Keywords=server;http;presentation;red;
+StartupNotify=true

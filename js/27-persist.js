@@ -59,9 +59,13 @@ function loadState(){
     slides=s.slides||[];cur=s.cur||0;ar=s.ar||'16:9';
     canvasW=s.canvasW||1200;canvasH=s.canvasH||(ar==='4:3'?900:675);
     globalTrans=s.globalTrans||'none';transitionDur=s.transitionDur||500;
+    if(typeof syncTransDurUI==='function') syncTransDurUI();
     autoDelay=s.autoDelay||5;ec=s.ec||0;
     document.getElementById('canvas').style.width=canvasW+'px';
     document.getElementById('canvas').style.height=canvasH+'px';
+    const bgRect=document.getElementById('canvas-bg-rect');
+    if(bgRect){bgRect.style.width=canvasW+'px';bgRect.style.height=canvasH+'px';}
+    if(typeof _applyCanvasZoom==='function') _applyCanvasZoom();
     document.querySelectorAll('.ar-btn').forEach(b=>b.classList.toggle('active',b.textContent===ar));
     if(s.title)document.getElementById('pres-title').value=s.title;
     if(s.appliedThemeIdx!=null)appliedThemeIdx=s.appliedThemeIdx;

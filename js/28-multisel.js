@@ -2,6 +2,7 @@
 function clearMultiSel(){
   multiSel.forEach(el=>el.classList.remove('multi-sel'));
   multiSel.clear();
+  window._explicitMultiSel=false;
   updateMultiBar();
 }
 function addToMultiSel(el){
@@ -30,6 +31,7 @@ function pickMulti(el,shiftKey){
     return;
   }
   if(shiftKey){
+    window._explicitMultiSel=true;
     if(multiSel.has(el)){
       removeFromMultiSel(el);
       const remaining=[...multiSel];
@@ -211,6 +213,7 @@ function pickMulti(el,shiftKey){
     if(multiSel.size===1){
       const onlyEl=[...multiSel][0];clearMultiSel();pick(onlyEl);
     } else if(multiSel.size>1){
+      window._explicitMultiSel=true;
       // Freeze the full selection before pick() can overwrite it
       const _frozenSel = [...multiSel];
       // Pick the last element for props panel, but without letting group patch clear multiSel
@@ -243,10 +246,12 @@ function copySelected(){
   }
   if(!elsToCopy.length)return (typeof toast==="function")&&toast(t('toastNothingSelected'));
   clipboard=elsToCopy;
+  if(typeof _xclipSaveElements==='function') _xclipSaveElements(elsToCopy);
   if(typeof toast==="function")toast(t('toastElementsCopied')+elsToCopy.length+t('toastElementsSuffix'),'ok');
 }
 
 function pasteSelected(){
+  if(typeof _xclipHydrateElements==='function') _xclipHydrateElements();
   if(!clipboard.length)return (typeof toast==="function")&&toast(t('toastNothingToPaste'));
   if(!slides[cur])return;
   if(typeof pushUndo==="function")pushUndo();

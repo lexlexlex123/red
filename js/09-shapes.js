@@ -1300,17 +1300,24 @@ function buildShapeSVG(d, w, h) {
   }
 
   let filterDef = '';
+  let shadowPad = 0;
   if (_gradDef) filterDef += _gradDef;
   if (d.shadow) {
     const sc = d.shadowColor || '#000000', sb = d.shadowBlur || 8;
-    const pad = Math.max(30, Math.ceil(sb * 3));
-    filterDef += `<filter id="sh_${d.id}" x="-${pad}%" y="-${pad}%" width="${100+pad*2}%" height="${100+pad*2}%">` +
+    shadowPad = Math.ceil(sb * 3 + 6);
+    filterDef += `<filter id="sh_${d.id}" filterUnits="userSpaceOnUse" x="${-shadowPad}" y="${-shadowPad}" width="${w + shadowPad * 2}" height="${h + shadowPad * 2}">` +
       `<feDropShadow dx="3" dy="3" stdDeviation="${sb}" flood-color="${sc}" flood-opacity="0.6"/></filter>`;
   }
   const defsContent = (filterDef || '') + (defBlock || '');
   const defs = defsContent ? `<defs>${defsContent}</defs>` : '';
+  const vbW = w + shadowPad * 2, vbH = h + shadowPad * 2;
+  const svgStyle = shadowPad
+    ? `overflow:visible;position:absolute;left:-${shadowPad}px;top:-${shadowPad}px;width:${vbW}px;height:${vbH}px`
+    : 'overflow:visible;width:100%;height:100%';
+  const svgViewBox = shadowPad ? `${-shadowPad} ${-shadowPad} ${vbW} ${vbH}` : `0 0 ${w} ${h}`;
+  const svgSize = shadowPad ? `width="${vbW}" height="${vbH}"` : `width="${w}" height="${h}"`;
   // For noFill (line/wave) the bounding-box div hit area handles clicks
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="overflow:visible">${defs}${shapeDef}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" ${svgSize} viewBox="${svgViewBox}" style="${svgStyle}">${defs}${shapeDef}</svg>`;
 }
 
 
@@ -1851,6 +1858,13 @@ function renderShapeEl(el,d){
     svgDiv.innerHTML=buildShapeSVG(d,w,h);
     const svgEl=svgDiv.querySelector('svg');
     if(svgEl){
+      const pad=d.shadow?Math.ceil((d.shadowBlur||8)*3+6):0;
+      if(!pad){
+        svgEl.style.position='absolute';
+        svgEl.style.inset='0';
+        svgEl.style.width='100%';
+        svgEl.style.height='100%';
+      }
       svgEl.style.pointerEvents='none';
       svgEl.querySelectorAll('path,rect,ellipse,circle,polygon,polyline').forEach(p=>{
         p.style.pointerEvents='visibleFill';p.style.cursor='move';

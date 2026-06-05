@@ -182,6 +182,7 @@ function setAR(ratio,btn){
   const oldW=canvasW,oldH=canvasH;
   canvasW=1200;canvasH=ratio==='4:3'?900:675;
   document.getElementById('canvas').style.width=canvasW+'px';document.getElementById('canvas').style.height=canvasH+'px';
+  if(typeof _applyCanvasZoom==='function') _applyCanvasZoom();
   // Scale element positions proportionally
   const sx=canvasW/oldW,sy=canvasH/oldH;
   // Types that must NOT be stretched - preserve aspect ratio
@@ -1127,6 +1128,15 @@ function _updateHandlesOverlay(){
     }
   }
 
+}
+
+let _handlesOverlayRaf=null;
+function _scheduleHandlesOverlayUpdate(){
+  if(_handlesOverlayRaf!=null)return;
+  _handlesOverlayRaf=requestAnimationFrame(()=>{
+    _handlesOverlayRaf=null;
+    if(typeof _updateHandlesOverlay==='function') _updateHandlesOverlay();
+  });
 }
 
 function _rhCursor(cls, rotDeg){

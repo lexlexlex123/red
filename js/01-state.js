@@ -3,6 +3,7 @@
 const SNAP=10;
 let slides=[],cur=0,sel=null,ec=0,ar='16:9',canvasW=1200,canvasH=675;
 let multiSel=new Set(),rbStart=null,clipboard=[];
+let slideMultiSel=new Set(),slideSelAnchor=0;
 let _justClearedMulti=false;
 let globalTrans='none',transitionDur=500,autoDelay=5;
 let undoStack=[],redoStack=[];

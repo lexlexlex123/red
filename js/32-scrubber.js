@@ -140,6 +140,11 @@
     });
   }
 
+  window.refreshNumScrubber = function (inp) {
+    if (!inp || inp.tagName !== 'INPUT' || inp.type !== 'number') return;
+    if (isFinite(getMn(inp)) && isFinite(getMx(inp)) && inp.value !== '') fill(inp);
+  };
+
   window.addEventListener('load', function () {
     const orig = window.syncProps;
     if (orig) window.syncProps = function () { orig.apply(this, arguments); setTimeout(initAll, 0); };

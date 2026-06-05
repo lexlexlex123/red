@@ -73,6 +73,7 @@
     const delayEl = document.getElementById('auto-delay');
     if (durEl   && typeof c.duration === 'number')   durEl.value   = c.duration;
     if (delayEl && typeof c.autoDelay === 'number')  delayEl.value = c.autoDelay;
+    if (typeof syncTransDurUI === 'function') syncTransDurUI();
   });
 
   // ─────────────────────────────────────────────────────────────

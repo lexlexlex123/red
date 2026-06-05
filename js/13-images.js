@@ -51,20 +51,20 @@ function _isTransparentPixel(elOuter, clientX, clientY, threshold) {
         } catch(e) { /* still tainted */ }
       };
 
-      if (src.startsWith('data:')) {
-        // Data URL — no CORS, can read directly
+      if (src.startsWith('data:') || location.protocol === 'file:') {
         buildCanvas(imgTag);
       } else {
-        // file:// or http:// — use fetch+blob to avoid CORS
-        fetch(src)
-          .then(r => r.blob())
+        const loadBlob = typeof assetFetchBlob === 'function'
+          ? assetFetchBlob(src)
+          : fetch(src).then(r => r.blob());
+        loadBlob
           .then(blob => {
             const url = URL.createObjectURL(blob);
             const img2 = new Image();
             img2.onload = () => { buildCanvas(img2); URL.revokeObjectURL(url); };
             img2.src = url;
           })
-          .catch(() => buildCanvas(imgTag)); // try direct as fallback
+          .catch(() => buildCanvas(imgTag));
       }
     }
     return false; // canvas not ready yet — will work on next click
@@ -213,20 +213,29 @@ function applyImgStyles(el,d){
   if(typeof applyImgCrop==='function')applyImgCrop(el,d);
 }
 
-function imgCoverSlide(){
+function imgSetAsSlideBg(){
   if(!sel||sel.dataset.type!=='image')return;
   pushUndo();
-  const d=slides[cur].els.find(e=>e.id===sel.dataset.id);if(!d)return;
-  d.x=0;d.y=0;d.w=canvasW;d.h=canvasH;
-  d.imgFit='cover';
-  // Move to back: put at index 0 in els (after decor)
-  const idx2=slides[cur].els.indexOf(d);
-  if(idx2>0){slides[cur].els.splice(idx2,1);
-    const firstNonDecor=slides[cur].els.findIndex(e=>!e._isDecor);
-    slides[cur].els.splice(Math.max(0,firstNonDecor),0,d);}
-  renderAll();commitAll();
+  const id=sel.dataset.id;
+  const d=slides[cur].els.find(e=>e.id===id);
+  if(!d||!d.src)return;
+  const name=d.imgName||_imgDisplayName(d.src);
+  const resolvedBg=typeof _resolveSlideColorBg==='function'?_resolveSlideColorBg(slides[cur]):null;
+  slides[cur].bgImg={src:d.src,name,mode:'cover',opacity:1,blur:0,tileSize:120,tileGap:10,tileRot:0};
+  slides[cur].bg='custom';
+  if(!slides[cur].bgc&&resolvedBg)slides[cur].bgc=resolvedBg;
+  slides[cur].els=slides[cur].els.filter(e=>e.id!==id);
+  const el=sel;
+  desel();
+  el.remove();
+  if(typeof _applySlideBgToCanvas==='function')_applySlideBgToCanvas(slides[cur]);
+  if(typeof syncSlideBgPreview==='function')syncSlideBgPreview();
+  if(typeof syncSlideBgImageUI==='function')syncSlideBgImageUI();
+  save();drawThumbs();saveState();
+  if(typeof renderObjectsPanel==='function')renderObjectsPanel();
   toast(t('toastImgBg'),'ok');
 }
+function imgCoverSlide(){ imgSetAsSlideBg(); }
 
 function syncImgProps(el,d){
   try{document.getElementById('img-fit').value=d.imgFit||'contain';}catch(e){}
@@ -361,7 +370,12 @@ function mkEl(d){
       el.dataset.rxUnit=d.rxUnit||'px';applyTextRadius(el);
     }
   }else if(d.type==='image'){
-    c.classList.add('iel');const img=document.createElement('img');img.src=d.src;img.draggable=false;c.appendChild(img);
+    c.classList.add('iel');const img=document.createElement('img');
+    if(d.src)img.setAttribute('src',typeof assetUrl==='function'?assetUrl(d.src):d.src);
+    img.draggable=false;
+    img.onload=()=>{if(typeof window._exportRememberImg==='function')window._exportRememberImg(img);};
+    if(img.complete&&img.naturalWidth&&typeof window._exportRememberImg==='function')window._exportRememberImg(img);
+    c.appendChild(img);
     // Store all img properties in dataset for reliable save()
     if(d.imgFit)el.dataset.imgFit=d.imgFit;
     if(d.imgRx!=null)el.dataset.imgRx=d.imgRx;
@@ -405,7 +419,7 @@ function mkEl(d){
   }else if(d.type==='shape'){
     const wrap=document.createElement('div');wrap.className='sel-el';
     wrap.style.cssText='position:absolute;inset:0;';
-    const svgDiv=document.createElement('div');svgDiv.className='shape-svg';svgDiv.style.cssText='position:absolute;inset:0;';
+    const svgDiv=document.createElement('div');svgDiv.className='shape-svg';svgDiv.style.cssText='position:absolute;inset:0;overflow:visible;';
     svgDiv.innerHTML=buildShapeSVG(d,d.w,d.h);
     // Enable pixel-perfect clicks only on actual SVG fill pixels
     const svgEl=svgDiv.querySelector('svg');

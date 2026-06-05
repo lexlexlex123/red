@@ -96,7 +96,9 @@ function alignEl(t,scope){
       if(dy!==0) el.style.top=(parseInt(el.style.top)+Math.round(dy))+'px';
     }
   });
-  syncPos();save();drawThumbs();saveState();
+  syncPos();
+  if(typeof _updateHandlesOverlay==='function')_updateHandlesOverlay();
+  save();drawThumbs();saveState();
 }
 
 function distributeEls(axis,scope){
@@ -122,5 +124,7 @@ function distributeEls(axis,scope){
     let y=minY;
     sorted.forEach(el=>{el.style.top=Math.round(y)+'px';y+=parseInt(el.style.height)+gap;});
   }
-  syncPos();save();drawThumbs();saveState();
+  syncPos();
+  if(typeof _updateHandlesOverlay==='function')_updateHandlesOverlay();
+  save();drawThumbs();saveState();
 }

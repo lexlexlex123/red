@@ -61,12 +61,25 @@ function onKey(e){
     if(lk==='z'&&!editing){e.preventDefault();doUndo();return;}
     if((lk==='y'||lk==='Z')&&!editing){e.preventDefault();doRedo();return;}
     if(lk==='d'&&!editing){e.preventDefault();if(multiSel.size>1){copySelected();pasteSelected();}else dupEl();return;}
-    if(lk==='c'&&!editing){e.preventDefault();copySelected();return;}
+    if(lk==='c'&&!editing){
+      const hasElSel=!!sel||(typeof multiSel!=='undefined'&&multiSel.size>0);
+      if(!hasElSel){
+        e.preventDefault();
+        if(typeof copySlidesSelected==='function') copySlidesSelected();
+        return;
+      }
+      e.preventDefault();copySelected();return;
+    }
     if(lk==='v'&&!editing){
-      // If internal clipboard has data — paste element; otherwise let system paste event handle it
+      if(typeof _xclipHydrateAll==='function') _xclipHydrateAll();
       const hasInternal=(typeof clipboard!=='undefined'&&clipboard.length)||(typeof elClipboard!=='undefined'&&elClipboard);
       if(hasInternal){e.preventDefault();pasteSelected();return;}
-      // No internal clipboard — let browser paste event fire (images, text, TSV from Excel)
+      if(typeof hasSlideClipboard==='function'&&hasSlideClipboard()){
+        e.preventDefault();
+        const at=typeof slides!=='undefined'?slides.length:0;
+        if(typeof pasteSlideAt==='function') pasteSlideAt(at);
+        return;
+      }
       return;
     }
     if(lk==='a'&&!editing){
@@ -114,8 +127,14 @@ function onKey(e){
   }
   if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();deleteSelected();return;}
   } else {
-    // No element selected — Delete removes current slide
-    if(e.key==='Delete'){e.preventDefault();delSlide();return;}
+    if(e.key==='Delete'||e.key==='Backspace'){
+      if(typeof slideMultiSel!=='undefined' && slideMultiSel.size>0){
+        e.preventDefault();
+        if(typeof deleteSlidesSelected==='function') deleteSlidesSelected();
+        return;
+      }
+      if(e.key==='Delete'){e.preventDefault();delSlide();return;}
+    }
   }
 
 }
@@ -123,9 +142,14 @@ function copyEl(){
   if(!sel)return;
   const d=slides[cur].els.find(el=>el.id===sel.dataset.id);if(!d)return;
   elClipboard=JSON.parse(JSON.stringify(d));
+  if(typeof _xclipSaveElements==='function') _xclipSaveElements([elClipboard]);
   if(typeof toast==="function")toast(t('toastCopied'),'ok');
 }
 function pasteEl(){
+  if(typeof _xclipHydrateElements==='function') _xclipHydrateElements();
+  if(!elClipboard){
+    if(typeof clipboard!=='undefined'&&clipboard.length) elClipboard=clipboard[0];
+  }
   if(!elClipboard)return (typeof toast==="function")&&toast(t('toastNothingPaste'));
   if(typeof pushUndo==="function")pushUndo();
   const nd=JSON.parse(JSON.stringify(elClipboard));

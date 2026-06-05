@@ -1,38 +1,218 @@
 // ══════════════ SLIDES ══════════════
-function addSlide(tmpl){
-  pushUndo();
-  // Inherit background from current slide if no template given
-  const curSlide=slides[cur];
-  const inheritBg=curSlide?curSlide.bg:'b1';
-  const inheritBgc=curSlide?curSlide.bgc:null;
-  const s={title:'Slide '+(slides.length+1),bg:inheritBg,bgc:inheritBgc,ar,trans:'',auto:0,els:[]};
-  if(tmpl){const t=JSON.parse(JSON.stringify(tmpl));s.bg=t.bg;s.bgc=t.bgc;s.els=t.els;s.trans=t.trans||'';}
-  // Вставляем ПОСЛЕ текущего слайда, а не в конец
-  const insertAt = slides.length > 0 ? cur + 1 : 0;
-  slides.splice(insertAt, 0, s);
-  cur = insertAt;
-  // Apply active layout decor to the new slide (content style, not title)
-  if(typeof makeDecorEl==='function'&&typeof selLayout!=='undefined'&&selLayout>=0){
-    const d=makeDecorEl(cur);
-    if(d)s.els.unshift(d);
+let _slideClipboard = null;
+
+function _cloneSlideData(src, stripDecor){
+  const copy = JSON.parse(JSON.stringify(src));
+  if(stripDecor) copy.els = (copy.els || []).filter(d => !d._isDecor);
+  return copy;
+}
+
+function _remapSlideElIds(s){
+  const map = {};
+  (s.els || []).forEach(d => {
+    const old = d.id;
+    map[old] = 'e' + (++ec);
+    d.id = map[old];
+  });
+  if(s.connectors){
+    s.connectors.forEach(c => {
+      if(c.fromId && map[c.fromId]) c.fromId = map[c.fromId];
+      if(c.toId && map[c.toId]) c.toId = map[c.toId];
+    });
   }
-  renderAll();saveState();
 }
+
+function _buildSlideObject(tmpl){
+  const curSlide = slides[cur];
+  const inheritBg = curSlide ? curSlide.bg : 'b1';
+  const inheritBgc = curSlide ? curSlide.bgc : null;
+  const inheritBgImg = curSlide && curSlide.bgImg ? JSON.parse(JSON.stringify(curSlide.bgImg)) : null;
+  const s = {title:'Slide ' + (slides.length + 1), bg:inheritBg, bgc:inheritBgc, ar, trans:'', auto:0, els:[]};
+  if(inheritBgImg) s.bgImg = inheritBgImg;
+  if(tmpl){
+    const t = JSON.parse(JSON.stringify(tmpl));
+    s.bg = t.bg; s.bgc = t.bgc; s.els = t.els; s.trans = t.trans || '';
+    if(t.title) s.title = t.title;
+    if(t.auto != null) s.auto = t.auto;
+    if(t.transDur != null) s.transDur = t.transDur;
+    if(t.bgImg) s.bgImg = JSON.parse(JSON.stringify(t.bgImg));
+    if(t.connectors) s.connectors = JSON.parse(JSON.stringify(t.connectors));
+  }
+  return s;
+}
+
+function insertSlidesAt(insertAt, slideObjs, addDecor){
+  pushUndo();
+  insertAt = Math.max(0, Math.min(insertAt, slides.length));
+  slideObjs.forEach(s => _remapSlideElIds(s));
+  slides.splice(insertAt, 0, ...slideObjs);
+  if(addDecor && typeof makeDecorEl === 'function' && typeof selLayout !== 'undefined' && selLayout >= 0){
+    slideObjs.forEach((s, k) => {
+      const d = makeDecorEl(insertAt + k);
+      if(d) s.els.unshift(d);
+    });
+  }
+  cur = insertAt + slideObjs.length - 1;
+  renderAll(); saveState();
+}
+
+function insertSlideAt(insertAt, s, addDecor){
+  insertSlidesAt(insertAt, [s], addDecor);
+}
+
+function addSlide(tmpl, insertAt){
+  save();
+  if(insertAt == null) insertAt = slides.length > 0 ? cur + 1 : 0;
+  else insertAt = Math.max(0, Math.min(insertAt, slides.length));
+  insertSlideAt(insertAt, _buildSlideObject(tmpl), true);
+}
+
 function dupSlide(){
-  if(!slides.length)return;
-  // Клонируем текущий слайд, но убираем декоры — addSlide сам добавит свежий декор
-  const src=slides[cur];
-  const tmpl=JSON.parse(JSON.stringify(src));
-  tmpl.els=tmpl.els.filter(d=>!d._isDecor);
-  addSlide(tmpl);
+  if(!slides.length) return;
+  dupSlideAt(cur);
 }
+
+function dupSlideAt(i){
+  if(!slides[i]) return;
+  save();
+  insertSlideAt(i + 1, _buildSlideObject(_cloneSlideData(slides[i], true)), true);
+}
+
+function clearSlideMultiSel(){
+  slideMultiSel.clear();
+}
+
+function getSlideSelection(){
+  if(slideMultiSel.size > 0) return [...slideMultiSel].sort((a, b) => a - b);
+  return [cur];
+}
+
+function pickSlideWithMod(i, e){
+  const ctrl = e && (e.ctrlKey || e.metaKey);
+  const shift = e && e.shiftKey;
+  if(shift){
+    save();
+    const anchor = slideSelAnchor != null ? slideSelAnchor : cur;
+    const from = Math.min(anchor, i);
+    const to = Math.max(anchor, i);
+    slideMultiSel.clear();
+    for(let j = from; j <= to; j++) slideMultiSel.add(j);
+    cur = i;
+    load();
+    drawThumbs();
+    return;
+  }
+  if(ctrl){
+    if(slideMultiSel.size === 0){
+      slideMultiSel.add(cur);
+      slideSelAnchor = cur;
+    }
+    if(slideMultiSel.has(i)){
+      slideMultiSel.delete(i);
+      if(slideMultiSel.size === 0){
+        pickSlide(i);
+        return;
+      }
+      if(cur === i){
+        cur = [...slideMultiSel].sort((a, b) => a - b)[0];
+        load();
+      } else {
+        drawThumbs();
+      }
+      slideSelAnchor = i;
+    } else {
+      slideMultiSel.add(i);
+      slideSelAnchor = i;
+      save();
+      cur = i;
+      load();
+      drawThumbs();
+    }
+    return;
+  }
+  clearSlideMultiSel();
+  pickSlide(i);
+}
+
+function copySlidesSelected(){
+  const indices = getSlideSelection();
+  if(!indices.length) return;
+  save();
+  _slideClipboard = indices.map(idx => _cloneSlideData(slides[idx], true));
+  if(typeof _xclipSaveSlides==='function') _xclipSaveSlides(_slideClipboard);
+  if(typeof toast==='function'){
+    const msg=indices.length>1
+      ? (typeof t==='function'?t('ctxCopySlidesN').replace('{n}', String(indices.length)):'Copied '+indices.length+' slides')
+      : (typeof t==='function'?t('toastCopied'):'Copied');
+    toast(msg,'ok');
+  }
+}
+
+function copySlideAt(i){
+  if(!slides[i]) return;
+  _slideClipboard = [_cloneSlideData(slides[i], true)];
+  if(typeof _xclipSaveSlides==='function') _xclipSaveSlides(_slideClipboard);
+}
+
+function hasSlideClipboard(){
+  if(_slideClipboard && _slideClipboard.length) return true;
+  if(typeof _xclipHydrateSlides==='function') _xclipHydrateSlides();
+  return !!(_slideClipboard && _slideClipboard.length);
+}
+
+function pasteSlideAt(atIdx){
+  if(typeof _xclipHydrateSlides==='function') _xclipHydrateSlides();
+  if(!hasSlideClipboard()) return;
+  save();
+  const toInsert = _slideClipboard.map(s => _buildSlideObject(_cloneSlideData(s, false)));
+  insertSlidesAt(atIdx, toInsert, true);
+  slideMultiSel.clear();
+  toInsert.forEach((_, k) => slideMultiSel.add(atIdx + k));
+  drawThumbs();
+}
+
+function deleteSlidesSelected(){
+  deleteSlidesAt(getSlideSelection());
+}
+
+function deleteSlidesAt(indices){
+  const uniq = [...new Set(indices)].filter(i => i >= 0 && i < slides.length).sort((a, b) => a - b);
+  if(!uniq.length) return;
+  if(slides.length - uniq.length < 1) return toast(t('toastNeedSlide'));
+  save();
+  pushUndo();
+  const wasCur = cur;
+  for(let k = uniq.length - 1; k >= 0; k--) slides.splice(uniq[k], 1);
+  let newCur = wasCur;
+  uniq.forEach(i => { if(i < newCur) newCur--; });
+  if(uniq.includes(wasCur)) newCur = Math.min(newCur, slides.length - 1);
+  cur = Math.max(0, newCur);
+  clearSlideMultiSel();
+  renderAll(); saveState();
+  if(typeof renderAnimPanel === 'function') renderAnimPanel();
+  if(typeof renderMotionOverlay === 'function') renderMotionOverlay();
+}
+
 function delSlide(){
-  if(slides.length<=1)return toast(t('toastNeedSlide'));
-  pushUndo();slides.splice(cur,1);cur=Math.min(cur,slides.length-1);renderAll();saveState();
-  if(typeof renderAnimPanel==='function')renderAnimPanel();
-  if(typeof renderMotionOverlay==='function')renderMotionOverlay();
+  const sel = getSlideSelection();
+  if(sel.length > 1) deleteSlidesSelected();
+  else delSlideAt(sel[0]);
 }
-function pickSlide(i){if(typeof tblClearSel==='function')tblClearSel();save();cur=i;load();drawThumbs();}
+
+function delSlideAt(i){
+  deleteSlidesAt([i]);
+}
+
+function pickSlide(i, keepMultiSel){
+  if(typeof tblClearSel === 'function') tblClearSel();
+  save();
+  cur = i;
+  slideSelAnchor = i;
+  if(!keepMultiSel) clearSlideMultiSel();
+  load();
+  drawThumbs();
+}
+
 function save(){
   if(!slides[cur])return;
   const canvas=document.getElementById('canvas');
@@ -116,7 +296,10 @@ function save(){
     if(el.dataset.groupId)d.groupId=el.dataset.groupId;else delete d.groupId;
     if(d.type==='image'){
       const dd=oldElsById[d.id];
-      d.src=el.querySelector('img').src;
+      const _imgEl=el.querySelector('img');
+      const _imgAttr=_imgEl?_imgEl.getAttribute('src'):'';
+      d.src=(_imgAttr&&!_imgAttr.startsWith('blob:'))?_imgAttr:(_imgEl?_imgEl.src:(dd&&dd.src)||'');
+      if(dd&&dd.src&&dd.src.startsWith('data:')&&(!d.src||!d.src.startsWith('data:'))) d.src=dd.src;
       d.imgFit=el.dataset.imgFit||(dd&&dd.imgFit)||'contain';
       d.imgRx=el.dataset.imgRx!=null?+el.dataset.imgRx:(dd&&dd.imgRx)||0;
       d.imgBw=el.dataset.imgBw!=null?+el.dataset.imgBw:(dd&&dd.imgBw)||0;
@@ -241,7 +424,7 @@ function save(){
     else if(d.type==='formula'){const dd=oldElsById[d.id];if(dd){d.formulaRaw=dd.formulaRaw;d.formulaLines=dd.formulaLines;d.formulaSvg=dd.formulaSvg;d.formulaColorScheme=dd.formulaColorScheme;}d.formulaColor=el.dataset.formulaColor||'#ffffff';}
     else if(d.type==='lego'){d.legoStuds=+el.dataset.legoStuds||2;d.legoTall=el.dataset.legoTall==='true';d.legoSlope=el.dataset.legoSlope||null;d.legoStair=el.dataset.legoStair||null;d.legoColor=el.dataset.legoColor||'#e3000b';const _lsc=el.dataset.legoColorScheme;d.legoColorScheme=(!_lsc||_lsc===''||_lsc==='undefined')?undefined:(_lsc==='null'?null:(function(){try{return JSON.parse(_lsc);}catch(e){return undefined;}})());}
     else if(d.type==='graph'){const dd=oldElsById[d.id];if(dd){d.linkedFormulaId=dd.linkedFormulaId;d.graphExpr=dd.graphExpr;d.graphLatex=dd.graphLatex;d.graphExprs=dd.graphExprs;d.graphLines=dd.graphLines;d.graphLineColors=dd.graphLineColors;d.graphImg=dd.graphImg;d.graphColor=dd.graphColor;d.graphBg=dd.graphBg;d.graphDark=dd.graphDark;d.graphXMin=dd.graphXMin;d.graphXMax=dd.graphXMax;d.graphYMin=dd.graphYMin;d.graphYMax=dd.graphYMax;d.graphStep=dd.graphStep;}}
-    else if(d.type==='code'){const dd=oldElsById[d.id];if(dd){d.codeLang=dd.codeLang;d.codeTheme=dd.codeTheme;d.codeRaw=dd.codeRaw;d.codeHtml=dd.codeHtml;d.codeFs=dd.codeFs;d.codeBg=dd.codeBg;if(dd.hfParentId)d.hfParentId=dd.hfParentId;}}
+    else if(d.type==='code'){const dd=oldElsById[d.id];if(dd){d.codeLang=dd.codeLang;d.codeTheme=dd.codeTheme;d.codeGlass=dd.codeGlass;d.codeRaw=dd.codeRaw;d.codeHtml=dd.codeHtml;d.codeFs=dd.codeFs;d.codeBg=dd.codeBg;if(dd.hfParentId)d.hfParentId=dd.hfParentId;}}
     else if(d.type==='htmlframe'){
       d.hfSrc=el.dataset.hfSrc||'';
       d.hfScroll=el.dataset.hfScroll==='1';
@@ -342,6 +525,7 @@ function load(){
   document.querySelectorAll('#slide-trans-grid .tbtn2[data-st]').forEach(b=>
     b.classList.toggle('active', b.dataset.st===_st)
   );
+  if(typeof updateSlideTransHint==='function') updateSlideTransHint(_st);
   document.getElementById('p-auto').value=s.auto||0;
   const navChk=document.getElementById('slide-click-nav');
   if(navChk)navChk.checked=s.clickNav!==false; // default true

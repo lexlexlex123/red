@@ -1,43 +1,24 @@
 // ══════════════ BOOT ══════════════
-function boot(){
-  // Init i18n first
-  applyI18n();
-  syncLangButtons();
-  const vEl=document.getElementById('settings-version');
-  const aEl=document.getElementById('settings-author');
-  if(vEl)vEl.textContent=APP_VERSION;
-  if(aEl)aEl.textContent=APP_AUTHOR;
-
-  // Populate font selector from fonts
-  // Sources tried in order:
-  // 1. window._LOCAL_FONTS — set by inline <script> in index.html (most reliable)
-  // 2. document.styleSheets — parse @font-face rules from loaded CSS
+function _bootDeferredUI(){
+  // Тяжёлая инициализация панелей — после первого кадра со слайдом
   (function _populateFontSel() {
     const sel = document.getElementById('p-ff');
     if (!sel) return;
-
     function addFamilies(families) {
       const existing = new Set(Array.from(sel.options).map(o => o.value));
-      let added = 0;
       for (const fam of families) {
         if (fam && !existing.has(fam)) {
           const opt = document.createElement('option');
           opt.value = fam; opt.textContent = fam; opt.style.fontFamily = fam;
           sel.appendChild(opt);
           existing.add(fam);
-          added++;
         }
       }
-      return added;
     }
-
-    // Source 1: window._LOCAL_FONTS
     if (window._LOCAL_FONTS && window._LOCAL_FONTS.length) {
       addFamilies(window._LOCAL_FONTS);
       return;
     }
-
-    // Source 2: parse @font-face from styleSheets (works on HTTP server)
     const families = new Set();
     try {
       for (const sheet of document.styleSheets) {
@@ -53,16 +34,23 @@ function boot(){
         }
       }
     } catch(e) {}
-    if (families.size) { addFamilies([...families].sort()); }
+    if (families.size) addFamilies([...families].sort());
   })();
-
   buildSwatches('bgswatches');buildSwatches('bgswatches2');
   buildThemeGrid();buildShapeGallery();buildAppletGallery();
   buildPalette('cp-text-palette','text');
   buildPalette('cp-fill-palette','fill');
-  // drawGrid после двух rAF — гарантирует что layout завершён и clientWidth корректен
-  requestAnimationFrame(()=>requestAnimationFrame(()=>drawGrid()));
-  // Sync click-nav checkboxes
+}
+
+function boot(){
+  // Init i18n first
+  applyI18n();
+  syncLangButtons();
+  const vEl=document.getElementById('settings-version');
+  const aEl=document.getElementById('settings-author');
+  if(vEl)vEl.textContent=APP_VERSION;
+  if(aEl)aEl.textContent=APP_AUTHOR;
+
   // Close any open modal when clicking the overlay (outside .modal content)
   document.addEventListener('mousedown', e => {
     if(!e.target.classList.contains('modal-ov')) return;
@@ -165,6 +153,10 @@ function boot(){
     _applyThemeByIdx(0);
   }
   renderAll();
+  if(typeof _applyCanvasZoom==='function') _applyCanvasZoom();
+  if(typeof _centerSlide==='function') _centerSlide();
+  requestAnimationFrame(()=>requestAnimationFrame(()=>drawGrid()));
+  requestAnimationFrame(()=>_bootDeferredUI());
   // Sync animation toggle UI state after restore
   if(typeof _syncAnimToggleBtns==='function') _syncAnimToggleBtns();
   if(typeof _updateAnimToggleVisibility==='function') _updateAnimToggleVisibility();
@@ -299,7 +291,8 @@ function buildThemeGrid(){
       lbl.textContent=t.name;
 
       card.append(bg,mock,swatches,lbl);
-      card.onclick=()=>{selTheme=i;applyTheme();buildThemeGrid();};
+      card.onclick=()=>{selTheme=i;buildThemeGrid();};
+      card.ondblclick=(e)=>{e.preventDefault();selTheme=i;applyTheme();closeThemeModal();};
       grid.appendChild(card);
     });
     sec.appendChild(grid);

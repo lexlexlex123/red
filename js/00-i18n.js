@@ -1,9 +1,9 @@
 // ══════════════ LOCALIZATION (i18n) ══════════════
-// Версия / Version: 5.7
+// Версия / Version: 6.1
 // Автор / Author: Некрасов Александр
 
 const APP_NAME = 'Слайды';
-const APP_VERSION = '6';
+const APP_VERSION = '6.1';
 const APP_AUTHOR = 'Некрасов Александр';
 
 const LANG_DATA = {
@@ -47,6 +47,10 @@ const LANG_DATA = {
     btnExport: 'Export',
     resetFormat: 'Reset',
     btnDuplicate: 'Duplicate',
+    ctxCopySlide: 'Copy',
+    ctxPasteSlide: 'Paste',
+    ctxCopySlidesN: 'Copy ({n})',
+    ctxDeleteSlidesN: 'Delete ({n})',
     // Animations
     animFadeIn: 'Fade In', animSlideUp: 'Slide Up', animZoomIn: 'Zoom In',
     animBounce: 'Bounce', animSpin: 'Spin', animFadeOut: 'Fade Out',
@@ -56,6 +60,7 @@ const LANG_DATA = {
     transNone: 'None', transFade: 'Fade', transSlide: 'Slide',
     transZoom: 'Zoom', transFlip: 'Flip', transCube: 'Cube',
     transDissolve: 'Dissolve', transMorph: 'Morph',
+    transDurFast: 'Fast', transDurNormal: 'Normal', transDurSlow: 'Slow', transDurVerySlow: 'Very slow',
     // Text roles
     roleBodyText: 'Body Text', roleHeading: 'Heading',
     // Misc
@@ -140,6 +145,9 @@ const LANG_DATA = {
 
     // Modals
     modalCode: '{ } Code Block',
+    codeThemeDark: 'Dark',
+    codeThemeLight: 'Light',
+    codeGlassBg: 'Frosted glass background',
     modalMd: '# Markdown Block',
     modalLayout: '🖼 Apply Theme',
     layoutDesc: 'Decorative style for all slides. Uses current theme colors.',
@@ -181,6 +189,32 @@ const LANG_DATA = {
     toastNothingPaste: 'Nothing to paste — copy an element first with Ctrl+C',
     toastPasted: 'Pasted',
     toastImgBg: 'Image set as slide background',
+    toastSlideStyleApplied: 'Slide style applied to all slides',
+    slideBgImgDefault: 'Image',
+    btnSetAsBg: '🖼 Set as background',
+    btnPickSlideBg: '🖼 Choose background image',
+    btnSetSlideBg: 'Set as background',
+    btnApplySlideStyleAll: 'Apply to all slides',
+    btnRemoveSlideBg: 'Remove background image',
+    sbgStretch: 'Stretch',
+    sbgCover: 'Fill (cover)',
+    sbgTile: 'Tile',
+    sbgCustom: 'By size',
+    sbgTileSize: 'Tile size',
+    sbgTileGap: 'Spacing',
+    sbgTileRot: 'Rotation',
+    sbgOpacity: 'Opacity',
+    sbgBlur: 'Blur',
+    sbgCustomSize: 'Size',
+    sbgCustomMargin: 'Edge offset',
+    sbgCustomAnchor: 'Position',
+    sbgAnchorTL: 'Top left',
+    sbgAnchorTR: 'Top right',
+    sbgAnchorCenter: 'Center',
+    sbgAnchorBL: 'Bottom left',
+    sbgAnchorBR: 'Bottom right',
+    exportEmbedding: 'Embedding images…',
+    exportImgFailed: 'Some images were not embedded into the export',
     toastAnimAdded: 'Animation added',
     toastSelectIcon: 'Select an icon',
     toastNothingSelected: 'Nothing selected',
@@ -306,6 +340,10 @@ const LANG_DATA = {
     btnExport: 'Экспорт',
     resetFormat: 'Сбросить',
     btnDuplicate: 'Дублировать',
+    ctxCopySlide: 'Копировать',
+    ctxPasteSlide: 'Вставить',
+    ctxCopySlidesN: 'Копировать ({n})',
+    ctxDeleteSlidesN: 'Удалить ({n})',
     // Анимации
     btnClearAnims: 'Очистить',
     animFadeIn: 'Появление', animSlideUp: 'Подъём', animZoomIn: 'Масштаб',
@@ -316,6 +354,7 @@ const LANG_DATA = {
     transNone: 'Нет', transFade: 'Затухание', transSlide: 'Сдвиг',
     transZoom: 'Масштаб', transFlip: 'Переворот', transCube: 'Куб',
     transDissolve: 'Растворение', transMorph: 'Морфинг',
+    transDurFast: 'Быстро', transDurNormal: 'Нормально', transDurSlow: 'Медленно', transDurVerySlow: 'Очень медленно',
     // Роли текста
     roleBodyText: 'Основной текст', roleHeading: 'Заголовок',
     // Разное
@@ -399,6 +438,9 @@ const LANG_DATA = {
 
     // Modals
     modalCode: '{ } Блок кода',
+    codeThemeDark: 'Тёмная',
+    codeThemeLight: 'Светлая',
+    codeGlassBg: 'Полупрозрачный фон с размытием',
     modalMd: '# Markdown блок',
     modalLayout: '🖼 Применить тему',
     layoutDesc: 'Декоративный стиль для всех слайдов. Использует цвета текущей темы.',
@@ -440,6 +482,31 @@ const LANG_DATA = {
     toastNothingPaste: 'Нечего вставлять — скопируйте элемент через Ctrl+C',
     toastPasted: 'Вставлено',
     toastImgBg: 'Изображение задано как фон слайда',
+    toastSlideStyleApplied: 'Стиль слайда применён ко всем слайдам',
+    slideBgImgDefault: 'Изображение',
+    btnPickSlideBg: '🖼 Выбрать фоновое изображение',
+    btnSetSlideBg: 'Установить фон',
+    btnApplySlideStyleAll: 'Применить ко всем слайдам',
+    btnRemoveSlideBg: 'Убрать фоновое изображение',
+    sbgStretch: 'Растянуть',
+    sbgCover: 'Заполнить',
+    sbgTile: 'Плитка',
+    sbgCustom: 'По размеру',
+    sbgTileSize: 'Размер плитки',
+    sbgTileGap: 'Расстояние',
+    sbgTileRot: 'Поворот',
+    sbgOpacity: 'Прозрачность',
+    sbgBlur: 'Размытие',
+    sbgCustomSize: 'Размер',
+    sbgCustomMargin: 'Отступ от края',
+    sbgCustomAnchor: 'Положение',
+    sbgAnchorTL: 'Верхний левый',
+    sbgAnchorTR: 'Верхний правый',
+    sbgAnchorCenter: 'По центру',
+    sbgAnchorBL: 'Нижний левый',
+    sbgAnchorBR: 'Нижний правый',
+    exportEmbedding: 'Встраивание изображений…',
+    exportImgFailed: 'Не все изображения удалось встроить в экспорт',
     toastAnimAdded: 'Анимация добавлена',
     toastSelectIcon: 'Выберите значок',
     toastNothingSelected: 'Ничего не выделено',
@@ -545,7 +612,7 @@ const LANG_DATA = {
     // Buttons
     btnShadowEnable: 'Включить тень',
     btnCropImage: '✂️ Обрезка',
-    btnCoverSlide: '📐 На весь слайд (фон)',
+    btnSetAsBg: '🖼 Сделать фоном',
     btnClearBg: '✕',
     // Inline labels
     propOpacityShort: 'Прозрачность',
@@ -617,4 +684,5 @@ function setLang(lang) {
   // Rebuild dynamic UI that has translated strings
   if (typeof buildThemeGrid === 'function') buildThemeGrid();
   if (typeof buildLayoutGrid === 'function') buildLayoutGrid();
+  if (typeof buildTransUI === 'function') buildTransUI();
 }
