@@ -1,5 +1,4 @@
 // ══════════════ SLIDES ══════════════
-<<<<<<< HEAD
 let _slideClipboard = null;
 
 function _cloneSlideData(src, stripDecor){
@@ -20,26 +19,6 @@ function _remapSlideElIds(s){
       if(c.fromId && map[c.fromId]) c.fromId = map[c.fromId];
       if(c.toId && map[c.toId]) c.toId = map[c.toId];
     });
-=======
-function addSlide(tmpl){
-  pushUndo();
-  // Inherit background from current slide if no template given
-  const curSlide=slides[cur];
-  const inheritBg=curSlide?curSlide.bg:'b1';
-  const inheritBgc=curSlide?curSlide.bgc:null;
-  const inheritBgImg=curSlide&&curSlide.bgImg?JSON.parse(JSON.stringify(curSlide.bgImg)):null;
-  const s={title:'Slide '+(slides.length+1),bg:inheritBg,bgc:inheritBgc,ar,trans:'',auto:0,els:[]};
-  if(inheritBgImg)s.bgImg=inheritBgImg;
-  if(tmpl){const t=JSON.parse(JSON.stringify(tmpl));s.bg=t.bg;s.bgc=t.bgc;s.els=t.els;s.trans=t.trans||'';if(t.bgImg)s.bgImg=JSON.parse(JSON.stringify(t.bgImg));}
-  // Вставляем ПОСЛЕ текущего слайда, а не в конец
-  const insertAt = slides.length > 0 ? cur + 1 : 0;
-  slides.splice(insertAt, 0, s);
-  cur = insertAt;
-  // Apply active layout decor to the new slide (content style, not title)
-  if(typeof makeDecorEl==='function'&&typeof selLayout!=='undefined'&&selLayout>=0){
-    const d=makeDecorEl(cur);
-    if(d)s.els.unshift(d);
->>>>>>> 884f6a84255b5cd68329d7481ea09b06f90c15a8
   }
 }
 
