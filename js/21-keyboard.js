@@ -92,7 +92,7 @@ function onKey(e){
     }
   }
   if(editing||inInput)return;
-  if(sel||multiSel.size>0||(typeof _selConnId!=='undefined'&&_selConnId)){
+  if(sel||multiSel.size>0||(typeof window._getSelConnId==='function'&&window._getSelConnId())){
     const step=e.shiftKey?SNAP*5:SNAP;
     const allEls=multiSel.size>1?[...multiSel]:(sel?[sel]:[]);
     if(e.key==='ArrowLeft'||e.key==='ArrowRight'||e.key==='ArrowUp'||e.key==='ArrowDown'){

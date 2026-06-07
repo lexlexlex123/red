@@ -179,7 +179,14 @@
   </div><!-- /ribbon-left -->
   <div id="ribbon-right">
     <button class="rb" onclick="document.getElementById('fileup').click()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span class="rbl" data-i18n="btnImport">Импорт</span></button>
-    <button class="rb pri" onclick="exportHTML()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span class="rbl" data-i18n="btnExport">Экспорт</span></button>
+    <div id="export-wrap" class="export-wrap">
+      <button class="rb pri" id="export-btn" type="button" onclick="toggleExportMenu(event)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span class="rbl" data-i18n="btnExport">Экспорт</span></button>
+      <div id="export-menu" class="export-menu" style="display:none">
+        <button type="button" class="export-menu-item" onclick="doExport('html')"><span class="export-menu-ext">.html</span><span data-i18n="exportFmtHtml">HTML-презентация</span></button>
+        <button type="button" class="export-menu-item" onclick="doExport('pdf')"><span class="export-menu-ext">.pdf</span><span data-i18n="exportFmtPdf">PDF-документ</span></button>
+        <button type="button" class="export-menu-item" onclick="doExport('odp')"><span class="export-menu-ext">.odp</span><span data-i18n="exportFmtOdp">OpenDocument</span></button>
+      </div>
+    </div>
   </div>
   </div><!-- /ribbon-bottom -->
 </div>
@@ -577,6 +584,19 @@
               <label style="font-size:9px;color:var(--text2)">Перейти на слайд</label>
               <select id="tm-onend-slide" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 6px;font-size:11px;width:100%" onchange="setTimerProp('tmOnEndSlide',+this.value)"></select>
             </div>
+          </div>
+          <!-- Generator mode -->
+          <div id="gen-mode-row" class="pr" style="margin-bottom:6px">
+            <label>Тип</label>
+            <select id="gen-mode" onchange="setGenMode(this.value)" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 6px;font-size:11px">
+              <option value="number">Число</option>
+              <option value="text">Текст (список)</option>
+            </select>
+          </div>
+          <!-- Text lines (text mode) -->
+          <div id="gen-lines-row" style="display:none;flex-direction:column;gap:4px;margin-bottom:8px">
+            <label style="font-size:9px;color:var(--text2)">Строки — каждая с новой строки</label>
+            <textarea id="gen-lines" rows="5" placeholder="Яблоко&#10;Груша&#10;Слива" oninput="setGenLines(this.value)" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:6px 8px;font-size:11px;resize:vertical;box-sizing:border-box;font-family:inherit;line-height:1.4"></textarea>
           </div>
           <!-- Range settings (hidden for timer) -->
           <div id="gen-range-row" class="psec" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px">
@@ -1605,6 +1625,14 @@
           <div class="pr">
             <label>Отступ от объекта (px)</label>
             <input type="number" id="cp-gap" min="0" max="100" step="1" value="0" oninput="cpUpdate()" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;box-sizing:border-box">
+          </div>
+          <div class="pr">
+            <label>Маршрут</label>
+            <select id="cp-route" onchange="cpUpdate()">
+              <option value="curve">Кривая (сглаженная)</option>
+              <option value="straight">Прямая</option>
+              <option value="orthogonal">Ломаная (ступенька)</option>
+            </select>
           </div>
           <div class="pr">
             <label>Вид линии</label>

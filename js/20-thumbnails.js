@@ -179,8 +179,9 @@ function drawThumbs(){
   });
 }
 
-function renderThumbCanvas(cnv,s,slideIdx){
-  const TW=160,TH=ar==='4:3'?120:90;
+function renderThumbCanvas(cnv,s,slideIdx,customW,customH){
+  const TW=customW||160;
+  const TH=customH||(customW?Math.round(customW*canvasH/canvasW):(ar==='4:3'?120:90));
   cnv.width=TW;cnv.height=TH;
   const ctx=cnv.getContext('2d');
   const scaleX=TW/canvasW,scaleY=TH/canvasH;
@@ -208,7 +209,19 @@ function renderThumbCanvas(cnv,s,slideIdx){
   }
   ctx.fillRect(0,0,TW,TH);
 
-  if(s.bgImg&&s.bgImg.src){
+  if(s.bgImg&&s.bgImg.exportBaked){
+    const bakedSrc=s.bgImg.exportBaked;
+    const drawBaked=(img)=>{if(_isCanvasExport()){_safeDrawExportImage(ctx,img,0,0,TW,TH);}else{ctx.drawImage(img,0,0,TW,TH);}};
+    const expImg=_isCanvasExport()?_exportCanvasImg(bakedSrc):null;
+    if(expImg){drawBaked(expImg);}
+    else if(!_isCanvasExport()&&_thumbImgCache[bakedSrc]) drawBaked(_thumbImgCache[bakedSrc]);
+    else if(!_isCanvasExport()){
+      const img=new Image();
+      img.onload=()=>{_thumbImgCache[bakedSrc]=img;if(!customW)drawThumbs();else drawBaked(img);};
+      img.onerror=()=>{};
+      img.src=bakedSrc;
+    }
+  }else if(s.bgImg&&s.bgImg.src){
     const thumbBg=typeof _scaleBgImgForCanvas==='function'
       ?_scaleBgImgForCanvas(s.bgImg,TW,TH,canvasW,canvasH)
       :s.bgImg;
@@ -223,10 +236,12 @@ function renderThumbCanvas(cnv,s,slideIdx){
         ctx.drawImage(img,dx,dy,dw,dh);
       }
     };
-    if(_thumbImgCache[s.bgImg.src]) drawBgImg(_thumbImgCache[s.bgImg.src]);
-    else{
+    const expImg=_isCanvasExport()?_exportCanvasImg(s.bgImg.src):null;
+    if(expImg) drawBgImg(expImg);
+    else if(!_isCanvasExport()&&_thumbImgCache[s.bgImg.src]) drawBgImg(_thumbImgCache[s.bgImg.src]);
+    else if(!_isCanvasExport()){
       const img=new Image();
-      img.onload=()=>{_thumbImgCache[s.bgImg.src]=img;drawThumbs();};
+      img.onload=()=>{_thumbImgCache[s.bgImg.src]=img;if(!customW)drawThumbs();else drawBgImg(img);};
       img.onerror=()=>{};
       img.src=typeof assetUrl==='function'?assetUrl(s.bgImg.src):s.bgImg.src;
     }
@@ -253,36 +268,80 @@ function renderThumbCanvas(cnv,s,slideIdx){
   if (s.connectors && s.connectors.length) {
     const elMap = {};
     s.els.forEach(d => { elMap[d.id] = d; });
-    function _tAnchor(elId, otherId, fromEdge, gap) {
-      const d = elMap[elId]; if (!d) return {x:0,y:0};
+    function _tEdgeRaw(elId, otherId, sideKey) {
+      const d = elMap[elId]; if (!d) return {x:0,y:0,side:sideKey};
       const cx = d.x+d.w/2, cy = d.y+d.h/2;
-      gap = gap||0;
+      if (sideKey === 'top') return {x: cx, y: d.y, side: 'top'};
+      if (sideKey === 'bottom') return {x: cx, y: d.y+d.h, side: 'bottom'};
+      if (sideKey === 'left') return {x: d.x, y: cy, side: 'left'};
+      if (sideKey === 'right') return {x: d.x+d.w, y: cy, side: 'right'};
       const od = elMap[otherId];
       const ox = od?od.x+od.w/2:cx, oy = od?od.y+od.h/2:cy;
-      const dx=ox-cx,dy=oy-cy, dist=Math.sqrt(dx*dx+dy*dy)||1;
-      const ux=dx/dist, uy=dy/dist;
-      if (!fromEdge) return {x:cx+ux*gap, y:cy+uy*gap};
-      let ex,ey;
-      if(Math.abs(dx)*d.h>Math.abs(dy)*d.w){ex=dx>0?d.x+d.w:d.x;ey=cy;}
-      else{ex=cx;ey=dy>0?d.y+d.h:d.y;}
-      return {x:ex+ux*gap, y:ey+uy*gap};
+      const dx=ox-cx, dy=oy-cy;
+      if (Math.abs(dx)*d.h > Math.abs(dy)*d.w) return {x: dx>0?d.x+d.w:d.x, y: cy, side: dx>0?'right':'left'};
+      return {x: cx, y: dy>0?d.y+d.h:d.y, side: dy>0?'bottom':'top'};
+    }
+    function _tApplyLineGap(r1, r2, gap) {
+      gap = gap || 0;
+      if (!gap) return { p1: r1, p2: r2 };
+      const dx = r2.x - r1.x, dy = r2.y - r1.y;
+      const len = Math.sqrt(dx*dx + dy*dy);
+      if (len < 0.001) return { p1: r1, p2: r2 };
+      const g = Math.min(gap, len / 2);
+      const ux = dx / len, uy = dy / len;
+      return { p1: {x: r1.x+ux*g, y: r1.y+uy*g}, p2: {x: r2.x-ux*g, y: r2.y-uy*g} };
+    }
+    function _tApplySideGap(raw, gap) {
+      if (!gap) return raw;
+      const n = { top:{x:0,y:-1}, right:{x:1,y:0}, bottom:{x:0,y:1}, left:{x:-1,y:0} };
+      const sn = n[raw.side] || {x:0,y:0};
+      return { x: raw.x + sn.x * gap, y: raw.y + sn.y * gap };
+    }
+    function _tOrthoPts(p1, p2, fromSide, toSide) {
+      const hFrom = fromSide === 'left' || fromSide === 'right';
+      const hTo = toSide === 'left' || toSide === 'right';
+      if (hFrom && hTo) {
+        const midX = (p1.x + p2.x) / 2;
+        return [p1, {x: midX, y: p1.y}, {x: midX, y: p2.y}, p2];
+      }
+      if (!hFrom && !hTo) {
+        const midY = (p1.y + p2.y) / 2;
+        return [p1, {x: p1.x, y: midY}, {x: p2.x, y: midY}, p2];
+      }
+      if (hFrom) return [p1, {x: p2.x, y: p1.y}, p2];
+      return [p1, {x: p1.x, y: p2.y}, p2];
     }
     s.connectors.forEach(conn => {
       const gap = conn.gap||0;
-      const p1 = _tAnchor(conn.fromId, conn.toId,   conn.fromAnchor==='edge', gap);
-      const p2 = _tAnchor(conn.toId,   conn.fromId, conn.toAnchor==='edge',   gap);
+      const raw1 = _tEdgeRaw(conn.fromId, conn.toId, conn.fromSide);
+      const raw2 = _tEdgeRaw(conn.toId, conn.fromId, conn.toSide);
+      const route = conn.route || 'curve';
+      let p1, p2;
+      if (route === 'straight') {
+        ({ p1, p2 } = _tApplyLineGap(raw1, raw2, gap));
+      } else {
+        p1 = _tApplySideGap(raw1, gap);
+        p2 = _tApplySideGap(raw2, gap);
+      }
       const sw  = (conn.sw||2) * scaleX;
       const dash = conn.dash||'solid';
       ctx.save();
       ctx.strokeStyle = conn.color||'#60a5fa';
       ctx.lineWidth   = sw;
       ctx.lineCap     = 'round';
+      ctx.lineJoin    = 'round';
       if (dash==='dot')  ctx.setLineDash([0, sw*4]);
       else if (dash==='dash') ctx.setLineDash([sw*5, sw*3]);
       else ctx.setLineDash([]);
       ctx.beginPath();
-      ctx.moveTo(p1.x*scaleX, p1.y*scaleY);
-      ctx.lineTo(p2.x*scaleX, p2.y*scaleY);
+      if (route === 'orthogonal') {
+        const pts = _tOrthoPts(p1, p2, conn.fromSide, conn.toSide);
+        ctx.moveTo(pts[0].x*scaleX, pts[0].y*scaleY);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x*scaleX, pts[i].y*scaleY);
+      } else {
+        ctx.moveTo(p1.x*scaleX, p1.y*scaleY);
+        ctx.lineTo(p2.x*scaleX, p2.y*scaleY);
+      }
       ctx.stroke();
       ctx.restore();
     });
@@ -617,18 +676,53 @@ function drawStar(ctx,cx,cy,rx,ry,pts){
 
 // Image cache for thumbnails
 const _thumbImgCache={};
+function _isCanvasExport(){ return !!window._canvasExportSession; }
+function _exportCanvasImgKey(key){
+  const ses=window._canvasExportSession;
+  const img=(ses&&ses.imgCache&&key)?ses.imgCache[key]:null;
+  return (img&&img.src&&String(img.src).startsWith('data:'))?img:null;
+}
+function _exportCanvasImg(src){
+  const ses=window._canvasExportSession;
+  if(!ses||!src) return null;
+  const ic=ses.imgCache||{};
+  if(ic[src]&&ic[src].src&&String(ic[src].src).startsWith('data:')) return ic[src];
+  if(ses.dataCache&&typeof _exportCacheGetData==='function'){
+    const du=_exportCacheGetData(ses.dataCache,src);
+    if(du&&ic[du]&&ic[du].src&&String(ic[du].src).startsWith('data:')) return ic[du];
+  }
+  if(typeof _exportSrcKeys==='function'){
+    for(const k of _exportSrcKeys(src)){
+      if(ic[k]&&ic[k].src&&String(ic[k].src).startsWith('data:')) return ic[k];
+    }
+  }
+  return null;
+}
+function _safeDrawExportImage(ctx,img,a,b,c,d,e,f,g,h){
+  if(!img||!img.src||!String(img.src).startsWith('data:')) return false;
+  if(arguments.length===6) ctx.drawImage(img,a,b,c,d);
+  else if(arguments.length===10) ctx.drawImage(img,a,b,c,d,e,f,g,h);
+  else ctx.drawImage(img,a,b);
+  return true;
+}
 function drawThumbImage(ctx,d,sx,sy){
   if(!d.src)return;
   const x=d.x*sx,y=d.y*sy,w=d.w*sx,h=d.h*sy;
   const cL=d.imgCropL||0,cT=d.imgCropT||0,cR=d.imgCropR||0,cB=d.imgCropB||0;
   const hasCrop=cL||cT||cR||cB;
   const drawIt=(img)=>{
+    if(_isCanvasExport()&&(!img||!img.src||!String(img.src).startsWith('data:'))) return;
     ctx.save();
     if(d.rot){ctx.translate(x+w/2,y+h/2);ctx.rotate(d.rot*Math.PI/180);ctx.translate(-(x+w/2),-(y+h/2));}
     if(hasCrop){const fW=(d.w+cL+cR)*sx,fH=(d.h+cT+cB)*sy;ctx.save();ctx.beginPath();ctx.rect(x,y,w,h);ctx.clip();ctx.drawImage(img,x-cL*sx,y-cT*sy,fW,fH);ctx.restore();}
     else{ctx.drawImage(img,x,y,w,h);}
     ctx.restore();
   };
+  if(_isCanvasExport()){
+    const img=_exportCanvasImg(d.src);
+    if(img) drawIt(img);
+    return;
+  }
   if(_thumbImgCache[d.src]){drawIt(_thumbImgCache[d.src]);return;}
   const img=new Image();
   img.onload=()=>{_thumbImgCache[d.src]=img;drawThumbs();};
@@ -703,6 +797,12 @@ function drawThumbIcon(ctx,d,sx,sy){
   const svgSized=svgStr.replace(/<svg /,'<svg width="'+pw+'" height="'+ph+'" ');
 
   if(svgSized){
+    if(_isCanvasExport()){
+      const img=_exportCanvasImgKey('icon_'+d.id);
+      if(img) _safeDrawExportImage(ctx,img,x,y,w,h);
+      ctx.restore();
+      return;
+    }
     const key=svgSized;
     if(_thumbIconCache[key]){
       ctx.drawImage(_thumbIconCache[key],x,y,w,h);
@@ -783,9 +883,13 @@ function drawThumbTable(ctx,d,sx,sy){
 }
 
 function drawThumbDecorSvg(ctx,d,sx,sy,TW,TH){
-  // Render SVG decor via Image
   if(!d.svgContent)return;
   const key='decor_'+d.id;
+  if(_isCanvasExport()){
+    const img=_exportCanvasImgKey(key);
+    if(img) _safeDrawExportImage(ctx,img,0,0,TW,TH);
+    return;
+  }
   if(_thumbImgCache[key]){ctx.drawImage(_thumbImgCache[key],0,0,TW,TH);return;}
   const blob=new Blob([d.svgContent],{type:'image/svg+xml'});
   const url=URL.createObjectURL(blob);
@@ -801,6 +905,11 @@ function drawThumbSvgEl(ctx,d,sx,sy){
   const x=Math.round(d.x*sx),y=Math.round(d.y*sy),w=Math.round(d.w*sx),h=Math.round(d.h*sy);
   if(w<1||h<1)return;
   const key='svgel_'+d.id+'_'+w+'x'+h;
+  if(_isCanvasExport()){
+    const img=_exportCanvasImgKey(key);
+    if(img) _safeDrawExportImage(ctx,img,x,y,w,h);
+    return;
+  }
   if(_thumbSvgElCache[key]){ctx.drawImage(_thumbSvgElCache[key],x,y,w,h);return;}
   // Wrap svgContent in a sized SVG so it scales to our thumbnail cell
   let inner=d.svgContent.trim();
@@ -844,6 +953,12 @@ function drawThumbFormula(ctx,d,sx,sy){
     `<foreignObject width="100%" height="100%">`+
     `<div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:${color};">`+
     coloredSvg+`</div></foreignObject></svg>`;
+  if(_isCanvasExport()){
+    const img=_exportCanvasImgKey('formula_'+d.id);
+    if(img){_safeDrawExportImage(ctx,img,x,y,w,h);return;}
+    ctx.save();ctx.globalAlpha=0.4;ctx.fillStyle=color;ctx.fillRect(x,y,w,h);ctx.restore();
+    return;
+  }
   if(_thumbFormulaCache[key]){
     ctx.drawImage(_thumbFormulaCache[key],x,y,w,h);return;
   }
@@ -864,6 +979,11 @@ const _thumbGraphCache={};
 function drawThumbGraph(ctx,d,sx,sy){
   if(!d.graphImg)return;
   const x=d.x*sx,y=d.y*sy,w=d.w*sx,h=d.h*sy;
+  if(_isCanvasExport()){
+    const img=_exportCanvasImg(d.graphImg);
+    if(img) _safeDrawExportImage(ctx,img,x,y,w,h);
+    return;
+  }
   const key='graph_'+d.id+'_'+(d.graphColor||'')+'_'+(d.graphBg||'');
   if(_thumbGraphCache[key]){ctx.drawImage(_thumbGraphCache[key],x,y,w,h);return;}
   // Invalidate old cache entries for this element

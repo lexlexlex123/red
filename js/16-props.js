@@ -715,12 +715,19 @@ function syncGenProps(){
   if(!d) return;
   // Restore generator UI
   const ph2=document.querySelector('#genprops .ph'); if(ph2) ph2.textContent='🎲 Генератор';
-  const rr=document.getElementById('gen-range-row'); if(rr) rr.style.display='';
+  const mr=document.getElementById('gen-mode-row'); if(mr) mr.style.display='';
   const tr=document.getElementById('tm-row'); if(tr) tr.style.display='none';
   const oer2=document.getElementById('tm-onend-row'); if(oer2) oer2.style.display='none';
   try{document.getElementById('gen-min').value  = d.genMin  !== undefined ? d.genMin  : 1;}catch(e){}
   try{document.getElementById('gen-max').value  = d.genMax  !== undefined ? d.genMax  : 100;}catch(e){}
   try{document.getElementById('gen-step').value = d.genStep !== undefined ? d.genStep : 1;}catch(e){}
+  const genMode = d.genMode || 'number';
+  try{document.getElementById('gen-mode').value = genMode;}catch(e){}
+  try{document.getElementById('gen-lines').value = d.genLines || '';}catch(e){}
+  try{
+    document.getElementById('gen-range-row').style.display = genMode === 'number' ? 'flex' : 'none';
+    document.getElementById('gen-lines-row').style.display = genMode === 'text' ? 'flex' : 'none';
+  }catch(e){}
   try{document.getElementById('gen-fs').value   = d.genFontSize || 64;}catch(e){}
   const bold = d.genBold || false;
   try{document.getElementById('gen-bold').classList.toggle('active', bold);}catch(e){}
@@ -769,7 +776,11 @@ function syncClockProps(){
   const rangeRow = document.getElementById('gen-range-row');
   const timerRow = document.getElementById('tm-row');
   const oer = document.getElementById('tm-onend-row');
+  const modeRow = document.getElementById('gen-mode-row');
+  const linesRow = document.getElementById('gen-lines-row');
   if(rangeRow) rangeRow.style.display = 'none';
+  if(modeRow) modeRow.style.display = 'none';
+  if(linesRow) linesRow.style.display = 'none';
   if(timerRow) timerRow.style.display = 'none';
   if(oer) oer.style.display = 'none';
   // Sync shared visual props (same as timer)
@@ -804,7 +815,11 @@ function syncTimerProps(){
   // Show timer duration row, hide generator range row
   const rangeRow = document.getElementById('gen-range-row');
   const timerRow = document.getElementById('tm-row');
+  const modeRow = document.getElementById('gen-mode-row');
+  const linesRow = document.getElementById('gen-lines-row');
   if(rangeRow) rangeRow.style.display = 'none';
+  if(modeRow) modeRow.style.display = 'none';
+  if(linesRow) linesRow.style.display = 'none';
   if(timerRow) timerRow.style.display = 'flex';
   // Sync timer duration fields
   try{document.getElementById('tm-min').value = d_.tmMin !== undefined ? d_.tmMin : 5;}catch(e){}
@@ -919,6 +934,20 @@ window.setGenProp = function(prop, val, sr){
   }
   _refreshAppletEl(d);
   if(typeof saveState==='function') saveState();
+};
+
+window.setGenMode = function(mode){
+  if(!sel) return;
+  setGenProp('genMode', mode);
+  try{
+    document.getElementById('gen-range-row').style.display = mode === 'number' ? 'flex' : 'none';
+    document.getElementById('gen-lines-row').style.display = mode === 'text' ? 'flex' : 'none';
+  }catch(e){}
+};
+
+window.setGenLines = function(text){
+  if(!sel) return;
+  setGenProp('genLines', text);
 };
 
 window.toggleGenBold = function(){

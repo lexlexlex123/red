@@ -77,12 +77,17 @@ function _isTransparentPixel(elOuter, clientX, clientY, threshold) {
 function stopTextEditing() {
   const editing = document.querySelector('.el[data-editing="true"]');
   if (editing) {
+    if (editing.dataset.type === 'shape') {
+      if (typeof window._blurActiveShapeText === 'function') window._blurActiveShapeText();
+      return;
+    }
     const tel = editing.querySelector('.tel');
     if (tel) { tel.contentEditable = 'false'; tel.blur(); }
     delete editing.dataset.editing;
     editing.style.cursor = '';
     commitAll();
   }
+  if (typeof window._blurActiveShapeText === 'function') window._blurActiveShapeText();
   // Also stop any active rich-text contenteditable not tracked by dataset
   const active = document.activeElement;
   if (active && active.contentEditable === 'true' && active.classList.contains('tel')) {
@@ -421,20 +426,8 @@ function mkEl(d){
     wrap.style.cssText='position:absolute;inset:0;';
     const svgDiv=document.createElement('div');svgDiv.className='shape-svg';svgDiv.style.cssText='position:absolute;inset:0;overflow:visible;';
     svgDiv.innerHTML=buildShapeSVG(d,d.w,d.h);
-    // Enable pixel-perfect clicks only on actual SVG fill pixels
-    const svgEl=svgDiv.querySelector('svg');
-    if(svgEl){
-      svgEl.style.pointerEvents='none';
-      svgEl.querySelectorAll('path,rect,ellipse,circle,polygon,polyline').forEach(p=>{
-        p.style.pointerEvents='visibleFill';
-        p.style.cursor='move';
-        p.addEventListener('mouseenter',()=>el.classList.add('svg-hovered'));
-        p.addEventListener('mouseleave',()=>el.classList.remove('svg-hovered'));
-      });
-    }
     const _sh=typeof SHAPES!=='undefined'&&SHAPES.find(s=>s.id===d.shape);
     const _isCallout=_sh&&_sh.special==='callout';
-    // Shape text: outer flex wrapper (centering) + inner editable div
     const txt=document.createElement('div');txt.className='shape-text';
     const _baseTextCss=d.shapeTextCss||'font-size:24px;font-weight:700;color:#ffffff;text-align:center;';
     txt.setAttribute('style',_baseTextCss);
@@ -444,7 +437,6 @@ function mkEl(d){
       txt.style.display='flex';txt.style.flexDirection='column';
       txt.style.alignItems='center';txt.style.justifyContent='center';txt.style.textAlign='center';
     }
-    // Inner editable div — editing here keeps cursor centered correctly
     const _txtInner=document.createElement('div');
     _txtInner.style.cssText='width:100%;text-align:center;min-height:1em;outline:none;';
     _txtInner.innerHTML=d.shapeHtml||'';
@@ -456,11 +448,28 @@ function mkEl(d){
       _txtInner.contentEditable='true';
       txt.style.pointerEvents='auto';
       _txtInner.focus();
-      // Place cursor at end
       const range=document.createRange();range.selectNodeContents(_txtInner);range.collapse(false);
       const sel2=window.getSelection();sel2.removeAllRanges();sel2.addRange(range);
     }
-    txt.addEventListener('dblclick',e=>{e.stopPropagation();_activateShapeTxt();});
+    function _onShapeDblclick(e){
+      if(e.target.closest('.rh')||e.target.closest('.db'))return;
+      e.stopPropagation();
+      if(typeof pick==='function'&&sel!==el) pick(el);
+      _activateShapeTxt();
+    }
+
+    const svgEl=svgDiv.querySelector('svg');
+    if(svgEl){
+      svgEl.style.pointerEvents='none';
+      svgEl.querySelectorAll('path,rect,ellipse,circle,polygon,polyline').forEach(p=>{
+        p.style.pointerEvents='visibleFill';
+        p.style.cursor='move';
+        p.addEventListener('mouseenter',()=>el.classList.add('svg-hovered'));
+        p.addEventListener('mouseleave',()=>el.classList.remove('svg-hovered'));
+        p.addEventListener('dblclick', _onShapeDblclick);
+      });
+    }
+    txt.addEventListener('dblclick', _onShapeDblclick);
     _txtInner.addEventListener('blur',()=>{
       _txtInner.contentEditable='false';
       txt.style.pointerEvents='none';
@@ -489,9 +498,8 @@ function mkEl(d){
       if(_dTxt2) _dTxt2.shapeHtml=_txtInner.innerHTML;
       save();
     });
-;
     // dblclick on wrap (full bounding box) — works regardless of fill opacity
-    wrap.addEventListener('dblclick',e=>{e.stopPropagation();_activateShapeTxt();});
+    wrap.addEventListener('dblclick', _onShapeDblclick);
     wrap.append(svgDiv,txt);c.appendChild(wrap);
     el.dataset.shape=d.shape;el.dataset.fill=d.fill||'#3b82f6';el.dataset.stroke=d.stroke||'#1d4ed8';
     if(d.fillGrad!=null){el.dataset.fillGrad=d.fillGrad?'1':'0';}
@@ -519,6 +527,7 @@ function mkEl(d){
     if(d.strokeStyle)el.dataset.strokeStyle=d.strokeStyle;
     // Apply clip-path so hit area matches shape, not bounding box
     _applyShapeClipPath(el, d);
+    el.addEventListener('dblclick', _onShapeDblclick);
   }else if(d.type==='formula'){
     c.style.cssText='width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:visible;';
     c.style.color = d.formulaColor || '#ffffff';
@@ -624,6 +633,8 @@ function mkEl(d){
       el.dataset.genMin         = d.genMin         !== undefined ? d.genMin         : 1;
       el.dataset.genMax         = d.genMax         !== undefined ? d.genMax         : 100;
       el.dataset.genStep        = d.genStep        !== undefined ? d.genStep        : 1;
+      el.dataset.genMode        = d.genMode        || 'number';
+      el.dataset.genLines       = encodeURIComponent(d.genLines || '');
       el.dataset.genFontSize    = d.genFontSize    !== undefined ? d.genFontSize    : 64;
       el.dataset.genColor       = d.genColor       || '';
       el.dataset.genBg          = d.genBg          || '';
@@ -988,20 +999,25 @@ function pick(el){
   document.querySelectorAll('.arc-handle').forEach(h=>h.remove());
   document.querySelectorAll('.star-handle').forEach(h=>h.remove()); document.querySelectorAll('.para-handle').forEach(h=>h.remove()); document.querySelectorAll('.chev-handle').forEach(h=>h.remove()); document.querySelectorAll('.curve-handle').forEach(h=>h.remove()); if(typeof _curveSelPts!=='undefined'&&el!==sel)_curveSelPts.clear(); if(typeof _exitCurveEditMode==='function'&&el!==sel&&!(window._curveEditMode&&el===null))_exitCurveEditMode();
   // Deselect connector synchronously when picking an element
-  if(typeof _deselectConn==='function'&&typeof _selConnId!=='undefined'&&_selConnId) _deselectConn();
+  if (typeof window._deselectConn === 'function' && typeof window._getSelConnId === 'function' && window._getSelConnId()) {
+    window._deselectConn(!el);
+  }
   // Exit crop mode if switching away from the cropped image
   if(typeof exitCropModeIfActive==='function'&&_cropEl&&_cropEl!==el)exitCropModeIfActive();
   // Clear table cell selection when leaving a table
   if(sel&&sel.dataset.type==='table'&&sel!==el&&typeof tblClearSel==='function') tblClearSel();
-  // Exit text editing on previously selected element - force blur to trigger save
-  if(sel&&sel.dataset.editing==='true'){
-    const c=sel.querySelector('.tel');
-    if(c){c.contentEditable='false';c.blur();}
-    delete sel.dataset.editing;sel.style.cursor='';
-    commitAll();
+  // Exit text/shape editing on previously selected element
+  if (sel && sel !== el) {
+    if (sel.dataset.type === 'shape' && sel.dataset.editing === 'true') {
+      if (typeof window._blurActiveShapeText === 'function') window._blurActiveShapeText();
+    } else if (sel.dataset.editing === 'true') {
+      const c = sel.querySelector('.tel');
+      if (c) { c.contentEditable = 'false'; c.blur(); }
+      delete sel.dataset.editing; sel.style.cursor = '';
+      commitAll();
+    }
   }
-  // Exit shape text editing on previously selected element
-  _blurActiveShapeText();
+  if (!el && typeof window._blurActiveShapeText === 'function') window._blurActiveShapeText();
   const prevSel=sel;
   if(sel)sel.classList.remove('sel');
   sel=el;

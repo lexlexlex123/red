@@ -477,7 +477,7 @@ function save(){
       d.appletHtml=el.dataset.appletHtml||'';
       if(el.dataset.appletAspect)d._appletAspect=+el.dataset.appletAspect;
       // Read generator fields from dataset (kept in sync by refreshGeneratorEl)
-      const _gk=['tmMin','tmSec','tmOnEnd','tmOnEndSlide','genMin','genMax','genStep','genFontSize','genColor','genBg','genBgBlur','genBgOp',
+      const _gk=['tmMin','tmSec','tmOnEnd','tmOnEndSlide','genMode','genLines','genMin','genMax','genStep','genFontSize','genColor','genBg','genBgBlur','genBgOp',
         'genBorderColor','genBorderWidth','genBold','genAlign','genVAlign',
         'genShadowOn','genShadowBlur','genShadowColor',
         'genColorScheme','genBgScheme','genBorderScheme'];
@@ -491,6 +491,7 @@ function save(){
           else if(['genColorScheme','genBgScheme','genBorderScheme'].includes(k)){
             try{d[k]=JSON.parse(v);}catch(e){d[k]=null;}
           }
+          else if(k==='genLines'){ try{d[k]=decodeURIComponent(v);}catch(e){d[k]=v;} }
           else d[k]=v;
         }
       });

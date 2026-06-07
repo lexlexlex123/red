@@ -285,9 +285,12 @@ window.addEventListener('message',function(e){
 
 function getGeneratorHTML(cfg){
   cfg = cfg || {};
+  const mode   = cfg.genMode || 'number';
   const min    = cfg.genMin      !== undefined ? +cfg.genMin      : 1;
   const max    = cfg.genMax      !== undefined ? +cfg.genMax      : 100;
   const step   = cfg.genStep     !== undefined ? +cfg.genStep     : 1;
+  const lines  = (cfg.genLines || '').split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
+  const linesJson = JSON.stringify(lines.length ? lines : ['?']);
   const fs     = cfg.genFontSize !== undefined ? +cfg.genFontSize : 64;
   const bold   = cfg.genBold     ? 900 : 800;
   const align  = cfg.genAlign    || 'center';
@@ -326,14 +329,19 @@ html,body{width:100%;height:100%;background:transparent;overflow:hidden;}
   <div class="num" id="num">?</div>
 </div>
 <script>
-var _min=${min},_max=${max},_step=${step};
+var _mode=${JSON.stringify(mode)},_min=${min},_max=${max},_step=${step},_lines=${linesJson};
 function gen(){
-  var steps=Math.round((_max-_min)/_step);
-  var val=_min+Math.round(Math.random()*steps)*_step;
-  val=Math.round(val*1e9)/1e9;
   var el=document.getElementById('num');
   el.classList.add('pop');
   setTimeout(function(){el.classList.remove('pop');},150);
+  var val;
+  if(_mode==='text'){
+    val=_lines.length? _lines[Math.floor(Math.random()*_lines.length)] : '?';
+  }else{
+    var steps=Math.round((_max-_min)/_step);
+    val=_min+Math.round(Math.random()*steps)*_step;
+    val=Math.round(val*1e9)/1e9;
+  }
   el.textContent=val;
 }
 gen();
@@ -350,7 +358,9 @@ window.addEventListener('message',function(e){
   if(d.bg   !==undefined){var wb2=document.getElementById('wrapbg');if(wb2)wb2.style.background=d.bg;}
   if(d.blur  !==undefined){var wb=document.getElementById('wrapbg');if(wb){wb.style.backdropFilter=d.blur>0?'blur('+d.blur+'px)':'none';wb.style.webkitBackdropFilter=d.blur>0?'blur('+d.blur+'px)':'none';}}
   if(d.shadow!==undefined){var nm2=document.getElementById('num');if(nm2)nm2.style.textShadow=d.shadow;}
-  if(d.min  !==undefined){_min=d.min;_max=d.max;_step=d.step;}
+  if(d.mode !==undefined){_mode=d.mode;gen();}
+  if(d.lines!==undefined){_lines=d.lines;gen();}
+  if(d.min  !==undefined){_min=d.min;_max=d.max;_step=d.step;if(_mode!=='text')gen();}
 });
 <\/script></body></html>`;
 }
@@ -461,7 +471,7 @@ function insertApplet(a){
     appletHtml:html,
     _appletAspect:aspect,
     // Generator-specific data
-    ...(a.id==='generator' ? {genMin:1,genMax:100,genStep:1, genFontSize:64, genColor:'', genBg:(_appletTheme().ac1||'#6366f1'), genBgOp:0.2, genBgScheme:{col:0,row:0}, genBgBlur:0, genBorderColor:'', genBorderWidth:0, genAlign:'center', genVAlign:'middle', genBold:false, genShadowBlur:8, genShadowY:2, genShadowColor:'#000000'} : {}),
+    ...(a.id==='generator' ? {genMode:'number',genLines:'',genMin:1,genMax:100,genStep:1, genFontSize:64, genColor:'', genBg:(_appletTheme().ac1||'#6366f1'), genBgOp:0.2, genBgScheme:{col:0,row:0}, genBgBlur:0, genBorderColor:'', genBorderWidth:0, genAlign:'center', genVAlign:'middle', genBold:false, genShadowBlur:8, genShadowY:2, genShadowColor:'#000000'} : {}),
     ...(a.id==='timer'     ? {tmMin:5, tmSec:0, genFontSize:72, genColor:'', genBg:(_appletTheme().ac1||'#6366f1'), genBgOp:0.2, genBgScheme:{col:0,row:0}, genBgBlur:0, genBorderColor:'', genBorderWidth:0, genAlign:'center', genVAlign:'middle', genBold:false, genShadowBlur:8, genShadowColor:'#000000', genShadowOn:true} : {}),
     ...(a.id==='clock'     ? {genFontSize:48, genColor:'', genBg:(_appletTheme().ac1||'#6366f1'), genBgOp:0.2, genBgScheme:{col:0,row:0}, genBgBlur:0, genBorderColor:'', genBorderWidth:0, genAlign:'center', genVAlign:'middle', genBold:false, genShadowBlur:8, genShadowColor:'#000000', genShadowOn:true} : {}),
     ...(a.id==='qr'        ? {qrText:'https://example.com', qrBg:'#ffffff', qrColor:'#000000', qrRx:16} : {}),
@@ -570,6 +580,8 @@ window.refreshGeneratorEl = function(elId){
   domEl.dataset.genMin         = d.genMin         !== undefined ? d.genMin         : 1;
   domEl.dataset.genMax         = d.genMax         !== undefined ? d.genMax         : 100;
   domEl.dataset.genStep        = d.genStep        !== undefined ? d.genStep        : 1;
+  domEl.dataset.genMode        = d.genMode        || 'number';
+  domEl.dataset.genLines       = encodeURIComponent(d.genLines || '');
   domEl.dataset.genFontSize    = fs;
   domEl.dataset.genColor       = d.genColor       || '';
   domEl.dataset.genBg          = d.genBg          || '';
@@ -597,11 +609,14 @@ window.refreshGeneratorEl = function(elId){
   // Send live update into iframe via postMessage — no reload, no flash
   const iframe = domEl.querySelector('iframe');
   if(iframe && iframe.contentWindow){
+    const linesArr = (d.genLines || '').split('\n').map(l => l.trim()).filter(Boolean);
     iframe.contentWindow.postMessage({
       type:'genUpdate',
       fs: fs, bold: d.genBold||false,
       color: numClr, align: align, ai: ai, jc: jc,
       bg: bgClr, blur: bgBlur, shadow: shStyle,
+      mode: d.genMode || 'number',
+      lines: linesArr.length ? linesArr : ['?'],
       min: d.genMin!==undefined?+d.genMin:1,
       max: d.genMax!==undefined?+d.genMax:100,
       step: d.genStep!==undefined?+d.genStep:1,
@@ -610,6 +625,7 @@ window.refreshGeneratorEl = function(elId){
 
   // Update persisted HTML
   const cfg2 = {
+    genMode:d.genMode,genLines:d.genLines,
     genMin:d.genMin,genMax:d.genMax,genStep:d.genStep,genFontSize:d.genFontSize,
     genColor:d.genColor,genBg:d.genBg,genBgBlur:d.genBgBlur,
     genBorderColor:d.genBorderColor,genBorderWidth:d.genBorderWidth,

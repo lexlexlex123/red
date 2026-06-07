@@ -1168,8 +1168,7 @@ function buildPSlide(container,idx,transOffset,noScale){
     const pdefs = psvg.querySelector('defs');
 
     // Helper: get edge midpoint anchor from data model, accounting for rotation
-    function _pEdgeMid(elId, sideKey, otherElId, gap) {
-      gap = gap || 0;
+    function _pEdgeMid(elId, sideKey, otherElId) {
       const d = elMap[elId]; if (!d) return {x:0,y:0};
       const cx=d.x+d.w/2, cy=d.y+d.h/2;
       const deg = d.rot || 0;
@@ -1190,12 +1189,7 @@ function buildPSlide(container,idx,transOffset,noScale){
         bottom: {...rot(cx,      d.y+d.h ), ...rotDir( 0, 1)},
         left:   {...rot(d.x,     cy      ), ...rotDir(-1, 0)},
       };
-      if (raw[sideKey]) {
-        const pt = raw[sideKey];
-        if (gap) return {x: pt.x + pt.nx*gap, y: pt.y + pt.ny*gap};
-        return pt;
-      }
-      // fallback: closest rotated side toward other element
+      if (raw[sideKey]) return raw[sideKey];
       const od=elMap[otherElId];
       const tx=od?od.x+od.w/2:cx, ty=od?od.y+od.h/2:cy;
       let best=raw.right, bestD=Infinity;
@@ -1203,8 +1197,38 @@ function buildPSlide(container,idx,transOffset,noScale){
         const d2=(pt.x-tx)**2+(pt.y-ty)**2;
         if (d2<bestD){bestD=d2;best=pt;}
       }
-      if (gap) return {x: best.x + best.nx*gap, y: best.y + best.ny*gap};
       return best;
+    }
+
+    function _pApplyLineGap(raw1, raw2, gap) {
+      gap = gap || 0;
+      if (!gap) return { p1: raw1, p2: raw2 };
+      const dx = raw2.x - raw1.x, dy = raw2.y - raw1.y;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (len < 0.001) return { p1: raw1, p2: raw2 };
+      const g = Math.min(gap, len / 2);
+      const ux = dx / len, uy = dy / len;
+      return {
+        p1: { x: raw1.x + ux * g, y: raw1.y + uy * g },
+        p2: { x: raw2.x - ux * g, y: raw2.y - uy * g },
+      };
+    }
+
+    function _pApplySideGap(raw, gap) {
+      if (!gap) return raw;
+      const n = { top:{x:0,y:-1}, right:{x:1,y:0}, bottom:{x:0,y:1}, left:{x:-1,y:0} };
+      const side = raw.side;
+      const nx = raw.nx != null ? raw.nx : (n[side] || { x: 0, y: 0 }).x;
+      const ny = raw.ny != null ? raw.ny : (n[side] || { x: 0, y: 0 }).y;
+      return { x: raw.x + nx * gap, y: raw.y + ny * gap, side: raw.side, nx, ny };
+    }
+
+    function _pAnchorPair(conn) {
+      const gap = conn.gap || 0;
+      const raw1 = _pEdgeMid(conn.fromId, conn.fromSide, conn.toId);
+      const raw2 = _pEdgeMid(conn.toId, conn.toSide, conn.fromId);
+      if ((conn.route || 'curve') === 'straight') return _pApplyLineGap(raw1, raw2, gap);
+      return { p1: _pApplySideGap(raw1, gap), p2: _pApplySideGap(raw2, gap) };
     }
     // Helper: default bezier control points
     function _pDefaultCP(p1, p2) {
@@ -1221,18 +1245,54 @@ function buildPSlide(container,idx,transOffset,noScale){
       };
     }
 
-    // Side normals for gap offset
-    const _pSideN = { top:{x:0,y:-1}, right:{x:1,y:0}, bottom:{x:0,y:1}, left:{x:-1,y:0} };
-    function _pApplyGap(pt, gap) {
-      if (!gap) return pt;
-      const n = _pSideN[pt.side] || {x:0,y:0};
-      return { ...pt, x: pt.x + n.x * gap, y: pt.y + n.y * gap };
+    function _pOrthoPts(p1, p2, fromSide, toSide) {
+      const hFrom = fromSide === 'left' || fromSide === 'right';
+      const hTo = toSide === 'left' || toSide === 'right';
+      if (hFrom && hTo) {
+        const midX = (p1.x + p2.x) / 2;
+        return [p1, {x: midX, y: p1.y}, {x: midX, y: p2.y}, p2];
+      }
+      if (!hFrom && !hTo) {
+        const midY = (p1.y + p2.y) / 2;
+        return [p1, {x: p1.x, y: midY}, {x: p2.x, y: midY}, p2];
+      }
+      if (hFrom) return [p1, {x: p2.x, y: p1.y}, p2];
+      return [p1, {x: p1.x, y: p2.y}, p2];
+    }
+
+    function _pOrthoPathD(pts) {
+      return pts.map((p, i) =>
+        (i === 0 ? 'M' : 'L') + p.x.toFixed(1) + ',' + p.y.toFixed(1)
+      ).join(' ');
+    }
+
+    function _pMkDist(t) { return t==='arrow'?1.386 : t==='square'?1.7 : t==='cross'?1.5 : 0; }
+    function _pMkRetract(pt, cpNear, d, sw) {
+      if (!d || sw <= 0) return pt;
+      const tdx=cpNear.x-pt.x, tdy=cpNear.y-pt.y, tl=Math.sqrt(tdx*tdx+tdy*tdy)||1;
+      return {x: pt.x+(tdx/tl)*sw*d, y: pt.y+(tdy/tl)*sw*d};
+    }
+
+    function _pConnPathD(conn, p1, p2, cp1, cp2, fromMk, toMk, sw) {
+      const route = conn.route || 'curve';
+      if (route === 'orthogonal') {
+        const pts = _pOrthoPts(p1, p2, conn.fromSide, conn.toSide);
+        const rp2 = toMk   !== 'none' ? _pMkRetract(pts[pts.length - 1], pts[pts.length - 2], _pMkDist(toMk), sw)   : pts[pts.length - 1];
+        const rp1 = fromMk !== 'none' ? _pMkRetract(pts[0], pts[1], _pMkDist(fromMk), sw) : pts[0];
+        return _pOrthoPathD([rp1, ...pts.slice(1, -1), rp2]);
+      }
+      if (route === 'straight') {
+        const rp2 = toMk   !== 'none' ? _pMkRetract(p2, p1, _pMkDist(toMk), sw)   : p2;
+        const rp1 = fromMk !== 'none' ? _pMkRetract(p1, p2, _pMkDist(fromMk), sw) : p1;
+        return `M${rp1.x.toFixed(1)},${rp1.y.toFixed(1)} L${rp2.x.toFixed(1)},${rp2.y.toFixed(1)}`;
+      }
+      const rp2 = toMk   !== 'none' ? _pMkRetract(p2, cp2, _pMkDist(toMk), sw)   : p2;
+      const rp1 = fromMk !== 'none' ? _pMkRetract(p1, cp1, _pMkDist(fromMk), sw) : p1;
+      return `M${rp1.x.toFixed(1)},${rp1.y.toFixed(1)} C${cp1.x.toFixed(1)},${cp1.y.toFixed(1)} ${cp2.x.toFixed(1)},${cp2.y.toFixed(1)} ${rp2.x.toFixed(1)},${rp2.y.toFixed(1)}`;
     }
 
     s.connectors.forEach(conn => {
-      const gap = conn.gap || 0;
-      const p1 = _pEdgeMid(conn.fromId, conn.fromSide, conn.toId, gap);
-      const p2 = _pEdgeMid(conn.toId,   conn.toSide,   conn.fromId, gap);
+      const { p1, p2 } = _pAnchorPair(conn);
       // Use stored control points if available, else compute defaults
       const def = _pDefaultCP(p1, p2);
       const cp1 = conn.cp1 || def.cp1;
@@ -1261,15 +1321,7 @@ function buildPSlide(container,idx,transOffset,noScale){
         pdefs.appendChild(style);
       }
 
-      function pMkDist(t){return t==='arrow'?1.386:t==='square'?1.7:t==='cross'?1.5:0;}
-      function pMkRetract(pt, cpNear, d) {
-        if (!d || sw <= 0) return pt;
-        const tdx=cpNear.x-pt.x, tdy=cpNear.y-pt.y, tl=Math.sqrt(tdx*tdx+tdy*tdy)||1;
-        return {x: pt.x+(tdx/tl)*sw*d, y: pt.y+(tdy/tl)*sw*d};
-      }
-      const rp2=toMk  !=='none' ? pMkRetract(p2, cp2, pMkDist(toMk))   : p2;
-      const rp1=fromMk!=='none' ? pMkRetract(p1, cp1, pMkDist(fromMk)) : p1;
-      const pd = `M${rp1.x.toFixed(1)},${rp1.y.toFixed(1)} C${cp1.x.toFixed(1)},${cp1.y.toFixed(1)} ${cp2.x.toFixed(1)},${cp2.y.toFixed(1)} ${rp2.x.toFixed(1)},${rp2.y.toFixed(1)}`;
+      const pd = _pConnPathD(conn, p1, p2, cp1, cp2, fromMk, toMk, sw);
       const line = document.createElementNS('http://www.w3.org/2000/svg','path');
       line.setAttribute('d', pd);
       line.setAttribute('fill', 'none');
@@ -1301,7 +1353,7 @@ function buildPSlide(container,idx,transOffset,noScale){
         const line = psvg.querySelector(`[data-pconn-id="${conn.id}"]`);
         if (!line) return;
         // Вычисляем позиции с учётом смещения
-        function _offsetMid(did, otherDid, side) {
+        function _offsetMid(did, otherDid, sideKey) {
           const base = elMap[did]; if (!base) return {x:0,y:0};
           const off = _motionOffsets[did] || {tx:0,ty:0};
           const bx = base.x + off.tx, by = base.y + off.ty;
@@ -1312,34 +1364,48 @@ function buildPSlide(container,idx,transOffset,noScale){
             const rad=deg*Math.PI/180,cos=Math.cos(rad),sin=Math.sin(rad);
             return{x:cx+(px-cx)*cos-(py-cy)*sin, y:cy+(px-cx)*sin+(py-cy)*cos};
           }
+          function rotDir(nx, ny) {
+            if (!deg) return { nx, ny };
+            const rad=deg*Math.PI/180,cos=Math.cos(rad),sin=Math.sin(rad);
+            return { nx: nx*cos-ny*sin, ny: nx*sin+ny*cos };
+          }
           const sides = {
-            top:    rot(cx, by),
-            right:  rot(bx+base.w, cy),
-            bottom: rot(cx, by+base.h),
-            left:   rot(bx, cy),
+            top:    { ...rot(cx, by),      ...rotDir(0,-1), side: 'top' },
+            right:  { ...rot(bx+base.w, cy), ...rotDir(1,0),  side: 'right' },
+            bottom: { ...rot(cx, by+base.h), ...rotDir(0,1),  side: 'bottom' },
+            left:   { ...rot(bx, cy),      ...rotDir(-1,0), side: 'left' },
           };
-          if (sides[side]) return sides[side];
-          // fallback: closest to other
+          if (sides[sideKey]) return sides[sideKey];
           const od = elMap[otherDid];
           const offO = _motionOffsets[otherDid]||{tx:0,ty:0};
           const tx2 = od ? od.x+offO.tx+od.w/2 : cx;
           const ty2 = od ? od.y+offO.ty+od.h/2 : cy;
           let best=sides.right, bestD=Infinity;
-          for(const [,pt] of Object.entries(sides)){
+          for (const [,pt] of Object.entries(sides)){
             const d2=(pt.x-tx2)**2+(pt.y-ty2)**2;
             if(d2<bestD){bestD=d2;best=pt;}
           }
           return best;
         }
-        const p1 = _offsetMid(conn.fromId, conn.toId, conn.fromSide);
-        const p2 = _offsetMid(conn.toId, conn.fromId, conn.toSide);
+        const raw1 = _offsetMid(conn.fromId, conn.toId, conn.fromSide);
+        const raw2 = _offsetMid(conn.toId, conn.fromId, conn.toSide);
+        const gap = conn.gap || 0;
+        let p1, p2;
+        if ((conn.route || 'curve') === 'straight') {
+          ({ p1, p2 } = _pApplyLineGap(raw1, raw2, gap));
+        } else {
+          p1 = _pApplySideGap(raw1, gap);
+          p2 = _pApplySideGap(raw2, gap);
+        }
         const dx=p2.x-p1.x, dy=p2.y-p1.y;
         const dist=Math.sqrt(dx*dx+dy*dy), bend=Math.min(dist*0.45,220);
         const hBias=Math.abs(dx)>Math.abs(dy)*0.6;
         const cp1 = hBias ? {x:p1.x+bend*Math.sign(dx||1),y:p1.y} : {x:p1.x,y:p1.y+bend*Math.sign(dy||1)};
         const cp2 = hBias ? {x:p2.x-bend*Math.sign(dx||1),y:p2.y} : {x:p2.x,y:p2.y-bend*Math.sign(dy||1)};
-        line.setAttribute('d',
-          `M${p1.x.toFixed(1)},${p1.y.toFixed(1)} C${cp1.x.toFixed(1)},${cp1.y.toFixed(1)} ${cp2.x.toFixed(1)},${cp2.y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`);
+        const fromMk = conn.fromMarker || 'none';
+        const toMk   = conn.toMarker   || (conn.type==='arrow'?'arrow':'none');
+        const sw = conn.sw || 2;
+        line.setAttribute('d', _pConnPathD(conn, p1, p2, cp1, cp2, fromMk, toMk, sw));
       });
     };
   }

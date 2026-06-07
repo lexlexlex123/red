@@ -136,22 +136,40 @@ const _SIDE_NORMAL = {
   left:   { x: -1, y:  0 },
 };
 
-// Get anchor point for rendering using stored side, with optional gap offset
+// Get anchor point on object edge (no gap)
 function _getAnchor(conn, which) {
-  const elId    = which === 'from' ? conn.fromId   : conn.toId;
-  const sideKey = which === 'from' ? 'fromSide'    : 'toSide';
-  const otherId = which === 'from' ? conn.toId     : conn.fromId;
-  const mids = _edgeMidpoints(elId);
-  if (!mids) return { x: 0, y: 0 };
-  const stored = conn[sideKey];
-  let m = stored ? mids.find(p => p.side === stored) : null;
-  if (!m) m = _getAnchorSide(elId, otherId);
+  return _getAnchorRaw(conn, which);
+}
+
+// Retract both endpoints inward along the line between raw anchors (straight route)
+function _applyLineGap(raw1, raw2, gap) {
+  gap = gap || 0;
+  if (!gap) return { p1: raw1, p2: raw2 };
+  const dx = raw2.x - raw1.x, dy = raw2.y - raw1.y;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  if (len < 0.001) return { p1: raw1, p2: raw2 };
+  const g = Math.min(gap, len / 2);
+  const ux = dx / len, uy = dy / len;
+  return {
+    p1: { x: raw1.x + ux * g, y: raw1.y + uy * g, side: raw1.side, nx: raw1.nx, ny: raw1.ny },
+    p2: { x: raw2.x - ux * g, y: raw2.y - uy * g, side: raw2.side, nx: raw2.nx, ny: raw2.ny },
+  };
+}
+
+// Push anchor outward along edge normal (curve / orthogonal routes)
+function _applySideGap(raw, gap) {
+  if (!gap) return raw;
+  const nx = raw.nx != null ? raw.nx : (_SIDE_NORMAL[raw.side] || { x: 0, y: 0 }).x;
+  const ny = raw.ny != null ? raw.ny : (_SIDE_NORMAL[raw.side] || { x: 0, y: 0 }).y;
+  return { x: raw.x + nx * gap, y: raw.y + ny * gap, side: raw.side, nx, ny };
+}
+
+function _getAnchorPair(conn) {
+  const raw1 = _getAnchorRaw(conn, 'from');
+  const raw2 = _getAnchorRaw(conn, 'to');
   const gap = conn.gap || 0;
-  if (!gap) return m;
-  // Push anchor outward along the ROTATED side normal stored in m.nx/m.ny
-  const nx = m.nx != null ? m.nx : (_SIDE_NORMAL[m.side] || {x:0,y:0}).x;
-  const ny = m.ny != null ? m.ny : (_SIDE_NORMAL[m.side] || {x:0,y:0}).y;
-  return { x: m.x + nx * gap, y: m.y + ny * gap, side: m.side, nx, ny };
+  if ((conn.route || 'curve') === 'straight') return _applyLineGap(raw1, raw2, gap);
+  return { p1: _applySideGap(raw1, gap), p2: _applySideGap(raw2, gap) };
 }
 
 // Get raw anchor WITHOUT gap (used for handle display and snapping)
@@ -189,12 +207,38 @@ function _pathD(p1, cp1, cp2, p2) {
   return `M${p1.x.toFixed(1)},${p1.y.toFixed(1)} C${cp1.x.toFixed(1)},${cp1.y.toFixed(1)} ${cp2.x.toFixed(1)},${cp2.y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`;
 }
 
+// ── Orthogonal (step) route ────────────────────────────────────────────────
+function _orthogonalPoints(p1, p2, fromSide, toSide) {
+  const hFrom = fromSide === 'left' || fromSide === 'right';
+  const hTo = toSide === 'left' || toSide === 'right';
+  if (hFrom && hTo) {
+    const midX = (p1.x + p2.x) / 2;
+    return [p1, { x: midX, y: p1.y }, { x: midX, y: p2.y }, p2];
+  }
+  if (!hFrom && !hTo) {
+    const midY = (p1.y + p2.y) / 2;
+    return [p1, { x: p1.x, y: midY }, { x: p2.x, y: midY }, p2];
+  }
+  if (hFrom) return [p1, { x: p2.x, y: p1.y }, p2];
+  return [p1, { x: p1.x, y: p2.y }, p2];
+}
+
+function _orthogonalPathD(pts) {
+  return pts.map((p, i) =>
+    (i === 0 ? 'M' : 'L') + p.x.toFixed(1) + ',' + p.y.toFixed(1)
+  ).join(' ');
+}
+
+function _straightPathD(p1, p2) {
+  return `M${p1.x.toFixed(1)},${p1.y.toFixed(1)} L${p2.x.toFixed(1)},${p2.y.toFixed(1)}`;
+}
+
 // ── Render one connector ───────────────────────────────────────────────────
 function _renderConnector(conn, svg) {
-  const p1 = _getAnchor(conn, 'from');
-  const p2 = _getAnchor(conn, 'to');
+  const { p1, p2 } = _getAnchorPair(conn);
+  const route = conn.route || 'curve';
 
-  if (!conn.cp1 || !conn.cp2) {
+  if (route === 'curve' && (!conn.cp1 || !conn.cp2)) {
     const def = _defaultControlPoints(p1, p2);
     conn.cp1 = def.cp1; conn.cp2 = def.cp2;
   }
@@ -301,9 +345,21 @@ function _renderConnector(conn, svg) {
     if (type === 'cross')  return 1.5;
     return 0;
   }
-  const rp2 = toMk   !== 'none' ? _mkRetract(p2, conn.cp2, true, _mkDist(toMk))   : p2;
-  const rp1 = fromMk !== 'none' ? _mkRetract(p1, conn.cp1, true, _mkDist(fromMk)) : p1;
-  const d = _pathD(rp1, conn.cp1, conn.cp2, rp2);
+  let d;
+  if (route === 'orthogonal') {
+    const pts = _orthogonalPoints(p1, p2, conn.fromSide, conn.toSide);
+    const rp2 = toMk   !== 'none' ? _mkRetract(pts[pts.length - 1], pts[pts.length - 2], true, _mkDist(toMk))   : pts[pts.length - 1];
+    const rp1 = fromMk !== 'none' ? _mkRetract(pts[0], pts[1], true, _mkDist(fromMk)) : pts[0];
+    d = _orthogonalPathD([rp1, ...pts.slice(1, -1), rp2]);
+  } else if (route === 'straight') {
+    const rp2 = toMk   !== 'none' ? _mkRetract(p2, p1, true, _mkDist(toMk))   : p2;
+    const rp1 = fromMk !== 'none' ? _mkRetract(p1, p2, true, _mkDist(fromMk)) : p1;
+    d = _straightPathD(rp1, rp2);
+  } else {
+    const rp2 = toMk   !== 'none' ? _mkRetract(p2, conn.cp2, true, _mkDist(toMk))   : p2;
+    const rp1 = fromMk !== 'none' ? _mkRetract(p1, conn.cp1, true, _mkDist(fromMk)) : p1;
+    d = _pathD(rp1, conn.cp1, conn.cp2, rp2);
+  }
   const effectiveLinecap = (dash === 'dot') ? 'round' : ((fromMk !== 'none' || toMk !== 'none') ? 'butt' : linecap);
   const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
   path.setAttribute('d', d);
@@ -343,6 +399,14 @@ let _handleLayer = null;
 
 function _removeHandles() {
   if (_handleLayer) { _handleLayer.remove(); _handleLayer = null; }
+  document.querySelectorAll('#conn-handles').forEach(n => n.remove());
+}
+
+function _clearConnSelectionVisuals() {
+  _removeHandles();
+  _removeTangentLines();
+  if (_selConnHighlight) { _selConnHighlight.remove(); _selConnHighlight = null; }
+  document.getElementById(SVG_LAYER_ID)?.querySelectorAll('.conn-sel-hl').forEach(n => n.remove());
 }
 
 function _canvasPoint(e) {
@@ -369,9 +433,8 @@ function _refreshTangentLines(conn) {
     svg.appendChild(tg);
   }
   tg.innerHTML = '';
-  const p1 = _getAnchor(conn, 'from');
-  const p2 = _getAnchor(conn, 'to');
-  if (!conn.cp1 || !conn.cp2) return;
+  const { p1, p2 } = _getAnchorPair(conn);
+  if ((conn.route || 'curve') !== 'curve' || !conn.cp1 || !conn.cp2) return;
 
   [[p1, conn.cp1], [p2, conn.cp2]].forEach(([ep, cp]) => {
     const ln = document.createElementNS('http://www.w3.org/2000/svg', 'line');
@@ -403,8 +466,10 @@ function _showHandles(connId) {
   _handleLayer.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:95;';
   canvas.appendChild(_handleLayer);
 
-  // Ensure control points exist
-  if (!conn.cp1 || !conn.cp2) {
+  const isCurve = (conn.route || 'curve') === 'curve';
+
+  // Ensure control points exist (curve mode only)
+  if (isCurve && (!conn.cp1 || !conn.cp2)) {
     const p1 = _getAnchorRaw(conn, 'from');
     const p2 = _getAnchorRaw(conn, 'to');
     const def = _defaultControlPoints(p1, p2);
@@ -446,8 +511,8 @@ function _showHandles(connId) {
       e.preventDefault(); e.stopPropagation();
       _handleDragging = true;
       // Store initial endpoint positions for delta calculation
-      conn._prevP1 = { ..._getAnchor(conn, 'from') };
-      conn._prevP2 = { ..._getAnchor(conn, 'to') };
+      conn._prevP1 = { ..._getAnchorPair(conn).p1 };
+      conn._prevP2 = { ..._getAnchorPair(conn).p2 };
 
       canvas.querySelectorAll('.el').forEach(el => el.classList.add('conn-target'));
 
@@ -480,41 +545,42 @@ function _showHandles(connId) {
         h.style.left = (displayPt.x - s / 2).toFixed(1) + 'px';
         h.style.top  = (displayPt.y - s / 2).toFixed(1) + 'px';
 
-        // Recompute control points, preserving manual adjustments
-        const np1 = _getAnchor(conn, 'from');
-        const np2 = _getAnchor(conn, 'to');
-        if (!conn._cpManual) {
-          const def = _defaultControlPoints(np1, np2);
-          conn.cp1 = def.cp1; conn.cp2 = def.cp2;
-        } else {
-          // Each CP follows its own endpoint delta rigidly
-          const prevP1 = conn._prevP1, prevP2 = conn._prevP2;
-          if (prevP1 && conn.cp1) {
-            const d1x = np1.x - prevP1.x, d1y = np1.y - prevP1.y;
-            conn.cp1 = { x: conn.cp1.x + d1x, y: conn.cp1.y + d1y };
+        // Recompute control points, preserving manual adjustments (curve mode only)
+        const { p1: np1, p2: np2 } = _getAnchorPair(conn);
+        if ((conn.route || 'curve') === 'curve') {
+          if (!conn._cpManual) {
+            const def = _defaultControlPoints(np1, np2);
+            conn.cp1 = def.cp1; conn.cp2 = def.cp2;
+          } else {
+            // Each CP follows its own endpoint delta rigidly
+            const prevP1 = conn._prevP1, prevP2 = conn._prevP2;
+            if (prevP1 && conn.cp1) {
+              const d1x = np1.x - prevP1.x, d1y = np1.y - prevP1.y;
+              conn.cp1 = { x: conn.cp1.x + d1x, y: conn.cp1.y + d1y };
+            }
+            if (prevP2 && conn.cp2) {
+              const d2x = np2.x - prevP2.x, d2y = np2.y - prevP2.y;
+              conn.cp2 = { x: conn.cp2.x + d2x, y: conn.cp2.y + d2y };
+            }
           }
-          if (prevP2 && conn.cp2) {
-            const d2x = np2.x - prevP2.x, d2y = np2.y - prevP2.y;
-            conn.cp2 = { x: conn.cp2.x + d2x, y: conn.cp2.y + d2y };
+          // Re-anchor offsets to new anchor positions after endpoint move
+          if (conn._cpManual) {
+            if (conn.cp1) conn.cp1offset = { x: conn.cp1.x - np1.x, y: conn.cp1.y - np1.y };
+            if (conn.cp2) conn.cp2offset = { x: conn.cp2.x - np2.x, y: conn.cp2.y - np2.y };
           }
+          // Update CP handle positions
+          _handleLayer.querySelectorAll('.conn-h-cp').forEach((ch, ci) => {
+            const cpKey = ci === 0 ? 'cp1' : 'cp2';
+            const ncp = conn[cpKey];
+            if (ncp) {
+              ch.style.left = (ncp.x - HANDLE_CP / 2).toFixed(1) + 'px';
+              ch.style.top  = (ncp.y - HANDLE_CP / 2).toFixed(1) + 'px';
+            }
+          });
         }
         // Store current endpoints for next frame delta
         conn._prevP1 = { ...np1 };
         conn._prevP2 = { ...np2 };
-        // Re-anchor offsets to new anchor positions after endpoint move
-        if (conn._cpManual) {
-          if (conn.cp1) conn.cp1offset = { x: conn.cp1.x - np1.x, y: conn.cp1.y - np1.y };
-          if (conn.cp2) conn.cp2offset = { x: conn.cp2.x - np2.x, y: conn.cp2.y - np2.y };
-        }
-        // Update CP handle positions
-        _handleLayer.querySelectorAll('.conn-h-cp').forEach((ch, ci) => {
-          const cpKey = ci === 0 ? 'cp1' : 'cp2';
-          const ncp = conn[cpKey];
-          if (ncp) {
-            ch.style.left = (ncp.x - HANDLE_CP / 2).toFixed(1) + 'px';
-            ch.style.top  = (ncp.y - HANDLE_CP / 2).toFixed(1) + 'px';
-          }
-        });
         redrawPath();
       };
 
@@ -539,9 +605,8 @@ function _showHandles(connId) {
             if (conn.cp2) conn.cp2offset = { x: conn.cp2.x - np2.x, y: conn.cp2.y - np2.y };
           }
         }
-        if (!conn._cpManual) {
-          const np1 = _getAnchor(conn, 'from');
-          const np2 = _getAnchor(conn, 'to');
+        if ((conn.route || 'curve') === 'curve' && !conn._cpManual) {
+          const { p1: np1, p2: np2 } = _getAnchorPair(conn);
           const def = _defaultControlPoints(np1, np2);
           conn.cp1 = def.cp1; conn.cp2 = def.cp2;
         }
@@ -613,12 +678,13 @@ function _showHandles(connId) {
 
   _handleLayer.appendChild(makeEndpointHandle('from'));
   _handleLayer.appendChild(makeEndpointHandle('to'));
-  const cp1h = makeControlHandle('cp1');
-  const cp2h = makeControlHandle('cp2');
-  if (cp1h) _handleLayer.appendChild(cp1h);
-  if (cp2h) _handleLayer.appendChild(cp2h);
-
-  _refreshTangentLines(conn);
+  if (isCurve) {
+    const cp1h = makeControlHandle('cp1');
+    const cp2h = makeControlHandle('cp2');
+    if (cp1h) _handleLayer.appendChild(cp1h);
+    if (cp2h) _handleLayer.appendChild(cp2h);
+    _refreshTangentLines(conn);
+  }
 }
 
 // ── Render all connectors ──────────────────────────────────────────────────
@@ -631,6 +697,8 @@ function renderConnectors() {
     if (!conns.find(c => c.id === g.getAttribute('data-conn-id'))) g.remove();
   });
   conns.forEach(conn => _renderConnector(conn, svg));
+  if (_selConnId) _highlightConn(_selConnId);
+  else document.getElementById(SVG_LAYER_ID)?.querySelectorAll('.conn-sel-hl').forEach(n => n.remove());
 }
 
 // ── Update connectors when element moves ──────────────────────────────────
@@ -645,9 +713,10 @@ function updateConnectorsFor(elId, tx, ty) {
   const svg = document.getElementById(SVG_LAYER_ID);
   if (!svg) return;
   conns.forEach(conn => {
-    if (!conn._cpManual) {
-      const p1 = _getAnchor(conn, 'from');
-      const p2 = _getAnchor(conn, 'to');
+    if ((conn.route || 'curve') !== 'curve') {
+      // orthogonal — no control points to update
+    } else if (!conn._cpManual) {
+      const { p1, p2 } = _getAnchorPair(conn);
       const def = _defaultControlPoints(p1, p2);
       conn.cp1 = def.cp1; conn.cp2 = def.cp2;
     } else {
@@ -837,6 +906,7 @@ let _selConnHighlight = null;
 let _handleDragging = false; // true while any handle is being dragged
 
 function _selectConn(id) {
+  if (typeof window._blurActiveShapeText === 'function') window._blurActiveShapeText();
   if (sel) { sel.classList.remove('sel'); sel = null; }
   if (typeof _rotEl !== 'undefined' && _rotEl) { _rotEl = null; const _ov=document.getElementById('handles-overlay'); if(_ov) _ov.innerHTML=''; }
   _selConnId = id;
@@ -845,17 +915,17 @@ function _selectConn(id) {
   _showHandles(id);
 }
 
-function _deselectConn() {
+function _deselectConn(restorePanel = true) {
   _selConnId = null;
-  _removeHandles();
-  _removeTangentLines();
-  if (_selConnHighlight) { _selConnHighlight.remove(); _selConnHighlight = null; }
-  ['connprops','elprops'].forEach(id => {
-    const el = document.getElementById(id); if (el) el.style.display = 'none';
-  });
-  const ns = document.getElementById('nosel'); if (ns) ns.style.display = 'block';
-  const sp = document.getElementById('slide-props'); if (sp) sp.style.display = 'block';
-  const spn = document.getElementById('slide-props-pn'); if (spn) spn.style.display = 'block';
+  _clearConnSelectionVisuals();
+  const cp = document.getElementById('connprops');
+  if (cp) cp.style.display = 'none';
+  if (restorePanel) {
+    const ep = document.getElementById('elprops'); if (ep) ep.style.display = 'none';
+    const ns = document.getElementById('nosel'); if (ns) ns.style.display = 'block';
+    const sp = document.getElementById('slide-props'); if (sp) sp.style.display = 'block';
+    const spn = document.getElementById('slide-props-pn'); if (spn) spn.style.display = 'block';
+  }
 }
 
 function _highlightConn(id) {
@@ -868,6 +938,7 @@ function _highlightConn(id) {
   const visPath = paths[paths.length - 1];
   if (!visPath) return;
   const hl = visPath.cloneNode();
+  hl.classList.add('conn-sel-hl');
   hl.setAttribute('stroke', '#fff');
   hl.setAttribute('stroke-width', (+visPath.getAttribute('stroke-width') + 4));
   hl.setAttribute('stroke-dasharray', 'none');
@@ -893,6 +964,7 @@ function _showConnProps(id) {
   if (_g('cp-sw'))   _g('cp-sw').value   = conn.sw  || 2;
   if (_g('cp-gap'))  _g('cp-gap').value  = conn.gap || 0;
   if (_g('cp-dash')) _g('cp-dash').value = conn.dash || 'solid';
+  if (_g('cp-route')) _g('cp-route').value = conn.route || 'curve';
   if (_g('cp-anim')) _g('cp-anim').checked = !!conn.animated;
   _updateMarkerButtons('from', conn.fromMarker || 'none');
   _updateMarkerButtons('to',   conn.toMarker   || 'none');
@@ -933,16 +1005,16 @@ window.cpUpdate = function() {
   conn.sw         = +document.getElementById('cp-sw').value || 2;
   conn.gap        = +document.getElementById('cp-gap').value || 0;
   conn.dash       = document.getElementById('cp-dash').value;
+  conn.route      = document.getElementById('cp-route')?.value || 'curve';
   conn.animated   = document.getElementById('cp-anim').checked;
   // markers are set via cpSetMarker buttons — read from dataset
   const fmEl = document.querySelector('#cp-marker-from .mk-btn.active');
   const tmEl = document.querySelector('#cp-marker-to .mk-btn.active');
-  conn.fromMarker = fmEl ? fmEl.dataset.mk : 'none';
-  conn.toMarker   = tmEl ? tmEl.dataset.mk : 'none';
-  // Recompute CPs from new gap positions so handles stay aligned
-  if (!conn._cpManual) {
-    const np1 = _getAnchor(conn, 'from');
-    const np2 = _getAnchor(conn, 'to');
+  conn.fromMarker = fmEl ? fmEl.dataset.mk : (document.getElementById('cp-from-marker')?.value || 'none');
+  conn.toMarker   = tmEl ? tmEl.dataset.mk : (document.getElementById('cp-to-marker')?.value || 'none');
+  // Recompute CPs from new gap positions so handles stay aligned (curve mode only)
+  if (conn.route !== 'orthogonal' && conn.route !== 'straight' && !conn._cpManual) {
+    const { p1: np1, p2: np2 } = _getAnchorPair(conn);
     const def = _defaultControlPoints(np1, np2);
     conn.cp1 = def.cp1; conn.cp2 = def.cp2;
     conn.cp1offset = null; conn.cp2offset = null;
@@ -987,12 +1059,15 @@ function _rerender() {
 }
 
 document.addEventListener('mousedown', e => {
-  if (!_selConnId) return;
-  if (_handleDragging) return;
-  if (!e.target.closest('[data-conn-id]') && !e.target.closest('#connprops') &&
-      !e.target.closest('#conn-handles'))
-    _deselectConn();
-});
+  if (!_selConnId || _handleDragging) return;
+  if (e.target.closest('[data-conn-id]') || e.target.closest('#connprops') ||
+      e.target.closest('#conn-handles')) return;
+  // capture: снимаем до pick/desel; при клике на объект панель свойств обновит syncProps
+  _deselectConn(!e.target.closest('#canvas .el'));
+}, true);
+
+window._deselectConn = _deselectConn;
+window._getSelConnId = () => _selConnId;
 
 const _origApplyTheme = window.applyTheme;
 if (typeof _origApplyTheme === 'function') {

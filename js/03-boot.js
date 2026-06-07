@@ -62,14 +62,21 @@ function boot(){
 
   // Global helper to blur any active shape text editor
   window._blurActiveShapeText = function(){
-    const editing = document.querySelector('.shape-text[contenteditable="true"]');
-    if(editing){
-      editing.contentEditable='false';
-      editing.style.pointerEvents='none';
-      const elP=editing.closest('[data-type="shape"]');
-      if(elP) elP.dataset.editing='false';
-      if(typeof commitAll==='function') commitAll();
+    const elP = document.querySelector('[data-type="shape"][data-editing="true"]');
+    if (!elP) return;
+    const txt = elP.querySelector('.shape-text');
+    if (!txt) { elP.dataset.editing = 'false'; return; }
+    const inner = txt.querySelector('[contenteditable="true"]');
+    if (inner) {
+      inner.blur(); // mkEl blur handler saves shapeHtml + commitAll
+      return;
     }
+    txt.style.pointerEvents = 'none';
+    elP.dataset.editing = 'false';
+    const d = slides[cur] && slides[cur].els.find(x => x.id === elP.dataset.id);
+    const src = txt.querySelector('div') || txt;
+    if (d) d.shapeHtml = src.innerHTML;
+    if (typeof commitAll === 'function') commitAll();
   };
 
   document.getElementById('canvas').addEventListener('mousedown',e=>{
@@ -126,8 +133,9 @@ function boot(){
       save();drawThumbs();saveState();
       return;
     }
-    // Exit shape text editing
-    if(sel.dataset.type==='shape'){
+    // Exit shape text editing when clicking outside the shape
+    if(sel.dataset.type==='shape' && sel.dataset.editing==='true'){
+      if(e.target.closest('#props')) return;
       window._blurActiveShapeText();
       return;
     }
