@@ -918,18 +918,26 @@ function _handleCommand(raw) {
       if (th) { fill = th.shapeFill || fill; stroke = th.shapeStroke || stroke; }
     }
     const _isCallout = sh.special === 'callout';
+    const _isCloud = sh.special === 'cloud';
+    const _size = _isCloud ? (window._CLOUD_INSERT_SIZE || 1000) : 200;
     const cW = typeof canvasW !== 'undefined' ? canvasW : 1200;
     const cH = typeof canvasH !== 'undefined' ? canvasH : 675;
     const d = {
       id: 'e' + (++ec), type: 'shape',
-      x: Math.round((cW - 200) / 2), y: Math.round((cH - 200) / 2),
-      w: 200, h: 200, shape: sh.id, fill, stroke, sw: 2,
+      x: Math.round((cW - _size) / 2), y: Math.round((cH - _size) / 2),
+      w: _size, h: _size, shape: sh.id,
+      fill: _isCloud ? '#b5d5f0' : fill,
+      stroke: _isCloud ? '#1d4ed8' : stroke,
+      sw: _isCloud ? 0 : 2,
       rx: _isCallout ? 12 : 0, fillOp: 1,
       shadow: false, shadowBlur: 8, shadowColor: '#000000',
       shapeHtml: '', shapeTextCss: 'font-size:24px;font-weight:700;color:#ffffff;text-align:center;',
       tailX: _isCallout ? 0 : undefined, tailY: _isCallout ? 130 : undefined,
-      rot: 0, anims: []
+      rot: 0, anims: [],
+      cloudSeed: _isCloud ? (Math.floor(Math.random() * 999999) + 1) : undefined,
+      cloudForm: _isCloud ? 'puff' : undefined
     };
+    if (_isCloud && typeof _cloudBakeAndFit === 'function') _cloudBakeAndFit(d, null);
     slides[cur].els.push(d);
     if (typeof mkEl === 'function') mkEl(d);
     if (typeof save === 'function') save();

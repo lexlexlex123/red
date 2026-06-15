@@ -28,7 +28,7 @@ function openShapeModalReplace(){
   if(_d){
     window._shapeReplaceSource={
       fill:_d.fill, stroke:_d.stroke, sw:_d.sw,
-      fillOp:_d.fillOp, shadow:_d.shadow, shadowBlur:_d.shadowBlur, shadowColor:_d.shadowColor,
+      fillOp:_d.fillOp, shadow:_d.shadow, shadowBlur:_d.shadowBlur, shadowSize:_d.shadowSize, shadowColor:_d.shadowColor,
       shapeHtml:_d.shapeHtml, shapeTextCss:_d.shapeTextCss,
       rx:_d.rx, rot:_d.rot, anims:_d.anims,
       x:_d.x, y:_d.y, w:_d.w, h:_d.h,
@@ -391,6 +391,7 @@ function insertShapeSelected(){
       if(src.fillOp!==undefined)d.fillOp=src.fillOp;
       if(src.shadow!==undefined)d.shadow=src.shadow;
       if(src.shadowBlur!==undefined)d.shadowBlur=src.shadowBlur;
+      if(src.shadowSize!==undefined)d.shadowSize=src.shadowSize;
       if(src.shadowColor!==undefined)d.shadowColor=src.shadowColor;
       if(src.shapeHtml!==undefined)d.shapeHtml=src.shapeHtml;
       if(src.shapeTextCss!==undefined)d.shapeTextCss=src.shapeTextCss;
@@ -414,16 +415,20 @@ function insertShapeSelected(){
   window._shapeReplaceMode=false;
   pushUndo();
   const _isCallout=sh.special==='callout';
-  const _insertFill = sh.noFill ? 'none' : fill;
   const _isCloud = sh.special === 'cloud';
+  const _insertFill = _isCloud ? '#b5d5f0' : (sh.noFill ? 'none' : fill);
+  const _insertSw = _isCloud ? 0 : sw;
   const _isCurve = sh.special === 'curve';
-  const d={id:'e'+(++ec),type:'shape',x:snapV((canvasW-200)/2),y:snapV((canvasH-200)/2),w:snapV(200),h:snapV(200),
-    shape:sh.id,fill:_insertFill,stroke,sw,rx:_isCallout?12:0,fillOp:1,shadow:false,shadowBlur:8,shadowColor:'#000000',
+  const _defSize = _isCloud ? _CLOUD_INSERT_SIZE : 200;
+  const d={id:'e'+(++ec),type:'shape',x:snapV((canvasW-_defSize)/2),y:snapV((canvasH-_defSize)/2),w:snapV(_defSize),h:snapV(_defSize),
+    shape:sh.id,fill:_insertFill,stroke:_isCloud?'#1d4ed8':stroke,sw:_insertSw,rx:_isCallout?12:0,fillOp:1,shadow:false,shadowBlur:4,shadowSize:3,shadowColor:'#000000',
     shapeHtml:'',shapeTextCss:'font-size:24px;font-weight:700;color:#ffffff;text-align:center;',
     tailX:_isCallout?0:undefined,tailY:_isCallout?130:undefined,rot:0,anims:[],
     cloudSeed:_isCloud?(Math.floor(Math.random()*999999)+1):undefined,
+    cloudForm:_isCloud?'puff':undefined,
     curvePoints:_isCurve?_defaultCurvePoints():undefined,
     curveClosed:_isCurve?false:undefined};
+  if (_isCloud && typeof _cloudBakeAndFit === 'function') _cloudBakeAndFit(d, null);
   slides[cur].els.push(d);mkEl(d);save();drawThumbs();saveState();
   document.getElementById('shape-modal').classList.remove('open');
 }
@@ -869,7 +874,9 @@ function _extractPolygonPts(pathStr) {
 
 
 function buildShapeSVG(d, w, h) {
-  const sh = SHAPES.find(s => s.id === d.shape) || SHAPES[0];
+  // Export uses self-contained buildShapeSVG in js/26-export.js (_exp* helpers, SHAPES_DATA).
+  const _shapeLib = (typeof SHAPES_DATA !== 'undefined' ? SHAPES_DATA : SHAPES);
+  const sh = _shapeLib.find(s => s.id === d.shape) || _shapeLib[0];
   const op = d.fillOp === undefined ? 1 : +d.fillOp;
   // noFill shapes (line, wave) always render without fill
   const _noFill = sh.noFill || false;
@@ -911,24 +918,31 @@ function buildShapeSVG(d, w, h) {
       return `<rect x="${m}" y="${m}" width="${ew}" height="${eh}" rx="${d.rx||0}" ${fAttr} ${sAttr} ${extra} ${shadow}/>`;
     if (sh.special === 'cloud') {
       const seed = d.cloudSeed || 42;
-      const path = _generateCloudPath(w, h, seed);
-      // Fill all circles — nonzero fill-rule = visual union, no inner borders
+      const circles = _cloudResolveCircles(d, w, h);
+      const path = _cloudBlobsPath(circles, 0);
       const _cFill = typeof fillAttr !== 'undefined' ? fillAttr : fAttr;
-      const fillPart = `<path d="${path}" fill-rule="nonzero" ${_cFill} stroke="none" ${extra} ${shadow}/>`;
-      // Stroke: draw thick stroke, then mask out the interior with the fill color
-      // This hides inner circle borders while showing only outer silhouette stroke
       const _cGradDef = _gradDef || '';
       let strokePart = '';
       if (sw > 0) {
-        const maskId = `cldm_${d.id}`;
-        const maskContent = `<rect width="${w}" height="${h}" fill="white"/>`
-          + `<path d="${path}" fill-rule="nonzero" fill="black"/>`;
-        strokePart = `<defs>${_cGradDef}<mask id="${maskId}">${maskContent}</mask></defs>`
-          + `<path d="${path}" fill-rule="nonzero" fill="none" ${sAttr} mask="url(#${maskId})" ${extra}/>`;
-      } else if (_cGradDef) {
-        return `<defs>${_cGradDef}</defs>` + fillPart;
+        const strokePath = _cloudBlobsPath(circles, sw / 2);
+        const strokeFill = op < 1
+          ? `fill="${strokeColor}" fill-opacity="${op.toFixed(3)}"`
+          : `fill="${strokeColor}"`;
+        strokePart = `<path d="${strokePath}" fill-rule="nonzero" ${strokeFill} stroke="none" ${extra}/>`;
       }
-      return fillPart + strokePart;
+      let fillPart = '';
+      if (hasFill) {
+        if (d.fillGrad && d.fillGrad2) {
+          fillPart = `<path d="${path}" fill-rule="nonzero" ${_cFill} stroke="none" ${extra} ${shadow}/>`;
+        } else {
+          const shade = _cloudShadeFromFill(fill);
+          fillPart = _buildCloudArtSvg(circles, fill, shade, op, d.id, extra, shadow, w, h);
+        }
+      }
+      if (_cGradDef) {
+        return `<defs>${_cGradDef}</defs>` + strokePart + fillPart;
+      }
+      return strokePart + fillPart;
     }
     if (sh.special === 'parallelogram') {
       const _skew = Math.max(-45, Math.min(45, +(d.paraSkew!=null?d.paraSkew:20)));
@@ -1205,7 +1219,7 @@ function buildShapeSVG(d, w, h) {
       return `M ${cx-erx} ${cy} A ${erx} ${ery} 0 1 1 ${cx+erx} ${cy} A ${erx} ${ery} 0 1 1 ${cx-erx} ${cy} Z`;
     }
     if (sh.special === 'cloud') {
-      return _generateCloudPath(w, h, d.cloudSeed || 42);
+      return _cloudBlobsPath(_cloudResolveCircles(d, w, h), 0);
     }
     if (sh.special === 'parallelogram') {
       const _skewP = Math.max(-45, Math.min(45, +(d.paraSkew!=null?d.paraSkew:20)));
@@ -1303,16 +1317,26 @@ function buildShapeSVG(d, w, h) {
   let shadowPad = 0;
   if (_gradDef) filterDef += _gradDef;
   if (d.shadow) {
-    const sc = d.shadowColor || '#000000', sb = d.shadowBlur || 8;
-    shadowPad = Math.ceil(sb * 3 + 6);
-    filterDef += `<filter id="sh_${d.id}" filterUnits="userSpaceOnUse" x="${-shadowPad}" y="${-shadowPad}" width="${w + shadowPad * 2}" height="${h + shadowPad * 2}">` +
-      `<feDropShadow dx="3" dy="3" stdDeviation="${sb}" flood-color="${sc}" flood-opacity="0.6"/></filter>`;
+    const sc = d.shadowColor || '#000000';
+    const sb = d.shadowBlur != null ? +d.shadowBlur : 4;
+    const ss = d.shadowSize != null ? +d.shadowSize : 3;
+    shadowPad = typeof window._shadowPad === 'function' ? window._shadowPad(ss, sb, sw) : Math.ceil(ss + sb * 3.5 + sw + 20);
+    if (typeof window._shadowFilterDefUser === 'function') {
+      filterDef += window._shadowFilterDefUser('sh_' + d.id, ss, sb, sc, w, h, sw);
+    } else {
+      const obbPct = typeof window._shadowFilterObbPct === 'function'
+        ? window._shadowFilterObbPct(ss, sb, sw, w, h, 'y') : 80;
+      const inner = typeof window._shadowFilterInner === 'function'
+        ? window._shadowFilterInner(ss, sb, sc)
+        : `<feDropShadow dx="0" dy="0" stdDeviation="${sb}" flood-color="${sc}" flood-opacity="0.65"/>`;
+      filterDef += `<filter id="sh_${d.id}" filterUnits="objectBoundingBox" x="-${obbPct}%" y="-${obbPct}%" width="${100 + obbPct * 2}%" height="${100 + obbPct * 2}%">${inner}</filter>`;
+    }
   }
   const defsContent = (filterDef || '') + (defBlock || '');
   const defs = defsContent ? `<defs>${defsContent}</defs>` : '';
   const vbW = w + shadowPad * 2, vbH = h + shadowPad * 2;
   const svgStyle = shadowPad
-    ? `overflow:visible;position:absolute;left:-${shadowPad}px;top:-${shadowPad}px;width:${vbW}px;height:${vbH}px`
+    ? 'overflow:visible;position:absolute;left:0;top:0;width:100%;height:100%'
     : 'overflow:visible;width:100%;height:100%';
   const svgViewBox = shadowPad ? `${-shadowPad} ${-shadowPad} ${vbW} ${vbH}` : `0 0 ${w} ${h}`;
   const svgSize = shadowPad ? `width="${vbW}" height="${vbH}"` : `width="${w}" height="${h}"`;
@@ -1520,7 +1544,6 @@ function _applyShapeClipPath(el, d) {
   // Cloud: el passes through clicks, SVG paths handle hit testing via visibleFill
   if (sh && sh.special === 'cloud') {
     el.style.pointerEvents = 'none';
-    // Make the SVG wrapper pass through but paths catch clicks
     const selEl = el.querySelector('.sel-el');
     if (selEl) selEl.style.pointerEvents = 'none';
     const svgDiv = el.querySelector('.shape-svg');
@@ -1528,9 +1551,8 @@ function _applyShapeClipPath(el, d) {
     const svgEl = el.querySelector('svg');
     if (svgEl) {
       svgEl.style.pointerEvents = 'none';
-      // Only the fill path (first path = the cloud union) catches clicks
       const paths = svgEl.querySelectorAll('path');
-      if (paths[0]) { paths[0].style.pointerEvents = 'visibleFill'; paths[0].style.cursor = 'move'; }
+      paths.forEach(p => { p.style.pointerEvents = 'visibleFill'; p.style.cursor = 'move'; });
     }
     return;
   }
@@ -1786,7 +1808,16 @@ function _starPath(cx, cy, erx, ery, nRays, innerR, cornerR) {
 
 
 // ══════════════ CLOUD SHAPE GENERATOR ══════════════
-function _generateCloudPath(w, h, seed) {
+const CLOUD_FORMS = ['puff', 'ring', 'burst', 'trail', 'stack'];
+const _CLOUD_INSERT_SIZE = 1000; // 5× базовый размер вставки фигуры (200)
+window._CLOUD_INSERT_SIZE = _CLOUD_INSERT_SIZE;
+
+function _cloudNormForm(form) {
+  return CLOUD_FORMS.includes(form) ? form : 'puff';
+}
+
+function _generateCloudCircles(w, h, seed, form) {
+  form = _cloudNormForm(form);
   let s = (seed || 42) >>> 0;
   function rnd() {
     s += 0x6D2B79F5; let t = s;
@@ -1795,70 +1826,516 @@ function _generateCloudPath(w, h, seed) {
     return ((t ^ t >>> 14) >>> 0) / 0xFFFFFFFF;
   }
 
-  const cloudW=w*0.78, cloudH=h*0.56;
-  const ox=(w-cloudW)/2, oy=(h-cloudH)/2;
-  const bigR=Math.min(cloudW,cloudH)*0.26, smallR=bigR/3;
-  const n=14+Math.floor(rnd()*7); // 14-20 circles
+  const ccx = w / 2;
+  const ccy = h * (0.50 + rnd() * 0.04);
+  const baseR = Math.min(w, h) * (0.12 + rnd() * 0.02);
+  const tiers = [
+    { mul: 0.40, count: 10 + Math.floor(rnd() * 10), maxD: 0.14 },
+    { mul: 0.27, count: 20 + Math.floor(rnd() * 10), maxD: 0.26 },
+    { mul: 0.17, count: 30 + Math.floor(rnd() * 10), maxD: 0.36 },
+    { mul: 0.10, count: 40 + Math.floor(rnd() * 20), maxD: 0.46 }
+  ];
+  const totalTarget = tiers.reduce((n, t) => n + t.count, 0);
 
-  // Grow circles from center
-  const circles=[];
-  circles.push({cx:w/2,cy:h/2,r:bigR*(0.9+rnd()*0.2)});
-  for(let att=0;circles.length<n&&att<4000;att++){
-    const par=circles[Math.floor(rnd()*circles.length)];
-    const ang=rnd()*Math.PI*2;
-    const dfc=Math.min(1,Math.hypot(par.cx-w/2,par.cy-h/2)/(Math.min(cloudW,cloudH)*0.5));
-    const nr=(bigR-(bigR-smallR)*dfc)*(0.7+rnd()*0.6);
-    const gap=par.r+nr*(0.4+rnd()*0.4);
-    const cx=par.cx+Math.cos(ang)*gap, cy=par.cy+Math.sin(ang)*gap;
-    if(cx-nr<ox||cx+nr>ox+cloudW||cy-nr<oy||cy+nr>oy+cloudH) continue;
-    circles.push({cx,cy,r:nr});
+  if (form === 'ring') {
+    const ringRx = w * (0.34 + rnd() * 0.02);
+    const ringRy = h * (0.34 + rnd() * 0.02);
+    const holeRatio = 0.40 + rnd() * 0.06;
+    const ringTiers = [
+      { mul: 0.40, count: 30 + Math.floor(rnd() * 12), maxD: 0.16 },
+      { mul: 0.27, count: 50 + Math.floor(rnd() * 16), maxD: 0.28 },
+      { mul: 0.17, count: 70 + Math.floor(rnd() * 20), maxD: 0.38 },
+      { mul: 0.10, count: 90 + Math.floor(rnd() * 24), maxD: 0.48 }
+    ];
+    const bigMul = ringTiers[0].mul;
+    const nAnchor = 28 + Math.floor(rnd() * 10);
+    const circles = [];
+
+    function _ringNormDist(cx, cy) {
+      return Math.hypot((cx - ccx) / ringRx, (cy - ccy) / ringRy);
+    }
+
+    function _ringSizeScale(normDist) {
+      const delta = Math.abs(normDist - 1) / 0.16;
+      return Math.max(0.14, 1 - delta * 0.68);
+    }
+
+    function _ringDup(cx, cy, r, tight) {
+      const k = tight ? 0.10 : 0.14;
+      for (const c of circles) {
+        if (Math.hypot(cx - c.cx, cy - c.cy) < (r + c.r) * k) return true;
+      }
+      return false;
+    }
+
+    function _ringTryPush(cx, cy, r, tightDup) {
+      if (r < baseR * 0.05) return false;
+      if (_ringNormDist(cx, cy) < holeRatio * 0.92) return false;
+      if (cx - r < w * 0.02 || cx + r > w * 0.98 || cy - r < h * 0.03 || cy + r > h * 0.97) return false;
+      if (_ringDup(cx, cy, r, tightDup)) return false;
+      circles.push({ cx, cy, r });
+      return true;
+    }
+
+    for (let i = 0; i < nAnchor; i++) {
+      const ang = (i / nAnchor) * Math.PI * 2 + (rnd() - 0.5) * 0.22;
+      const cx = ccx + Math.cos(ang) * ringRx;
+      const cy = ccy + Math.sin(ang) * ringRy;
+      _ringTryPush(cx, cy, baseR * bigMul * (0.94 + rnd() * 0.12), true);
+    }
+
+    for (let ti = 0; ti < ringTiers.length; ti++) {
+      const tier = ringTiers[ti];
+      let placed = 0;
+      const target = tier.count;
+      const bandNorm = (baseR * (0.42 + tier.maxD * 0.62)) / Math.max(ringRx, ringRy);
+      for (let att = 0; placed < target && att < target * 55; att++) {
+        const ang = rnd() * Math.PI * 2;
+        const normDist = 1 + (rnd() - 0.5) * bandNorm * 2.2;
+        if (normDist < holeRatio) continue;
+        const cx = ccx + Math.cos(ang) * ringRx * normDist + (rnd() - 0.5) * baseR * 0.14;
+        const cy = ccy + Math.sin(ang) * ringRy * normDist + (rnd() - 0.5) * baseR * 0.14;
+        const nd = _ringNormDist(cx, cy);
+        const scale = _ringSizeScale(nd);
+        let r = baseR * tier.mul * scale * (0.90 + rnd() * 0.20);
+        if (ti > 0) {
+          const anchor = circles[Math.floor(rnd() * circles.length)];
+          const pull = 0.48 + ti * 0.05;
+          const px = cx * pull + anchor.cx * (1 - pull);
+          const py = cy * pull + anchor.cy * (1 - pull);
+          const pd = _ringNormDist(px, py);
+          if (pd < holeRatio * 0.92) continue;
+          r *= _ringSizeScale(pd) / Math.max(0.2, scale);
+          if (_ringTryPush(px, py, r, false)) placed++;
+        } else if (_ringTryPush(cx, cy, r, false)) {
+          placed++;
+        }
+      }
+    }
+
+    const nFill = 48 + Math.floor(rnd() * 20);
+    for (let i = 0; i < nFill; i++) {
+      const ang = (i / nFill) * Math.PI * 2 + (rnd() - 0.5) * 0.35;
+      const normDist = 1 + (rnd() - 0.5) * 0.10;
+      const cx = ccx + Math.cos(ang) * ringRx * normDist + (rnd() - 0.5) * baseR * 0.10;
+      const cy = ccy + Math.sin(ang) * ringRy * normDist + (rnd() - 0.5) * baseR * 0.10;
+      const r = baseR * (0.22 + rnd() * 0.14) * _ringSizeScale(_ringNormDist(cx, cy));
+      _ringTryPush(cx, cy, r, true);
+    }
+
+    return circles;
   }
 
-  // Build path as union of circles using SVG's fill-rule:evenodd trick
-  // Simply render each circle as a separate subpath — SVG nonzero fill will union them
-  let main='';
-  for(const c of circles){
-    const {cx,cy,r}=c;
-    main+=`M ${(cx-r).toFixed(2)} ${cy.toFixed(2)} `+
-          `A ${r.toFixed(2)} ${r.toFixed(2)} 0 1 1 ${(cx+r).toFixed(2)} ${cy.toFixed(2)} `+
-          `A ${r.toFixed(2)} ${r.toFixed(2)} 0 1 1 ${(cx-r).toFixed(2)} ${cy.toFixed(2)} Z `;
+  if (form === 'burst') {
+    const maxR = Math.min(w, h) * (0.44 + rnd() * 0.04);
+    const coreR = baseR * tiers[0].mul * (0.88 + rnd() * 0.14);
+    const circles = [{ cx: ccx, cy: ccy, r: coreR }];
+
+    function _burstDup(cx, cy, r, k) {
+      k = k == null ? 0.12 : k;
+      for (const c of circles) {
+        if (Math.hypot(cx - c.cx, cy - c.cy) < (r + c.r) * k) return true;
+      }
+      return false;
+    }
+
+    function _burstTry(cx, cy, r, tight) {
+      if (r < baseR * 0.035) return false;
+      if (cx - r < w * 0.02 || cx + r > w * 0.98 || cy - r < h * 0.03 || cy + r > h * 0.97) return false;
+      if (_burstDup(cx, cy, r, tight ? 0.08 : 0.11)) return false;
+      circles.push({ cx, cy, r });
+      return true;
+    }
+
+    const nRays = 32 + Math.floor(rnd() * 14);
+    for (let ri = 0; ri < nRays; ri++) {
+      const ang = (ri / nRays) * Math.PI * 2 + (rnd() - 0.5) * 0.3;
+      const dustN = 10 + Math.floor(rnd() * 8);
+      for (let di = 0; di < dustN; di++) {
+        const t = (di + 0.35) / (dustN + 0.5);
+        const dist = coreR * 0.55 + t * maxR * (0.92 + rnd() * 0.12);
+        const perp = (rnd() - 0.5) * baseR * (0.08 + t * 0.28);
+        const cx = ccx + Math.cos(ang) * dist + Math.cos(ang + Math.PI / 2) * perp;
+        const cy = ccy + Math.sin(ang) * dist * 0.62 + Math.sin(ang + Math.PI / 2) * perp * 0.62;
+        const r = baseR * (0.05 + (1 - t * 0.82) * 0.11) * (0.65 + rnd() * 0.55);
+        _burstTry(cx, cy, r, true);
+      }
+    }
+
+    const nDust = 160 + Math.floor(rnd() * 90);
+    for (let i = 0; i < nDust; i++) {
+      const ang = rnd() * Math.PI * 2;
+      const distPow = Math.pow(rnd(), 0.48);
+      const dist = coreR * 0.25 + distPow * maxR;
+      const cx = ccx + Math.cos(ang) * dist + (rnd() - 0.5) * baseR * 0.22;
+      const cy = ccy + Math.sin(ang) * dist * 0.62 + (rnd() - 0.5) * baseR * 0.16;
+      const r = baseR * (0.04 + (1 - distPow) * 0.09 + rnd() * 0.07);
+      _burstTry(cx, cy, r, false);
+    }
+
+    const burstTiers = [
+      { mul: 0.32, count: 24 + Math.floor(rnd() * 10), maxD: 0.18 },
+      { mul: 0.20, count: 40 + Math.floor(rnd() * 14), maxD: 0.32 },
+      { mul: 0.12, count: 55 + Math.floor(rnd() * 18), maxD: 0.42 }
+    ];
+    for (let ti = 0; ti < burstTiers.length; ti++) {
+      const tier = burstTiers[ti];
+      let placed = 0;
+      for (let att = 0; placed < tier.count && att < tier.count * 40; att++) {
+        const ang = rnd() * Math.PI * 2;
+        const dist = tier.maxD * Math.min(w, h) * (0.35 + rnd() * 0.95);
+        const cx = ccx + Math.cos(ang) * dist + (rnd() - 0.5) * baseR * 0.14;
+        const cy = ccy + Math.sin(ang) * dist * 0.62 + (rnd() - 0.5) * baseR * 0.12;
+        const r = baseR * tier.mul * (0.82 + rnd() * 0.22);
+        if (_burstTry(cx, cy, r, false)) placed++;
+      }
+    }
+
+    return circles;
   }
 
-  // Small decorative circles outside main cloud
-  const nDeco=7+Math.floor(rnd()*5);
-  const minD=Math.min(w,h)*0.012, maxD=Math.min(w,h)*0.030;
-  for(let dAtt=0,nd=0;nd<nDeco&&dAtt<3000;dAtt++){
-    const par=circles[Math.floor(rnd()*circles.length)];
-    const ang=rnd()*Math.PI*2;
-    const dr=minD+rnd()*(maxD-minD);
-    const gap=par.r+dr*(1.3+rnd()*1.5);
-    const cx=par.cx+Math.cos(ang)*gap, cy=par.cy+Math.sin(ang)*gap;
-    if(cx-dr<0||cx+dr>w||cy-dr<0||cy+dr>h) continue;
-    let inside=false;
-    for(const mc of circles){const dx=cx-mc.cx,dy=cy-mc.cy;if(dx*dx+dy*dy<(mc.r+dr*0.3)*(mc.r+dr*0.3)){inside=true;break;}}
-    if(inside) continue;
-    main+=`M ${(cx-dr).toFixed(2)} ${cy.toFixed(2)} `+
-          `A ${dr.toFixed(2)} ${dr.toFixed(2)} 0 1 1 ${(cx+dr).toFixed(2)} ${cy.toFixed(2)} `+
-          `A ${dr.toFixed(2)} ${dr.toFixed(2)} 0 1 1 ${(cx-dr).toFixed(2)} ${cy.toFixed(2)} Z `;
-    nd++;
+  let totalPlaced = 0;
+  const circles = [];
+
+  if (form === 'trail') {
+    circles.push({ cx: w * 0.10, cy: ccy, r: baseR * 0.38 * (0.92 + rnd() * 0.12) });
+  } else if (form === 'burst') {
+    circles.push({ cx: ccx, cy: ccy, r: baseR * tiers[0].mul * (0.92 + rnd() * 0.12) });
+  } else if (form === 'stack') {
+    circles.push({ cx: ccx, cy: h * 0.28, r: baseR * 0.34 * (0.9 + rnd() * 0.15) });
+  } else {
+    circles.push({
+      cx: ccx + (rnd() - 0.5) * baseR * 0.35,
+      cy: ccy + baseR * 0.08,
+      r: baseR * tiers[0].mul * (0.92 + rnd() * 0.12)
+    });
+  }
+  totalPlaced++;
+
+  function _candidate(tier) {
+    const ratio = totalPlaced / Math.max(1, totalTarget);
+    if (form === 'burst') {
+      const ang = rnd() * Math.PI * 2;
+      const dist = tier.maxD * Math.min(w, h) * (0.4 + rnd() * 0.95);
+      return { cx: ccx + Math.cos(ang) * dist, cy: ccy + Math.sin(ang) * dist * 0.62, maxD: tier.maxD * Math.min(w, h) * 1.25, rScale: 1 };
+    }
+    if (form === 'trail') {
+      const t = ratio;
+      return { cx: w * (0.06 + t * 0.88) + (rnd() - 0.5) * baseR * 0.5, cy: ccy + (rnd() - 0.5) * baseR * 2.2, maxD: tier.maxD * Math.min(w, h) * 1.1, rScale: Math.max(0.32, 1 - t * 0.58) };
+    }
+    if (form === 'stack') {
+      const layer = Math.min(2, Math.floor(ratio * 3 + rnd() * 0.5));
+      return { cx: ccx + (rnd() - 0.5) * w * (0.22 + layer * 0.08), cy: h * (0.24 + layer * 0.16 + rnd() * 0.07), maxD: tier.maxD * Math.min(w, h) * (0.95 - layer * 0.1), rScale: 1 - layer * 0.07 };
+    }
+    return null;
   }
 
-  return main.trim();
+  for (let ti = 0; ti < tiers.length; ti++) {
+    const tier = tiers[ti];
+    let placed = 1;
+    for (let att = 0; placed < tier.count && att < tier.count * 30; att++) {
+      let r = baseR * tier.mul * (0.88 + rnd() * 0.2);
+      let cx, cy, maxD = tier.maxD * Math.min(w, h);
+      const cand = _candidate(tier);
+      if (cand) {
+        r *= cand.rScale || 1;
+        maxD = cand.maxD || maxD;
+        const anchor = circles[Math.floor(rnd() * circles.length)];
+        const pull = form === 'trail' ? 0.35 : 0.55;
+        cx = cand.cx * pull + anchor.cx * (1 - pull) + (rnd() - 0.5) * r * 0.35;
+        cy = cand.cy * pull + anchor.cy * (1 - pull) + (rnd() - 0.5) * r * 0.35;
+      } else {
+        const anchor = circles[Math.floor(rnd() * circles.length)];
+        const ang = -Math.PI * 0.92 + rnd() * Math.PI * 0.84;
+        const dist = (anchor.r + r) * (0.48 + rnd() * 0.24);
+        cx = anchor.cx + Math.cos(ang) * dist;
+        cy = anchor.cy + Math.sin(ang) * dist * 0.62;
+        if (Math.hypot(cx - ccx, (cy - ccy) * 1.25) > maxD) continue;
+      }
+      if (cx - r < w * 0.03 || cx + r > w * 0.97 || cy - r < h * 0.04 || cy + r > h * 0.94) continue;
+      let dup = false;
+      for (const c of circles) {
+        if (Math.hypot(cx - c.cx, cy - c.cy) < (r + c.r) * 0.18) { dup = true; break; }
+      }
+      if (dup) continue;
+      circles.push({ cx, cy, r });
+      placed++;
+      totalPlaced++;
+    }
+  }
+  return circles;
+}
+
+function _circlePathD(c) {
+  const { cx, cy, r } = c;
+  return `M ${(cx - r).toFixed(2)} ${cy.toFixed(2)} `
+    + `A ${r.toFixed(2)} ${r.toFixed(2)} 0 1 1 ${(cx + r).toFixed(2)} ${cy.toFixed(2)} `
+    + `A ${r.toFixed(2)} ${r.toFixed(2)} 0 1 1 ${(cx - r).toFixed(2)} ${cy.toFixed(2)} Z `;
+}
+
+function _cloudBlobsPath(circles, expandR) {
+  if (!circles || !circles.length) return '';
+  const exp = expandR || 0;
+  return circles.map(c => _circlePathD({ cx: c.cx, cy: c.cy, r: c.r + exp })).join('').trim();
+}
+
+function _cloudCircleBounds(circles, expandR) {
+  if (!circles || !circles.length) return { x: 0, y: 0, w: 1, h: 1 };
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const exp = expandR || 0;
+  for (const c of circles) {
+    const r = c.r + exp;
+    if (c.cx - r < minX) minX = c.cx - r;
+    if (c.cy - r < minY) minY = c.cy - r;
+    if (c.cx + r > maxX) maxX = c.cx + r;
+    if (c.cy + r > maxY) maxY = c.cy + r;
+  }
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
+function _cloudContentPad(d) {
+  const sw = d && d.sw != null ? +d.sw : 0;
+  let pad = Math.max(3, sw / 2 + 2);
+  if (d && d.shadow) {
+    const sb = d.shadowBlur != null ? +d.shadowBlur : 4;
+    const ss = d.shadowSize != null ? +d.shadowSize : 3;
+    pad += Math.ceil(ss + sb * 2);
+  }
+  return pad;
+}
+
+function _cloudResolveCircles(d, w, h) {
+  if (!d) return _generateCloudCircles(w, h, 42, 'puff');
+  const form = _cloudNormForm(d.cloudForm);
+  const circlesForm = d.cloudCirclesForm ? _cloudNormForm(d.cloudCirclesForm) : null;
+  const canScale = d.cloudCircles && d.cloudCircles.length && d.cloudRefW > 0 && d.cloudRefH > 0 &&
+    circlesForm === form;
+  if (!canScale) {
+    if (d.cloudFramed && w > 0 && h > 0) {
+      d.cloudCircles = _cloudBuildAtSize(d, w, h);
+      d.cloudCirclesForm = form;
+      d.cloudRefW = w;
+      d.cloudRefH = h;
+      return d.cloudCircles;
+    }
+    return _generateCloudCircles(w, h, (d.cloudSeed) || 42, form);
+  }
+  const sx = w / d.cloudRefW;
+  const sy = h / d.cloudRefH;
+  const sm = Math.min(sx, sy);
+  return d.cloudCircles.map(c => ({ cx: c.cx * sx, cy: c.cy * sy, r: c.r * sm }));
+}
+
+function _cloudFillFrame(circles, w, h, inset) {
+  if (!circles || !circles.length) return circles;
+  inset = inset == null ? 0 : inset;
+  const b = _cloudCircleBounds(circles, 0);
+  if (b.w < 1 || b.h < 1) return circles;
+  const tw = Math.max(1, w - inset * 2);
+  const th = Math.max(1, h - inset * 2);
+  const sm = Math.max(tw / b.w, th / b.h);
+  const bcx = b.x + b.w / 2;
+  const bcy = b.y + b.h / 2;
+  return circles.map(c => ({
+    cx: (c.cx - bcx) * sm + w / 2,
+    cy: (c.cy - bcy) * sm + h / 2,
+    r: c.r * sm
+  }));
+}
+
+function _cloudSyncMeta(el, d) {
+  if (!d) return;
+  if (el) {
+    if (el.dataset.cloudForm) d.cloudForm = el.dataset.cloudForm;
+    if (el.dataset.cloudSeed != null && el.dataset.cloudSeed !== '') d.cloudSeed = +el.dataset.cloudSeed;
+    if (el.dataset.cloudRefW) d.cloudRefW = +el.dataset.cloudRefW;
+    if (el.dataset.cloudRefH) d.cloudRefH = +el.dataset.cloudRefH;
+    if (el.dataset.cloudFramed === '1') d.cloudFramed = true;
+  }
+  if (d.cloudForm) {
+    d.cloudForm = _cloudNormForm(d.cloudForm);
+    _cloudPersistDataset(el, d);
+  } else if (el && el.dataset.cloudForm) {
+    d.cloudForm = _cloudNormForm(el.dataset.cloudForm);
+  }
+}
+
+function _cloudPersistDataset(el, d) {
+  if (!el || !d) return;
+  if (d.cloudForm) el.dataset.cloudForm = d.cloudForm;
+  if (d.cloudSeed != null) el.dataset.cloudSeed = d.cloudSeed;
+  if (d.cloudRefW > 0) el.dataset.cloudRefW = d.cloudRefW;
+  if (d.cloudRefH > 0) el.dataset.cloudRefH = d.cloudRefH;
+  if (d.cloudFramed) el.dataset.cloudFramed = '1';
+}
+window._cloudSyncMeta = _cloudSyncMeta;
+window._cloudPersistDataset = _cloudPersistDataset;
+
+function _cloudBuildAtSize(d, w, h) {
+  const form = _cloudNormForm(d.cloudForm);
+  d.cloudForm = form;
+  let circles = _generateCloudCircles(w, h, d.cloudSeed || 42, form);
+  d.cloudCirclesForm = form;
+  return _cloudFillFrame(circles, w, h, Math.max(2, _cloudContentPad(d) * 0.4));
+}
+
+function _cloudRemapToFrame(d, w, h) {
+  d.cloudCircles = _cloudBuildAtSize(d, w, h);
+  d.cloudRefW = w;
+  d.cloudRefH = h;
+  d.cloudFrameW = w;
+  d.cloudFrameH = h;
+  d.w = w;
+  d.h = h;
+}
+
+function _cloudRegenerate(d, el) {
+  if (!d) return;
+  if (el) _cloudSyncMeta(el, d);
+  const w = Math.max(24, (el && parseInt(el.style.width)) || d.cloudFrameW || d.w || 200);
+  const h = Math.max(24, (el && parseInt(el.style.height)) || d.cloudFrameH || d.h || 200);
+  d.w = w;
+  d.h = h;
+  d.cloudFrameW = w;
+  d.cloudFrameH = h;
+  d.cloudFramed = true;
+  d.cloudCircles = _cloudBuildAtSize(d, w, h);
+  d.cloudRefW = w;
+  d.cloudRefH = h;
+  if (el) {
+    el.style.width = w + 'px';
+    el.style.height = h + 'px';
+    _cloudPersistDataset(el, d);
+  }
+}
+
+function _cloudBakeAndFit(d, el) {
+  if (!d) return;
+  if (el) _cloudSyncMeta(el, d);
+  const w = d.w || (el && parseInt(el.style.width)) || 200;
+  const h = d.h || (el && parseInt(el.style.height)) || 200;
+  const raw = _generateCloudCircles(w, h, d.cloudSeed || 42, d.cloudForm);
+  const pad = _cloudContentPad(d);
+  const b = _cloudCircleBounds(raw, pad * 0.45);
+  const ox = Math.floor(b.x - pad);
+  const oy = Math.floor(b.y - pad);
+  const refW = Math.max(24, Math.ceil(b.w + pad * 2));
+  const refH = Math.max(24, Math.ceil(b.h + pad * 2));
+  d.cloudCircles = raw.map(c => ({ cx: c.cx - ox, cy: c.cy - oy, r: c.r }));
+  d.cloudCirclesForm = _cloudNormForm(d.cloudForm);
+  d.cloudRefW = refW;
+  d.cloudRefH = refH;
+  d.cloudFrameW = refW;
+  d.cloudFrameH = refH;
+  d.cloudFramed = true;
+  d.x = Math.round((d.x || 0) + ox);
+  d.y = Math.round((d.y || 0) + oy);
+  d.w = refW;
+  d.h = refH;
+  if (el) {
+    el.style.left = d.x + 'px';
+    el.style.top = d.y + 'px';
+    el.style.width = refW + 'px';
+    el.style.height = refH + 'px';
+    _cloudPersistDataset(el, d);
+  }
+}
+window._cloudBakeAndFit = _cloudBakeAndFit;
+window._cloudRegenerate = _cloudRegenerate;
+window._cloudResolveCircles = _cloudResolveCircles;
+
+function _cloudShadeFromFill(fill) {
+  if (!fill || fill === 'none') return '#8eb8dc';
+  const hex = fill.replace('#', '');
+  if (hex.length !== 6) return '#8eb8dc';
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  if (r > 225 && g > 225 && b > 225) return '#b8ced9';
+  const sr = Math.min(255, Math.round(r * 0.78 + 8));
+  const sg = Math.min(255, Math.round(g * 0.82 + 12));
+  const sb = Math.min(255, Math.round(b * 0.88 + 18));
+  return `#${sr.toString(16).padStart(2, '0')}${sg.toString(16).padStart(2, '0')}${sb.toString(16).padStart(2, '0')}`;
+}
+
+function _cloudHighlightFromFill(fill) {
+  if (!fill || fill === 'none') return '#eef6fc';
+  const hex = fill.replace('#', '');
+  if (hex.length !== 6) return '#eef6fc';
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  return `#${Math.min(255, r + 38).toString(16).padStart(2, '0')}${Math.min(255, g + 42).toString(16).padStart(2, '0')}${Math.min(255, b + 28).toString(16).padStart(2, '0')}`;
+}
+
+function _buildCloudArtSvg(circles, fill, shade, op, uid, extra, shadow, w, h) {
+  const path = _cloudBlobsPath(circles, 0);
+  const gid = `cg_${uid}`;
+  const opAttr = op < 1 ? ` opacity="${op.toFixed(3)}"` : '';
+  const defs = `<linearGradient id="${gid}" gradientUnits="userSpaceOnUse" x1="0" y1="${(h * 0.08).toFixed(1)}" x2="0" y2="${h.toFixed(1)}">`
+    + `<stop offset="0%" stop-color="${_cloudHighlightFromFill(fill)}"/>`
+    + `<stop offset="45%" stop-color="${fill}"/>`
+    + `<stop offset="100%" stop-color="${shade}"/>`
+    + `</linearGradient>`;
+  const body = `<path d="${path}" fill-rule="nonzero" fill="url(#${gid})" stroke="none" ${extra}${shadow}${opAttr}/>`;
+  return `<defs>${defs}</defs>` + body;
+}
+
+function _generateCloudPath(w, h, seed, form, d) {
+  const circles = d ? _cloudResolveCircles(d, w, h) : _generateCloudCircles(w, h, seed, form);
+  return _cloudBlobsPath(circles, 0);
+}
+
+function _generateCloudStrokePath(w, h, seed, sw, form, d) {
+  if (!sw || sw <= 0) return '';
+  const circles = d ? _cloudResolveCircles(d, w, h) : _generateCloudCircles(w, h, seed, form);
+  return _cloudBlobsPath(circles, sw / 2);
 }
 
 
-function renderShapeEl(el,d){
-  const w=parseInt(el.style.width),h=parseInt(el.style.height);
-  // Keep dataset in sync so syncProps reads correct values
+function renderShapeEl(el,d,opts){
+  opts=opts||{};
+  const sh0 = typeof SHAPES !== 'undefined' ? SHAPES.find(s => s.id === d.shape) : null;
+  if (sh0 && sh0.special === 'cloud') _cloudSyncMeta(el, d);
+  if (sh0 && sh0.special === 'cloud' && !d.cloudFramed) {
+    if (!d.cloudCircles || !d.cloudCircles.length) {
+      if (typeof _cloudBakeAndFit === 'function') _cloudBakeAndFit(d, el);
+    } else {
+      const fw = parseInt(el.style.width) || d.w || 200;
+      const fh = parseInt(el.style.height) || d.h || 200;
+      d.cloudFramed = true;
+      d.cloudFrameW = fw;
+      d.cloudFrameH = fh;
+      if (!d.cloudRefW) { d.cloudRefW = fw; d.cloudRefH = fh; }
+      _cloudPersistDataset(el, d);
+    }
+  }
+  const w = parseInt(el.style.width, 10) || 0;
+  const h = parseInt(el.style.height, 10) || 0;
+  if (opts.remapCloud && sh0 && sh0.special === 'cloud' && d.cloudFramed && w > 0 && h > 0) {
+    const refW = Math.round(+(el.dataset.cloudRefW || d.cloudRefW) || 0);
+    const refH = Math.round(+(el.dataset.cloudRefH || d.cloudRefH) || 0);
+    if (w !== refW || h !== refH) {
+      _cloudRemapToFrame(d, w, h);
+      _cloudPersistDataset(el, d);
+    }
+  } else if (sh0 && sh0.special === 'cloud') {
+    _cloudSyncMeta(el, d);
+  }
+  // Keep dataset in sync so syncProps/save read correct values
   if(d.strokeStyle)el.dataset.strokeStyle=d.strokeStyle;
   else if(!el.dataset.strokeStyle)el.dataset.strokeStyle='solid';
+  if(d.shadow!=null)el.dataset.shadow=(d.shadow===true||d.shadow==='true')?'true':'false';
+  if(d.shadowBlur!=null)el.dataset.shadowBlur=d.shadowBlur;
+  if(d.shadowSize!=null)el.dataset.shadowSize=d.shadowSize;
+  if(d.shadowColor)el.dataset.shadowColor=d.shadowColor;
   const c=el.querySelector('.sel-el');if(!c)return;
   const svgDiv=c.querySelector('.shape-svg');
   if(svgDiv){
     svgDiv.innerHTML=buildShapeSVG(d,w,h);
     const svgEl=svgDiv.querySelector('svg');
     if(svgEl){
-      const pad=d.shadow?Math.ceil((d.shadowBlur||8)*3+6):0;
+      const pad=typeof window._syncShapeShadowLayout==='function'?window._syncShapeShadowLayout(el,d,w,h):0;
       if(!pad){
         svgEl.style.position='absolute';
         svgEl.style.inset='0';
@@ -1882,6 +2359,10 @@ function updateShapeStyle(prop,val){
   if(!sel||sel.dataset.type!=='shape')return;
   debouncedPushUndo();
   const d=slides[cur].els.find(e=>e.id===sel.dataset.id);if(!d)return;
+  if(d.type==='shape'&&typeof _cloudSyncMeta==='function'){
+    const sh=typeof SHAPES!=='undefined'?SHAPES.find(s=>s.id===d.shape):null;
+    if(sh&&sh.special==='cloud') _cloudSyncMeta(sel,d);
+  }
   if(prop==='fill'){d.fill=val;sel.dataset.fill=val;}
   else if(prop==='stroke'){d.stroke=val;sel.dataset.stroke=val;}
   else if(prop==='sw'){
@@ -1917,10 +2398,16 @@ function updateShapeStyle(prop,val){
   else if(prop==='strokeStyle'){d.strokeStyle=val;sel.dataset.strokeStyle=val;}
   else if(prop==='rx'){d.rx=+val;sel.dataset.rx=val;}
   else if(prop==='fillOp'){d.fillOp=+val;sel.dataset.fillOp=val;}
-  else if(prop==='shadow'){d.shadow=val;sel.dataset.shadow=val;}
+  else if(prop==='shadow'){d.shadow=val;sel.dataset.shadow=val;try{const opts=document.getElementById('shadow-options');if(opts)opts.style.display=val?'flex':'none';}catch(e){}}
   else if(prop==='shadowBlur'){d.shadowBlur=+val;sel.dataset.shadowBlur=val;}
+  else if(prop==='shadowSize'){d.shadowSize=+val;sel.dataset.shadowSize=val;}
   else if(prop==='shadowColor'){d.shadowColor=val;sel.dataset.shadowColor=val;}
   renderShapeEl(sel,d);save();drawThumbs();saveState();
+  const dCloud = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (dCloud && dCloud.type === 'shape' && typeof _cloudPersistDataset === 'function') {
+    const sh = typeof SHAPES !== 'undefined' ? SHAPES.find(s => s.id === dCloud.shape) : null;
+    if (sh && sh.special === 'cloud') _cloudPersistDataset(sel, dCloud);
+  }
 }
 function updateShapeStyleScheme(prop, val, schemeRef) {
   if(sel && slides[cur]) {
@@ -1928,7 +2415,11 @@ function updateShapeStyleScheme(prop, val, schemeRef) {
     if(d) {
       if(prop==='fill') { d.fillScheme = schemeRef || null; d.fill = val; sel.dataset.fill = val; }
       else if(prop==='stroke') { d.strokeScheme = schemeRef || null; d.stroke = val; sel.dataset.stroke = val; }
-      console.log('[DBG schemeRef] prop='+prop+' val='+val+' schemeRef='+JSON.stringify(schemeRef)+' d.fillScheme='+JSON.stringify(d.fillScheme));
+      else if(prop==='shadowColor') { d.shadowColorScheme = schemeRef || null; d.shadowColor = val; sel.dataset.shadowColor = val; if(schemeRef) sel.dataset.shadowColorScheme = JSON.stringify(schemeRef); else delete sel.dataset.shadowColorScheme; }
+      if(d.type==='shape'&&typeof _cloudSyncMeta==='function'){
+        const sh=typeof SHAPES!=='undefined'?SHAPES.find(s=>s.id===d.shape):null;
+        if(sh&&sh.special==='cloud') _cloudSyncMeta(sel,d);
+      }
     }
   }
   updateShapeStyle(prop, val);

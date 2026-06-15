@@ -18,6 +18,23 @@
 let _cropEl = null;
 let _cropOrigW = 0, _cropOrigH = 0;
 
+// PPTX blipFill srcRect: l/t/r/b в 1/100000 размера исходного файла
+function applyPptxSrcRectCrop(el, d, img) {
+  const sr = d._pptxSrcRect;
+  if (!sr || !img || !img.naturalWidth) return false;
+  const nw = img.naturalWidth, nh = img.naturalHeight;
+  d.imgCropL = Math.round(nw * (sr.l || 0) / 100000);
+  d.imgCropT = Math.round(nh * (sr.t || 0) / 100000);
+  d.imgCropR = Math.round(nw * (sr.r || 0) / 100000);
+  d.imgCropB = Math.round(nh * (sr.b || 0) / 100000);
+  delete d._pptxSrcRect;
+  el.dataset.imgCropL = d.imgCropL;
+  el.dataset.imgCropT = d.imgCropT;
+  el.dataset.imgCropR = d.imgCropR;
+  el.dataset.imgCropB = d.imgCropB;
+  return true;
+}
+
 // ── Render committed crop ───────────────────────────────────────────────
 function applyImgCrop(el, d) {
   const c   = el.querySelector('.iel');
@@ -41,8 +58,6 @@ function applyImgCrop(el, d) {
     const tPct  = (-T / visH * 100).toFixed(4) + '%';
 
     const rx   = (d.imgRx || 0) + 'px';
-    const bw   = d.imgBw || 0;
-    const border = bw > 0 ? `${bw}px solid ${d.imgBc||'#fff'}` : 'none';
 
     el.dataset.hasCrop = '1';
 
@@ -50,8 +65,8 @@ function applyImgCrop(el, d) {
     c.style.inset       = '0';
     c.style.overflow    = 'hidden';
     c.style.borderRadius = rx;
-    c.style.border      = border;
-    c.style.boxSizing   = bw > 0 ? 'border-box' : '';
+    c.style.border      = 'none';
+    c.style.boxSizing   = '';
 
     img.style.position  = 'absolute';
     img.style.left      = lPct;
@@ -64,13 +79,12 @@ function applyImgCrop(el, d) {
   } else {
     delete el.dataset.hasCrop;
     const rx = (d.imgRx || 0) + 'px';
-    const bw = d.imgBw || 0;
     c.style.position    = 'absolute';
     c.style.inset       = '0';
     c.style.overflow    = 'hidden';
     c.style.borderRadius = rx;
-    c.style.border      = bw > 0 ? `${bw}px solid ${d.imgBc||'#fff'}` : 'none';
-    c.style.boxSizing   = bw > 0 ? 'border-box' : '';
+    c.style.border      = 'none';
+    c.style.boxSizing   = '';
     img.style.position  = '';
     img.style.left      = '';
     img.style.top       = '';

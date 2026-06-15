@@ -17,7 +17,6 @@
   function effectiveStep(inp, currentVal) {
     const base = getStep(inp);
     if (getMn(inp) >= 0 && base >= 1) {
-      // Only apply fine steps near zero for integer-step inputs
       const abs = Math.abs(currentVal);
       if (abs < 0.1)  return 0.01;
       if (abs < 1)    return 0.1;
@@ -48,6 +47,28 @@
     inp.style.textShadow = '';
   }
 
+  function valueFromClientX(inp, clientX) {
+    const lo = getMn(inp), hi = getMx(inp);
+    if (!isFinite(lo) || !isFinite(hi) || hi === lo) return parseFloat(inp.value) || 0;
+    const rect = inp.getBoundingClientRect();
+    if (rect.width <= 0) return parseFloat(inp.value) || lo;
+    const fracX = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    let v = lo + fracX * (hi - lo);
+    const s = effectiveStep(inp, v);
+    v = Math.round(v / s) * s;
+    if (getMn(inp) >= 0 && getStep(inp) >= 1 && v < 0.005) v = 0;
+    v = Math.max(lo, Math.min(hi, v));
+    const thisDec = (getMn(inp) >= 0 && getStep(inp) >= 1 && Math.abs(v) < 1) ?
+      (Math.abs(v) < 0.1 ? 3 : 2) : stepDec(inp);
+    return parseFloat(v.toFixed(thisDec));
+  }
+
+  function applyValue(inp, v, lo, hi) {
+    inp.value = v;
+    if (isFinite(lo) && isFinite(hi)) fill(inp);
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
   document.addEventListener('mousedown', function (e) {
     const inp = e.target;
     if (!inp || inp.tagName !== 'INPUT' || inp.type !== 'number') return;
@@ -56,15 +77,34 @@
     e.stopPropagation();
     e.stopImmediatePropagation();
 
-    const x0   = e.clientX;
-    const v0   = parseFloat(inp.value) || 0;
-    const lo   = getMn(inp), hi = getMx(inp);
-    const spd  = (isFinite(lo) && isFinite(hi)) ? (hi - lo) / 200 : getStep(inp);
-    const dec  = stepDec(inp);
+    const lo = getMn(inp), hi = getMx(inp);
+    const hasRange = isFinite(lo) && isFinite(hi);
+    const dec = stepDec(inp);
     let scrubbing = false;
-    let lastV = v0;
+    let lastV = parseFloat(inp.value) || 0;
+    const x0 = e.clientX;
+    const v0 = lastV;
+    const spd = hasRange ? 0 : getStep(inp);
+
+    if (hasRange) {
+      lastV = valueFromClientX(inp, e.clientX);
+      applyValue(inp, lastV, lo, hi);
+      scrubbing = true;
+      inp.blur();
+      document.body.style.cursor = 'ew-resize';
+    }
 
     function onMove(e2) {
+      if (hasRange) {
+        e2.preventDefault();
+        e2.stopPropagation();
+        const v = valueFromClientX(inp, e2.clientX);
+        if (v === lastV) return;
+        lastV = v;
+        applyValue(inp, v, lo, hi);
+        return;
+      }
+
       const dx = e2.clientX - x0;
       if (!scrubbing) {
         if (Math.abs(dx) < THRESH) return;
@@ -78,18 +118,13 @@
       const s = effectiveStep(inp, lastV);
       let v = v0 + dx * spd;
       v = Math.round(v / s) * s;
-      // snap to 0 for positive-only near-zero
       if (getMn(inp) >= 0 && getStep(inp) >= 1 && v < 0.005) v = 0;
       v = Math.max(getMn(inp), Math.min(getMx(inp), v));
-      // use step decimal places (or fine dec near zero)
       const thisDec = (getMn(inp) >= 0 && getStep(inp) >= 1 && Math.abs(v) < 1) ?
         (Math.abs(v) < 0.1 ? 3 : 2) : dec;
       v = parseFloat(v.toFixed(thisDec));
       lastV = v;
-
-      inp.value = v;
-      if (isFinite(lo) && isFinite(hi)) fill(inp);
-      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      applyValue(inp, v, lo, hi);
     }
 
     function onUp() {

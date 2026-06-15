@@ -105,7 +105,7 @@ function boot(){
         if(e.shiftKey && typeof pickMulti==='function') pickMulti(best, true);
         else if(typeof pick==='function') pick(best);
       }
-      else if(!e.shiftKey&&!window._curveEditMode) desel();
+      else if(!e.shiftKey&&!window._curveEditMode && typeof desel==='function') desel();
     }
   });
   // Global: clicking anywhere outside an element exits text/table editing
@@ -223,6 +223,8 @@ function _applyThemeByIdx(idx){
     });
   });
   if(typeof refreshDecorColors==='function')refreshDecorColors(theme.ac1||'#6366f1',theme.ac2||'#818cf8',true);
+  if(typeof renderAll==='function') renderAll();
+  else if(typeof refreshDecorOnCanvas==='function') refreshDecorOnCanvas();
   if(typeof refreshAppletThemes==='function')refreshAppletThemes();
   if(typeof refreshAllCodeBlocks==='function')refreshAllCodeBlocks();
 }
@@ -246,6 +248,10 @@ function buildThemeGrid(){
     sec.appendChild(hdr);
     const grid=document.createElement('div');
     grid.className='theme-grid';
+    grid.style.display='flex';
+    grid.style.flexWrap='wrap';
+    grid.style.gap='14px';
+    grid.style.alignContent='flex-start';
 
     // "No theme" card — only in first section
     if(label===t('darkThemes')||(!THEMES.some(x=>x.dark!==false))){
@@ -253,11 +259,16 @@ function buildThemeGrid(){
 
     themes.forEach(([i,t])=>{
       const card=document.createElement('div');
-      card.className='theme-card'+(selTheme===i?' active':'');
+      const slideLight=t.dark===false;
+      card.className='theme-card'
+        +(selTheme===i?' active':'')
+        +(slideLight?' theme-card--slide-light':' theme-card--slide-dark');
+      const inner=document.createElement('div');
+      inner.className='theme-card-inner';
 
-      // Background fill
       const bg=document.createElement('div');
-      bg.style.cssText='position:absolute;inset:0;background:'+t.bg+';';
+      bg.className='tc-bg';
+      bg.style.background=t.bg;
       // Start birds animation if theme has bgAnim
       if(t.bgAnim==='birds' && typeof _birdsThemeStart==='function'){
         setTimeout(()=>_birdsThemeStart(bg.parentElement||bg),50);
@@ -283,7 +294,7 @@ function buildThemeGrid(){
 
       // 7 colour strips — vertical rectangles side by side, bottom-right corner
       const swatches=document.createElement('div');
-      swatches.style.cssText='position:absolute;bottom:20px;right:5px;display:flex;flex-direction:row;gap:2px;align-items:flex-end;';
+      swatches.style.cssText='position:absolute;bottom:20px;right:5px;display:flex;flex-direction:row;gap:2px;align-items:flex-end;pointer-events:none;';
       const base7=(typeof _themeColors==='function'?_themeColors(t):Object.values(t)).slice(0,7);
       base7.forEach(col=>{
         const sw=document.createElement('div');
@@ -298,7 +309,8 @@ function buildThemeGrid(){
       lbl.className='tc-label';
       lbl.textContent=t.name;
 
-      card.append(bg,mock,swatches,lbl);
+      inner.append(bg,mock,swatches,lbl);
+      card.appendChild(inner);
       card.onclick=()=>{selTheme=i;buildThemeGrid();};
       card.ondblclick=(e)=>{e.preventDefault();selTheme=i;applyTheme();closeThemeModal();};
       grid.appendChild(card);
@@ -908,6 +920,10 @@ function applyFillColor(c, schemeRef){
   if(!sel)return;
   const d=slides[cur].els.find(e=>e.id===sel.dataset.id);
   if(!d||d.type!=='shape')return;
+  if(typeof _cloudSyncMeta==='function'){
+    const sh=typeof SHAPES!=='undefined'?SHAPES.find(s=>s.id===d.shape):null;
+    if(sh&&sh.special==='cloud') _cloudSyncMeta(sel,d);
+  }
   d.fill=c; d.fillScheme = schemeRef || null; sel.dataset.fill=c;
   try{const _fsw=document.getElementById('sh-fill-preview');if(_fsw)_fsw.style.background=c;document.getElementById('sh-fill-hex').value=c;}catch(e){}
   renderShapeEl(sel,d);save();saveState();

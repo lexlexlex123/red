@@ -6,41 +6,90 @@ const _decorPausedAt = new Map();
 
 const LAYOUTS=[
 
-  // ── 1. PRISM ── острый свет, преломление
+  // ── 1. PRISM ── угловые клинья (заливка от линии до угла), выезд по очереди
   {
     name:'Призма',nameEn:'Prism',
     desc:'Острые грани, световые блики',descEn:'Sharp refracting light beams',
-    titleSvg:(w,h,a1,a2)=>`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
-      <defs>
-        <linearGradient id="pg1" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stop-color="${a1}" stop-opacity="0.35"/>
-          <stop offset="1" stop-color="${a2}" stop-opacity="0"/>
-        </linearGradient>
-        <filter id="pgf"><feGaussianBlur stdDeviation="16"/></filter>
-      </defs>
-      <polygon points="${w*.55},0 ${w},0 ${w},${h*.65}" fill="url(#pg1)"/>
-      <polygon points="${w*.68},0 ${w},0 ${w},${h*.38}" fill="${a2}" opacity="0.18"/>
-      <polygon points="${w*.78},0 ${w},0 ${w},${h*.18}" fill="${a1}" opacity="0.25"/>
-      <line x1="${w*.55}" y1="0" x2="${w}" y2="${h*.65}" stroke="${a1}" stroke-width="1" opacity="0.4"/>
-      <line x1="${w*.68}" y1="0" x2="${w}" y2="${h*.38}" stroke="${a2}" stroke-width="0.8" opacity="0.5"/>
-      <line x1="${w*.78}" y1="0" x2="${w}" y2="${h*.18}" stroke="${a1}" stroke-width="0.6" opacity="0.6"/>
-      <ellipse cx="${w*.82}" cy="${h*.72}" rx="${h*.28}" ry="${h*.28}" fill="${a1}" opacity="0.04" filter="url(#pgf)"/>
-      <polygon points="0,${h} ${w*.32},${h} 0,${h*.62}" fill="${a1}" opacity="0.08"/>
-      <polygon points="0,${h} ${w*.18},${h} 0,${h*.78}" fill="${a2}" opacity="0.06"/>
-    </svg>`,
-    contentSvg:(w,h,a1,a2)=>`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
-      <defs>
-        <linearGradient id="pcg" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0" stop-color="${a1}" stop-opacity="0.55"/>
-          <stop offset="1" stop-color="${a2}" stop-opacity="0"/>
-        </linearGradient>
-      </defs>
-      <polygon points="${w},0 ${w},${h*.5} ${w*.65},0" fill="${a1}" opacity="0.12"/>
-      <polygon points="${w},0 ${w},${h*.28}" fill="${a2}" opacity="0.22"/>
-      <rect x="0" y="0" width="${w}" height="3" fill="url(#pcg)"/>
-      <rect x="0" y="${h-3}" width="${w*.5}" height="3" fill="url(#pcg)"/>
-      <polygon points="0,${h} ${w*.22},${h} 0,${h*.72}" fill="${a1}" opacity="0.07"/>
-    </svg>`,
+    animated: true,
+
+    _peekStripe(x1, y1, x2, y2, cx, cy, color, sw, doAnimate, begin, dur, fillOp){
+      const peek = 0.34;
+      const hx = ((cx - (x1 + x2) * 0.5) * peek).toFixed(1);
+      const hy = ((cy - (y1 + y2) * 0.5) * peek).toFixed(1);
+      const pts = (cx > 0 && cy === 0)
+        ? `${x1.toFixed(1)},${y1.toFixed(1)} ${cx.toFixed(1)},${cy.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`
+        : `${cx.toFixed(1)},${cy.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)} ${x1.toFixed(1)},${y1.toFixed(1)}`;
+      const fo = fillOp != null ? fillOp : 0.82;
+      const shape = `<polygon points="${pts}" fill="${color}" fill-opacity="${fo}"/>
+        <line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${color}" stroke-width="${sw}" stroke-linecap="round" opacity="0.9"/>`;
+      if (!doAnimate) return `<g opacity="0.5">${shape}</g>`;
+      const spl = '0.42 0 0.58 1;0.42 0 0.58 1';
+      return `<g opacity="0">
+        <g>${shape}
+          <animateTransform attributeName="transform" type="translate"
+            values="${hx},${hy};0,0;${hx},${hy}" keyTimes="0;0.48;1"
+            dur="${dur}s" begin="${begin}s" repeatCount="indefinite" calcMode="spline" keySplines="${spl}"/>
+        </g>
+        <animate attributeName="opacity" values="0;0.72;0" keyTimes="0;0.45;1"
+          dur="${dur}s" begin="${begin}s" repeatCount="indefinite" calcMode="spline" keySplines="${spl}"/>
+      </g>`;
+    },
+
+    _cornerStripes(w, h, corner, specs, cx, cy, doAnimate, dur, cycleBegin){
+      let out = '';
+      const n = specs.length;
+      const off = cycleBegin != null ? parseFloat(cycleBegin) : 0;
+      specs.forEach((sp, i) => {
+        const begin = (off + i * dur / n).toFixed(2);
+        out += this._peekStripe(sp[0], sp[1], sp[2], sp[3], cx, cy, sp[4], sp[5], doAnimate, begin, dur, sp[6]);
+      });
+      return out;
+    },
+
+    _build(w, h, a1, a2, isTitle, doAnimate){
+      const uid = 'prm' + Math.random().toString(36).slice(2, 7);
+      const dur = isTitle ? 8 : 6.4;
+      const rng = s => { let x = Math.sin(s * 41.7 + 9.2) * 43758.5; return x - Math.floor(x); };
+      const midBegin = (seed, d, lo, hi) => { const p = lo + rng(seed) * (hi - lo); return (-p * d).toFixed(2); };
+      const cycleBegin = doAnimate ? midBegin(3.7, dur, 0.12, 0.88) : '0';
+      const sw = (n) => isTitle ? n : Math.max(0.45, n * 0.72);
+      let extra = '';
+
+      // [x1,y1,x2,y2, color, strokeWidth, fillOpacity]
+      const trTitle = [
+        [w * .52, 0, w, h * .68, a1, sw(1.1), 0.30],
+        [w * .64, 0, w, h * .42, a2, sw(0.9), 0.26],
+        [w * .74, 0, w, h * .24, a1, sw(0.75), 0.22],
+        [w * .84, 0, w, h * .10, a2, sw(0.55), 0.18],
+      ];
+      const trContent = [
+        [w * .76, 0, w, h * .30, a1, sw(0.8), 0.24],
+        [w * .88, 0, w, h * .12, a2, sw(0.55), 0.18],
+      ];
+      const blTitle = [
+        [0, h * .66, w * .34, h, a1, sw(1.1), 0.30],
+        [0, h * .76, w * .20, h, a2, sw(0.9), 0.26],
+        [0, h * .86, w * .12, h, a1, sw(0.75), 0.22],
+        [0, h * .94, w * .06, h, a2, sw(0.55), 0.18],
+      ];
+      const blContent = [
+        [0, h * .82, w * .16, h, a1, sw(0.75), 0.22],
+        [0, h * .92, w * .08, h, a2, sw(0.5), 0.16],
+      ];
+
+      if (isTitle){
+        extra = `<defs><filter id="${uid}pgf"><feGaussianBlur stdDeviation="16"/></filter></defs>
+          <ellipse cx="${(w * .82).toFixed(1)}" cy="${(h * .72).toFixed(1)}" rx="${(h * .28).toFixed(1)}" ry="${(h * .28).toFixed(1)}" fill="${a1}" opacity="0.04" filter="url(#${uid}pgf)"/>`;
+      }
+
+      const tr = this._cornerStripes(w, h, 'tr', isTitle ? trTitle : trContent, w, 0, doAnimate, dur, cycleBegin);
+      const bl = this._cornerStripes(w, h, 'bl', isTitle ? blTitle : blContent, 0, h, doAnimate, dur, cycleBegin);
+
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden">${extra}${tr}${bl}</svg>`;
+    },
+
+    titleSvg(w, h, a1, a2, doAnimate){ return this._build(w, h, a1, a2, true, doAnimate !== false); },
+    contentSvg(w, h, a1, a2, doAnimate){ return this._build(w, h, a1, a2, false, doAnimate !== false); },
   },
 
   // ── 2. AURORA ── северное сияние, анимированные переливающиеся блобы
@@ -326,30 +375,6 @@ const LAYOUTS=[
     contentSvg(w,h,a1,a2,doAnimate){ return this._build(w,h,a1,a2,false,doAnimate!==false); },
   },
 
-  // ── 7. ARCH ── арочные своды, архитектура
-  {
-    name:'Аркада',nameEn:'Arcade',
-    desc:'Арки, архитектурная торжественность',descEn:'Arches, architectural grandeur',
-    titleSvg:(w,h,a1,a2)=>`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
-      <defs><filter id="arf"><feGaussianBlur stdDeviation="20"/></filter></defs>
-      <path d="M${w*.62},${h} L${w*.62},${h*.55} A${w*.19},${h*.45} 0 0,1 ${w},${h*.55} L${w},${h} Z" fill="${a1}" opacity="0.14"/>
-      <path d="M${w*.62},${h} L${w*.62},${h*.55} A${w*.19},${h*.45} 0 0,1 ${w},${h*.55} L${w},${h} Z" fill="none" stroke="${a1}" stroke-width="1.2" opacity="0.35"/>
-      <path d="M${w*.72},${h} L${w*.72},${h*.62} A${w*.14},${h*.38} 0 0,1 ${w},${h*.62} L${w},${h} Z" fill="${a2}" opacity="0.10"/>
-      <path d="M${w*.72},${h} L${w*.72},${h*.62} A${w*.14},${h*.38} 0 0,1 ${w},${h*.62} L${w},${h} Z" fill="none" stroke="${a2}" stroke-width="0.8" opacity="0.25"/>
-      <ellipse cx="${w*.81}" cy="${h*.55}" rx="${w*.2}" ry="${h*.45}" fill="${a1}" opacity="0.04" filter="url(#arf)"/>
-      <line x1="${w*.05}" y1="${h*.82}" x2="${w*.55}" y2="${h*.82}" stroke="${a1}" stroke-width="2" opacity="0.35"/>
-      <line x1="${w*.05}" y1="${h*.88}" x2="${w*.38}" y2="${h*.88}" stroke="${a2}" stroke-width="1.5" opacity="0.25"/>
-      <line x1="${w*.05}" y1="${h*.94}" x2="${w*.26}" y2="${h*.94}" stroke="${a1}" stroke-width="1" opacity="0.15"/>
-    </svg>`,
-    contentSvg:(w,h,a1,a2)=>`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
-      <path d="M${w*.7},${h} L${w*.7},${h*.4} A${w*.15},${h*.55} 0 0,1 ${w},${h*.4} L${w},${h} Z" fill="${a1}" opacity="0.12"/>
-      <path d="M${w*.7},${h} L${w*.7},${h*.4} A${w*.15},${h*.55} 0 0,1 ${w},${h*.4} L${w},${h} Z" fill="none" stroke="${a1}" stroke-width="1" opacity="0.3"/>
-      <path d="M${w*.8},${h} L${w*.8},${h*.5} A${w*.1},${h*.45} 0 0,1 ${w},${h*.5} L${w},${h} Z" fill="${a2}" opacity="0.08"/>
-      <rect x="0" y="0" width="5" height="${h}" fill="${a1}" opacity="0.5"/>
-      <rect x="0" y="0" width="${w}" height="4" fill="${a1}" opacity="0.14"/>
-    </svg>`,
-  },
-
   // ── 8. DUSK ── закат, горизонт, солнце
   {
     name:'Закат',nameEn:'Dusk',
@@ -467,59 +492,163 @@ const LAYOUTS=[
     },
   },
 
-  // ── 10. DIAMOND ── кристалл, огранка
+  // ── 10. CRYSTAL ── WebGL октаэдр + SVG угловой свет
   {
     name:'Кристалл',nameEn:'Crystal',
-    desc:'Огранка кристалла, отражения',descEn:'Gem facets, crystalline reflections',
-    titleSvg:(w,h,a1,a2)=>`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
-      <defs><filter id="crf"><feGaussianBlur stdDeviation="18"/></filter></defs>
-      <polygon points="${w*.78},${h*.08} ${w*.92},${h*.22} ${w*.78},${h*.58} ${w*.58},${h*.35}" fill="${a1}" opacity="0.14"/>
-      <polygon points="${w*.78},${h*.08} ${w*.92},${h*.22} ${w*.95},${h*.08}" fill="${a2}" opacity="0.22"/>
-      <polygon points="${w*.92},${h*.22} ${w*.78},${h*.58} ${w*.95},${h*.42}" fill="${a1}" opacity="0.18"/>
-      <polygon points="${w*.78},${h*.08} ${w*.58},${h*.35} ${w*.68},${h*.08}" fill="${a2}" opacity="0.12"/>
-      <polygon points="${w*.58},${h*.35} ${w*.78},${h*.58} ${w*.62},${h*.58}" fill="${a1}" opacity="0.10"/>
-      <line x1="${w*.78}" y1="${h*.08}" x2="${w*.92}" y2="${h*.22}" stroke="${a1}" stroke-width="1" opacity="0.5"/>
-      <line x1="${w*.92}" y1="${h*.22}" x2="${w*.78}" y2="${h*.58}" stroke="${a1}" stroke-width="0.8" opacity="0.4"/>
-      <line x1="${w*.78}" y1="${h*.58}" x2="${w*.58}" y2="${h*.35}" stroke="${a2}" stroke-width="0.8" opacity="0.35"/>
-      <line x1="${w*.58}" y1="${h*.35}" x2="${w*.78}" y2="${h*.08}" stroke="${a2}" stroke-width="0.8" opacity="0.35"/>
-      <line x1="${w*.78}" y1="${h*.08}" x2="${w*.78}" y2="${h*.58}" stroke="${a1}" stroke-width="0.5" opacity="0.2"/>
-      <circle cx="${w*.78}" cy="${h*.33}" r="${h*.3}" fill="${a1}" opacity="0.04" filter="url(#crf)"/>
-      <polygon points="${w*.78},${h*.08} ${w*.92},${h*.22} ${w*.78},${h*.58} ${w*.58},${h*.35}" fill="none" stroke="${a1}" stroke-width="0.6" opacity="0.25"/>
-    </svg>`,
-    contentSvg:(w,h,a1,a2)=>`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
-      <polygon points="${w*.82},${h*.05} ${w*.96},${h*.22} ${w*.82},${h*.55} ${w*.65},${h*.3}" fill="${a1}" opacity="0.12"/>
-      <polygon points="${w*.82},${h*.05} ${w*.96},${h*.22} ${w*.98},${h*.05}" fill="${a2}" opacity="0.2"/>
-      <polygon points="${w*.96},${h*.22} ${w*.82},${h*.55} ${w*.98},${h*.42}" fill="${a1}" opacity="0.15"/>
-      <line x1="${w*.82}" y1="${h*.05}" x2="${w*.96}" y2="${h*.22}" stroke="${a1}" stroke-width="0.9" opacity="0.45"/>
-      <line x1="${w*.96}" y1="${h*.22}" x2="${w*.82}" y2="${h*.55}" stroke="${a1}" stroke-width="0.7" opacity="0.35"/>
-      <line x1="${w*.82}" y1="${h*.55}" x2="${w*.65}" y2="${h*.3}" stroke="${a2}" stroke-width="0.7" opacity="0.3"/>
-      <line x1="${w*.65}" y1="${h*.3}" x2="${w*.82}" y2="${h*.05}" stroke="${a2}" stroke-width="0.7" opacity="0.3"/>
-      <rect x="0" y="0" width="5" height="${h}" fill="${a1}" opacity="0.5"/>
-      <polygon points="0,0 ${w*.14},0 0,${h*.28}" fill="${a1}" opacity="0.08"/>
-    </svg>`,
+    desc:'Прозрачный октаэдр, вращение как в Sims',descEn:'Transparent spinning octahedron gem',
+    animated: true,
+    renderer: 'crystal',
+
+    buildCrystalCfg(w, h, a1, a2, isTitle, animated){
+      const scale = isTitle ? h * 0.2 : h * 0.1;
+      return { w, h, a1, a2, isTitle, animated: animated !== false, scale, spinDur: isTitle ? 12 : 10 };
+    },
+
+    _buildLightSvg(w, h, a1, a2, isTitle, doAnimate){
+      const uid = 'cry' + Math.random().toString(36).slice(2, 7);
+      if (isTitle){
+        const lr = Math.max(w, h) * 0.62;
+        const l0x = w * 1.06, l0y = -h * 0.06;
+        const l1x = -w * 0.06, l1y = h * 1.04;
+        const l2x = w * 1.06, l2y = h * 1.04;
+        const l3x = -w * 0.06, l3y = -h * 0.06;
+        const hopKt = '0;0.20;0.22;0.42;0.44;0.64;0.66;0.86;0.88;1';
+        const hopLx = `${l0x};${l0x};${l1x};${l1x};${l2x};${l2x};${l3x};${l3x};${l0x};${l0x}`;
+        const hopLy = `${l0y};${l0y};${l1y};${l1y};${l2y};${l2y};${l3y};${l3y};${l0y};${l0y}`;
+        const pulse = doAnimate
+          ? `<animate attributeName="opacity" values="0.32;0.58;0.32" dur="2.8s" repeatCount="indefinite" calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1"/>
+             <animate attributeName="r" values="${lr.toFixed(1)};${(lr * 1.12).toFixed(1)};${lr.toFixed(1)}" dur="2.8s" repeatCount="indefinite" calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1"/>`
+          : '';
+        const hopAnim = doAnimate
+          ? `<animate attributeName="cx" values="${hopLx}" keyTimes="${hopKt}" dur="18s" repeatCount="indefinite" calcMode="linear"/>
+             <animate attributeName="cy" values="${hopLy}" keyTimes="${hopKt}" dur="18s" repeatCount="indefinite" calcMode="linear"/>`
+          : '';
+        return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden">
+          <defs>
+            <radialGradient id="${uid}corner" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stop-color="${a1}" stop-opacity="0.55"/>
+              <stop offset="45%" stop-color="${a2}" stop-opacity="0.22"/>
+              <stop offset="100%" stop-color="${a2}" stop-opacity="0"/>
+            </radialGradient>
+          </defs>
+          <circle cx="${l0x.toFixed(1)}" cy="${l0y.toFixed(1)}" r="${lr.toFixed(1)}" fill="url(#${uid}corner)" opacity="0.42">${hopAnim}${pulse}</circle>
+        </svg>`;
+      }
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden">
+        <rect x="0" y="0" width="5" height="${h}" fill="${a1}" opacity="0.5"/>
+        <polygon points="0,0 ${(w * .14).toFixed(1)},0 0,${(h * .28).toFixed(1)}" fill="${a1}" opacity="0.08"/>
+      </svg>`;
+    },
+
+    titleSvg(w, h, a1, a2, doAnimate){ return this._buildLightSvg(w, h, a1, a2, true, doAnimate !== false); },
+    contentSvg(w, h, a1, a2, doAnimate){ return this._buildLightSvg(w, h, a1, a2, false, doAnimate !== false); },
   },
 
-  // ── 11. METRO ── плитки, плоский дизайн, bold цвет
+  // ── 11. METRO ── плитки, бегущие панели как на новостных каналах
   {
     name:'Метро',nameEn:'Metro',
-    desc:'Цветные плитки, плоский bold-дизайн',descEn:'Bold flat tiles, metro UI style',
-    titleSvg:(w,h,a1,a2)=>`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
-      <rect x="${w*.62}" y="0" width="${w*.38}" height="${h*.5}" fill="${a1}" opacity="0.2" rx="0"/>
-      <rect x="${w*.62}" y="${h*.52}" width="${w*.22}" height="${h*.48}" fill="${a2}" opacity="0.16" rx="0"/>
-      <rect x="${w*.86}" y="${h*.52}" width="${w*.14}" height="${h*.48}" fill="${a1}" opacity="0.25" rx="0"/>
-      <rect x="${w*.62}" y="0" width="${w*.38}" height="${h*.5}" fill="none" stroke="${a1}" stroke-width="1" opacity="0.2"/>
-      <rect x="${w*.62}" y="${h*.52}" width="${w*.22}" height="${h*.48}" fill="none" stroke="${a2}" stroke-width="0.8" opacity="0.2"/>
-      <rect x="${w*.86}" y="${h*.52}" width="${w*.14}" height="${h*.48}" fill="none" stroke="${a1}" stroke-width="0.8" opacity="0.25"/>
-      <rect x="0" y="0" width="${w*.08}" height="${h}" fill="${a1}" opacity="0.55"/>
-      <rect x="${w*.09}" y="0" width="${w*.025}" height="${h}" fill="${a2}" opacity="0.3"/>
-    </svg>`,
-    contentSvg:(w,h,a1,a2)=>`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
-      <rect x="${w*.72}" y="0" width="${w*.28}" height="${h*.55}" fill="${a1}" opacity="0.18"/>
-      <rect x="${w*.72}" y="${h*.57}" width="${w*.16}" height="${h*.43}" fill="${a2}" opacity="0.14"/>
-      <rect x="${w*.9}" y="${h*.57}" width="${w*.1}" height="${h*.43}" fill="${a1}" opacity="0.22"/>
-      <rect x="0" y="0" width="${w*.06}" height="${h}" fill="${a1}" opacity="0.55"/>
-      <rect x="${w*.07}" y="0" width="${w*.02}" height="${h}" fill="${a2}" opacity="0.28"/>
-    </svg>`,
+    desc:'Цветные плитки, панели ездят как на ТВ',descEn:'Bold flat tiles, sliding news-style panels',
+    animated: true,
+
+    _build:(w,h,a1,a2,isTitle,doAnimate)=>{
+      const preWarm=isTitle?14:11;
+      const ks='0.42 0 0.58 1;0.42 0 0.58 1';
+
+      function _pingT(t){
+        return t<=0.5?t*2:(1-t)*2;
+      }
+      function _pingPos(t,x0,x1){
+        const p=2*t;
+        return p<=1?x0+(x1-x0)*p:x1-(x1-x0)*(p-1);
+      }
+
+      function _staticRect(x,y,rw,rh,col,fillOp,strokeCol,strokeOp){
+        const fill=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${rw.toFixed(1)}" height="${rh.toFixed(1)}" fill="${col}" opacity="${fillOp}"/>`;
+        const stroke=strokeCol?`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${rw.toFixed(1)}" height="${rh.toFixed(1)}" fill="none" stroke="${strokeCol}" stroke-width="${strokeOp>=0.22?1:0.8}" opacity="${strokeOp}"/>`:'';
+        return fill+stroke;
+      }
+
+      function _driftRect(x,y,rw,rh,col,fillOp,strokeCol,strokeOp,anim){
+        const rw2=anim&&(anim.rw2!=null)?anim.rw2:rw*1.42;
+        const rh2=anim&&(anim.rh2!=null)?anim.rh2:rh*1.42;
+        if(doAnimate&&anim){
+          const dur=anim.dur,begin=(anim.begin-preWarm).toFixed(2);
+          let tValues,wAnim='',hAnim='';
+          if(anim.axis==='x'){
+            const x0=x.toFixed(1),x1=(x+anim.delta).toFixed(1),y0=y.toFixed(1);
+            tValues=`${x0},${y0};${x1},${y0};${x0},${y0}`;
+            wAnim=`<animate attributeName="width" values="${rw.toFixed(1)};${rw2.toFixed(1)};${rw.toFixed(1)}" dur="${dur}s" begin="${begin}s" repeatCount="indefinite" calcMode="spline" keySplines="${ks}"/>`;
+          }else{
+            const x0=x.toFixed(1),y0=y.toFixed(1),y1=(y+anim.delta).toFixed(1);
+            tValues=`${x0},${y0};${x0},${y1};${x0},${y0}`;
+            hAnim=`<animate attributeName="height" values="${rh.toFixed(1)};${rh2.toFixed(1)};${rh.toFixed(1)}" dur="${dur}s" begin="${begin}s" repeatCount="indefinite" calcMode="spline" keySplines="${ks}"/>`;
+          }
+          const fill=`<rect x="0" y="0" width="${rw.toFixed(1)}" height="${rh.toFixed(1)}" fill="${col}" opacity="${fillOp}">${wAnim}${hAnim}</rect>`;
+          const stroke=strokeCol?`<rect x="0" y="0" width="${rw.toFixed(1)}" height="${rh.toFixed(1)}" fill="none" stroke="${strokeCol}" stroke-width="${strokeOp>=0.22?1:0.8}" opacity="${strokeOp}">${wAnim}${hAnim}</rect>`:'';
+          return `<g>
+            <animateTransform attributeName="transform" type="translate" values="${tValues}" dur="${dur}s" begin="${begin}s" repeatCount="indefinite" calcMode="spline" keySplines="${ks}"/>
+            ${fill}${stroke}
+          </g>`;
+        }
+        let px=x,py=y,cw=rw,ch=rh;
+        if(anim){
+          let elapsed=preWarm-anim.begin;
+          while(elapsed<0) elapsed+=anim.dur;
+          elapsed%=anim.dur;
+          const t=elapsed/anim.dur;
+          const blend=_pingT(t);
+          if(anim.axis==='x'){
+            px=_pingPos(t,x,x+anim.delta);
+            cw=rw+(rw2-rw)*blend;
+          }else{
+            py=_pingPos(t,y,y+anim.delta);
+            ch=rh+(rh2-rh)*blend;
+          }
+        }
+        const fill=`<rect x="0" y="0" width="${cw.toFixed(1)}" height="${ch.toFixed(1)}" fill="${col}" opacity="${fillOp}"/>`;
+        const stroke=strokeCol?`<rect x="0" y="0" width="${cw.toFixed(1)}" height="${ch.toFixed(1)}" fill="none" stroke="${strokeCol}" stroke-width="${strokeOp>=0.22?1:0.8}" opacity="${strokeOp}"/>`:'';
+        return `<g transform="translate(${px.toFixed(1)},${py.toFixed(1)})">${fill}${stroke}</g>`;
+      }
+
+      let frame='';
+      if(isTitle){
+        const edge1=w*.08,edge2=w*.025,edge2x=w*.09;
+        frame+=`<rect x="0" y="0" width="${edge1.toFixed(1)}" height="${h}" fill="${a1}" opacity="0.55"/>
+          <rect x="${edge2x.toFixed(1)}" y="0" width="${edge2.toFixed(1)}" height="${h}" fill="${a2}" opacity="0.3"/>`;
+        frame+=_staticRect(w*.62,0,w*.38,h*.5,a1,0.2,a1,0.2);
+        frame+=_staticRect(w*.62,h*.52,w*.22,h*.48,a2,0.16,a2,0.2);
+        frame+=_staticRect(w*.86,h*.52,w*.14,h*.48,a1,0.25,a1,0.25);
+        frame+=`<rect x="${(w-edge1).toFixed(1)}" y="0" width="${edge1.toFixed(1)}" height="${h}" fill="${a1}" opacity="0.55"/>
+          <rect x="${(w-edge2x-edge2).toFixed(1)}" y="0" width="${edge2.toFixed(1)}" height="${h}" fill="${a2}" opacity="0.3"/>`;
+      }else{
+        frame+=`<rect x="0" y="0" width="${(w*.06).toFixed(1)}" height="${h}" fill="${a1}" opacity="0.55"/>
+          <rect x="${(w*.07).toFixed(1)}" y="0" width="${(w*.02).toFixed(1)}" height="${h}" fill="${a2}" opacity="0.28"/>`;
+        frame+=_staticRect(w*.72,0,w*.28,h*.55,a1,0.18,null,0);
+        frame+=_staticRect(w*.72,h*.57,w*.16,h*.43,a2,0.14,null,0);
+        frame+=_staticRect(w*.9,h*.57,w*.1,h*.43,a1,0.22,null,0);
+      }
+
+      const tickers=isTitle?[
+        {x:w*.08,y:h*.05,rw:w*.62,rh:h*.058,c:a1,fo:0.14,a:'x',d:w*.44,rw2:w*.88,dur:19,b:0},
+        {x:w*.18,y:h*.17,rw:w*.55,rh:h*.052,c:a2,fo:0.11,a:'x',d:-w*.5,rw2:w*.82,dur:22,b:1.5},
+        {x:w*.04,y:h*.78,rw:w*.68,rh:h*.056,c:a2,fo:0.10,a:'x',d:w*.54,rw2:w*.92,dur:24,b:3},
+        {x:w*.35,y:h*.9,rw:w*.58,rh:h*.05,c:a1,fo:0.09,a:'x',d:-w*.46,rw2:w*.8,dur:17,b:0.8},
+      ]:[
+        {x:w*.12,y:h*.08,rw:w*.56,rh:h*.05,c:a1,fo:0.12,a:'x',d:w*.4,rw2:w*.78,dur:21,b:0},
+        {x:w*.16,y:h*.84,rw:w*.6,rh:h*.048,c:a2,fo:0.09,a:'x',d:-w*.44,rw2:w*.82,dur:23,b:2.2},
+        {x:w*.86,y:h*.15,rw:w*.055,rh:h*.42,c:a1,fo:0.11,a:'y',d:h*.24,rh2:h*.58,dur:15,b:1.1},
+      ];
+
+      let body='';
+      tickers.forEach(t=>{
+        body+=_driftRect(t.x,t.y,t.rw,t.rh,t.c,t.fo,null,0,{axis:t.a,delta:t.d,dur:t.dur,begin:t.b,rw2:t.rw2,rh2:t.rh2});
+      });
+
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden">${frame}${body}</svg>`;
+    },
+
+    titleSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,true,doAnimate!==false);},
+    contentSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,false,doAnimate!==false);},
   },
 
   // ── 12. TOPOGRAPHY ── топографические контуры, рельеф
@@ -1643,17 +1772,158 @@ M-29,-2.5 L-47,-19 L-44,0 L-47,19 L-29,2.5 Z"/>
   },
   {
     name:'Гроза', nameEn:'Storm',
-    desc:'Молнии, тучи, дождь',descEn:'Lightning, storm clouds, rain',
+    desc:'Грозовые тучи, вспышки молний, ливень',descEn:'Storm clouds, lightning flashes, downpour',
     animated: true,
     _build:(w,h,a1,a2,isTitle,doAnimate)=>{
-      const rng=(s)=>{let x=Math.sin(s*127.1+311.7)*43758.5;return x-Math.floor(x);};
-      function bolt(x1,segs,spread,col,op,sw){let pts=[[x1,-10]],cx=x1;const sh=(h+10)/segs;for(let i=1;i<=segs;i++){cx+=((rng(x1+i*7)-0.5)*spread);pts.push([cx.toFixed(1),(sh*i-10).toFixed(1)]);}return `<polyline points="${pts.map(p=>p.join(',')).join(' ')}" fill="none" stroke="${col}" stroke-width="${sw}" opacity="${op}" stroke-linecap="round" stroke-linejoin="round"/>`;}
-      let rain='',bolts='',anims='';
-      for(let i=0;i<(isTitle?60:35);i++){const rx=(rng(i*4)*w).toFixed(1),rl=(8+rng(i*4+2)*18).toFixed(0),op=(0.04+rng(i*4+3)*0.08).toFixed(2);if(doAnimate){const dur=(0.6+rng(i*4)*0.8).toFixed(2),delay=(rng(i*4+0.5)*2).toFixed(2);anims+=`<line x1="${rx}" y1="0" x2="${+rx+6}" y2="${rl}" stroke="${a2}" stroke-width="0.8" opacity="${op}"><animateTransform attributeName="transform" type="translate" from="0 -${rl}" to="0 ${h+rl}" dur="${dur}s" begin="${delay}s" repeatCount="indefinite"/></line>`;}else rain+=`<line x1="${rx}" y1="${(rng(i*4+1)*h).toFixed(1)}" x2="${+rx+6}" y2="${(+rng(i*4+1)*h+ +rl).toFixed(1)}" stroke="${a2}" stroke-width="0.8" opacity="${op}"/>`;}
-      if(isTitle){bolts+=bolt(w*0.25,8,w*0.06,a1,'0.55',2.5);bolts+=bolt(w*0.72,7,w*0.05,a2,'0.40',2.0);}else bolts+=bolt(w*0.2,6,w*0.05,a1,'0.35',1.8);
-      let clouds='';[[0.15,0.06,0.22,0.10],[0.6,0.03,0.25,0.08]].forEach(([cx,cy,cw,ch])=>{clouds+=`<ellipse cx="${(cx*w).toFixed(0)}" cy="${(cy*h).toFixed(0)}" rx="${(cw*w).toFixed(0)}" ry="${(ch*h).toFixed(0)}" fill="${a1}" opacity="0.09"/>`;});
-      const flash=doAnimate?`<rect width="${w}" height="${h}" fill="${a1}" opacity="0"><animate attributeName="opacity" values="0;0;0;0;0.08;0;0.04;0;0;0;0;0;0.06;0;0" dur="4s" repeatCount="indefinite"/></rect>`:'';
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${clouds}${doAnimate?anims:rain}${bolts}${flash}</svg>`;
+      const uid='stm'+Math.random().toString(36).slice(2,7);
+      const rng=s=>{let x=Math.sin(s*127.1+311.7)*43758.5;return x-Math.floor(x);};
+      const f=n=>n.toFixed(1);
+      const sp='0.35 0 0.65 1';
+      const midBegin=(seed,dur,lo,hi)=>{const p=lo+rng(seed)*(hi-lo);return(-p*dur).toFixed(2);};
+      const cx0=w*0.5,cy0=h*0.5,zoneRx=w*0.34,zoneRy=h*0.3;
+      const inCenter=(x,y)=>{const dx=(x-cx0)/zoneRx,dy=(y-cy0)/zoneRy;return dx*dx+dy*dy<1;};
+
+      function boltPath(x0,segs,spread,branch){
+        let pts=[[x0,-12]],cx=x0;
+        const sh=(h*0.72)/segs;
+        for(let i=1;i<=segs;i++){
+          cx+=((rng(x0+i*11+branch)-0.5)*spread);
+          pts.push([cx,(sh*i-8).toFixed(1)]);
+        }
+        let d=`M ${pts[0][0].toFixed(1)},${pts[0][1]} `+pts.slice(1).map(p=>`L ${p[0].toFixed(1)},${p[1]}`).join(' ');
+        if(branch%2===0&&segs>5){
+          const fork=pts[Math.floor(segs*0.55)];
+          const fx=fork[0]+spread*0.35,fy=+fork[1]+sh*0.9;
+          d+=` M ${fork[0].toFixed(1)},${fork[1]} L ${fx.toFixed(1)},${fy.toFixed(1)} L ${(fx+spread*0.2).toFixed(1)},${(fy+sh*0.7).toFixed(1)}`;
+        }
+        return d;
+      }
+
+      let svg=`<defs>
+        <linearGradient id="${uid}sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${a2}" stop-opacity="0.18"/><stop offset="55%" stop-color="${a1}" stop-opacity="0.08"/><stop offset="100%" stop-color="#0a0e1a" stop-opacity="0.22"/></linearGradient>
+        <linearGradient id="${uid}bolt" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#fff" stop-opacity="0"/><stop offset="35%" stop-color="#e8f4ff" stop-opacity="1"/><stop offset="100%" stop-color="${a1}" stop-opacity="0.85"/></linearGradient>
+        <radialGradient id="${uid}puff" cx="42%" cy="38%" r="58%"><stop offset="0%" stop-color="#e8eef8" stop-opacity="0.42"/><stop offset="45%" stop-color="${a2}" stop-opacity="0.28"/><stop offset="78%" stop-color="${a1}" stop-opacity="0.16"/><stop offset="100%" stop-color="${a1}" stop-opacity="0"/></radialGradient>
+        <radialGradient id="${uid}puffD" cx="50%" cy="62%" r="55%"><stop offset="0%" stop-color="${a1}" stop-opacity="0.22"/><stop offset="60%" stop-color="${a1}" stop-opacity="0.12"/><stop offset="100%" stop-color="${a1}" stop-opacity="0"/></radialGradient>
+        <filter id="${uid}cloud"><feGaussianBlur stdDeviation="${isTitle?9:7}"/></filter>
+        <filter id="${uid}glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      </defs>
+      <rect width="${w}" height="${h}" fill="url(#${uid}sky)"/>`;
+
+      const puffTpl=[
+        {ox:0,oy:0,rx:1.00,ry:0.72,fill:'puff'},
+        {ox:-0.42,oy:0.14,rx:0.72,ry:0.58,fill:'puff'},
+        {ox:0.44,oy:0.10,rx:0.78,ry:0.62,fill:'puff'},
+        {ox:-0.20,oy:-0.18,rx:0.58,ry:0.48,fill:'puff'},
+        {ox:0.24,oy:-0.14,rx:0.52,ry:0.44,fill:'puff'},
+        {ox:0.58,oy:0.06,rx:0.62,ry:0.50,fill:'puff'},
+        {ox:-0.55,oy:0.08,rx:0.55,ry:0.46,fill:'puff'},
+        {ox:0.08,oy:0.22,rx:0.85,ry:0.55,fill:'puffD'},
+        {ox:-0.08,oy:0.28,rx:0.70,ry:0.48,fill:'puffD'},
+      ];
+      function cloudCluster(cx,cy,baseW,baseH,op,drift,dur,seed){
+        const x0=f(cx),x1=f(cx+drift);
+        const y0=f(cy);
+        const beg=midBegin(seed,dur,0.1,0.9);
+        const opLo=(op*0.72).toFixed(2),opHi=op.toFixed(2);
+        let inner='';
+        puffTpl.forEach((p,j)=>{
+          const px=f(cx+p.ox*baseW),py=f(cy+p.oy*baseH);
+          const prx=f(p.rx*baseW*0.5),pry=f(p.ry*baseH*0.5);
+          const fo=(op*(0.82+rng(seed+j*3)*0.18)).toFixed(2);
+          const grad=p.fill==='puffD'?`url(#${uid}puffD)`:`url(#${uid}puff)`;
+          inner+=`<ellipse cx="${px}" cy="${py}" rx="${prx}" ry="${pry}" fill="${grad}" opacity="${fo}"/>`;
+        });
+        const body=`<g filter="url(#${uid}cloud)" opacity="${opHi}">${inner}</g>`;
+        if(!doAnimate)return body;
+        return `<g>
+          ${body}
+          <animateTransform attributeName="transform" type="translate" values="0,0;${f(drift)},0;0,0" dur="${dur}s" begin="${beg}s" repeatCount="indefinite" calcMode="spline" keySplines="${sp};${sp}"/>
+          <animate attributeName="opacity" values="${opHi};${opLo};${opHi}" dur="${(dur*0.88).toFixed(1)}s" begin="${beg}s" repeatCount="indefinite" calcMode="spline" keySplines="${sp};${sp}"/>
+        </g>`;
+      }
+
+      const cloudSpecs=isTitle?[
+        {cx:0.20*w,cy:0.09*h,w:w*0.34,h:h*0.14,op:0.88,drift:w*0.04,dur:28},
+        {cx:0.58*w,cy:0.06*h,w:w*0.40,h:h*0.16,op:0.82,drift:-w*0.035,dur:32},
+        {cx:0.84*w,cy:0.11*h,w:w*0.28,h:h*0.12,op:0.76,drift:w*0.028,dur:26},
+        {cx:0.40*w,cy:0.15*h,w:w*0.24,h:h*0.10,op:0.65,drift:-w*0.022,dur:24},
+      ]:[
+        {cx:0.14*w,cy:0.08*h,w:w*0.30,h:h*0.12,op:0.72,drift:w*0.03,dur:30},
+        {cx:0.74*w,cy:0.07*h,w:w*0.32,h:h*0.13,op:0.68,drift:-w*0.025,dur:28},
+      ];
+      cloudSpecs.forEach((c,i)=>{svg+=cloudCluster(c.cx,c.cy,c.w,c.h,c.op,c.drift,c.dur,i*19+3);});
+
+      const nRain=isTitle?110:58;
+      const baseWind=w*(isTitle?0.11:0.09);
+      for(let i=0;i<nRain;i++){
+        const seed=i*4+90;
+        let rx=rng(seed)*w;
+        if(!isTitle&&inCenter(rx,h*0.5))rx=rng(seed+50)*w;
+        const rl=10+rng(seed+2)*(isTitle?32:22);
+        const op=(0.05+rng(seed+3)*(isTitle?0.14:0.10)).toFixed(2);
+        const sw=(0.5+rng(seed+4)*1.4).toFixed(1);
+        const col=rng(seed+5)>0.55?a2:a1;
+        const wind=baseWind*(0.75+rng(seed+8)*0.5);
+        const fall=h+rl*2;
+        const vlen=Math.sqrt(wind*wind+fall*fall);
+        const dx=(wind/vlen*rl),dy=(fall/vlen*rl);
+        if(doAnimate){
+          const dur=(0.35+rng(seed+6)*0.55).toFixed(2);
+          const beg=midBegin(seed+7,+dur,0,1);
+          const xEnd=f(rx+wind),yEnd=f(h+rl);
+          svg+=`<g opacity="${op}">
+            <line x1="0" y1="0" x2="${f(dx)}" y2="${f(dy)}" stroke="${col}" stroke-width="${sw}" stroke-linecap="round"/>
+            <animateTransform attributeName="transform" type="translate" from="${f(rx)} -${f(rl)}" to="${xEnd} ${yEnd}" dur="${dur}s" begin="${beg}s" repeatCount="indefinite"/>
+          </g>`;
+        }else{
+          const t=rng(seed+1);
+          const ty=-rl+t*(h+rl*2);
+          const tx=rx+wind*t;
+          svg+=`<line x1="${f(tx)}" y1="${f(ty)}" x2="${f(tx+dx)}" y2="${f(ty+dy)}" stroke="${col}" stroke-width="${sw}" stroke-linecap="round" opacity="${op}"/>`;
+        }
+      }
+
+      const boltSpecs=isTitle?[
+        {x:0.22,segs:9,spread:w*0.07,cycle:8.5,peak:0.92,sw:3.2,flash:0.14},
+        {x:0.68,segs:8,spread:w*0.06,cycle:11.2,peak:0.78,sw:2.6,flash:0.10},
+        {x:0.48,segs:7,spread:w*0.045,cycle:14.8,peak:0.55,sw:2.0,flash:0.07},
+      ]:[
+        {x:0.28,segs:7,spread:w*0.055,cycle:10.5,peak:0.72,sw:2.4,flash:0.09},
+        {x:0.74,segs:6,spread:w*0.05,cycle:13.2,peak:0.50,sw:1.8,flash:0.06},
+      ];
+      boltSpecs.forEach((b,i)=>{
+        const bx=f(b.x*w);
+        const path=boltPath(b.x*w,b.segs,b.spread,i);
+        const cycle=b.cycle.toFixed(1);
+        const beg=midBegin(i*53+200,b.cycle,0.05,0.95);
+        if(doAnimate){
+          svg+=`<g opacity="0" filter="url(#${uid}glow)">
+            <path d="${path}" fill="none" stroke="url(#${uid}bolt)" stroke-width="${b.sw}" stroke-linecap="round" stroke-linejoin="round"/>
+            <animate attributeName="opacity" values="0;0;0;${b.peak};${(b.peak*0.5).toFixed(2)};0;0;0" keyTimes="0;0.38;0.40;0.42;0.44;0.50;0.52;1" dur="${cycle}s" begin="${beg}s" repeatCount="indefinite"/>
+          </g>
+          <rect width="${w}" height="${h}" fill="#eef6ff" opacity="0">
+            <animate attributeName="opacity" values="0;0;0;${b.flash};0;0;0;0" keyTimes="0;0.38;0.40;0.42;0.46;0.50;0.52;1" dur="${cycle}s" begin="${beg}s" repeatCount="indefinite"/>
+          </rect>`;
+        }else svg+=`<path d="${path}" fill="none" stroke="url(#${uid}bolt)" stroke-width="${b.sw}" stroke-linecap="round" stroke-linejoin="round" opacity="${(b.peak*0.65).toFixed(2)}" filter="url(#${uid}glow)"/>`;
+      });
+
+      const nMist=isTitle?28:14;
+      for(let i=0;i<nMist;i++){
+        const seed=i*3+400;
+        const mx=rng(seed)*w,my=h*(0.55+rng(seed+1)*0.42);
+        const mr=(1.5+rng(seed+2)*3.5).toFixed(1);
+        const mop=(0.03+rng(seed+3)*0.06).toFixed(2);
+        if(doAnimate){
+          const dur=(1.2+rng(seed+4)*2.2).toFixed(1);
+          const beg=midBegin(seed+5,+dur,0,1);
+          svg+=`<circle cx="${f(mx)}" cy="${f(my)}" r="${mr}" fill="${a2}" opacity="${mop}">
+            <animateTransform attributeName="transform" type="translate" values="0 0; ${f((rng(seed+6)-0.5)*18)} ${f(-8-rng(seed+7)*20)}" dur="${dur}s" begin="${beg}s" repeatCount="indefinite"/>
+            <animate attributeName="opacity" values="0;${mop};0" dur="${dur}s" begin="${beg}s" repeatCount="indefinite"/>
+          </circle>`;
+        }
+      }
+
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden">${svg}</svg>`;
     },
     titleSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,true,doAnimate!==false);},
     contentSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,false,doAnimate!==false);},
@@ -1665,10 +1935,40 @@ M-29,-2.5 L-47,-19 L-44,0 L-47,19 L-29,2.5 Z"/>
     _build:(w,h,a1,a2,isTitle,doAnimate)=>{
       const uid='ct'+Math.random().toString(36).slice(2,7);
       const rng=(s)=>{let x=Math.sin(s*127.1+311.7)*43758.5;return x-Math.floor(x);};
-      const nB=isTitle?28:18,hY=isTitle?h*0.62:h*0.72;
+      const nB=isTitle?28:18;
+      const groundH=h*(isTitle?0.16:0.12);
+      const bldBase=isTitle?0.08:0.035;
+      const bldRange=isTitle?0.10:0.055;
+      const winBase=isTitle?0.25:0.10;
+      const winRange=isTitle?0.45:0.18;
+      const groupOp=isTitle?1:0.52;
       let buildings='',windows='',anims='';
-      for(let i=0;i<nB;i++){const bw=w/nB*(0.55+rng(i*3)*0.55),bh=hY*(0.2+rng(i*3+1)*0.65),bx=w/nB*i+(w/nB-bw)*0.5,by=hY-bh;buildings+=`<rect x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${bw.toFixed(1)}" height="${(bh+2).toFixed(1)}" fill="${i%3===0?a2:a1}" opacity="${(0.08+rng(i*3+2)*0.10).toFixed(2)}"/>`;const wC=Math.max(1,Math.floor(bw/9)),wR=Math.max(1,Math.floor(bh/11));for(let wr=0;wr<wR;wr++)for(let wc=0;wc<wC;wc++){if(rng(i*100+wr*10+wc)<0.45)continue;const wx=bx+wc*(bw/wC)+2,wy=by+wr*(bh/wR)+3,ww=Math.max(2,bw/wC-4),wh2=Math.max(2,bh/wR-4),wop=(0.25+rng(i*100+wr*10+wc+0.5)*0.45).toFixed(2),wcol=rng(i*100+wr*10+wc+0.3)>0.6?a2:a1;if(doAnimate){const dur=(1.5+rng(i*100+wr*10+wc+1)*4).toFixed(1),delay=(rng(i*100+wr*10+wc+2)*5).toFixed(1);anims+=`<rect x="${wx.toFixed(1)}" y="${wy.toFixed(1)}" width="${ww.toFixed(1)}" height="${wh2.toFixed(1)}" fill="${wcol}"><animate attributeName="opacity" values="${wop};${wop};${(+wop*0.3).toFixed(2)};${wop}" dur="${dur}s" begin="${delay}s" repeatCount="indefinite"/></rect>`;}else windows+=`<rect x="${wx.toFixed(1)}" y="${wy.toFixed(1)}" width="${ww.toFixed(1)}" height="${wh2.toFixed(1)}" fill="${wcol}" opacity="${wop}"/>`;}}
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><defs><linearGradient id="${uid}gg" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="${a1}" stop-opacity="0"/><stop offset="100%" stop-color="${a1}" stop-opacity="0.14"/></linearGradient></defs><rect y="${hY}" width="${w}" height="${h-hY}" fill="url(#${uid}gg)"/>${buildings}${doAnimate?anims:windows}</svg>`;
+      for(let i=0;i<nB;i++){
+        const bw=w/nB*(0.55+rng(i*3)*0.55);
+        const bh=h*(0.14+rng(i*3+1)*(isTitle?0.46:0.32));
+        const bx=w/nB*i+(w/nB-bw)*0.5;
+        const by=h-bh;
+        const bop=(bldBase+rng(i*3+2)*bldRange).toFixed(2);
+        buildings+=`<rect x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" fill="${i%3===0?a2:a1}" opacity="${bop}"/>`;
+        const wC=Math.max(1,Math.floor(bw/9)), wR=Math.max(1,Math.floor(bh/11));
+        for(let wr=0;wr<wR;wr++)for(let wc=0;wc<wC;wc++){
+          if(rng(i*100+wr*10+wc)<0.45) continue;
+          const wx=bx+wc*(bw/wC)+2, wy=by+wr*(bh/wR)+3;
+          const ww=Math.max(2,bw/wC-4), wh2=Math.max(2,bh/wR-4);
+          const wop=(winBase+rng(i*100+wr*10+wc+0.5)*winRange).toFixed(2);
+          const wdim=(+wop*0.35).toFixed(2);
+          const wcol=rng(i*100+wr*10+wc+0.3)>0.6?a2:a1;
+          if(doAnimate){
+            const dur=(1.8+rng(i*100+wr*10+wc+1)*3.2).toFixed(1);
+            const phase=(rng(i*100+wr*10+wc+2)*dur).toFixed(2);
+            anims+=`<rect x="${wx.toFixed(1)}" y="${wy.toFixed(1)}" width="${ww.toFixed(1)}" height="${wh2.toFixed(1)}" fill="${wcol}" opacity="${wop}"><animate attributeName="opacity" values="${wop};${wdim};${wop}" dur="${dur}s" begin="${phase}s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/></rect>`;
+          }else{
+            windows+=`<rect x="${wx.toFixed(1)}" y="${wy.toFixed(1)}" width="${ww.toFixed(1)}" height="${wh2.toFixed(1)}" fill="${wcol}" opacity="${wop}"/>`;
+          }
+        }
+      }
+      const ggOp=isTitle?0.14:0.07;
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><defs><linearGradient id="${uid}gg" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="${a1}" stop-opacity="0"/><stop offset="100%" stop-color="${a1}" stop-opacity="${ggOp}"/></linearGradient></defs><g opacity="${groupOp.toFixed(2)}"><rect y="${(h-groundH).toFixed(1)}" width="${w}" height="${groundH.toFixed(1)}" fill="url(#${uid}gg)"/>${buildings}${doAnimate?anims:windows}</g></svg>`;
     },
     titleSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,true,doAnimate!==false);},
     contentSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,false,doAnimate!==false);},
@@ -1774,16 +2074,133 @@ M-29,-2.5 L-47,-19 L-44,0 L-47,19 L-29,2.5 Z"/>
   },
   {
     name:'Цунами', nameEn:'Wave',
-    desc:'Японская волна — геометрическая',descEn:'Geometric Japanese-style wave',
+    desc:'Спиральная волна, пена в центр',descEn:'Spiral wave curling inward with foam',
     animated: true,
     _build:(w,h,a1,a2,isTitle,doAnimate)=>{
-      function wPath(yBase,amp,freq,phase){const n=120,pts=[];for(let i=0;i<=n;i++){const x=w*i/n;pts.push(`${x.toFixed(1)},${(yBase+Math.sin((i/n*Math.PI*2*freq)+phase)*amp).toFixed(1)}`);}return `M${pts.join(' L')} L${w},${h+10} L0,${h+10} Z`;}
-      const layers=isTitle?[[h*0.50,h*0.12,2.5,0,a1,'0.18'],[h*0.62,h*0.09,2.0,1.2,a2,'0.14'],[h*0.72,h*0.06,1.5,0.8,a1,'0.10']]:[[h*0.65,h*0.09,2.5,0,a1,'0.16'],[h*0.75,h*0.06,2.0,1.0,a2,'0.12']];
+      const uid='tsu'+Math.random().toString(36).slice(2,7);
+      const rng=s=>{let x=Math.sin(s*127.1+311.7)*43758.5;return x-Math.floor(x);};
+      const f=n=>n.toFixed(1);
+      const cx=isTitle?w*0.11:w*0.08;
+      const cy=isTitle?h*0.42:h*0.54;
+      const Rmax=Math.hypot(w,h)*1.28;
+      const Rmin=2.5;
+      const turns=isTitle?6.2:5.2;
+      const tMax=turns*Math.PI*2;
+      const rot0=isTitle?-0.58:-0.18;
+      const sp='0.38 0 0.62 1';
+
+      function rAt(t){ return Rmin+(Rmax-Rmin)*(1-t/tMax); }
+
+      function ptAt(t,lane,rot){
+        const r=Math.max(Rmin,rAt(t)+lane);
+        const ang=t+rot;
+        return [cx+Math.cos(ang)*r, cy+Math.sin(ang)*r];
+      }
+
+      function spiralBand(thick,rot,lane){
+        const steps=128,tA=0,tB=tMax*0.992;
+        const out=[],inn=[];
+        for(let i=0;i<=steps;i++){
+          const t=tA+(tB-tA)*i/steps;
+          const taper=Math.min(1,(tMax-t)/(tMax*0.12));
+          const th=thick*taper;
+          const rMid=Math.max(Rmin,rAt(t)+lane);
+          const ang=t+rot;
+          out.push([cx+Math.cos(ang)*(rMid+th*0.5), cy+Math.sin(ang)*(rMid+th*0.5)]);
+          inn.push([cx+Math.cos(ang)*Math.max(1,rMid-th*0.5), cy+Math.sin(ang)*Math.max(1,rMid-th*0.5)]);
+        }
+        const pt=p=>f(p[0])+','+f(p[1]);
+        return 'M'+out.map(pt).join(' L')+' L'+inn.reverse().map(pt).join(' L')+' Z';
+      }
+
+      function spiralCrest(rot,lane){
+        const steps=100,pts=[];
+        for(let i=0;i<=steps;i++){
+          const t=(tMax*0.992)*i/steps;
+          const p=ptAt(t,lane,rot);
+          pts.push(f(p[0])+','+f(p[1]));
+        }
+        return 'M'+pts.join(' L');
+      }
+
+      const waveTh=isTitle?Rmax*0.055:Rmax*0.048;
+      const bands=isTitle?[
+        {thick:waveTh*1.35, rot:rot0,       lane:0,           col:a1, op:'0.11'},
+        {thick:waveTh,      rot:rot0+0.12,   lane:waveTh*0.6,  col:a2, op:'0.08'},
+        {thick:waveTh*0.72, rot:rot0+0.22,   lane:waveTh*1.1,  col:a1, op:'0.06'},
+      ]:[
+        {thick:waveTh*1.2,  rot:rot0,       lane:0,           col:a1, op:'0.09'},
+        {thick:waveTh*0.8,  rot:rot0+0.10,  lane:waveTh*0.5,  col:a2, op:'0.07'},
+      ];
+
       let waveSvg='';
-      layers.forEach(([yb,amp,freq,phase,col,op],idx)=>{if(doAnimate){const dur=(3+idx*1.2).toFixed(1);waveSvg+=`<path fill="${col}" opacity="${op}"><animate attributeName="d" values="${wPath(yb,amp,freq,phase)};${wPath(yb,amp,freq,phase+Math.PI)};${wPath(yb,amp,freq,phase)}" dur="${dur}s" repeatCount="indefinite" calcMode="linear"/></path>`;}else waveSvg+=`<path d="${wPath(yb,amp,freq,phase)}" fill="${col}" opacity="${op}"/>`;});
-      const sx=isTitle?w*0.12:w*0.08,sy=isTitle?h*0.35:h*0.55,sr=isTitle?h*0.14:h*0.10;
-      let spiral='';for(let t=0;t<720;t+=8){const a=t*Math.PI/180,r=sr*t/720;spiral+=t===0?`M${(sx+Math.cos(a)*r).toFixed(1)},${(sy-Math.sin(a)*r).toFixed(1)} `:`L${(sx+Math.cos(a)*r).toFixed(1)},${(sy-Math.sin(a)*r).toFixed(1)} `;}
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${waveSvg}<path d="${spiral}" fill="none" stroke="${a1}" stroke-width="1.5" opacity="0.20" stroke-linecap="round"/></svg>`;
+      bands.forEach(bd=>{
+        waveSvg+=`<path d="${spiralBand(bd.thick,bd.rot,bd.lane)}" fill="${bd.col}" opacity="${bd.op}" filter="url(#${uid}wave)"/>`;
+        waveSvg+=`<path d="${spiralCrest(bd.rot,bd.lane)}" fill="none" stroke="#fff" stroke-width="1" opacity="${(+bd.op*0.45).toFixed(2)}" stroke-linecap="round" filter="url(#${uid}wave)"/>`;
+      });
+
+      const vortexR=isTitle?Rmax*0.09:Rmax*0.07;
+      const vortexSvg=`<circle cx="${f(cx)}" cy="${f(cy)}" r="${f(vortexR)}" fill="url(#${uid}vortex)" filter="url(#${uid}vortexBlur)" opacity="0.9"/>
+        <circle cx="${f(cx)}" cy="${f(cy)}" r="${f(vortexR*0.35)}" fill="url(#${uid}core)" filter="url(#${uid}vortexBlur)" opacity="0.55"/>`;
+
+      const nFoam=isTitle?140:88;
+      let foamSvg='';
+      for(let i=0;i<nFoam;i++){
+        const t0=rng(i*17)*tMax*0.72;
+        const lane=(rng(i*17+1)-0.5)*waveTh*2.2;
+        const p0=ptAt(t0,lane,rot0);
+        const t1=tMax*(0.88+rng(i*17+2)*0.11);
+        const lane1=lane*0.25;
+        const p1=ptAt(t1,lane1,rot0+0.35);
+        const tM=(t0+t1)*0.5;
+        const pM=ptAt(tM,(lane+lane1)*0.5,rot0+0.18);
+        const sz=(0.7+rng(i*17+3)*3.2).toFixed(2);
+        const foamCol=rng(i*17+4)>0.65?'#fff':(rng(i*17+4)>0.35?a2:a1);
+        const op=Math.min(0.38,0.05+rng(i*17+5)*0.22).toFixed(2);
+        const dur=(28+rng(i*17+6)*34).toFixed(1);
+        const beg=(rng(i*17+7)*32).toFixed(1);
+        const opHi=Math.min(0.42,(+op*1.2).toFixed(2));
+        const opLo=(+op*0.55).toFixed(2);
+        if(doAnimate){
+          foamSvg+=`<circle cx="${f(p0[0])}" cy="${f(p0[1])}" r="${sz}" fill="${foamCol}" opacity="${op}" filter="url(#${uid}foam)">
+            <animate attributeName="cx" values="${f(p0[0])};${f(pM[0])};${f(p1[0])};${f(p0[0])}" dur="${dur}s" begin="${beg}s" repeatCount="indefinite" calcMode="spline" keySplines="${sp};${sp};${sp}"/>
+            <animate attributeName="cy" values="${f(p0[1])};${f(pM[1])};${f(p1[1])};${f(p0[1])}" dur="${dur}s" begin="${beg}s" repeatCount="indefinite" calcMode="spline" keySplines="${sp};${sp};${sp}"/>
+            <animate attributeName="r" values="${sz};${(+sz*1.08).toFixed(2)};${(+sz*0.7).toFixed(2)};${sz}" dur="${(dur*1.05).toFixed(1)}s" begin="${beg}s" repeatCount="indefinite" calcMode="spline" keySplines="${sp};${sp};${sp}"/>
+            <animate attributeName="opacity" values="${op};${opHi};${opLo};${op}" dur="${(dur*0.95).toFixed(1)}s" begin="${beg}s" repeatCount="indefinite"/>
+          </circle>`;
+        }else{
+          foamSvg+=`<circle cx="${f(p0[0])}" cy="${f(p0[1])}" r="${sz}" fill="${foamCol}" opacity="${op}" filter="url(#${uid}foam)"/>`;
+        }
+      }
+
+      const rotDur=isTitle?88:98;
+      const rotCx=f(cx), rotCy=f(cy);
+      const rotAnim=doAnimate
+        ?`<animateTransform attributeName="transform" type="rotate" from="0 ${rotCx} ${rotCy}" to="360 ${rotCx} ${rotCy}" dur="${rotDur}s" repeatCount="indefinite" calcMode="linear"/>`
+        :'';
+
+      const blurW=isTitle?16:12;
+      const defs=`<defs>
+        <filter id="${uid}wave" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="${blurW}"/></filter>
+        <filter id="${uid}foam" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="1.4"/></filter>
+        <filter id="${uid}vortexBlur" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="${blurW*1.4}"/></filter>
+        <radialGradient id="${uid}vortex" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#fff" stop-opacity="0.14"/>
+          <stop offset="35%" stop-color="${a1}" stop-opacity="0.07"/>
+          <stop offset="70%" stop-color="${a2}" stop-opacity="0.03"/>
+          <stop offset="100%" stop-color="${a1}" stop-opacity="0"/>
+        </radialGradient>
+        <radialGradient id="${uid}core" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#fff" stop-opacity="0.22"/>
+          <stop offset="55%" stop-color="${a2}" stop-opacity="0.06"/>
+          <stop offset="100%" stop-opacity="0"/>
+        </radialGradient>
+      </defs>`;
+
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden">
+        ${defs}
+        <g opacity="0.92">${rotAnim}${vortexSvg}${waveSvg}<g opacity="0.85">${foamSvg}</g></g>
+      </svg>`;
     },
     titleSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,true,doAnimate!==false);},
     contentSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,false,doAnimate!==false);},
@@ -1825,22 +2242,600 @@ M-29,-2.5 L-47,-19 L-44,0 L-47,19 L-29,2.5 Z"/>
     name:'ДНК', nameEn:'DNA',
     desc:'Двойная спираль, молекулярные связи',descEn:'Double helix, molecular bonds',
     animated: true,
+    renderer: 'dna',
+
+    buildDnaCfg(w, h, a1, a2, isTitle, animated){
+      return {
+        w, h, a1, a2, isTitle, animated: animated !== false,
+        cx: isTitle ? w * 0.84 : w * 0.88,
+        radius: isTitle ? w * 0.12 : w * 0.085,
+        depth: isTitle ? w * 0.065 : w * 0.045,
+        turns: isTitle ? 3.8 : 2.8,
+        segments: isTitle ? 96 : 72,
+        scrollSpeed: isTitle ? 30 : 24,
+        rotSpeed: isTitle ? 0.38 : 0.30
+      };
+    },
+
+    _buildBgSvg(w, h, a1, a2, isTitle, doAnimate){
+      const uid = 'dn' + Math.random().toString(36).slice(2, 7);
+      const sp = '0.42 0 0.58 1';
+      const blobs = isTitle ? [
+        {cx:w*.12, cy:h*.22, r:h*.18, g:'g1', dcx:w*.09, dcy:h*.12, dcx2:-w*.05, dcy2:h*.07, dr:.14, dur:9,  begin:0},
+        {cx:w*.08, cy:h*.72, r:h*.14, g:'g2', dcx:w*.06, dcy:-h*.10, dcx2:-w*.07, dcy2:-h*.05, dr:.16, dur:11, begin:2.4},
+        {cx:w*.22, cy:h*.48, r:h*.11, g:'g1', dcx:-w*.08, dcy:h*.09, dcx2:w*.04, dcy2:-h*.06, dr:.12, dur:13, begin:4.8},
+        {cx:w*.04, cy:h*.42, r:h*.09, g:'g2', dcx:w*.05, dcy:h*.06, dcx2:-w*.03, dcy2:h*.08, dr:.11, dur:15, begin:1.2},
+      ] : [
+        {cx:w*.10, cy:h*.55, r:h*.12, g:'g1', dcx:w*.07, dcy:-h*.08, dcx2:-w*.04, dcy2:h*.05, dr:.13, dur:10, begin:0},
+        {cx:w*.18, cy:h*.28, r:h*.09, g:'g2', dcx:-w*.06, dcy:h*.07, dcx2:w*.05, dcy2:-h*.04, dr:.12, dur:12, begin:3.1},
+      ];
+      let blobSvg = '';
+      blobs.forEach((b) => {
+        const cx0 = b.cx, cy0 = b.cy, r0 = b.r;
+        const cx1 = b.cx + b.dcx, cy1 = b.cy + b.dcy;
+        const cx2 = b.cx + b.dcx2, cy2 = b.cy + b.dcy2;
+        const r1 = r0 * (1 + b.dr), r2 = r0 * (1 - b.dr * 0.55);
+        const f = (n) => n.toFixed(1);
+        const grad = `url(#${uid}${b.g})`;
+        const blur = `url(#${uid}blur)`;
+        if (doAnimate) {
+          const beg = b.begin.toFixed(1);
+          const durCy = (b.dur * 1.19).toFixed(1);
+          const durR = (b.dur * 0.88).toFixed(1);
+          const durOp = (b.dur * 1.07).toFixed(1);
+          blobSvg += `<circle cx="${f(cx0)}" cy="${f(cy0)}" r="${f(r0)}" fill="${grad}" filter="${blur}" opacity="0.92">
+            <animate attributeName="cx" values="${f(cx0)};${f(cx1)};${f(cx2)};${f(cx0)}" dur="${b.dur}s" begin="${beg}s" repeatCount="indefinite" calcMode="spline" keySplines="${sp};${sp};${sp}"/>
+            <animate attributeName="cy" values="${f(cy0)};${f(cy1)};${f(cy2)};${f(cy0)}" dur="${durCy}s" begin="${beg}s" repeatCount="indefinite" calcMode="spline" keySplines="${sp};${sp};${sp}"/>
+            <animate attributeName="r" values="${f(r0)};${f(r1)};${f(r2)};${f(r0)}" dur="${durR}s" begin="${beg}s" repeatCount="indefinite" calcMode="spline" keySplines="${sp};${sp};${sp}"/>
+            <animate attributeName="opacity" values="0.92;0.72;0.98;0.92" dur="${durOp}s" begin="${beg}s" repeatCount="indefinite" calcMode="spline" keySplines="${sp};${sp};${sp}"/>
+          </circle>`;
+        } else {
+          blobSvg += `<circle cx="${f(cx0)}" cy="${f(cy0)}" r="${f(r0)}" fill="${grad}" filter="${blur}" opacity="0.85"/>`;
+        }
+      });
+      const blurDev = isTitle ? 30 : 22;
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden">
+        <defs>
+          <filter id="${uid}blur" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="${blurDev}"/></filter>
+          <radialGradient id="${uid}g1" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="${a1}" stop-opacity="0.14"/><stop offset="70%" stop-color="${a1}" stop-opacity="0.05"/><stop offset="100%" stop-color="${a1}" stop-opacity="0"/></radialGradient>
+          <radialGradient id="${uid}g2" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="${a2}" stop-opacity="0.11"/><stop offset="70%" stop-color="${a2}" stop-opacity="0.04"/><stop offset="100%" stop-color="${a2}" stop-opacity="0"/></radialGradient>
+        </defs>${blobSvg}</svg>`;
+    },
+
+    titleSvg(w, h, a1, a2, doAnimate){ return this._buildBgSvg(w, h, a1, a2, true, doAnimate !== false); },
+    contentSvg(w, h, a1, a2, doAnimate){ return this._buildBgSvg(w, h, a1, a2, false, doAnimate !== false); },
+  },
+  {
+    name:'Пыль', nameEn:'Dust',
+    desc:'Пылинки в лучах, переливающийся туман',descEn:'Floating dust motes, shifting haze',
+    animated: true,
     _build:(w,h,a1,a2,isTitle,doAnimate)=>{
-      const uid='dn'+Math.random().toString(36).slice(2,7);
-      const hX=isTitle?w*0.88:w*0.92,hW=isTitle?w*0.13:w*0.10,nT=isTitle?4:3,nP=nT*24,step=h/nP;
-      const p1=[],p2=[];let rungs='';
-      for(let i=0;i<=nP;i++){const t=i/nP*nT*Math.PI*2,y=(i*step).toFixed(1),x1=(hX+Math.cos(t)*hW).toFixed(1),x2=(hX+Math.cos(t+Math.PI)*hW).toFixed(1);p1.push(`${x1},${y}`);p2.push(`${x2},${y}`);if(i%4===0&&i>0&&i<nP)rungs+=`<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${i%8===0?a2:a1}" stroke-width="1.2" opacity="${(0.10+Math.abs(Math.cos(t))*0.15).toFixed(2)}"/>`;}
-      let nodes='';for(let i=3;i<nP;i+=6){const t=i/nP*nT*Math.PI*2,y=(i*step).toFixed(1);nodes+=`<circle cx="${(hX+Math.cos(t)*hW).toFixed(1)}" cy="${y}" r="2.5" fill="${a1}" opacity="0.30"/><circle cx="${(hX+Math.cos(t+Math.PI)*hW).toFixed(1)}" cy="${y}" r="2" fill="${a2}" opacity="0.25"/>`;}
-      const tx=`<animateTransform attributeName="transform" type="translate" from="0 0" to="0 ${(-step*4).toFixed(1)}" dur="2s" repeatCount="indefinite" calcMode="linear"/>`;
-      const svg=doAnimate?`<g><polyline points="${p1.join(' ')}" fill="none" stroke="${a1}" stroke-width="1.8" opacity="0.25" stroke-linecap="round">${tx}</polyline></g><g><polyline points="${p2.join(' ')}" fill="none" stroke="${a2}" stroke-width="1.8" opacity="0.20" stroke-linecap="round">${tx}</polyline></g><g>${rungs}${tx}</g>`:`<polyline points="${p1.join(' ')}" fill="none" stroke="${a1}" stroke-width="1.8" opacity="0.25" stroke-linecap="round"/><polyline points="${p2.join(' ')}" fill="none" stroke="${a2}" stroke-width="1.8" opacity="0.20" stroke-linecap="round"/>${rungs}`;
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden"><clipPath id="${uid}cp"><rect width="${w}" height="${h}"/></clipPath><g clip-path="url(#${uid}cp)">${svg}${nodes}</g></svg>`;
+      const uid='dst'+Math.random().toString(36).slice(2,7);
+      const rng=s=>{let x=Math.sin(s*127.1+311.7)*43758.5;return x-Math.floor(x);};
+      const f=n=>n.toFixed(1);
+      const sp='0.4 0 0.6 1';
+      const cx0=w*0.5, cy0=h*0.5;
+      const zoneRx=w*(isTitle?0.44:0.38);
+      const zoneRy=h*(isTitle?0.42:0.36);
+
+      function inCenter(x,y){
+        const dx=(x-cx0)/zoneRx, dy=(y-cy0)/zoneRy;
+        return dx*dx+dy*dy<1;
+      }
+
+      function pickPos(seed){
+        for(let a=0;a<14;a++){
+          const x=rng(seed+a*5.3)*w;
+          const y=rng(seed+a*5.3+1.7)*h;
+          if(isTitle||!inCenter(x,y)) return [x,y];
+        }
+        const ang=rng(seed*2.1)*Math.PI*2;
+        const r=0.62+rng(seed*2.1+3)*0.38;
+        return [cx0+Math.cos(ang)*zoneRx*r*1.05, cy0+Math.sin(ang)*zoneRy*r*1.05];
+      }
+
+      // Отрицательный begin — при открытии слайда анимация уже в разгаре, пылинки на экране.
+      function midBegin(seed,dur,visLo,visHi){
+        const phase=visLo+rng(seed)*(visHi-visLo);
+        return (-phase*dur).toFixed(2);
+      }
+
+      const gradBlobs=isTitle?[
+        {cx:w*.20, cy:h*.32, rx:w*.48, ry:h*.34, fill:a1, op:0.13, dcx:w*.08, dcy:h*.11, dur:16},
+        {cx:w*.78, cy:h*.58, rx:w*.44, ry:h*.32, fill:a2, op:0.11, dcx:-w*.07, dcy:-h*.09, dur:19},
+        {cx:w*.52, cy:h*.18, rx:w*.38, ry:h*.28, fill:a1, op:0.09, dcx:w*.05, dcy:h*.08, dur:22},
+        {cx:w*.15, cy:h*.78, rx:w*.36, ry:h*.26, fill:a2, op:0.08, dcx:w*.06, dcy:-h*.07, dur:18},
+      ]:[
+        {cx:w*.14, cy:h*.28, rx:w*.46, ry:h*.32, fill:a1, op:0.09, dcx:w*.06, dcy:h*.08, dur:18},
+        {cx:w*.86, cy:h*.72, rx:w*.40, ry:h*.28, fill:a2, op:0.07, dcx:-w*.05, dcy:-h*.06, dur:21},
+        {cx:w*.50, cy:h*.88, rx:w*.34, ry:h*.22, fill:a1, op:0.06, dcx:w*.04, dcy:-h*.05, dur:24},
+      ];
+
+      let bgSvg='';
+      gradBlobs.forEach((b,i)=>{
+        const x0=f(b.cx), x1=f(b.cx+b.dcx);
+        const y0=f(b.cy), y1=f(b.cy+b.dcy);
+        const op0=b.op.toFixed(2), op1=(b.op*0.45).toFixed(2);
+        const beg=midBegin(i*41.3+7,b.dur,0.08,0.92);
+        if(doAnimate){
+          bgSvg+=`<ellipse cx="${x0}" cy="${y0}" rx="${f(b.rx)}" ry="${f(b.ry)}" fill="${b.fill}" opacity="${op0}" filter="url(#${uid}haze)">
+            <animate attributeName="cx" values="${x0};${x1};${x0}" dur="${b.dur}s" begin="${beg}s" repeatCount="indefinite" calcMode="spline" keySplines="${sp};${sp}"/>
+            <animate attributeName="cy" values="${y0};${y1};${y0}" dur="${(b.dur*1.14).toFixed(1)}s" begin="${beg}s" repeatCount="indefinite" calcMode="spline" keySplines="${sp};${sp}"/>
+            <animate attributeName="opacity" values="${op0};${op1};${op0}" dur="${(b.dur*0.85).toFixed(1)}s" begin="${beg}s" repeatCount="indefinite" calcMode="spline" keySplines="${sp};${sp}"/>
+          </ellipse>`;
+        }else{
+          bgSvg+=`<ellipse cx="${x0}" cy="${y0}" rx="${f(b.rx)}" ry="${f(b.ry)}" fill="${b.fill}" opacity="${op0}" filter="url(#${uid}haze)"/>`;
+        }
+      });
+
+      const nDust=isTitle?190:74;
+      let dustSvg='';
+      for(let i=0;i<nDust;i++){
+        const seed=i*23.7+311;
+        const p0=pickPos(seed);
+        const driftX=(rng(seed+2)-0.5)*(isTitle?w*0.22:w*0.18);
+        const driftY=(rng(seed+3)-0.5)*(isTitle?h*0.20:h*0.16);
+        const x0=p0[0], y0=p0[1];
+        const x1=x0+driftX, y1=y0+driftY;
+        const xm=(x0+x1)*0.5+(rng(seed+4)-0.5)*w*0.04;
+        const ym=(y0+y1)*0.5+(rng(seed+5)-0.5)*h*0.04;
+        let sz=0.35+rng(seed+6)*(isTitle?5.2:4.2);
+        if(!isTitle&&inCenter(x0,y0)) sz*=0.65;
+        const szStr=sz.toFixed(2);
+        const roll=rng(seed+7);
+        const col=roll>0.72?'#fff':(roll>0.38?(roll>0.55?a2:a1):'#c8cdd8');
+        let peak=0.06+rng(seed+8)*0.34;
+        if(!isTitle&&inCenter(xm,ym)) peak*=0.55;
+        const pHi=Math.min(0.42,peak).toFixed(2);
+        const pMid=(peak*0.75).toFixed(2);
+        const durNum=14+rng(seed+9)*22;
+        const dur=durNum.toFixed(1);
+        const beg=midBegin(seed+10,durNum,0.26,0.64);
+        const blur=sz>2.5?` filter="url(#${uid}dust)"`:'';
+        if(doAnimate){
+          dustSvg+=`<circle cx="${f(x0)}" cy="${f(y0)}" r="${szStr}" fill="${col}" opacity="${pMid}"${blur}>
+            <animate attributeName="cx" values="${f(x0)};${f(xm)};${f(x1)};${f(x0)}" dur="${dur}s" begin="${beg}s" repeatCount="indefinite" calcMode="spline" keySplines="${sp};${sp};${sp}"/>
+            <animate attributeName="cy" values="${f(y0)};${f(ym)};${f(y1)};${f(y0)}" dur="${(dur*1.08).toFixed(1)}s" begin="${beg}s" repeatCount="indefinite" calcMode="spline" keySplines="${sp};${sp};${sp}"/>
+            <animate attributeName="opacity" values="0;0;${pHi};${pMid};0;0" keyTimes="0;0.08;0.22;0.68;0.92;1" dur="${dur}s" begin="${beg}s" repeatCount="indefinite"/>
+            <animate attributeName="r" values="${szStr};${(sz*1.15).toFixed(2)};${(sz*0.82).toFixed(2)};${szStr}" dur="${(dur*1.12).toFixed(1)}s" begin="${beg}s" repeatCount="indefinite" calcMode="spline" keySplines="${sp};${sp};${sp}"/>
+          </circle>`;
+        }else{
+          dustSvg+=`<circle cx="${f(x0)}" cy="${f(y0)}" r="${szStr}" fill="${col}" opacity="${pMid}"${blur}/>`;
+        }
+      }
+
+      const hazeBlur=isTitle?34:26;
+      const defs=`<defs>
+        <filter id="${uid}haze" x="-45%" y="-45%" width="190%" height="190%"><feGaussianBlur stdDeviation="${hazeBlur}"/></filter>
+        <filter id="${uid}dust" x="-120%" y="-120%" width="340%" height="340%"><feGaussianBlur stdDeviation="0.9"/></filter>
+      </defs>`;
+
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden">
+        ${defs}${bgSvg}<g opacity="${isTitle?'0.95':'0.88'}">${dustSvg}</g>
+      </svg>`;
     },
     titleSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,true,doAnimate!==false);},
     contentSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,false,doAnimate!==false);},
   },
+  {
+    name:'Соты', nameEn:'Honeycomb',
+    desc:'Шестиугольная сетка с волной света',descEn:'Hex grid with rippling light',
+    animated: true,
+    _build:(w,h,a1,a2,isTitle,doAnimate)=>{
+      const uid='hx'+Math.random().toString(36).slice(2,7);
+      const rng=s=>{let x=Math.sin(s*53.2+9.1)*43758.5;return x-Math.floor(x);};
+      const f=n=>n.toFixed(1);
+      const hexR=isTitle?26:20;
+      const dx=hexR*1.732, dy=hexR*1.5;
+      function hexD(hx,hy,r){
+        let d='';
+        for(let k=0;k<6;k++){const a=Math.PI/6+k*Math.PI/3;const x=hx+Math.cos(a)*r,y=hy+Math.sin(a)*r;d+=(k?'L':'M')+f(x)+','+f(y);}
+        return d+'Z';
+      }
+      let hexSvg='';
+      let idx=0;
+      for(let row=-1;row*dy<h+hexR;row++){
+        for(let col=-1;col*w/dx<w+hexR;col++){
+          const hx=col*dx+(row%2?dx*0.5:0), hy=row*dy;
+          const dist=Math.hypot(hx-w*0.5,hy-h*0.5)/(Math.hypot(w,h)*0.55);
+          const baseOp=Math.max(0.02,0.09-dist*0.06);
+          const colFill=idx%3===0?a1:(idx%3===1?a2:a1);
+          const phase=rng(idx*7)*6.28;
+          const dur=(5+rng(idx*7+1)*4).toFixed(1);
+          const beg=(-(rng(idx*7+2)*+dur)).toFixed(2);
+          const op0=baseOp.toFixed(3), op1=(baseOp*0.35).toFixed(3);
+          if(doAnimate){
+            hexSvg+=`<path d="${hexD(hx,hy,hexR*0.92)}" fill="none" stroke="${colFill}" stroke-width="1.1" opacity="${op0}">
+              <animate attributeName="opacity" values="${op0};${op1};${op0}" dur="${dur}s" begin="${beg}s" repeatCount="indefinite"/>
+            </path>`;
+          }else hexSvg+=`<path d="${hexD(hx,hy,hexR*0.92)}" fill="none" stroke="${colFill}" stroke-width="1" opacity="${op0}"/>`;
+          idx++;
+        }
+      }
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden" opacity="0.9">${hexSvg}</svg>`;
+    },
+    titleSvg(w,h,a1,a2,d){return this._build(w,h,a1,a2,true,d!==false);},
+    contentSvg(w,h,a1,a2,d){return this._build(w,h,a1,a2,false,d!==false);},
+  },
+  {
+    name:'Галактика', nameEn:'Galaxy',
+    desc:'Спираль звёзд, медленное вращение',descEn:'Spiral star disk, slow rotation',
+    animated: true,
+    renderer: 'galaxy',
+    buildGalaxyCfg(w,h,a1,a2,isTitle,animated){
+      return {w,h,a1,a2,isTitle,animated:animated!==false,particles:isTitle?1800:1100,cx:isTitle?0.52:0.54,cy:isTitle?0.48:0.50,maxR:isTitle?0.56:0.48,rotSpeed:isTitle?0.052:0.044,tilt:0.38,arms:4,twist:3.4,flat:0.28,depthScale:0.38,brightness:isTitle?1.85:1.65};
+    },
+    _buildBg(w,h,a1,a2,isTitle){
+      const uid='gal'+Math.random().toString(36).slice(2,7);
+      const f=n=>n.toFixed(0);
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden">
+        <defs><radialGradient id="${uid}g" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#fff" stop-opacity="0.22"/><stop offset="35%" stop-color="${a1}" stop-opacity="0.12"/><stop offset="70%" stop-color="${a2}" stop-opacity="0.06"/><stop offset="100%" stop-opacity="0"/></radialGradient></defs>
+        <circle cx="${f(w*(isTitle?0.52:0.54))}" cy="${f(h*(isTitle?0.48:0.50))}" r="${f(Math.min(w,h)*(isTitle?0.20:0.16))}" fill="url(#${uid}g)"/></svg>`;
+    },
+    titleSvg(w,h,a1,a2){return this._buildBg(w,h,a1,a2,true);},
+    contentSvg(w,h,a1,a2){return this._buildBg(w,h,a1,a2,false);},
+  },
+  {
+    name:'Каустика', nameEn:'Caustics',
+    desc:'Подводные блики света',descEn:'Underwater caustic light',
+    animated: true,
+    renderer: 'caustics',
+    buildCausticsCfg(w,h,a1,a2,isTitle,animated){
+      return {w,h,a1,a2,isTitle,animated:animated!==false,alpha:isTitle?0.48:0.38,speed:isTitle?1.0:0.85};
+    },
+    _buildBg(w,h,a1,a2,isTitle){
+      const uid='cau'+Math.random().toString(36).slice(2,7);
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden">
+        <defs><linearGradient id="${uid}bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${a2}" stop-opacity="0.16"/><stop offset="100%" stop-color="${a1}" stop-opacity="0.22"/></linearGradient></defs>
+        <rect width="${w}" height="${h}" fill="url(#${uid}bg)"/></svg>`;
+    },
+    titleSvg(w,h,a1,a2){return this._buildBg(w,h,a1,a2,true);},
+    contentSvg(w,h,a1,a2){return this._buildBg(w,h,a1,a2,false);},
+  },
+  {
+    name:'Звёздопад', nameEn:'Starfall',
+    desc:'Звёздное небо, редкие метеоры',descEn:'Starry sky with occasional meteors',
+    animated: true,
+    _build:(w,h,a1,a2,isTitle,doAnimate)=>{
+      const uid='sf'+Math.random().toString(36).slice(2,7);
+      const rng=s=>{let x=Math.sin(s*67.3+2.9)*43758.5;return x-Math.floor(x);};
+      const f=n=>n.toFixed(1);
+      const midBegin=(seed,dur,lo,hi)=>{const p=lo+rng(seed)*(hi-lo);return(-p*dur).toFixed(2);};
+      const ti=typeof appliedThemeIdx!=='undefined'&&appliedThemeIdx>=0?appliedThemeIdx
+        :(typeof selTheme!=='undefined'&&selTheme>=0?selTheme:-1);
+      const theme=ti>=0&&typeof THEMES!=='undefined'?THEMES[ti]:null;
+      const isLight=theme&&theme.dark===false;
+
+      const starOpMin=isLight?0.24:0.06;
+      const starOpMax=isLight?0.72:0.41;
+      const tailStops=isLight
+        ? `<stop offset="0%" stop-color="${a2}" stop-opacity="0"/><stop offset="50%" stop-color="${a1}" stop-opacity="0.45"/><stop offset="100%" stop-color="${a1}" stop-opacity="1"/>`
+        : `<stop offset="0%" stop-color="${a2}" stop-opacity="0"/><stop offset="55%" stop-color="#fff" stop-opacity="0.2"/><stop offset="100%" stop-color="#fff" stop-opacity="1"/>`;
+      const metPeakLo=isLight?0.62:0.45;
+      const metPeakHi=isLight?0.95:0.90;
+
+      const nStars=isTitle?95:52;
+      let svg=`<defs><linearGradient id="${uid}tail" gradientUnits="objectBoundingBox" x1="0" y1="0.5" x2="1" y2="0.5">${tailStops}</linearGradient></defs>`;
+      for(let i=0;i<nStars;i++){
+        const sx=rng(i*5)*w,sy=rng(i*5+1)*h,sr=(0.3+rng(i*5+2)*(isLight?1.8:1.4)).toFixed(2);
+        const op=(starOpMin+rng(i*5+3)*(starOpMax-starOpMin)).toFixed(2);
+        const col=isLight
+          ?(rng(i*5+4)>0.45?a1:a2)
+          :(rng(i*5+4)>0.7?'#fff':a2);
+        if(doAnimate){
+          const dur=(2+rng(i*5+5)*3).toFixed(1),beg=midBegin(i*5+6,+dur,0.1,0.95);
+          const twLo=isLight?(op*0.45).toFixed(2):(op*0.3).toFixed(2);
+          svg+=`<circle cx="${f(sx)}" cy="${f(sy)}" r="${sr}" fill="${col}" opacity="${op}">
+            <animate attributeName="opacity" values="${op};${twLo};${op}" dur="${dur}s" begin="${beg}s" repeatCount="indefinite"/>
+          </circle>`;
+        }else svg+=`<circle cx="${f(sx)}" cy="${f(sy)}" r="${sr}" fill="${col}" opacity="${op}"/>`;
+      }
+      const nMet=isTitle?14:6;
+      for(let i=0;i<nMet;i++){
+        const seed=i*29+200;
+        const ang=0.58+rng(seed+3)*0.42;
+        const ca=Math.cos(ang), sa=Math.sin(ang);
+        const len=40+rng(seed+2)*(isTitle?260:180);
+        const tx0=rng(seed)*w*0.85+w*0.05, ty0=rng(seed+1)*h*0.32;
+        const travel=len*(1.1+rng(seed+6)*0.5);
+        const tx1=tx0+ca*travel, ty1=ty0+sa*travel;
+        const hx0=tx0+ca*len, hy0=ty0+sa*len;
+        const hx1=tx1+ca*len, hy1=ty1+sa*len;
+        const sw=(0.8+rng(seed+7)*(isLight?2.8:2.2)).toFixed(1);
+        const peak=(metPeakLo+rng(seed+8)*(metPeakHi-metPeakLo)).toFixed(2);
+        const cycleNum=(3.2+rng(seed+4)*4.8);
+        const cycle=cycleNum.toFixed(2);
+        const beg=midBegin(seed+5,cycleNum,0.05,0.92);
+        if(doAnimate){
+          svg+=`<line x1="${f(tx0)}" y1="${f(ty0)}" x2="${f(hx0)}" y2="${f(hy0)}" stroke="url(#${uid}tail)" stroke-width="${sw}" stroke-linecap="round" opacity="0">
+            <animate attributeName="opacity" values="0;0;${peak};${peak};0;0" keyTimes="0;0.28;0.68;0.74;0.80;1" dur="${cycle}s" begin="${beg}s" repeatCount="indefinite"/>
+            <animate attributeName="x1" values="${f(tx0)};${f(tx1)}" keyTimes="0;1" dur="${cycle}s" begin="${beg}s" repeatCount="indefinite" calcMode="spline" keySplines="0.1 0 0.85 1"/>
+            <animate attributeName="y1" values="${f(ty0)};${f(ty1)}" keyTimes="0;1" dur="${cycle}s" begin="${beg}s" repeatCount="indefinite" calcMode="spline" keySplines="0.1 0 0.85 1"/>
+            <animate attributeName="x2" values="${f(hx0)};${f(hx1)}" keyTimes="0;1" dur="${cycle}s" begin="${beg}s" repeatCount="indefinite" calcMode="spline" keySplines="0.1 0 0.85 1"/>
+            <animate attributeName="y2" values="${f(hy0)};${f(hy1)}" keyTimes="0;1" dur="${cycle}s" begin="${beg}s" repeatCount="indefinite" calcMode="spline" keySplines="0.1 0 0.85 1"/>
+          </line>`;
+        }else svg+=`<line x1="${f(tx0)}" y1="${f(ty0)}" x2="${f(hx0)}" y2="${f(hy0)}" stroke="url(#${uid}tail)" stroke-width="${sw}" opacity="${peak}" stroke-linecap="round"/>`;
+      }
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden">${svg}</svg>`;
+    },
+    titleSvg(w,h,a1,a2,d){return this._build(w,h,a1,a2,true,d!==false);},
+    contentSvg(w,h,a1,a2,d){return this._build(w,h,a1,a2,false,d!==false);},
+  },
+  {
+    name:'Сакура', nameEn:'Sakura',
+    desc:'Падающие лепестки сакуры',descEn:'Falling cherry blossom petals',
+    animated: true,
+    _build:(w,h,a1,a2,isTitle,doAnimate)=>{
+      const rng=s=>{let x=Math.sin(s*83.5+44.2)*43758.5;return x-Math.floor(x);};
+      const f=n=>n.toFixed(1);
+      const midBegin=(seed,dur,lo,hi)=>{const p=lo+rng(seed)*(hi-lo);return(-p*dur).toFixed(2);};
+      const cx0=w*0.5,cy0=h*0.5,zoneRx=w*(isTitle?0.4:0.34),zoneRy=h*(isTitle?0.38:0.32);
+      const inCenter=(x,y)=>{const dx=(x-cx0)/zoneRx,dy=(y-cy0)/zoneRy;return dx*dx+dy*dy<1;};
+      const petalD=(sc)=>{
+        const pw=14*sc,ph=28*sc;
+        const fp=n=>n.toFixed(1);
+        return `M 0 ${fp(-ph*0.42)} C ${fp(pw*0.95)} ${fp(-ph*0.18)} ${fp(pw*0.88)} ${fp(ph*0.32)} 0 ${fp(ph*0.5)} C ${fp(-pw*0.88)} ${fp(ph*0.32)} ${fp(-pw*0.95)} ${fp(-ph*0.18)} 0 ${fp(-ph*0.42)} Z`;
+      };
+      const nP=isTitle?34:16;
+      let svg='';
+      for(let i=0;i<nP;i++){
+        const seed=i*31+77;
+        let px=rng(seed)*w;
+        if(!isTitle){for(let a=0;a<10&&inCenter(px,h*0.4);a++)px=rng(seed+a*2)*w;}
+        const sc=1.0+rng(seed+2)*(isTitle?2.1:1.7);
+        const rot0=(rng(seed+3)*140-30).toFixed(1);
+        const rot1=(+rot0+100+rng(seed+9)*80).toFixed(1);
+        const col=rng(seed+4)>0.32?(rng(seed+4)>0.58?a2:a1):'#ffd4e8';
+        const op=Math.min(0.5,0.14+rng(seed+5)*0.3).toFixed(2);
+        const startY=-(12+rng(seed+1)*55);
+        const endY=h+18+rng(seed+10)*35;
+        const drift=(rng(seed+6)-0.5)*w*0.14;
+        const x1=(px+drift).toFixed(1);
+        const durNum=11+rng(seed+7)*14;
+        const dur=durNum.toFixed(1);
+        const beg=midBegin(seed+8,durNum,0,1);
+        if(doAnimate){
+          svg+=`<g opacity="0">
+            <animate attributeName="opacity" values="0;${op};${op};0" keyTimes="0;0.07;0.9;1" dur="${dur}s" begin="${beg}s" repeatCount="indefinite"/>
+            <animateTransform attributeName="transform" type="translate" values="${f(px)} ${f(startY)};${x1} ${f(endY)}" dur="${dur}s" begin="${beg}s" repeatCount="indefinite" calcMode="spline" keySplines="0.25 0 0.75 1"/>
+            <path d="${petalD(sc)}" fill="${col}">
+              <animateTransform attributeName="transform" type="rotate" values="${rot0};${rot1}" dur="${dur}s" begin="${beg}s" repeatCount="indefinite"/>
+            </path>
+          </g>`;
+        }else{
+          const py=rng(seed+1)*h*0.85;
+          svg+=`<g transform="translate(${f(px)} ${f(py)}) rotate(${rot0})"><path d="${petalD(sc)}" fill="${col}" opacity="${op}"/></g>`;
+        }
+      }
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden">${svg}</svg>`;
+    },
+    titleSvg(w,h,a1,a2,d){return this._build(w,h,a1,a2,true,d!==false);},
+    contentSvg(w,h,a1,a2,d){return this._build(w,h,a1,a2,false,d!==false);},
+  },
+  {
+    name:'Карта', nameEn:'Map',
+    desc:'Контурная карта высот, медленный облёт камеры', descEn:'Height contour map, slow camera drift',
+    animated: true,
+    _build:(w,h,a1,a2,isTitle,doAnimate)=>{
+      const uid='map'+Math.random().toString(36).slice(2,7);
+      const rng=s=>{let x=Math.sin(s*97.3+17.1)*43758.5;return x-Math.floor(x);};
+      const f=n=>n.toFixed(1);
+      const sp='0.42 0 0.58 1';
+      const midBegin=(seed,dur,lo,hi)=>{const p=lo+rng(seed)*(hi-lo);return(-p*dur).toFixed(2);};
+      const ti=typeof appliedThemeIdx!=='undefined'&&appliedThemeIdx>=0?appliedThemeIdx
+        :(typeof selTheme!=='undefined'&&selTheme>=0?selTheme:-1);
+      const theme=ti>=0&&typeof THEMES!=='undefined'?THEMES[ti]:null;
+      const isLight=theme&&theme.dark===false;
+      const isThumb=w<=400&&h<=220;
+      let bgDefs='';
+      let mapBgFill='';
+      if(isThumb){
+        bgDefs=`<linearGradient id="${uid}mbg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${a2}" stop-opacity="0.14"/><stop offset="100%" stop-color="${a1}" stop-opacity="0.10"/></linearGradient>`;
+        mapBgFill=`url(#${uid}mbg)`;
+      }else if(isLight){
+        const bg=theme.bg||'#f4f6fa';
+        const cols=bg.match(/#[0-9a-fA-F]{3,8}/g);
+        const c1=cols?.[0]||'#f8fafc', c2=cols?.[1]||c1;
+        bgDefs=`<linearGradient id="${uid}mbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="${c1}"/><stop offset="100%" stop-color="${c2}"/></linearGradient>`;
+        mapBgFill=`url(#${uid}mbg)`;
+      }else{
+        mapBgFill='#0a0d14';
+      }
+
+      const mapScale=isTitle?2.75:2.35;
+      const mapW=w*mapScale, mapH=h*mapScale;
+      const zoneCx=w*0.5+(mapW-w)*0.42, zoneCy=h*0.5+(mapH-h)*0.38;
+      const zoneR=w*(isTitle?0.22:0.3);
+      const hills=[];
+      const maxTry=isTitle?100:60;
+      const want=isTitle?8:5;
+
+      function hillFits(cx,cy,baseR){
+        const pad=baseR*0.3+mapW*0.022;
+        for(const h0 of hills){
+          const dx=cx-h0.cx, dy=cy-h0.cy;
+          const need=h0.baseR+baseR+pad;
+          if(dx*dx+dy*dy<need*need) return false;
+        }
+        if(!isTitle){
+          const dx=cx-zoneCx, dy=cy-zoneCy;
+          if(dx*dx+dy*dy<zoneR*zoneR) return false;
+        }
+        return true;
+      }
+
+      for(let i=0;i<maxTry&&hills.length<want;i++){
+        const s=i*29+61;
+        const cx=rng(s)*mapW, cy=rng(s+1)*mapH;
+        const baseR=Math.min(mapW,mapH)*(0.055+rng(s+2)*(isTitle?0.17:0.13));
+        if(!hillFits(cx,cy,baseR)) continue;
+        hills.push({
+          cx, cy, baseR,
+          levels:4+Math.floor(rng(s+5)*(isTitle?5:3)),
+          seed:s+200,
+          rxMul:0.82+rng(s+6)*0.38,
+          ryMul:0.78+rng(s+7)*0.42,
+          rot:rng(s+8)*36-18,
+        });
+      }
+
+      function smoothRadius(hill,a){
+        const s=hill.seed;
+        return 1
+          +0.1*Math.sin(a*2+s)
+          +0.065*Math.cos(a*3+s*1.25)
+          +0.04*Math.sin(a*4+s*0.85)
+          +0.028*Math.cos(a*5+s*1.6);
+      }
+
+      function neighborInfluence(px,py,hill){
+        let x=px, y=py;
+        for(const o of hills){
+          if(o===hill) continue;
+          const dx=x-o.cx, dy=y-o.cy;
+          const dist=Math.sqrt(dx*dx+dy*dy)||0.001;
+          const reach=(hill.baseR+o.baseR)*1.08;
+          if(dist>=reach) continue;
+          const t=1-dist/reach;
+          const push=t*t*o.baseR*0.2;
+          x+=dx/dist*push;
+          y+=dy/dist*push;
+          const toward=o.baseR*0.06*t*(1-t)*4;
+          x-=dx/dist*toward;
+          y-=dy/dist*toward;
+        }
+        return [x,y];
+      }
+
+      function contourPts(hill,scale,nSeg){
+        const pts=[], rad=hill.rot*Math.PI/180;
+        for(let i=0;i<nSeg;i++){
+          const a=(i/nSeg)*Math.PI*2;
+          const r=hill.baseR*scale*smoothRadius(hill,a);
+          const lx=Math.cos(a)*r*hill.rxMul;
+          const ly=Math.sin(a)*r*hill.ryMul;
+          const px=hill.cx+lx*Math.cos(rad)-ly*Math.sin(rad);
+          const py=hill.cy+lx*Math.sin(rad)+ly*Math.cos(rad);
+          pts.push(neighborInfluence(px,py,hill));
+        }
+        return pts;
+      }
+
+      function smoothClosedPath(pts){
+        const n=pts.length;
+        if(n<3) return '';
+        let d=`M ${f(pts[0][0])},${f(pts[0][1])}`;
+        for(let i=0;i<n;i++){
+          const p0=pts[(i-1+n)%n], p1=pts[i], p2=pts[(i+1)%n], p3=pts[(i+2)%n];
+          const c1x=p1[0]+(p2[0]-p0[0])/6, c1y=p1[1]+(p2[1]-p0[1])/6;
+          const c2x=p2[0]-(p3[0]-p1[0])/6, c2y=p2[1]-(p3[1]-p1[1])/6;
+          d+=` C ${f(c1x)},${f(c1y)} ${f(c2x)},${f(c2y)} ${f(p2[0])},${f(p2[1])}`;
+        }
+        return d+' Z';
+      }
+
+      let map='';
+      if(mapBgFill) map+=`<rect width="${f(mapW)}" height="${f(mapH)}" fill="${mapBgFill}"/>`;
+      const gridOp=(isThumb||!isLight)?'0.06':'0.09';
+      const gridStep=isTitle?44:52;
+      for(let gx=0;gx<=mapW;gx+=gridStep){
+        map+=`<line x1="${f(gx)}" y1="0" x2="${f(gx)}" y2="${f(mapH)}" stroke="${a2}" stroke-width="0.35" opacity="${gridOp}"/>`;
+      }
+      for(let gy=0;gy<=mapH;gy+=gridStep){
+        map+=`<line x1="0" y1="${f(gy)}" x2="${f(mapW)}" y2="${f(gy)}" stroke="${a2}" stroke-width="0.35" opacity="${gridOp}"/>`;
+      }
+
+      hills.forEach((hill,hi)=>{
+        for(let lv=1;lv<=hill.levels;lv++){
+          const t=lv/hill.levels;
+          const pts=contourPts(hill,t,48);
+          const path=smoothClosedPath(pts);
+          const isIndex=lv%4===0||lv===hill.levels;
+          const sw=(isIndex?(isTitle?1.15:0.95):(isTitle?0.65:0.55)).toFixed(2);
+          const strokeOp=((isThumb||!isLight)?(0.22+t*0.48):(0.28+t*0.42)).toFixed(2);
+          const col=(lv+hi)%2===0?a1:a2;
+          map+=`<path d="${path}" fill="none" stroke="${col}" stroke-width="${sw}" stroke-opacity="${strokeOp}" stroke-linejoin="round" stroke-linecap="round"/>`;
+        }
+      });
+
+      const panDur=isTitle?82:72;
+      const dx=-(mapW-w), dy=-(mapH-h)*0.38;
+      const beg=doAnimate?midBegin(88,panDur,0.06,0.94):'0';
+      let cam;
+      if(doAnimate){
+        cam=`<g>
+          ${map}
+          <animateTransform attributeName="transform" type="translate"
+            values="0,0; ${f(dx*0.42)},${f(dy*0.22)}; ${f(dx*0.78)},${f(dy*0.55)}; ${f(dx)},${f(dy)}; ${f(dx*0.35)},${f(dy*0.88)}; 0,0"
+            keyTimes="0;0.22;0.45;0.62;0.82;1"
+            dur="${panDur}s" begin="${beg}s" repeatCount="indefinite"
+            calcMode="spline" keySplines="${sp};${sp};${sp};${sp};${sp}"/>
+        </g>`;
+      }else{
+        cam=`<g transform="translate(${f(dx*0.48)},${f(dy*0.44)})">${map}</g>`;
+      }
+
+      const vigColor=isLight?a2:'#000';
+      const vigOp=isLight?0.1:0.4;
+      const compBg=isLight?'#ffffff':'#0a0e16';
+      const compBgOp=isLight?0.82:0.72;
+      let comp='';
+      if(isTitle&&!isThumb){
+        const R=Math.min(w,h)*0.052;
+        const cx0=w*0.078, cy0=h*0.14;
+        comp=`<g transform="translate(${f(cx0)},${f(cy0)})">
+          <circle r="${f(R*1.12)}" fill="${compBg}" fill-opacity="${compBgOp}" stroke="${a1}" stroke-width="1.1" stroke-opacity="0.55"/>
+          <circle r="${f(R*0.92)}" fill="none" stroke="${a2}" stroke-width="0.55" stroke-opacity="0.35"/>
+          ${[0,45,90,135,180,225,270,315].map(deg=>{
+            const a=deg*Math.PI/180, major=deg%90===0;
+            const r0=R*(major?0.62:0.72), r1=R*(major?0.88:0.82);
+            return `<line x1="${f(Math.sin(a)*r0)}" y1="${f(-Math.cos(a)*r0)}" x2="${f(Math.sin(a)*r1)}" y2="${f(-Math.cos(a)*r1)}" stroke="${major?a1:a2}" stroke-width="${major?0.9:0.45}" stroke-opacity="${major?0.75:0.35}" stroke-linecap="round"/>`;
+          }).join('')}
+          <g>
+            ${doAnimate?`<animateTransform attributeName="transform" type="rotate" values="-5;4;-3;5;-5" keyTimes="0;0.25;0.5;0.75;1" dur="6.5s" repeatCount="indefinite" calcMode="spline" keySplines="${sp};${sp};${sp};${sp}"/>`:''}
+            <path d="M 0 ${f(-R*0.78)} L ${f(-R*0.16)} ${f(R*0.06)} L 0 ${f(-R*0.2)} L ${f(R*0.16)} ${f(R*0.06)} Z" fill="${a1}" fill-opacity="0.92"/>
+            <path d="M 0 ${f(R*0.78)} L ${f(-R*0.14)} ${f(-R*0.04)} L 0 ${f(R*0.16)} L ${f(R*0.14)} ${f(-R*0.04)} Z" fill="${a2}" fill-opacity="0.45"/>
+          </g>
+          <circle r="${f(R*0.1)}" fill="${isLight?a1:'#e8ecf4'}" fill-opacity="0.85"/>
+          <text x="0" y="${f(-R*1.28)}" text-anchor="middle" fill="${a1}" font-size="${f(R*0.42)}" font-family="sans-serif" font-weight="700" opacity="0.9">N</text>
+          <text x="${f(R*1.22)}" y="${f(R*0.12)}" text-anchor="middle" fill="${a2}" font-size="${f(R*0.28)}" font-family="sans-serif" opacity="0.55">E</text>
+          <text x="0" y="${f(R*1.38)}" text-anchor="middle" fill="${a2}" font-size="${f(R*0.28)}" font-family="sans-serif" opacity="0.45">S</text>
+          <text x="${f(-R*1.22)}" y="${f(R*0.12)}" text-anchor="middle" fill="${a2}" font-size="${f(R*0.28)}" font-family="sans-serif" opacity="0.45">W</text>
+        </g>`;
+      }
+
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden">
+        <defs>
+          ${bgDefs}
+          <clipPath id="${uid}vp"><rect width="${w}" height="${h}"/></clipPath>
+          <radialGradient id="${uid}vig" cx="50%" cy="50%" r="72%">
+            <stop offset="50%" stop-color="${vigColor}" stop-opacity="0"/>
+            <stop offset="100%" stop-color="${vigColor}" stop-opacity="${vigOp}"/>
+          </radialGradient>
+        </defs>
+        <g clip-path="url(#${uid}vp)">${cam}</g>
+        ${isThumb?'':`<rect width="${w}" height="${h}" fill="url(#${uid}vig)" pointer-events="none"/>`}
+        ${comp}
+      </svg>`;
+    },
+    titleSvg(w,h,a1,a2,d){return this._build(w,h,a1,a2,true,d!==false);},
+    contentSvg(w,h,a1,a2,d){return this._build(w,h,a1,a2,false,d!==false);},
+  },
 ];
 
 // ══════════════ LAYOUT ENGINE ══════════════
+
+function _isGlDecorRenderer(r){
+  return r==='crystal'||r==='dna'||r==='galaxy'||r==='caustics';
+}
+
+function _glDecorByRenderer(r){
+  if(r==='crystal'&&typeof CrystalDecor!=='undefined')return CrystalDecor;
+  if(r==='dna'&&typeof DnaDecor!=='undefined')return DnaDecor;
+  if(r==='galaxy'&&typeof GalaxyDecor!=='undefined')return GalaxyDecor;
+  if(r==='caustics'&&typeof CausticsDecor!=='undefined')return CausticsDecor;
+  return null;
+}
 
 // Get current theme accent colours (fallback to CSS vars)
 function _decorAccents(){
@@ -1851,6 +2846,40 @@ function _decorAccents(){
   }
   return ['#6366f1','#818cf8'];
 }
+
+function _ensureGlDecorCfg(d, a1, a2){
+  if (!d || !d._isDecor) return;
+  const li = d._layoutIdx;
+  if (li == null || li < 0 || li >= LAYOUTS.length) return;
+  const L = LAYOUTS[li];
+  const doAnim = L && L.animated && _layoutAnimated;
+  const accents = a1 && a2 ? [a1, a2] : _decorAccents();
+  if (L && L.renderer === 'crystal' && typeof L.buildCrystalCfg === 'function'){
+    d._decorRenderer = 'crystal';
+    d._glCfg = L.buildCrystalCfg(canvasW, canvasH, accents[0], accents[1], d._decorStyle === 'title', doAnim);
+    d._crystalCfg = d._glCfg;
+    return;
+  }
+  if (L && L.renderer === 'dna' && typeof L.buildDnaCfg === 'function'){
+    d._decorRenderer = 'dna';
+    d._glCfg = L.buildDnaCfg(canvasW, canvasH, accents[0], accents[1], d._decorStyle === 'title', doAnim);
+    return;
+  }
+  if (L && L.renderer === 'galaxy' && typeof L.buildGalaxyCfg === 'function'){
+    d._decorRenderer = 'galaxy';
+    d._glCfg = L.buildGalaxyCfg(canvasW, canvasH, accents[0], accents[1], d._decorStyle === 'title', doAnim);
+    return;
+  }
+  if (L && L.renderer === 'caustics' && typeof L.buildCausticsCfg === 'function'){
+    d._decorRenderer = 'caustics';
+    d._glCfg = L.buildCausticsCfg(canvasW, canvasH, accents[0], accents[1], d._decorStyle === 'title', doAnim);
+    return;
+  }
+  delete d._decorRenderer;
+  delete d._glCfg;
+  delete d._crystalCfg;
+}
+function _ensureCrystalCfg(d, a1, a2){ _ensureGlDecorCfg(d, a1, a2); }
 
 // Build the SVG string for a decor element using current canvas dimensions.
 // Scopes all defs IDs with a unique prefix so multiple slides never share filter/gradient IDs.
@@ -1876,7 +2905,7 @@ function makeDecorEl(si, style){
   const decorStyle=style||'content';
   const svg=_buildDecorSvg(selLayout, decorStyle);
   if(!svg)return null;
-  return {
+  const d = {
     id:'decor_'+(si||0)+'_'+Date.now(),
     type:'svg',
     x:0, y:0, w:canvasW, h:canvasH,
@@ -1886,6 +2915,8 @@ function makeDecorEl(si, style){
     _decorStyle:decorStyle,
     _layoutIdx:selLayout,
   };
+  _ensureGlDecorCfg(d);
+  return d;
 }
 
 // Regenerate SVG strings for all decor elements across all slides
@@ -1911,14 +2942,55 @@ function refreshDecorColors(ac1, ac2, skipRender){
       d.svgContent=svg;
       d.w=canvasW;
       d.h=canvasH;
+      _ensureGlDecorCfg(d, _oa1, _oa2);
+      const _glU=_glDecorByRenderer(d._decorRenderer);
+      if(_glU&&d._glCfg) _glU.update(d.id,d._glCfg);
     });
   });
   if(!skipRender){
     if(typeof renderAll==="function")renderAll();
+    else if(typeof refreshDecorOnCanvas==='function') refreshDecorOnCanvas();
     if(typeof saveState==='function')if(typeof saveState==="function")saveState();
-    if(typeof drawThumbs==='function')if(typeof drawThumbs==="function")drawThumbs();
+    if(typeof invalidateThumbCache==='function')invalidateThumbCache();
+    if(typeof drawThumbs==='function')drawThumbs(true);
   }
 
+}
+
+// Sync decor SVG / WebGL on the live canvas without full reload (safe for GL layers).
+function refreshDecorOnCanvas(slideIdx){
+  const si=slideIdx!=null?slideIdx:cur;
+  const canvas=document.getElementById('canvas');
+  if(!canvas||!slides[si])return;
+  canvas.querySelectorAll('.el').forEach(el=>{
+    const d=slides[si].els.find(x=>x.id===el.dataset.id);
+    if(!d||!d._isDecor)return;
+    const ec=el.querySelector('.ec');
+    if(!ec)return;
+    const _glR=d._decorRenderer;
+    if(_isGlDecorRenderer(_glR)){
+      const _glCfg=d._glCfg||d._crystalCfg;
+      const _GlDecor=_glDecorByRenderer(_glR);
+      if(_GlDecor&&_glCfg) _GlDecor.update(d.id, _glCfg);
+      const svgEl=ec.querySelector('svg');
+      if(svgEl&&d.svgContent){
+        const _svgUid='svg_'+(d.id||'');
+        const _svgStr=typeof _isolateSvgIds==='function'?_isolateSvgIds(d.svgContent,_svgUid):d.svgContent;
+        try{
+          const _dp=new DOMParser();
+          const _doc=_dp.parseFromString(_svgStr,'image/svg+xml');
+          const _parsed=_doc.documentElement;
+          if(_parsed&&_parsed.tagName!=='parsererror'){
+            const _newSvg=document.adoptNode(_parsed);
+            _newSvg.style.width='100%';_newSvg.style.height='100%';
+            svgEl.replaceWith(_newSvg);
+          }
+        }catch(e){}
+      }
+      return;
+    }
+    if(d.svgContent) ec.innerHTML=d.svgContent;
+  });
 }
 
 // Layout picker UI
@@ -1926,6 +2998,10 @@ function buildLayoutGrid(){
   const grid=document.getElementById('layout-grid');
   if(!grid)return;
   grid.innerHTML='';
+  grid.style.display='flex';
+  grid.style.flexWrap='wrap';
+  grid.style.gap='14px';
+  grid.style.alignContent='flex-start';
   const [a1,a2]=_decorAccents();
   const PW=320,PH=180;
 
@@ -1933,12 +3009,17 @@ function buildLayoutGrid(){
   const none=document.createElement('div');
   none.className='layout-item'+(selLayout===-1?' active':'');
   none.title='Без декора';
-  none.style.cssText='display:flex;flex-direction:column;align-items:center;justify-content:center;';
-  none.innerHTML=`<svg width="48" height="48" viewBox="0 0 48 48" fill="none" style="opacity:.35"><line x1="8" y1="8" x2="40" y2="40" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/><line x1="40" y1="8" x2="8" y2="40" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/></svg>`;
+  const noneBox=document.createElement('div');
+  noneBox.className='layout-item-inner';
+  const noneInner=document.createElement('div');
+  noneInner.style.cssText='display:flex;align-items:center;justify-content:center;';
+  noneInner.innerHTML=`<svg width="48" height="48" viewBox="0 0 48 48" fill="none" style="opacity:.35"><line x1="8" y1="8" x2="40" y2="40" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/><line x1="40" y1="8" x2="8" y2="40" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/></svg>`;
+  noneBox.appendChild(noneInner);
   const noneLbl=document.createElement('div');
   noneLbl.className='li-label';
   noneLbl.textContent='Без декора';
-  none.appendChild(noneLbl);
+  noneBox.appendChild(noneLbl);
+  none.appendChild(noneBox);
   none.onclick=()=>{
     selLayout=-1;
     grid.querySelectorAll('.layout-item').forEach(b=>b.classList.remove('active'));
@@ -1967,8 +3048,25 @@ function buildLayoutGrid(){
       badge.title=isRu?'Поддерживает анимацию':'Supports animation';
       lbl.appendChild(badge);
     }
-    btn.innerHTML=svgStr;
-    btn.appendChild(lbl);
+    const box=document.createElement('div');
+    box.className='layout-item-inner';
+    const prev=document.createElement('div');
+    prev.innerHTML=svgStr;
+    box.appendChild(prev);
+    if(L.renderer&&_isGlDecorRenderer(L.renderer)){
+      let cfg=null;
+      if(L.renderer==='crystal'&&L.buildCrystalCfg)cfg=L.buildCrystalCfg(PW,PH,a1,a2,true,doAnim);
+      else if(L.renderer==='dna'&&L.buildDnaCfg)cfg=L.buildDnaCfg(PW,PH,a1,a2,true,doAnim);
+      else if(L.renderer==='galaxy'&&L.buildGalaxyCfg)cfg=L.buildGalaxyCfg(PW,PH,a1,a2,true,doAnim);
+      else if(L.renderer==='caustics'&&L.buildCausticsCfg)cfg=L.buildCausticsCfg(PW,PH,a1,a2,true,doAnim);
+      const decor=_glDecorByRenderer(L.renderer);
+      if(cfg&&decor&&decor.renderStill){
+        const still=decor.renderStill(cfg,PW,PH);
+        if(still) box.appendChild(still);
+      }
+    }
+    box.appendChild(lbl);
+    btn.appendChild(box);
     btn.onclick=()=>{
       selLayout=i;
       grid.querySelectorAll('.layout-item').forEach(b=>b.classList.remove('active'));
@@ -2024,6 +3122,10 @@ window.setLayoutAnimated = function(val){
   // чтобы просмотр и экспорт получили корректную SVG-строку (без перерисовки DOM)
   if(typeof refreshDecorColors==='function') refreshDecorColors(null, null, true);
   if(!val){
+    if(typeof CrystalDecor!=='undefined') CrystalDecor.pauseAll();
+    if(typeof DnaDecor!=='undefined') DnaDecor.pauseAll();
+    if(typeof GalaxyDecor!=='undefined') GalaxyDecor.pauseAll();
+    if(typeof CausticsDecor!=='undefined') CausticsDecor.pauseAll();
     // Сохраняем currentTime каждого видимого SVG-декора по индексу слайда
     document.querySelectorAll('.decor-el svg').forEach(function(svg){
       try{
@@ -2033,6 +3135,10 @@ window.setLayoutAnimated = function(val){
       }catch(e){}
     });
   } else {
+    if(typeof CrystalDecor!=='undefined') CrystalDecor.resumeAll();
+    if(typeof DnaDecor!=='undefined') DnaDecor.resumeAll();
+    if(typeof GalaxyDecor!=='undefined') GalaxyDecor.resumeAll();
+    if(typeof CausticsDecor!=='undefined') CausticsDecor.resumeAll();
     // Возобновляем все видимые SVG
     document.querySelectorAll('.decor-el svg').forEach(function(svg){
       try{ svg.unpauseAnimations(); }catch(e){}
@@ -2090,11 +3196,13 @@ function applyLayout(idx,btn){
       _decorStyle:decorStyle,
       _layoutIdx:idx,
     };
+    _ensureGlDecorCfg(d, a1, a2);
     s.els.unshift(d);
   });
 
   if(typeof renderAll==="function")renderAll();if(typeof saveState==="function")saveState();
-  if(typeof drawThumbs==='function')if(typeof drawThumbs==="function")drawThumbs();
+  if(typeof invalidateThumbCache==='function')invalidateThumbCache();
+  if(typeof drawThumbs==='function')drawThumbs(true);
   _syncSlidePropsAnimRow();
 }
 
@@ -2104,7 +3212,8 @@ function clearLayout(){
   slides.forEach(s=>{s.els=s.els.filter(d=>!d._isDecor);});
   _syncSlidePropsAnimRow();
   if(typeof renderAll==="function")renderAll();if(typeof saveState==="function")saveState();
-  if(typeof drawThumbs==='function')if(typeof drawThumbs==="function")drawThumbs();
+  if(typeof invalidateThumbCache==='function')invalidateThumbCache();
+  if(typeof drawThumbs==='function')drawThumbs(true);
 }
 
 function openLayoutModal(){

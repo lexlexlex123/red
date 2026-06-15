@@ -61,25 +61,34 @@ function buildIconGrid(catId){
   if(info)info.textContent=icons.length+' иконок';
 }
 
-function _buildIconSVG(ic, color, sw, style, shadow, shadowBlur, shadowColor){
+function _buildIconSVG(ic, color, sw, style, shadow, shadowBlur, shadowColor, shadowSize, filterUid){
   const paths=ic.p.split('||').map(p=>p.trim()).filter(Boolean);
   const pathEls=paths.map(p=>`<path d="${p}"/>`).join('');
   let attrs='';
   if(style==='fill') attrs=`fill="${color}" stroke="none"`;
   else if(style==='duotone') attrs=`fill="${color}" fill-opacity="0.18" stroke="${color}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"`;
   else attrs=`fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"`;
-  // For fill-based icons (custom vb), force fill style
   const vb=ic.vb||'0 0 24 24';
   if(ic.vb && style==='fill') attrs=`fill="${color}" stroke="none"`;
   else if(ic.vb && style==='duotone') attrs=`fill="${color}" fill-opacity="0.18" stroke="${color}" stroke-width="${sw}"`;
   else if(ic.vb) attrs=`fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"`;
   let filterDef='', filterAttr='';
   if(shadow){
-    const sb=shadowBlur||8, sc=shadowColor||'#000000';
-    filterDef=`<defs><filter id="isf_${ic.id}" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="2" dy="2" stdDeviation="${sb*0.4}" flood-color="${sc}" flood-opacity="0.7"/></filter></defs>`;
-    filterAttr=`filter="url(#isf_${ic.id})"`;
+    const sb=shadowBlur!=null?+shadowBlur:4;
+    const ss=shadowSize!=null?+shadowSize:3;
+    const sc=shadowColor||'#000000';
+    const uid=filterUid||('isf_'+ic.id);
+    const effBlur = sb > 0 && typeof window._shadowEffectiveBlur === 'function'
+      ? window._shadowEffectiveBlur(ss, sb) : sb;
+    const inner=typeof window._shadowFilterInner==='function'
+      ?window._shadowFilterInner(ss,sb,sc)
+      :`<feDropShadow dx="0" dy="0" stdDeviation="${effBlur}" flood-color="${sc}" flood-opacity="0.65"/>`;
+    const pPct=Math.min(120,Math.max(55,Math.ceil((ss+effBlur*4+8)/12*50)));
+    filterDef=`<defs><filter id="${uid}" x="-${pPct}%" y="-${pPct}%" width="${100+pPct*2}%" height="${100+pPct*2}%">${inner}</filter></defs>`;
+    filterAttr=`filter="url(#${uid})"`;
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb}" ${attrs} ${filterAttr} style="width:100%;height:100%;overflow:hidden">${filterDef}<g>${pathEls}</g></svg>`;
+  const ovFlow=shadow?'visible':'hidden';
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb}" ${attrs} ${filterAttr} style="width:100%;height:100%;overflow:${ovFlow}">${filterDef}<g>${pathEls}</g></svg>`;
 }
 
 function _renderIconCells(grid,icons){
@@ -137,7 +146,7 @@ function insertIconSelected(){
       d.iconId=ic.id; d.iconPath=ic.p;
       // Keep existing color/sw/style unless user changed ic-style
       d.iconStyle=style;
-      d.svgContent=_buildIconSVG(ic,d.iconColor||color,d.iconSw||sw,style,d.shadow,d.shadowBlur,d.shadowColor);
+      d.svgContent=_buildIconSVG(ic,d.iconColor||color,d.iconSw||sw,style,d.shadow,d.shadowBlur,d.shadowColor,d.shadowSize,d.id);
       sel.dataset.iconId=ic.id;
       sel.dataset.iconStyle=style;
       const c=sel.querySelector('.ec');
@@ -154,42 +163,17 @@ function insertIconSelected(){
     id:'e'+(++ec), type:'icon',
     x:snapV(200), y:snapV(150), w:sz, h:sz,
     iconId:ic.id, iconPath:ic.p, iconColor:color, iconSw:sw, iconStyle:style,
-    svgContent, rot:0, anims:[], shadow:false, shadowBlur:8, shadowColor:'#000000',
+    svgContent, rot:0, anims:[], shadow:false, shadowBlur:4, shadowSize:3, shadowColor:'#000000',
   };
   // Tighten viewBox: parse SVG paths and compute bounds from path geometry
-  try{
-    // Extract path data strings from svgContent
-    const _pathMatches=[...svgContent.matchAll(/d="([^"]+)"/g)].map(m=>m[1]);
-    if(_pathMatches.length>0){
-      // Use a temporary visible SVG appended off-screen to get reliable getBBox
-      const _wrap=document.createElement('div');
-      _wrap.style.cssText='position:fixed;left:-9999px;top:-9999px;width:200px;height:200px;';
-      const _tmpSvg=document.createElementNS('http://www.w3.org/2000/svg','svg');
-      _tmpSvg.setAttribute('viewBox','0 0 24 24');
-      _tmpSvg.style.cssText='width:200px;height:200px;';
-      const _g=document.createElementNS('http://www.w3.org/2000/svg','g');
-      _pathMatches.forEach(pd=>{
-        const _p=document.createElementNS('http://www.w3.org/2000/svg','path');
-        _p.setAttribute('d',pd);_g.appendChild(_p);
-      });
-      _tmpSvg.appendChild(_g);
-      _wrap.appendChild(_tmpSvg);
-      document.body.appendChild(_wrap);
-      const bbox=_g.getBBox();
-      document.body.removeChild(_wrap);
-      if(bbox&&bbox.width>0&&bbox.height>0){
-        const sw2=(parseFloat(sw)||1.8)/2;
-        const vx=bbox.x-sw2, vy=bbox.y-sw2, vw=bbox.width+sw2*2, vh=bbox.height+sw2*2;
-        const tightSvg=svgContent.replace(/viewBox="[^"]*"/,'viewBox="'+vx+' '+vy+' '+vw+' '+vh+'"');
-        d.svgContent=tightSvg;
-        const aspect=vw/vh;
-        const nh=Math.round(Math.sqrt(sz*sz/aspect));
-        const nw=Math.round(nh*aspect);
-        d.w=nw; d.h=nh;
-        d.iconFitted=true;
-      }
-    }
-  }catch(_e){console.warn('icon fit failed',_e);}
+  const _fit0=_fitIconSvgViewBox(svgContent,sw);
+  if(_fit0){
+    d.svgContent=_fit0.svg;
+    const nh=Math.round(Math.sqrt(sz*sz/_fit0.aspect));
+    const nw=Math.round(nh*_fit0.aspect);
+    d.w=nw;d.h=nh;
+    d.iconFitted=true;
+  }
   slides[cur].els.push(d); mkEl(d);
   save(); if(typeof drawThumbs==="function")drawThumbs(); if(typeof saveState==="function")saveState();
   if(typeof _refreshHandlesOverlay==='function')_refreshHandlesOverlay();
@@ -212,6 +196,78 @@ function insertIconSelected(){
   document.head.appendChild(s);
 })();
 
+function _fitIconSvgViewBox(svgStr, swVal){
+  try{
+    const _pathMatches=[...svgStr.matchAll(/d="([^"]+)"/g)].map(m=>m[1]);
+    if(_pathMatches.length>0){
+      const _wrap=document.createElement('div');
+      _wrap.style.cssText='position:fixed;left:-9999px;top:-9999px;width:200px;height:200px;';
+      const _tmpSvg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+      _tmpSvg.setAttribute('viewBox','0 0 24 24');_tmpSvg.style.cssText='width:200px;height:200px;';
+      const _g=document.createElementNS('http://www.w3.org/2000/svg','g');
+      _pathMatches.forEach(pd=>{const _p=document.createElementNS('http://www.w3.org/2000/svg','path');_p.setAttribute('d',pd);_g.appendChild(_p);});
+      _tmpSvg.appendChild(_g);_wrap.appendChild(_tmpSvg);document.body.appendChild(_wrap);
+      const bbox=_g.getBBox();document.body.removeChild(_wrap);
+      if(bbox&&bbox.width>0&&bbox.height>0){
+        const sw2=(parseFloat(swVal)||1.8)/2;
+        const vx=bbox.x-sw2,vy=bbox.y-sw2,vw=bbox.width+sw2*2,vh=bbox.height+sw2*2;
+        return {svg:svgStr.replace(/viewBox="[^"]*"/,'viewBox="'+vx+' '+vy+' '+vw+' '+vh+'"'),aspect:vw/vh};
+      }
+    }
+  }catch(_e){}
+  return null;
+}
+
+function _rebuildIconElement(el,d){
+  const ic=ICONS.find(x=>x.id===d.iconId);
+  if(!ic)return;
+  let _newSvg=_buildIconSVG(ic,d.iconColor||'#3b82f6',d.iconSw!=null?d.iconSw:1.8,d.iconStyle||'stroke',d.shadow,d.shadowBlur,d.shadowColor,d.shadowSize,d.id);
+  const _fit=_fitIconSvgViewBox(_newSvg,d.iconSw);
+  if(_fit){
+    _newSvg=_fit.svg;
+    if(el){
+      const _area=(d.w||parseInt(el.style.width)||180)*(d.h||parseInt(el.style.height)||180);
+      const _nh=Math.round(Math.sqrt(_area/_fit.aspect));
+      const _nw=Math.round(_nh*_fit.aspect);
+      d.w=_nw;d.h=_nh;
+      el.style.width=_nw+'px';el.style.height=_nh+'px';
+      d.iconFitted=true;
+    }
+  }
+  d.svgContent=_newSvg;
+  if(el){
+    const c=el.querySelector('.ec');
+    if(c){
+      const _uid='icon_'+(d.id||('u'+Math.random().toString(36).slice(2)));
+      c.innerHTML=typeof _isolateSvgIds==='function'?_isolateSvgIds(_newSvg,_uid):_newSvg;
+      const s=c.querySelector('svg');if(s){s.style.width='100%';s.style.height='100%';}
+    }
+  }
+}
+
+function syncIconProps(el,d){
+  d=d||((typeof slides!=='undefined'&&typeof cur!=='undefined'&&slides[cur])?slides[cur].els.find(e=>e.id===el.dataset.id):null);
+  if(!el||!d)return;
+  const ic_col=d.iconColor||el.dataset.iconColor||'#3b82f6';
+  const ic_sw=d.iconSw!=null?d.iconSw:(el.dataset.iconSw||1.8);
+  const ic_st=d.iconStyle||el.dataset.iconStyle||'stroke';
+  const ic_sh=d.shadow===true||d.shadow==='true'||el.dataset.shadow==='true';
+  const ic_sb=d.shadowBlur!=null?d.shadowBlur:(el.dataset.shadowBlur!=null?+el.dataset.shadowBlur:4);
+  const ic_ss=d.shadowSize!=null?d.shadowSize:(el.dataset.shadowSize!=null?+el.dataset.shadowSize:3);
+  const ic_sc=d.shadowColor||el.dataset.shadowColor||'#000000';
+  try{document.getElementById('ic-p-color-swatch').style.background=ic_col;}catch(e){}
+  try{document.getElementById('ic-p-color-hex').value=ic_col;}catch(e){}
+  try{document.getElementById('ic-p-sw').value=ic_sw;}catch(e){}
+  const styleEl=document.getElementById('ic-p-style');
+  if(styleEl)styleEl.value=ic_st;
+  const shEl=document.getElementById('ic-p-shadow');
+  if(shEl){shEl.checked=ic_sh;const opts=document.getElementById('ic-p-shadow-opts');if(opts)opts.style.display=ic_sh?'flex':'none';}
+  try{document.getElementById('ic-p-sb').value=ic_sb;}catch(e){}
+  try{document.getElementById('ic-p-ss').value=ic_ss;}catch(e){}
+  try{const scPr=document.getElementById('ic-p-sc-preview');if(scPr)scPr.style.background=ic_sc;}catch(e){}
+  try{document.getElementById('ic-p-op').value=parseFloat(el.dataset.elOpacity!=null?el.dataset.elOpacity:(d.elOpacity!=null?d.elOpacity:1));}catch(e){}
+}
+
 function updateIconStyle(prop,val){
   if(!sel||sel.dataset.type!=='icon')return;
   if(typeof pushUndo==="function")pushUndo();
@@ -220,47 +276,33 @@ function updateIconStyle(prop,val){
   if(prop==='color'){d.iconColor=val;sel.dataset.iconColor=val;d.iconColorCustom=true;}
   else if(prop==='sw'){d.iconSw=parseFloat(val);sel.dataset.iconSw=val;}
   else if(prop==='style'){d.iconStyle=val;sel.dataset.iconStyle=val;}
-  else if(prop==='shadow'){d.shadow=val;sel.dataset.shadow=val;
+  else if(prop==='shadow'){d.shadow=val;sel.dataset.shadow=val?'true':'false';
     var shOpts=document.getElementById('ic-p-shadow-opts');
     if(shOpts)shOpts.style.display=val?'flex':'none';}
-  else if(prop==='shadowBlur'){d.shadowBlur=parseFloat(val);sel.dataset.shadowBlur=val;}
+  else if(prop==='shadowBlur'){d.shadowBlur=+val;sel.dataset.shadowBlur=val;}
+  else if(prop==='shadowSize'){d.shadowSize=+val;sel.dataset.shadowSize=val;}
   else if(prop==='shadowColor'){d.shadowColor=val;sel.dataset.shadowColor=val;}
   else if(prop==='op'){d.elOpacity=parseFloat(val);sel.dataset.elOpacity=val;sel.style.opacity=val;}
-  var ic=ICONS.find(function(x){return x.id===d.iconId;});
-  if(ic){
-    var _newSvg=_buildIconSVG(ic,d.iconColor||'#3b82f6',d.iconSw!=null?d.iconSw:1.8,d.iconStyle||'stroke',d.shadow,d.shadowBlur,d.shadowColor);
-    // Re-fit viewBox after rebuild
-    try{
-      const _pathMatches=[..._newSvg.matchAll(/d="([^"]+)"/g)].map(m=>m[1]);
-      if(_pathMatches.length>0){
-        const _wrap=document.createElement('div');
-        _wrap.style.cssText='position:fixed;left:-9999px;top:-9999px;width:200px;height:200px;';
-        const _tmpSvg=document.createElementNS('http://www.w3.org/2000/svg','svg');
-        _tmpSvg.setAttribute('viewBox','0 0 24 24');_tmpSvg.style.cssText='width:200px;height:200px;';
-        const _g=document.createElementNS('http://www.w3.org/2000/svg','g');
-        _pathMatches.forEach(pd=>{const _p=document.createElementNS('http://www.w3.org/2000/svg','path');_p.setAttribute('d',pd);_g.appendChild(_p);});
-        _tmpSvg.appendChild(_g);_wrap.appendChild(_tmpSvg);document.body.appendChild(_wrap);
-        const bbox=_g.getBBox();document.body.removeChild(_wrap);
-        if(bbox&&bbox.width>0&&bbox.height>0){
-          const sw2=(parseFloat(d.iconSw)||1.8)/2;
-          const vx=bbox.x-sw2,vy=bbox.y-sw2,vw=bbox.width+sw2*2,vh=bbox.height+sw2*2;
-          _newSvg=_newSvg.replace(/viewBox="[^"]*"/,'viewBox="'+vx+' '+vy+' '+vw+' '+vh+'"');
-          // Resize element to match new aspect ratio, preserve area
-          const _area=d.w*d.h;
-          const _aspect=vw/vh;
-          const _nh=Math.round(Math.sqrt(_area/_aspect));
-          const _nw=Math.round(_nh*_aspect);
-          d.w=_nw;d.h=_nh;
-          sel.style.width=_nw+'px';sel.style.height=_nh+'px';
-          d.iconFitted=true;
-        }
-      }
-    }catch(_e){}
-    d.svgContent=_newSvg;
-    var c=sel.querySelector('.ec');
-    if(c){c.innerHTML=d.svgContent;var s=c.querySelector('svg');if(s){s.style.width='100%';s.style.height='100%';}}
-  }
+  _rebuildIconElement(sel,d);
   save();if(typeof saveState==="function")saveState();
+}
+
+function updateIconStyleScheme(prop,val,schemeRef){
+  if(sel&&slides[cur]){
+    const d=slides[cur].els.find(e=>e.id===sel.dataset.id);
+    if(d){
+      if(prop==='color'){
+        d.iconColorScheme=schemeRef||null;
+        if(schemeRef)sel.dataset.iconColorScheme=JSON.stringify(schemeRef);
+        else delete sel.dataset.iconColorScheme;
+      }else if(prop==='shadowColor'){
+        d.shadowColorScheme=schemeRef||null;
+        if(schemeRef)sel.dataset.shadowColorScheme=JSON.stringify(schemeRef);
+        else delete sel.dataset.shadowColorScheme;
+      }
+    }
+  }
+  updateIconStyle(prop==='shadowColor'?'shadowColor':'color',val);
 }
 
 

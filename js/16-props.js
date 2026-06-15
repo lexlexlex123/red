@@ -71,23 +71,7 @@ function syncProps(){
   if(qrp){qrp.style.display=isQR?'flex':'none';qrp.style.flexDirection='column';if(isQR)syncQRProps();}
   if(icp){
     icp.style.display=t==='icon'?'flex':'none';icp.style.flexDirection='column';
-    if(t==='icon'){
-      const ic_col=sel.dataset.iconColor||'#3b82f6';
-      const ic_sw=sel.dataset.iconSw||'1.8';
-      const ic_st=sel.dataset.iconStyle||'stroke';
-      const ic_sh=sel.dataset.shadow==='true';
-      try{document.getElementById('ic-p-color-swatch').style.background=ic_col;}catch(e){}
-      try{document.getElementById('ic-p-color-hex').value=ic_col;}catch(e){}
-      try{document.getElementById('ic-p-sw').value=ic_sw;}catch(e){}
-      const styleEl=document.getElementById('ic-p-style');
-      if(styleEl)styleEl.value=ic_st;
-      const shEl=document.getElementById('ic-p-shadow');
-      if(shEl){shEl.checked=ic_sh;const opts=document.getElementById('ic-p-shadow-opts');if(opts)opts.style.display=ic_sh?'flex':'none';}
-      const ic_sc=sel.dataset.shadowColor||'#000000';
-      try{const scInner=document.getElementById('ic-p-sc-inner');if(scInner)scInner.style.background=ic_sc;}catch(e){}
-      try{const icInner=document.getElementById('ic-p-color-inner');if(icInner)icInner.style.background=ic_col;}catch(e){}
-      try{document.getElementById('ic-p-op').value=parseFloat(sel.dataset.elOpacity!=null?sel.dataset.elOpacity:1);}catch(e){}
-    }
+    if(t==='icon'&&typeof syncIconProps==='function')syncIconProps(sel);
   }
   if(t==='text'){
     const cs=(sel.querySelector('.tel')||sel.querySelector('.ec')).getAttribute('style')||'';
@@ -290,8 +274,15 @@ function syncProps(){
       } catch(e) {}
     }catch(e){}
     document.getElementById('sh-shadow').checked=sel.dataset.shadow==='true';
-    document.getElementById('sh-sb').value=sel.dataset.shadowBlur||8;
+    try{
+      const _dSh=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+      const _sb=sel.dataset.shadowBlur!=null?sel.dataset.shadowBlur:(_dSh&&_dSh.shadowBlur!=null?_dSh.shadowBlur:4);
+      const _ss=sel.dataset.shadowSize!=null?sel.dataset.shadowSize:(_dSh&&_dSh.shadowSize!=null?_dSh.shadowSize:3);
+      document.getElementById('sh-sb').value=_sb;
+      document.getElementById('sh-ss').value=_ss;
+    }catch(e){}
     try{const sc=sel.dataset.shadowColor||'#000000';document.getElementById('sh-sc-preview').style.background=sc;}catch(e){}
+    try{const shOpts=document.getElementById('shadow-options');if(shOpts)shOpts.style.display=sel.dataset.shadow==='true'?'flex':'none';}catch(e){}
     try{document.getElementById('sh-el-blur').value=parseFloat(sel.dataset.shapeBlur||0);}catch(e){}
     try{const _elOp=document.getElementById('sh-el-op');if(_elOp)_elOp.value=parseFloat(sel.dataset.elOpacity!=null?sel.dataset.elOpacity:1);}catch(e){}
     const st=sel.querySelector('.shape-text');
@@ -352,7 +343,14 @@ function syncProps(){
   }
   // Animations count badge
   if(ap){
-    const anims=JSON.parse(sel.dataset.anims||'[]');
+    let anims=JSON.parse(sel.dataset.anims||'[]');
+    if(sel.dataset.groupId && typeof window._animGroupDomEls==='function'){
+      window._animGroupDomEls(sel).forEach(ge=>{
+        if(!anims.length){
+          try{anims=JSON.parse(ge.dataset.anims||'[]');}catch(e){}
+        }
+      });
+    }
     if(anims.length){ap.style.display='flex';ap.style.flexDirection='column';const animList=document.getElementById('el-anim-list');if(animList){animList.innerHTML='';anims.forEach((a,i)=>{const item=document.createElement('div');item.className='anim-item';const cat=a.category||'entrance';const catColor=cat==='entrance'?'#22c55e':cat==='exit'?'#ec4899':'#f59e0b';item.innerHTML='<span style="width:16px;height:16px;border-radius:50%;background:'+catColor+'20;color:'+catColor+';font-size:8px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">'+(i+1)+'</span><span style="flex:1;font-size:10px">'+(ANIM_INFO[a.name]?.label||a.name)+'</span><span style="font-size:9px;color:var(--text3)">'+formatTiming(a)+'</span>';item.style.cssText='background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:4px 8px;display:flex;align-items:center;gap:6px;margin-bottom:3px;';animList.appendChild(item);});}}else ap.style.display='none';
     // Always sync hover fx UI when animprops is shown
     syncHoverFxUI();
@@ -709,6 +707,7 @@ function resetTextFormatting() {
 
 // ══════════════ GENERATOR PROPS ══════════════
 function syncGenProps(){
+  // gen* props are shared visual fields for generator, timer and clock applets
   const s=slides[cur]||null;
   if(!sel||!s) return;
   const d=s.els.find(x=>x.id===sel.dataset.id);
@@ -905,7 +904,7 @@ window.setTimerOnEnd = function(val){
       }
     }
   }catch(e){}
-  if(d.appletId==='clock' && typeof refreshClockEl==='function') refreshClockEl(elId);
+  if(d_.appletId==='clock' && typeof refreshClockEl==='function') refreshClockEl(elId);
   else if(typeof refreshTimerEl==='function') refreshTimerEl(elId);
   if(typeof save==='function') save();
   if(typeof saveState==='function') saveState();
@@ -1484,14 +1483,36 @@ function _syncCloudUI(d) {
     (typeof SHAPES !== 'undefined') &&
     SHAPES.find(s => s.id === sel.dataset.shape)?.special === 'cloud';
   sec.style.display = isCloud ? '' : 'none';
+  const formSel = document.getElementById('sh-cloud-form');
+  if (formSel) formSel.value = sel?.dataset.cloudForm || (d && d.cloudForm) || 'puff';
+}
+function setCloudForm(form) {
+  if (!sel || sel.dataset.type !== 'shape') return;
+  if (typeof pushUndo === 'function') pushUndo();
+  const d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (!d) return;
+  d.cloudForm = form || 'puff';
+  d.cloudSeed = Math.floor(Math.random() * 999999) + 1;
+  if (typeof _cloudPersistDataset === 'function') _cloudPersistDataset(sel, d);
+  else { sel.dataset.cloudForm = d.cloudForm; sel.dataset.cloudSeed = d.cloudSeed; }
+  if (typeof _cloudRegenerate === 'function') _cloudRegenerate(d, sel);
+  else if (typeof _cloudBakeAndFit === 'function') _cloudBakeAndFit(d, sel);
+  if (typeof renderShapeEl === 'function') renderShapeEl(sel, d);
+  else if (typeof window.renderShapeEl === 'function') window.renderShapeEl(sel, d);
+  if (typeof save === 'function') save();
+  if (typeof drawThumbs === 'function') drawThumbs();
+  if (typeof saveState === 'function') saveState();
 }
 function regenCloud() {
   if (!sel || sel.dataset.type !== 'shape') return;
+  if (typeof pushUndo === 'function') pushUndo();
   const d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
   if (!d) return;
-  if (typeof pushUndo === 'function') pushUndo();
   d.cloudSeed = Math.floor(Math.random() * 999999) + 1;
-  sel.dataset.cloudSeed = d.cloudSeed;
+  if (typeof _cloudPersistDataset === 'function') _cloudPersistDataset(sel, d);
+  else sel.dataset.cloudSeed = d.cloudSeed;
+  if (typeof _cloudRegenerate === 'function') _cloudRegenerate(d, sel);
+  else if (typeof _cloudBakeAndFit === 'function') _cloudBakeAndFit(d, sel);
   if (typeof renderShapeEl === "function") renderShapeEl(sel, d);
   else if (typeof window.renderShapeEl === "function") window.renderShapeEl(sel, d);
   if (typeof save === "function") save();

@@ -42,7 +42,13 @@ function saveState(){
     decorPausedAt:(typeof _decorPausedAt!=='undefined'&&!_layoutAnimated?Array.from(_decorPausedAt.entries()):[]),
     title:document.getElementById('pres-title').value,
     pnSettings:_pn
-  }));}catch(e){console.warn('saveState failed:',e);}
+  }));}catch(e){
+    console.warn('saveState failed:',e);
+    if(typeof toast==='function'){
+      const msg=typeof t==='function'?t('toastSaveFailed'):'Could not save — storage may be full';
+      toast(msg,'err');
+    }
+  }
 }
 
 // Full commit: flush DOM→data then data→localStorage
@@ -57,6 +63,7 @@ function loadState(){
     const raw=localStorage.getItem('sf_v4');if(!raw)return;
     const s=JSON.parse(raw);
     slides=s.slides||[];cur=s.cur||0;ar=s.ar||'16:9';
+    if(typeof syncAllAppletHtmlFromData==='function') syncAllAppletHtmlFromData();
     canvasW=s.canvasW||1200;canvasH=s.canvasH||(ar==='4:3'?900:675);
     globalTrans=s.globalTrans||'none';transitionDur=s.transitionDur||500;
     if(typeof syncTransDurUI==='function') syncTransDurUI();
@@ -105,7 +112,7 @@ function hideLoading(){document.getElementById('load-bar-inner').style.width='10
 function dl(content,filename,type){const b=new Blob([content],{type});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=filename;a.click();}
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 let toastTimer;
-function toast(msg,type){const t=document.getElementById('toast');t.textContent=msg;t.className=(type==='ok'?'show ok':'show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>{t.className='';},3600);}
+function toast(msg,type){const t=document.getElementById('toast');t.textContent=msg;t.className=(type==='ok'?'show ok':type==='err'?'show err':'show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>{t.className='';},3600);}
 // ══════════════ SETTINGS & THEME ══════════════
 function openSettings(){
   const modal=document.getElementById('settings-modal');modal.classList.add('open');
@@ -118,7 +125,21 @@ function openSettings(){
   const aEl=document.getElementById('settings-author');
   if(vEl)vEl.textContent=APP_VERSION;
   if(aEl)aEl.textContent=APP_AUTHOR;
+  const pwaRow=document.getElementById('settings-pwa-row');
+  if(pwaRow){
+    const http=location.protocol==='http:'||location.protocol==='https:';
+    const standalone=typeof isPwaStandalone==='function'&&isPwaStandalone();
+    pwaRow.style.display=(http&&!standalone)?'':'none';
+  }
 }
+function _syncPwaSettingsRow(){
+  const pwaRow=document.getElementById('settings-pwa-row');
+  if(!pwaRow||!pwaRow.offsetParent&&pwaRow.style.display==='none') return;
+  const http=location.protocol==='http:'||location.protocol==='https:';
+  const standalone=typeof isPwaStandalone==='function'&&isPwaStandalone();
+  pwaRow.style.display=(http&&!standalone)?'':'none';
+}
+document.addEventListener('pwa-installable',_syncPwaSettingsRow);
 function closeSettings(){document.getElementById('settings-modal').classList.remove('open');}
 function setTheme(t){
   if(t==='light'){document.documentElement.classList.add('light');}

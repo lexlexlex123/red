@@ -237,7 +237,7 @@ function applyTheme(){
           if(el.shadow) el.shadowColor=theme.ac1||newColor;
           const ic=ICONS.find(function(x){return x.id===el.iconId;});
           if(ic){
-            const _newSvg=_buildIconSVG(ic,newColor,el.iconSw!=null?el.iconSw:1.8,el.iconStyle||'stroke',el.shadow,el.shadowBlur,el.shadowColor);
+            const _newSvg=_buildIconSVG(ic,newColor,el.iconSw!=null?el.iconSw:1.8,el.iconStyle||'stroke',el.shadow,el.shadowBlur,el.shadowColor,el.shadowSize,el.id);
             // Re-fit viewBox after color change to preserve tight bounds
             try{
               const _pm=[..._newSvg.matchAll(/(?<=[\s<])d="([^"]+)"/g)].map(m=>m[1]);
@@ -303,7 +303,7 @@ function applyTheme(){
           }
         }
       }
-      if(el.type==='applet' && el.appletId==='generator'){
+      if(el.type==='applet' && (el.appletId==='generator'||el.appletId==='timer'||el.appletId==='clock')){
         // Remap scheme-pinned colors; leave custom (null) unchanged
         if(el.genColorScheme){
           const r=_resolveSchemeColor(el.genColorScheme,theme);
@@ -324,20 +324,14 @@ function applyTheme(){
   appliedThemeIdx=selTheme;
   // Refresh decor SVGs with new accent colors (updates d.svgContent in data)
   refreshDecorColors(theme.ac1||'#6366f1', theme.ac2||'#818cf8', true);
-  // Refresh applets with new theme colors
-  if(typeof refreshAppletThemes==='function')refreshAppletThemes();
   if(typeof refreshAllCodeBlocks==='function')refreshAllCodeBlocks();
   if(typeof refreshAllGraphs==='function')refreshAllGraphs(theme);
-  // Now render all slides from fully updated data
+  // Render slide DOM first, then refresh applets (iframe postMessage needs loaded srcdoc)
+  if(typeof rebuildAppletHtmlForTheme==='function') rebuildAppletHtmlForTheme();
   renderAll();
-  // Force-update decor SVG elements in DOM (in case load() used cached content)
-  document.getElementById('canvas').querySelectorAll('.el').forEach(el=>{
-    const id=el.dataset.id;
-    const d=slides[cur].els.find(x=>x.id===id);
-    if(!d||!d._isDecor)return;
-    const ec=el.querySelector('.ec');
-    if(ec){ec.innerHTML=d.svgContent||'';}
-  });
+  if(typeof syncAppletDomAfterTheme==='function') syncAppletDomAfterTheme();
+  // Force-update decor on canvas (WebGL decor: keep .decor-gl-layer, only swap SVG)
+  if(typeof refreshDecorOnCanvas==='function') refreshDecorOnCanvas();
   // После force-update — применяем правильное состояние анимации
   setTimeout(function(){
     document.querySelectorAll('.decor-el svg').forEach(function(svg){
@@ -379,6 +373,6 @@ function applyTheme(){
   });
   invalidateThumbCache();
   saveState();
-  drawThumbs();
+  drawThumbs(true);
   toast(t('toastThemeApplied')+': '+theme.name,'ok');
 }

@@ -447,6 +447,7 @@ function applySlideStyleToAll(){
   _applySlideBgToCanvas(slides[cur]);
   syncSlideBgPreview();
   syncSlideBgImageUI();
-  save(); drawThumbs(); saveState();
+  if(typeof invalidateThumbCache==='function') invalidateThumbCache();
+  save(); drawThumbs(true); saveState();
   if(typeof toast === 'function') toast(t('toastSlideStyleApplied'), 'ok');
 }

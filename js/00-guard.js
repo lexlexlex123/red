@@ -80,6 +80,9 @@
 
     // ── Декор / темы ───────────────────────────────────────────
     refreshDecorColors:    proxy('refreshDecorColors'),
+    refreshDecorOnCanvas:  proxy('refreshDecorOnCanvas'),
+    _glDecorByRenderer:    proxy('_glDecorByRenderer'),
+    _isGlDecorRenderer:    proxy('_isGlDecorRenderer'),
     refreshAppletThemes:   proxy('refreshAppletThemes'),
     refreshAllCodeBlocks:  proxy('refreshAllCodeBlocks'),
 

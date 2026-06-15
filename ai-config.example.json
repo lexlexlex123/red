@@ -1,6 +1,6 @@
 {
   "provider": "gigachat",
-  "gigachat_credentials": "",
+  "gigachat_credentials": "ВСТАВЬТЕ_КЛЮЧ_ИЗ_КАБИНЕТА_SBER",
   "gigachat_model": "GigaChat",
   "gigachat_scope": "GIGACHAT_API_PERS"
 }

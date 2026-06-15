@@ -1,25 +1,33 @@
 // ══════════════════════════════════════════════════════════════════
-// 33b-autoplace.js  v7
+// 33b-autoplace.js  v8 — сценарии компоновки, подписи к картинкам, split текста
 // ══════════════════════════════════════════════════════════════════
 
-window.autoPlaceAll = function(){
+window.autoPlaceAll = function(options){
   if(!slides||!slides.length) return;
+  const gentle = !options || options.gentle !== false;
+  const msg = typeof t==='function' ? t('confirmAutoPlace') : 'Auto-layout all slides? Theme and decor are preserved.';
+  if(!confirm(msg)) return;
   pushUndo();
-  if(typeof THEMES!=='undefined'&&THEMES.length){ selTheme=Math.floor(Math.random()*THEMES.length); applyTheme(); pushUndo(); }
-  if(typeof LAYOUTS!=='undefined'&&LAYOUTS.length&&typeof applyLayout==='function'){
-    if(Math.random()<0.3){ slides.forEach(s=>{s.els=s.els.filter(e=>!e._isDecor);}); selLayout=-1; }
-    else applyLayout(Math.floor(Math.random()*LAYOUTS.length),null);
+  if(!gentle){
+    if(typeof THEMES!=='undefined'&&THEMES.length){ selTheme=Math.floor(Math.random()*THEMES.length); applyTheme(); pushUndo(); }
+    if(typeof LAYOUTS!=='undefined'&&LAYOUTS.length&&typeof applyLayout==='function'){
+      if(Math.random()<0.3){ slides.forEach(s=>{s.els=s.els.filter(e=>!e._isDecor);}); selLayout=-1; }
+      else applyLayout(Math.floor(Math.random()*LAYOUTS.length),null);
+    }
   }
-  const headAlign=['center','left','right'][Math.floor(Math.random()*3)];
+  const headAlign = gentle ? _apDetectAlign() : ['center','left','right'][Math.floor(Math.random()*3)];
   const W=canvasW, H=canvasH, PAD=66, GAP=24;
 
-  // Проход 1: сброс форматирования + определение заголовков (метим textRole)
-  slides.forEach((s,si)=>_apSlide_prep(s,si===0));
+  // Проход 0: длинный текст → несколько слайдов
+  _apSplitOverflowSlides(280, 200);
 
-  // Проход 2: вычисляем ГЛОБАЛЬНЫЙ font-size по самому плотному слайду
+  // Проход 1: классификация + сброс форматирования
+  slides.forEach((s,si)=>_apSlide_prep(s,si===0,gentle));
+
+  // Проход 2: единый font-size по всей презентации
   _apGlobalBodyFs = _apCalcGlobalFs(slides, W, H, PAD, GAP);
 
-  // Проход 3: размещение с единым шрифтом
+  // Проход 3: сценарии размещения
   slides.forEach((s,si)=>_apSlide_layout(s,si===0,headAlign));
   // Сохраняем данные в localStorage до рендера (все слайды уже изменены в памяти)
   if(typeof saveState==='function') saveState();
@@ -29,26 +37,177 @@ window.autoPlaceAll = function(){
   if(typeof saveState==='function') saveState();
   // Подгоняем высоты текстов по реальному содержимому
   if(typeof _fitAllTextsAllSlides==='function'){
-    _fitAllTextsAllSlides(()=>toast('✨ Объекты размещены'));
+    _fitAllTextsAllSlides(()=>toast(typeof t==='function'?t('toastAutoPlaceDone'):'✨ Objects placed'));
   } else {
-    toast('✨ Объекты размещены');
+    toast(typeof t==='function'?t('toastAutoPlaceDone'):'✨ Objects placed');
   }
 };
 
-// ── Проход 1: сброс форматирования + определение заголовка ──────────
-function _apSlide_prep(s,isTitle){
+// ── Доминирующее выравнивание заголовков (сохраняет стиль шаблона) ──
+function _apDetectAlign(){
+  const counts={center:0,left:0,right:0};
+  slides.forEach(s=>{
+    (s.els||[]).filter(e=>!e._isDecor&&e.type==='text').forEach(el=>{
+      const m=(el.cs||'').match(/text-align\s*:\s*(\w+)/i);
+      if(m&&counts[m[1]]!=null) counts[m[1]]++;
+    });
+  });
+  const best=Object.entries(counts).sort((a,b)=>b[1]-a[1])[0];
+  return (best&&best[1]>0)?best[0]:'left';
+}
+
+// ── Разбиение переполненного текста на 2–3 слайда ───────────────────
+function _apSplitOverflowSlides(limit, chunk){
+  const out=[];
+  for(let i=0;i<slides.length;i++){
+    const s=slides[i];
+    const decor=(s.els||[]).filter(e=>e._isDecor);
+    const content=(s.els||[]).filter(e=>!e._isDecor);
+    const texts=content.filter(e=>e.type==='text');
+    const media=content.filter(e=>e.type!=='text');
+    if(!texts.length){ out.push(s); continue; }
+    const {head,bodies}=_apHeading(texts,s,canvasH,i===0);
+    const bodyChars=bodies.reduce((n,e)=>n+_apPlainLen(e),0);
+    if(bodyChars<=limit||!bodies.length){ out.push(s); continue; }
+    const full=bodies.map(e=>_apPlain(e)).filter(Boolean).join('\n\n');
+    const chunks=_apChunkText(full,chunk);
+    if(chunks.length<2){ out.push(s); continue; }
+    const firstBody=_apTextFromPlain(bodies[0],chunks[0]);
+    s.els=[...decor,...(head?[head]:[]),firstBody,...media,...bodies.slice(1)];
+    out.push(s);
+    for(let c=1;c<chunks.length;c++){
+      const ns={title:s.title,bg:s.bg,bgc:s.bgc,ar:s.ar,trans:s.trans||'',auto:s.auto||0,els:decor.map(d=>JSON.parse(JSON.stringify(d)))};
+      if(s.bgImg) ns.bgImg=JSON.parse(JSON.stringify(s.bgImg));
+      const uid='sp'+(Date.now()%1e7)+c;
+      if(head){
+        const nh=JSON.parse(JSON.stringify(head));
+        nh.id=uid+'h';
+        const ht=_apPlain(head);
+        nh.html=_apEscHtml(chunks.length>2?ht+' ('+(c+1)+'/'+chunks.length+')':ht+' (продолжение)');
+        nh.textRole='heading';
+        ns.els.push(nh);
+      }
+      const nb=_apTextFromPlain(bodies[0],chunks[c]);
+      nb.id=uid+'b';
+      ns.els.push(nb);
+      out.push(ns);
+    }
+  }
+  slides.length=0;
+  out.forEach(s=>slides.push(s));
+}
+
+function _apChunkText(text,chunkSize){
+  const paras=text.split(/\n\n+/).map(p=>p.trim()).filter(Boolean);
+  const chunks=[]; let cur='';
+  const flush=()=>{ if(cur.trim()){ chunks.push(cur.trim()); cur=''; }};
+  paras.forEach(p=>{
+    if(p.length<=chunkSize){
+      if(cur&&(cur+'\n\n'+p).length<=chunkSize) cur+='\n\n'+p;
+      else{ flush(); cur=p; }
+    }else{
+      flush();
+      const sents=p.match(/[^.!?…]+[.!?…]+(?:\s+|$)|[^.!?…]+$/g)||[p];
+      sents.forEach(sent=>{
+        const t=sent.trim(); if(!t) return;
+        if(cur&&(cur+' '+t).length<=chunkSize) cur+=' '+t;
+        else{ flush(); cur=t; }
+      });
+    }
+  });
+  flush();
+  return chunks.length?chunks:[text];
+}
+
+function _apEscHtml(t){
+  return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function _apTextFromPlain(src,plain){
+  const el=JSON.parse(JSON.stringify(src));
+  const parts=plain.split(/\n\n+/);
+  el.html=parts.map(p=>'<div>'+_apEscHtml(p).replace(/\n/g,'<br>')+'</div>').join('');
+  el.textRole='body';
+  return el;
+}
+
+// ── Подписи к картинкам ─────────────────────────────────────────────
+function _apCsFs(el){
+  const m=(el.cs||'').match(/font-size\s*:\s*(\d+)/i);
+  if(m) return +m[1];
+  return el._origFs||0;
+}
+function _apIsCaption(el,maxFs,nImages){
+  if(!nImages||el.textRole==='heading'||el.textRole==='title') return false;
+  if(el.textRole==='caption') return true;
+  const plain=_apPlain(el);
+  const words=plain?plain.split(/\s+/).filter(Boolean).length:0;
+  const fs=_apCsFs(el)||24;
+  if(words<=0) return false;
+  if(words<=14&&plain.length<=90) return true;
+  if(fs<=maxFs*0.82&&words<=22&&plain.length<=120) return true;
+  return false;
+}
+function _apCenter(el){
+  return {x:(el.x||0)+(el.w||200)/2, y:(el.y||0)+(el.h||100)/2};
+}
+function _apPairCaptions(images,captions){
+  const pairs=[];
+  const used=new Set();
+  const maxD=Math.min(canvasW,canvasH)*0.55;
+  [...images].sort((a,b)=>(a.y||0)-(b.y||0)||(a.x||0)-(b.x||0)).forEach(img=>{
+    const ic=_apCenter(img);
+    let best=null,bestD=Infinity;
+    captions.forEach(cap=>{
+      if(used.has(cap)) return;
+      const cc=_apCenter(cap);
+      const d=Math.hypot(ic.x-cc.x,ic.y-cc.y);
+      if(d<bestD){ bestD=d; best=cap; }
+    });
+    if(best&&bestD<maxD){ used.add(best); pairs.push({img,caption:best}); }
+    else pairs.push({img,caption:null});
+  });
+  return {pairs,orphanCaptions:captions.filter(c=>!used.has(c))};
+}
+
+// ── Проход 1: классификация + сброс ─────────────────────────────────
+function _apSlide_prep(s,isTitle,gentle){
   const H=canvasH;
   const els=(s.els||[]).filter(e=>!e._isDecor);
   if(!els.length) return;
   const texts=els.filter(e=>e.type==='text');
-  // Определяем заголовок ДО сброса (читает оригинальный cs/_origFs)
-  const {head,bodies}=_apHeading(texts,s,H,isTitle);
-  // Запоминаем для второго прохода
-  s._apHead=head; s._apBodies=bodies;
-  // Сброс и типографика
-  texts.forEach(el=>_apReset(el));
+  const images=els.filter(e=>e.type==='image'||e.type==='svg'||e.type==='icon');
+  const presetCaps=texts.filter(e=>e.textRole==='caption');
+  const forHead=texts.filter(e=>e.textRole!=='caption');
+  const {head,bodies}=_apHeading(forHead,s,H,isTitle);
+  const maxFs=Math.max(24,...texts.map(_apCsFs));
+  const captions=[...presetCaps], realBodies=[];
+  bodies.forEach(el=>{
+    if(presetCaps.includes(el)) return;
+    if(_apIsCaption(el,maxFs,images.length)) captions.push(el);
+    else realBodies.push(el);
+  });
+  const {pairs,orphanCaptions}=_apPairCaptions(images,captions);
+  s._apHead=head;
+  s._apBodies=realBodies.concat(orphanCaptions);
+  s._apPairs=pairs;
+  s._apImages=images;
+  s._apTables=els.filter(e=>e.type==='table');
+  const resetFn=gentle?_apGentleReset:_apReset;
+  texts.forEach(el=>resetFn(el));
   if(head) _apTypo(head);
-  bodies.forEach(b=>_apTypo(b));
+  s._apBodies.forEach(b=>_apTypo(b));
+  pairs.forEach(p=>{ if(p.caption) _apTypo(p.caption); });
+}
+
+function _apGentleReset(el){
+  if(el.cs){
+    el.cs=el.cs
+      .replace(/font-size\s*:\s*[^;]+;?/gi,'')
+      .replace(/font-weight\s*:\s*[^;]+;?/gi,'')
+      .replace(/line-height\s*:\s*[^;]+;?/gi,'')
+      .replace(/;;+/g,';').replace(/^;+|;+$/g,'').trim();
+  }
+  _apTypo(el);
 }
 
 // ── Проход 2: размещение с глобальным шрифтом ─────────────────────
@@ -56,20 +215,34 @@ function _apSlide_layout(s,isTitle,headAlign){
   const W=canvasW,H=canvasH,PAD=66,GAP=24;
   const els=(s.els||[]).filter(e=>!e._isDecor);
   if(!els.length) return;
-  const head  =s._apHead||null;
+  const head=s._apHead||null;
   const bodies=s._apBodies||[];
-  const images=els.filter(e=>e.type==='image'||e.type==='svg'||e.type==='icon');
-  const tables=els.filter(e=>e.type==='table');
-  if(isTitle) _apTitle(head,bodies,images,W,H,PAD,GAP,headAlign);
-  else        _apContent(head,bodies,images,tables,W,H,PAD,GAP,headAlign);
+  const images=s._apImages||els.filter(e=>e.type==='image'||e.type==='svg'||e.type==='icon');
+  const tables=s._apTables||els.filter(e=>e.type==='table');
+  const pairs=s._apPairs||images.map(img=>({img,caption:null}));
+  if(isTitle) _apTitle(head,bodies,images,pairs,W,H,PAD,GAP,headAlign);
+  else _apContent(head,bodies,images,pairs,tables,W,H,PAD,GAP,headAlign);
   if(head) _apHStyle(head,isTitle?50:40,isTitle);
-  delete s._apHead; delete s._apBodies;
+  delete s._apHead; delete s._apBodies; delete s._apPairs; delete s._apImages; delete s._apTables;
+}
+
+function _apPickScenario(ctx){
+  const {isTitle,head,bodies,images,pairs,tables,txtLen}=ctx;
+  const nImg=images.length;
+  const nCap=pairs.filter(p=>p.caption).length;
+  if(tables.length) return 'table';
+  if(isTitle) return 'title';
+  if(nImg===0) return bodies.length>1?'text-columns':'text-only';
+  if(nImg>=2&&(nCap>=1||nImg<=4)) return 'grid-caption';
+  if(nImg===1&&txtLen>220) return 'hero-stack';
+  if(nImg>=2&&txtLen>180) return 'img-top-text';
+  if(nImg===1) return 'text-left-img';
+  return 'text-left-img';
 }
 
 // ── Единый вызов (обратная совместимость для applyLayoutVariant) ──
 function _apSlide(s,isTitle,headAlign){
-  _apSlide_prep(s,isTitle);
-  // Без глобального fs — используем локальный
+  _apSlide_prep(s,isTitle,true);
   _apGlobalBodyFs=30;
   _apSlide_layout(s,isTitle,headAlign);
 }
@@ -303,12 +476,11 @@ function _apFix(s){
 // ══════════════════════════════════════════════════════════════════
 // РАЗМЕЩЕНИЕ — ГЛАВНЫЙ СЛАЙД
 // ══════════════════════════════════════════════════════════════════
-function _apTitle(head,bodies,images,W,H,PAD,GAP,align){
+function _apTitle(head,bodies,images,pairs,W,H,PAD,GAP,align){
   const n=images.length, b=bodies[0]||null;
-  // Если нет заголовка — обрабатываем как контентный слайд
   if(!head){
-    _apTexts(bodies,PAD,PAD,W-PAD*2,H-PAD*2,GAP);
-    _apImgs(images,PAD,PAD,W-PAD*2,H-PAD*2,GAP);
+    if(n>=2&&pairs.some(p=>p.caption)) _apGridWithCaptions(pairs,PAD,PAD,W-PAD*2,H-PAD*2,GAP);
+    else{ _apTexts(bodies,PAD,PAD,W-PAD*2,H-PAD*2,GAP); _apImgs(images,PAD,PAD,W-PAD*2,H-PAD*2,GAP); }
     return;
   }
   if(head&&!b&&n===0){
@@ -351,63 +523,133 @@ function _apTitle(head,bodies,images,W,H,PAD,GAP,align){
     _apPut(images[0],PAD+cW+GAP,PAD,cW,H-PAD*2,false);
     if(bodies.length) _apTexts(bodies,PAD,head.y+head.h+GAP,cW,H-head.y-head.h-GAP*2-PAD,GAP);
   } else if(head&&n>=2){
-    // Заголовок сверху
     _apAlign(head,align); head.valign='middle';
     head.x=PAD; head.y=PAD; head.w=W-PAD*2;
+    if(!head.h||head.h<40) head.h=Math.round(H*0.14);
     const imgY=PAD+head.h+GAP;
-    if(bodies.length){
-      const tW=Math.round((W-PAD*2-GAP)*0.45);
-      _apTexts(bodies,PAD,imgY,tW,H-imgY-PAD,GAP);
-      _apImgs(images,PAD+tW+GAP,imgY,W-PAD*2-tW-GAP,H-imgY-PAD,GAP);
+    const zoneH=H-imgY-PAD;
+    if(pairs.some(p=>p.caption)&&!bodies.length){
+      _apGridWithCaptions(pairs,PAD,imgY,W-PAD*2,zoneH,GAP);
+    }else if(bodies.length){
+      const tW=Math.round((W-PAD*2-GAP)*0.42);
+      _apTexts(bodies,PAD,imgY,tW,zoneH,GAP);
+      if(pairs.some(p=>p.caption)) _apGridWithCaptions(pairs,PAD+tW+GAP,imgY,W-PAD*2-tW-GAP,zoneH,GAP);
+      else _apImgs(images,PAD+tW+GAP,imgY,W-PAD*2-tW-GAP,zoneH,GAP);
     } else {
-      _apImgs(images,PAD,imgY,W-PAD*2,H-imgY-PAD,GAP);
+      _apGridWithCaptions(pairs,PAD,imgY,W-PAD*2,zoneH,GAP);
     }
   } else if(n>=1){
-    _apImgs(images,PAD,PAD,W-PAD*2,H-PAD*2,GAP);
+    if(pairs.some(p=>p.caption)) _apGridWithCaptions(pairs,PAD,PAD,W-PAD*2,H-PAD*2,GAP);
+    else _apImgs(images,PAD,PAD,W-PAD*2,H-PAD*2,GAP);
   }
 }
 
 // ══════════════════════════════════════════════════════════════════
 // РАЗМЕЩЕНИЕ — КОНТЕНТНЫЙ СЛАЙД
 // ══════════════════════════════════════════════════════════════════
-function _apContent(head,bodies,images,tables,W,H,PAD,GAP,align){
+function _apContent(head,bodies,images,pairs,tables,W,H,PAD,GAP,align){
   let curY=PAD;
   if(head){
     _apAlign(head,align); head.valign='middle';
     head.x=PAD; head.y=curY; head.w=W-PAD*2;
-    if(!head.h||head.h<40) head.h=Math.round(H*0.16);
+    if(!head.h||head.h<40) head.h=Math.round(H*0.14);
     curY+=head.h+GAP;
   }
   const aH=H-curY-PAD, aW=W-PAD*2;
-  const n=images.length;
   const txtLen=bodies.reduce((s,e)=>s+_apPlainLen(e),0);
-  const big=txtLen>220;
+  const scenario=_apPickScenario({isTitle:false,head,bodies,images,pairs,tables,txtLen});
 
-  if(tables.length){
+  if(scenario==='table'){
     const tH=Math.max(40,Math.floor((aH-GAP*(tables.length-1))/tables.length));
     tables.forEach((t,i)=>{t.x=PAD;t.y=curY+i*(tH+GAP);t.w=aW;t.h=tH;});
     return;
   }
-  if(n===0){ _apTexts(bodies,PAD,curY,aW,aH,GAP); return; }
-  if(!bodies.length){ _apImgs(images,PAD,curY,aW,aH,GAP); return; }
-
-  // Вычисляем пропорцию из реальных размеров
+  if(scenario==='text-only'){ _apTexts(bodies,PAD,curY,aW,aH,GAP); return; }
+  if(scenario==='text-columns'&&bodies.length>=2){
+    const colW=Math.floor((aW-GAP)/2);
+    const left=bodies.filter((_,i)=>i%2===0);
+    const right=bodies.filter((_,i)=>i%2===1);
+    _apTexts(left,PAD,curY,colW,aH,GAP);
+    _apTexts(right,PAD+colW+GAP,curY,colW,aH,GAP);
+    return;
+  }
+  if(scenario==='grid-caption'){
+    if(bodies.length){
+      const tH=Math.min(Math.round(aH*0.38),bodies.reduce((s,e)=>s+_apEst(e,aW,_apGlobalBodyFs||30),0)+GAP*bodies.length+20);
+      _apTexts(bodies,PAD,curY,aW,Math.max(60,tH),GAP);
+      _apGridWithCaptions(pairs,PAD,curY+Math.max(60,tH)+GAP,aW,aH-Math.max(60,tH)-GAP,GAP);
+    }else{
+      _apGridWithCaptions(pairs,PAD,curY,aW,aH,GAP);
+    }
+    return;
+  }
+  if(scenario==='hero-stack'){
+    const iH=Math.min(Math.round(aH*0.4),images[0].h||Math.round(aH*0.4));
+    if(pairs[0]&&pairs[0].caption){
+      _apPut(pairs[0].img,PAD,curY,aW,iH*0.82,false);
+      _apCaptionStyle(pairs[0].caption,PAD,curY+iH*0.82+4,aW,Math.round(iH*0.18)-4);
+    }else{
+      _apPut(images[0],PAD,curY,aW,iH,false);
+    }
+    _apTexts(bodies,PAD,curY+iH+GAP,aW,aH-iH-GAP,GAP);
+    return;
+  }
+  if(scenario==='img-top-text'){
+    const capZone=pairs.some(p=>p.caption);
+    const iH=capZone?Math.round(aH*0.48):Math.min(Math.round(aH*0.42),images.reduce((m,i)=>Math.max(m,i.h||200),0)+GAP);
+    if(capZone) _apGridWithCaptions(pairs,PAD,curY,aW,iH,GAP);
+    else _apImgs(images,PAD,curY,aW,iH,GAP);
+    _apTexts(bodies,PAD,curY+iH+GAP,aW,aH-iH-GAP,GAP);
+    return;
+  }
+  // text-left-img
+  if(!bodies.length){
+    if(pairs.some(p=>p.caption)) _apGridWithCaptions(pairs,PAD,curY,aW,aH,GAP);
+    else _apImgs(images,PAD,curY,aW,aH,GAP);
+    return;
+  }
   const totalImgW=images.reduce((s,img)=>s+(img.w||200),0);
   const totalTxtW=bodies.reduce((s,b)=>s+(b.w||300),0);
-  const imgRatio=Math.min(0.65,Math.max(0.3,totalImgW/(totalImgW+totalTxtW)));
+  const imgRatio=Math.min(0.58,Math.max(0.32,totalImgW/(totalImgW+totalTxtW||1)));
+  const tW=Math.round((aW-GAP)*(1-imgRatio));
+  const iW=aW-tW-GAP;
+  _apTexts(bodies,PAD,curY,tW,aH,GAP);
+  if(pairs.some(p=>p.caption)) _apGridWithCaptions(pairs,PAD+tW+GAP,curY,iW,aH,GAP);
+  else _apImgs(images,PAD+tW+GAP,curY,iW,aH,GAP);
+}
 
-  if(!big){
-    // Текст слева, картинки справа
-    const tW=Math.round((aW-GAP)*(1-imgRatio));
-    _apTexts(bodies,PAD,curY,tW,aH,GAP);
-    _apImgs(images,PAD+tW+GAP,curY,aW-tW-GAP,aH,GAP);
-  } else {
-    // Много текста → картинки сверху
-    const bestH=images.reduce((m,i)=>Math.max(m,i.h||200),0);
-    const iH=Math.min(Math.round(aH*0.42),bestH+GAP);
-    _apImgs(images,PAD,curY,aW,iH,GAP);
-    _apTexts(bodies,PAD,curY+iH+GAP,aW,aH-iH-GAP,GAP);
-  }
+function _apCaptionFs(){
+  return Math.max(12,Math.round((_apGlobalBodyFs||30)*0.78));
+}
+function _apCaptionStyle(cap,x,y,w,h){
+  const fs=_apCaptionFs();
+  const color=_apThemeColor();
+  _apSetFs(cap,fs);
+  _apSetColor(cap,color);
+  _apAlign(cap,'center');
+  cap.textRole='caption';
+  cap.valign='top';
+  cap.x=x; cap.y=y; cap.w=w; cap.h=Math.max(28,h);
+}
+function _apGridWithCaptions(pairs,ax,ay,aw,ah,gap){
+  const n=pairs.length; if(!n) return;
+  let cols,rows;
+  if(n===1){cols=1;rows=1;}
+  else if(n===2){cols=2;rows=1;}
+  else if(n<=4){cols=2;rows=2;}
+  else if(n<=6){cols=3;rows=2;}
+  else{cols=3;rows=Math.ceil(n/3);}
+  const cW=Math.floor((aw-gap*(cols-1))/cols);
+  const cH=Math.floor((ah-gap*(rows-1))/rows);
+  const capFs=_apCaptionFs();
+  pairs.forEach((pair,i)=>{
+    const col=i%cols,row=Math.floor(i/cols);
+    const zx=ax+col*(cW+gap),zy=ay+row*(cH+gap);
+    const capH=pair.caption?Math.max(26,Math.round(cH*0.22)):0;
+    const imgH=cH-capH-(pair.caption?Math.round(gap*0.4):0);
+    _apPut(pair.img,zx,zy,cW,Math.max(40,imgH),false);
+    if(pair.caption) _apCaptionStyle(pair.caption,zx,zy+imgH+Math.round(gap*0.4),cW,capH);
+  });
 }
 
 // ══════════════════════════════════════════════════════════════════

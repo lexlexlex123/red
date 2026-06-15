@@ -949,7 +949,12 @@ function _updateHandlesOverlay(){
   overlay.style.pointerEvents = 'none'; // container passes through, only handles have pointer-events:auto
 
   const el = typeof sel !== 'undefined' ? sel : null;
-  if (!el) { overlay.style.pointerEvents = 'none'; document.querySelectorAll('.arc-handle,.star-handle,.para-handle,.chev-handle,.trap-handle,.moon-handle').forEach(h=>h.remove()); return; }
+  if (!el) {
+    _rotEl = null;
+    overlay.style.pointerEvents = 'none';
+    document.querySelectorAll('.arc-handle,.star-handle,.para-handle,.chev-handle,.trap-handle,.moon-handle').forEach(h=>h.remove());
+    return;
+  }
   // Don't show overlay handles during crop mode — crop handles take over
   if (el.dataset.cropMode === 'true') return;
   // In curve edit mode: hide resize/rotation handles (only curve editor handles shown)
@@ -964,7 +969,7 @@ function _updateHandlesOverlay(){
   });
 
   // Lego blocks: no resize handles, no rotation
-  if(el.dataset.type === 'lego') return;
+  if(el.dataset.type === 'lego') { _rotEl = null; return; }
 
   const elL = parseInt(el.style.left)||0;
   const elT = parseInt(el.style.top)||0;
@@ -1191,6 +1196,30 @@ function _makeCursorForAngle(angleDeg) {
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 11 11, crosshair`;
 }
 
+// Tangent angle for rotation cursor: mouse position around pivot
+function _rotCursorAngle(pivotX, pivotY, mouseX, mouseY) {
+  return Math.atan2(mouseY - pivotY, mouseX - pivotX) * 180 / Math.PI + 90;
+}
+
+let _lastRotCursor = '';
+function _setRotCursor(cursorVal) {
+  if (cursorVal === _lastRotCursor) return;
+  _lastRotCursor = cursorVal;
+  const st = document.getElementById('_rot-cursor-style');
+  if (!st) return;
+  if (cursorVal === 'none') {
+    st.textContent = '* { cursor: none !important; }';
+  } else if (cursorVal) {
+    st.textContent = `* { cursor: ${cursorVal} !important; }`;
+  } else {
+    st.textContent = '';
+  }
+}
+
+function _updateRotCursorFromPivot(pivotX, pivotY, mouseX, mouseY) {
+  _setRotCursor(_makeCursorForAngle(_rotCursorAngle(pivotX, pivotY, mouseX, mouseY)));
+}
+
 // Rotation state — listeners attached once to cwrap
 let _rotListenersAttached = false;
 let _rotEl = null; // currently selected element for rotation
@@ -1305,12 +1334,25 @@ function _buildPivotHandle(overlay, el) {
   overlay.appendChild(ph);
 }
 
+function _getElRotationDeg(el) {
+  let deg = parseFloat(el.dataset.rot || 0);
+  try {
+    const mfx = (el.dataset.shapeFlipH === 'true') ? -1 : 1;
+    const mat = new DOMMatrix(getComputedStyle(el).transform);
+    if (mat && !isNaN(mat.a)) {
+      const computed = Math.atan2(mfx * mat.b, mfx * mat.a) * 180 / Math.PI;
+      if (Math.abs(computed - deg) > 0.5) deg = computed;
+    }
+  } catch (e) {}
+  return deg;
+}
+
 function _getRotCorners(el) {
   const L = parseInt(el.style.left)||0;
   const T = parseInt(el.style.top)||0;
   const W = parseInt(el.style.width)||0;
   const H = parseInt(el.style.height)||0;
-  const deg = parseFloat(el.dataset.rot||0);
+  const deg = _getElRotationDeg(el);
   const rad = deg * Math.PI / 180;
   const cosr = Math.cos(rad), sinr = Math.sin(rad);
   // transformOrigin always 50%50%; rotation center = element center
@@ -1336,25 +1378,26 @@ function _getRotCorners(el) {
 
 function _nearCorner(el, canvasX, canvasY) {
   if (!el) return null;
-  const R = 28; // rotation zone radius around corner
+  const R = 34; // rotation zone radius around corner
+  const HANDLE_R = 10; // skip zone covered by corner resize handles
   const corners = _getRotCorners(el);
+  const deg = _getElRotationDeg(el) * Math.PI / 180;
+  const cosr = Math.cos(-deg), sinr = Math.sin(-deg);
+  const L = parseInt(el.style.left)||0, T = parseInt(el.style.top)||0;
+  const W = parseInt(el.style.width)||0, H = parseInt(el.style.height)||0;
+  const ecx = L + W/2, ecy = T + H/2;
+  const inset = Math.min(20, W * 0.35, H * 0.35);
   for (const c of corners) {
     const dx = canvasX - c.x, dy = canvasY - c.y;
-    const d2 = dx*dx + dy*dy;
-    if (d2 > R*R) continue; // too far from corner
-    // Check if point is OUTSIDE the element bounds (rotated check)
-    // Use the corner positions to determine if point is inside or outside
-    const deg = parseFloat(el.dataset.rot||0)*Math.PI/180;
-    const cosr = Math.cos(-deg), sinr = Math.sin(-deg);
-    const L=parseInt(el.style.left)||0, T=parseInt(el.style.top)||0;
-    const W=parseInt(el.style.width)||0, H=parseInt(el.style.height)||0;
-    const ecx=L+W/2, ecy=T+H/2;
-    // Rotate point to element-local space
-    const lx = (canvasX-ecx)*cosr - (canvasY-ecy)*sinr;
-    const ly = (canvasX-ecx)*sinr + (canvasY-ecy)*cosr;
-    // If inside element bounds → don't trigger rotation
-    const margin = 8;
-    if (lx > -W/2-margin && lx < W/2+margin && ly > -H/2-margin && ly < H/2+margin) continue;
+    const dist = Math.hypot(dx, dy);
+    if (dist > R) continue;
+    if (dist < HANDLE_R) continue; // let corner resize handles win
+    const lx = (canvasX - ecx) * cosr - (canvasY - ecy) * sinr;
+    const ly = (canvasX - ecx) * sinr + (canvasY - ecy) * cosr;
+    // Block only the interior — corners stay rotatable even slightly inside bbox
+    if (inset > 0 &&
+        lx > -W/2 + inset && lx < W/2 - inset &&
+        ly > -H/2 + inset && ly < H/2 - inset) continue;
     return c;
   }
   return null;
@@ -1387,20 +1430,6 @@ function _addRotationZones(overlay, el) {
     st.id = '_rot-cursor-style';
     document.head.appendChild(st);
   }
-  let _lastRotCursor = '';
-  function _setRotCursor(cursorVal) {
-    if (cursorVal === _lastRotCursor) return; // no change
-    _lastRotCursor = cursorVal;
-    const st = document.getElementById('_rot-cursor-style');
-    if (!st) return;
-    if (cursorVal === 'none') {
-      st.textContent = '* { cursor: none !important; }';
-    } else if (cursorVal) {
-      st.textContent = `* { cursor: ${cursorVal} !important; }`;
-    } else {
-      st.textContent = '';
-    }
-  }
 
   document.addEventListener('mousemove', ev => {
     if (_rotDragging || !_rotEl) return;
@@ -1415,7 +1444,9 @@ function _addRotationZones(overlay, el) {
     }
     const p = _toCanvasCoords(ev.clientX, ev.clientY);
     const corner = _nearCorner(_rotEl, p.x, p.y);
-    _setRotCursor(corner ? _makeCursorForAngle(corner.angle) : '');
+    if (!corner) { _setRotCursor(''); return; }
+    const pv = _getPivotCanvas(_rotEl);
+    _updateRotCursorFromPivot(pv.x, pv.y, p.x, p.y);
   });
 
   // Capture phase: fires before ANY element's mousedown handler
@@ -1430,6 +1461,11 @@ function _addRotationZones(overlay, el) {
         ev.clientY < cr.top  || ev.clientY > cr.bottom) return;
     if (window._pivotDragging) return; // pivot handle takes priority
     if (window._overPivotHandle) return; // mouse is over pivot handle
+    const rhHit = ev.target.closest && ev.target.closest('#handles-overlay [data-cls]');
+    if (rhHit) {
+      const cls = rhHit.dataset.cls;
+      if (cls === 'tl' || cls === 'tr' || cls === 'bl' || cls === 'br') return;
+    }
     const p = _toCanvasCoords(ev.clientX, ev.clientY);
     const corner = _nearCorner(_rotEl, p.x, p.y);
     if (!corner) return;
@@ -1461,6 +1497,7 @@ function _addRotationZones(overlay, el) {
     const startAngle = parseFloat(el.dataset.rot || 0);
     // a0: angle from pivot to mouse at drag start — this is the reference angle
     const a0 = Math.atan2(p.y - cy, p.x - cx) * 180 / Math.PI;
+    _updateRotCursorFromPivot(cx, cy, p.x, p.y);
 
     let _rotRaf = null;
     const onMove = e => {
@@ -1469,6 +1506,7 @@ function _addRotationZones(overlay, el) {
       _rotRaf = requestAnimationFrame(() => {
         _rotRaf = null;
         const q = _toCanvasCoords(clientX, clientY);
+        _updateRotCursorFromPivot(cx, cy, q.x, q.y);
         const a = Math.atan2(q.y - cy, q.x - cx) * 180 / Math.PI;
         let deg = Math.round(startAngle + (a - a0));
         if (shiftKey) deg = Math.round(deg / 15) * 15;

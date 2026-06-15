@@ -322,7 +322,7 @@ function mkResize(el,rh,cfg){
         el.style.top  = Math.round(newCy - nh/2)+'px';
       }
       const d=slides[cur]&&slides[cur].els.find(x=>x.id===el.dataset.id);
-      if(d&&el.dataset.type==='shape')renderShapeEl(el,d);
+      if(d&&el.dataset.type==='shape')renderShapeEl(el,d,{remapCloud:true});
       if(d&&el.dataset.type==='table'){d.w=nw;d.h=nh;if(typeof renderTableEl==='function'){if(d.showChart){const sv=el.querySelector('.ec svg');if(sv){sv.setAttribute('width',nw);sv.setAttribute('height',nh);sv.setAttribute('viewBox','0 0 '+nw+' '+nh);}}else{renderTableEl(el,d);}}}
       // For image side-handle drag: show stretch in real time
       if(el.dataset.type==='image'&&(cfg.dx===0||cfg.dy===0)){

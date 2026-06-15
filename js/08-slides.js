@@ -219,7 +219,7 @@ function save(){
   // Build lookup of existing decor flags before overwriting
   const decorMeta={};
   const oldEls=slides[cur].els||[]; // snapshot BEFORE overwriting
-  oldEls.forEach(d=>{if(d._isDecor)decorMeta[d.id]={_isDecor:true,_decorStyle:d._decorStyle,_layoutIdx:d._layoutIdx};});
+  oldEls.forEach(d=>{if(d._isDecor)decorMeta[d.id]={_isDecor:true,_decorStyle:d._decorStyle,_layoutIdx:d._layoutIdx,_decorRenderer:d._decorRenderer,_glCfg:d._glCfg||d._crystalCfg,_crystalCfg:d._crystalCfg};});
   const oldElsById={}; oldEls.forEach(d=>oldElsById[d.id]=d);
   // Snapshot table data keyed by id so the table branch below always finds fresh data
   const tableSnap={}; oldEls.forEach(d=>{if(d.type==='table')tableSnap[d.id]=d;});
@@ -250,6 +250,7 @@ function save(){
            .replace(/\bflex-direction\s*:[^;]+;?/gi,'')
            .replace(/\bjustify-content\s*:[^;]+;?/gi,'')
            .replace(/\bpadding-top\s*:[^;]+;?/gi,'')
+           .replace(/\banimation\s*:[^;]+;?/gi,'')
            .replace(/\s{2,}/g,' ').trim();
       d.cs=cs;
       // Preserve scheme refs — not stored in DOM, only in data object
@@ -304,14 +305,20 @@ function save(){
       d.imgRx=el.dataset.imgRx!=null?+el.dataset.imgRx:(dd&&dd.imgRx)||0;
       d.imgBw=el.dataset.imgBw!=null?+el.dataset.imgBw:(dd&&dd.imgBw)||0;
       d.imgBc=el.dataset.imgBc||(dd&&dd.imgBc)||'#ffffff';
+      if(el.dataset.imgBorderStyle)d.imgBorderStyle=el.dataset.imgBorderStyle;
+      else if(dd&&dd.imgBorderStyle)d.imgBorderStyle=dd.imgBorderStyle;
+      if(el.dataset.imgFrame)d.imgFrame=el.dataset.imgFrame;
+      else if(dd&&dd.imgFrame)d.imgFrame=dd.imgFrame;
       d.imgShadow=el.dataset.imgShadow==='true'||(dd&&dd.imgShadow)||false;
       d.imgShadowBlur=el.dataset.imgShadowBlur!=null?+el.dataset.imgShadowBlur:(dd&&dd.imgShadowBlur)||15;
+      d.imgShadowSize=el.dataset.imgShadowSize!=null?+el.dataset.imgShadowSize:(dd&&dd.imgShadowSize!=null?dd.imgShadowSize:4);
       d.imgShadowColor=el.dataset.imgShadowColor||(dd&&dd.imgShadowColor)||'#000000';
       d.imgOpacity=el.dataset.imgOpacity!=null?+el.dataset.imgOpacity:(dd&&dd.imgOpacity!=null?dd.imgOpacity:1);
       d.imgPosX=el.dataset.imgPosX||(dd&&dd.imgPosX)||'center';
       d.imgPosY=el.dataset.imgPosY||(dd&&dd.imgPosY)||'center';
       d.imgFlipH=el.dataset.imgFlipH==='true'||!!(dd&&dd.imgFlipH)||false;
       d.imgFlipV=el.dataset.imgFlipV==='true'||!!(dd&&dd.imgFlipV)||false;
+      if(dd&&dd._pptxSrcRect)d._pptxSrcRect=dd._pptxSrcRect;
       // QR Code — приоритет: dataset > oldEls (dd)
       // Пишем dataset обратно если dd._isQR есть но dataset нет
       if(dd&&dd._isQR && el.dataset.isQR!=='true'){
@@ -348,7 +355,10 @@ function save(){
         if(_ods.strokeScheme!==undefined)d.strokeScheme=_ods.strokeScheme;
       }
       d.sw=el.dataset.sw!=null?+el.dataset.sw:2;d.rx=+(el.dataset.rx||0);d.fillOp=el.dataset.fillOp!=null?+el.dataset.fillOp:1;
-      d.shadow=el.dataset.shadow==='true';d.shadowBlur=+(el.dataset.shadowBlur||8);d.shadowColor=el.dataset.shadowColor||'#000000';
+      d.shadow=el.dataset.shadow==='true';
+      d.shadowBlur=el.dataset.shadowBlur!=null?+el.dataset.shadowBlur:(_ods&&_ods.shadowBlur!=null?_ods.shadowBlur:4);
+      d.shadowSize=el.dataset.shadowSize!=null?+el.dataset.shadowSize:(_ods&&_ods.shadowSize!=null?_ods.shadowSize:3);
+      d.shadowColor=el.dataset.shadowColor||(_ods&&_ods.shadowColor)||'#000000';
       if(el.dataset.strokeStyle)d.strokeStyle=el.dataset.strokeStyle; else if(_ods&&_ods.strokeStyle)d.strokeStyle=_ods.strokeStyle;
       // Shape fill gradient
       if(el.dataset.fillGrad!=null){d.fillGrad=el.dataset.fillGrad==='1';}
@@ -366,6 +376,23 @@ function save(){
       // Cloud seed
       if(el.dataset.cloudSeed!=null) d.cloudSeed=+el.dataset.cloudSeed;
       else if(_ods&&_ods.cloudSeed!=null) d.cloudSeed=_ods.cloudSeed;
+      if(el.dataset.cloudForm) d.cloudForm=el.dataset.cloudForm;
+      else if(_ods&&_ods.cloudForm) d.cloudForm=_ods.cloudForm;
+      if(el.dataset.cloudRefW) d.cloudRefW=+el.dataset.cloudRefW;
+      else if(_ods&&_ods.cloudRefW) d.cloudRefW=_ods.cloudRefW;
+      if(el.dataset.cloudRefH) d.cloudRefH=+el.dataset.cloudRefH;
+      else if(_ods&&_ods.cloudRefH) d.cloudRefH=_ods.cloudRefH;
+      if(el.dataset.cloudFramed==='1') d.cloudFramed=true;
+      else if(_ods&&_ods.cloudFramed) d.cloudFramed=_ods.cloudFramed;
+      if(_ods&&_ods.cloudCircles) d.cloudCircles=_ods.cloudCircles;
+      if(_ods&&_ods.cloudCirclesForm) d.cloudCirclesForm=_ods.cloudCirclesForm;
+      else if(d.cloudForm) d.cloudCirclesForm=d.cloudForm;
+      if(_ods&&_ods.cloudFrameW) d.cloudFrameW=_ods.cloudFrameW;
+      if(_ods&&_ods.cloudFrameH) d.cloudFrameH=_ods.cloudFrameH;
+      const _domCw=parseInt(el.style.width)||0, _domCh=parseInt(el.style.height)||0;
+      if(!d.cloudRefW&&_domCw>0) d.cloudRefW=_domCw;
+      if(!d.cloudRefH&&_domCh>0) d.cloudRefH=_domCh;
+      if(typeof _cloudPersistDataset==='function') _cloudPersistDataset(el,d);
       // Parallelogram skew
       if(el.dataset.paraSkew!=null) d.paraSkew=+el.dataset.paraSkew;
       else if(_ods&&_ods.paraSkew!=null) d.paraSkew=_ods.paraSkew;
@@ -420,7 +447,14 @@ function save(){
       // Preserve shapeTextColorScheme (not in DOM, only in data)
       if(_ods&&_ods.shapeTextColorScheme!==undefined)d.shapeTextColorScheme=_ods.shapeTextColorScheme;
     }
-    else if(d.type==='svg')d.svgContent=el.querySelector('.ec').innerHTML;
+    else if(d.type==='svg'){
+      const _ec=el.querySelector('.ec');
+      const _svgOnly=_ec&&_ec.querySelector('svg');
+      const _oldSvg=oldElsById[d.id];
+      const _isGlDecor=_oldSvg&&typeof _isGlDecorRenderer==='function'&&_isGlDecorRenderer(_oldSvg._decorRenderer);
+      if(_isGlDecor&&_svgOnly) d.svgContent=_svgOnly.outerHTML;
+      else if(_ec) d.svgContent=_ec.innerHTML;
+    }
     else if(d.type==='formula'){const dd=oldElsById[d.id];if(dd){d.formulaRaw=dd.formulaRaw;d.formulaLines=dd.formulaLines;d.formulaSvg=dd.formulaSvg;d.formulaColorScheme=dd.formulaColorScheme;}d.formulaColor=el.dataset.formulaColor||'#ffffff';}
     else if(d.type==='lego'){d.legoStuds=+el.dataset.legoStuds||2;d.legoTall=el.dataset.legoTall==='true';d.legoSlope=el.dataset.legoSlope||null;d.legoStair=el.dataset.legoStair||null;d.legoColor=el.dataset.legoColor||'#e3000b';const _lsc=el.dataset.legoColorScheme;d.legoColorScheme=(!_lsc||_lsc===''||_lsc==='undefined')?undefined:(_lsc==='null'?null:(function(){try{return JSON.parse(_lsc);}catch(e){return undefined;}})());}
     else if(d.type==='graph'){const dd=oldElsById[d.id];if(dd){d.linkedFormulaId=dd.linkedFormulaId;d.graphExpr=dd.graphExpr;d.graphLatex=dd.graphLatex;d.graphExprs=dd.graphExprs;d.graphLines=dd.graphLines;d.graphLineColors=dd.graphLineColors;d.graphImg=dd.graphImg;d.graphColor=dd.graphColor;d.graphBg=dd.graphBg;d.graphDark=dd.graphDark;d.graphXMin=dd.graphXMin;d.graphXMax=dd.graphXMax;d.graphYMin=dd.graphYMin;d.graphYMax=dd.graphYMax;d.graphStep=dd.graphStep;}}
@@ -448,13 +482,13 @@ function save(){
       d.iconColor=el.dataset.iconColor||'#3b82f6';
       d.iconSw=el.dataset.iconSw!=null?+el.dataset.iconSw:1.8;
       d.iconStyle=el.dataset.iconStyle||'stroke';
-      d.shadow=el.dataset.shadow==='true'||el.dataset.shadow===true;
-      d.shadowBlur=+(el.dataset.shadowBlur||8);
-      d.shadowColor=el.dataset.shadowColor||'#000000';
-      // Always read svgContent from DOM — it contains the tight viewBox after fit
       const _ecInner=el.querySelector('.ec');
       const _domSvg=_ecInner?_ecInner.querySelector('svg'):null;
       const _oldIcon=oldElsById[d.id];
+      d.shadow=el.dataset.shadow==='true'||el.dataset.shadow===true;
+      d.shadowBlur=el.dataset.shadowBlur!=null?+el.dataset.shadowBlur:(_oldIcon&&_oldIcon.shadowBlur!=null?_oldIcon.shadowBlur:4);
+      d.shadowSize=el.dataset.shadowSize!=null?+el.dataset.shadowSize:(_oldIcon&&_oldIcon.shadowSize!=null?_oldIcon.shadowSize:3);
+      d.shadowColor=el.dataset.shadowColor||(_oldIcon&&_oldIcon.shadowColor)||'#000000';
       if(_domSvg){
         d.svgContent=_domSvg.outerHTML;
         // Preserve flags from previous data
@@ -466,17 +500,18 @@ function save(){
       } else {
         const _ic=typeof ICONS!=='undefined'?ICONS.find(function(x){return x.id===d.iconId;}):null;
         if(_ic&&typeof _buildIconSVG==='function'){
-          d.svgContent=_buildIconSVG(_ic,d.iconColor,d.iconSw,d.iconStyle,d.shadow,d.shadowBlur,d.shadowColor);
+          d.svgContent=_buildIconSVG(_ic,d.iconColor,d.iconSw,d.iconStyle,d.shadow,d.shadowBlur,d.shadowColor,d.shadowSize,d.id);
         }else if(_ecInner){
           d.svgContent=_ecInner.innerHTML;
         }
       }
     }
     else if(d.type==='applet'){
+      if(typeof _serializeAppletFromDom==='function') _serializeAppletFromDom(el, d);
+      else {
       d.appletId=el.dataset.appletId;
       d.appletHtml=el.dataset.appletHtml||'';
       if(el.dataset.appletAspect)d._appletAspect=+el.dataset.appletAspect;
-      // Read generator fields from dataset (kept in sync by refreshGeneratorEl)
       const _gk=['tmMin','tmSec','tmOnEnd','tmOnEndSlide','genMode','genLines','genMin','genMax','genStep','genFontSize','genColor','genBg','genBgBlur','genBgOp',
         'genBorderColor','genBorderWidth','genBold','genAlign','genVAlign',
         'genShadowOn','genShadowBlur','genShadowColor',
@@ -484,7 +519,6 @@ function save(){
       _gk.forEach(k=>{
         if(el.dataset[k]!==undefined){
           const v=el.dataset[k];
-          // convert numerics and booleans
           if(k==='genBold') d[k]=(v==='true');
           else if(k==='genShadowOn') d[k]=(v==='true');
           else if(['tmMin','tmSec','tmOnEndSlide','genMin','genMax','genStep','genFontSize','genBgBlur','genBgOp','genBorderWidth','genShadowBlur'].includes(k)) d[k]=+v;
@@ -496,6 +530,7 @@ function save(){
         }
       });
       if(el.dataset.genRx!==undefined) d.rx=+el.dataset.genRx;
+      }
     }
     else if(d.type==='pagenum'){
       // page number element — data stored in slide data, no DOM reading needed
@@ -518,7 +553,12 @@ function load(){
   document.querySelectorAll('.arc-handle,.star-handle,.para-handle').forEach(h=>h.remove());
   const _ov=document.getElementById('handles-overlay');if(_ov)_ov.innerHTML='';
   document.querySelectorAll('.rh[data-overlay-hidden]').forEach(rh=>{rh.style.display='';delete rh.dataset.overlayHidden;});
-  const canvas=document.getElementById('canvas');canvas.querySelectorAll('.el').forEach(e=>e.remove());
+  const canvas=document.getElementById('canvas');
+  if(typeof CrystalDecor!=='undefined') CrystalDecor.unmountAll();
+  if(typeof DnaDecor!=='undefined') DnaDecor.unmountAll();
+  if(typeof GalaxyDecor!=='undefined') GalaxyDecor.unmountAll();
+  if(typeof CausticsDecor!=='undefined') CausticsDecor.unmountAll();
+  canvas.querySelectorAll('.el').forEach(e=>e.remove());
   const s=slides[cur];loadBg(s);s.els.forEach(mkEl);
   document.getElementById('p-st').value=s.title;
   // Highlight active transition button — пустой/undefined = 'none'

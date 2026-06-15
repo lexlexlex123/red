@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **«Слайды»** — презентационный редактор, работающий в одном HTML-файле (или модульно).
 Не требует сервера, сборки или интернета. Открывается напрямую в браузере.
 
-- **Версия:** v5.8
+- **Версия:** v6.1
 - **Автор:** Некрасов Александр
 - **Стек:** Vanilla JS + HTML + CSS, без фреймворков
 - **Зависимости:** JSZip (офлайн), QRCode (офлайн), системные шрифты
@@ -52,9 +52,12 @@ project/
 │   ├── qrcode.min.js       # QR-аплет
 │   └── mathjax/tex-svg.js  # MathJax 3 (офлайн)
 └── js/
-    ├── 00-i18n.js          # Локализация RU/EN, APP_VERSION='5.8', APP_NAME
-    ├── 00-guard.js         # Proxy-обёртки для глобальных функций
+    ├── 00-i18n.js          # Локализация RU/EN, APP_VERSION='6.1', APP_NAME
+    ├── 00-bus.js           # Шина событий Bus.emit / Bus.on
+    ├── 00-guard.js         # window.guard.* прокси + Bus-обработчики
     ├── 01-state.js         # Глобальные переменные, THEMES[], SHAPES[], PALETTE[]
+    ├── 02-applets.js       # Аплеты: generator/timer/clock/notes, темы, postMessage
+    ├── 08-serialize.js     # _serializeAppletFromDom() для save()
     ├── 03-boot.js          # Инициализация, openColorPanel, магнитное выделение
     ├── 04-ui.js            # Handles overlay, drag, resize, rotation (DOMMatrix)
     ├── 05-backgrounds.js   # Фоны слайдов, setCustomBg()

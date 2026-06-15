@@ -53,6 +53,7 @@ const ANIM_CATS = [
       {name:'swing',      label:'Качение',      icon:'🎷'},
       {name:'float',      label:'Плавание',     icon:'🌊'},
       {name:'typewriter', label:'Смена текста',  icon:'⌨'},
+      {name:'captionSlide', label:'Титр в сторону', icon:'📰'},
     ]
   },
 ];
@@ -63,14 +64,34 @@ ANIM_CATS.forEach(g => g.items.forEach(it => { ANIM_INFO[it.name] = {label:it.la
 // ── Float organic smooth drift ───────────────────────────────────
 // Uses integer-frequency sine waves so the loop is perfectly seamless.
 // Each wave completes a whole number of cycles → t=0 and t=1 identical.
-function _floatFrames(fw, fh) {
+function _floatSeed(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function _floatRng(seed) {
+  let s = seed >>> 0;
+  return function() {
+    s = (s + 0x6D2B79F5) >>> 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function _floatFrames(fw, fh, seed) {
   const mx = fw * 0.06, my = fh * 0.06;
   const N = 32; // many keyframes = smooth
+  const rnd = seed != null ? _floatRng(seed) : Math.random.bind(Math);
   // Integer frequencies (1,2,3) ensure perfect loop: sin(n*2π*1+ph)=sin(ph)
   const mkW = () => [1,2,3].map(freq => ({
-    amp: 0.2 + Math.random() * 0.8,
+    amp: 0.2 + rnd() * 0.8,
     freq,
-    phase: Math.random() * Math.PI * 2
+    phase: rnd() * Math.PI * 2
   }));
   const rx = mkW(), ry = mkW();
   const smp = (ws, t) => {
@@ -87,10 +108,567 @@ function _floatFrames(fw, fh) {
   });
 }
 
+window._floatGroupBounds = function(members) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  (members || []).forEach(m => {
+    const x = m.x || 0, y = m.y || 0, w = m.w || 0, h = m.h || 0;
+    minX = Math.min(minX, x); minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x + w); maxY = Math.max(maxY, y + h);
+  });
+  if (!isFinite(minX)) return { w: 200, h: 200 };
+  return { w: Math.max(1, maxX - minX), h: Math.max(1, maxY - minY) };
+};
+
+window._floatFramesForGroup = function(members, groupId) {
+  const b = window._floatGroupBounds(members);
+  const seed = groupId ? _floatSeed(String(groupId)) : undefined;
+  return _floatFrames(b.w, b.h, seed);
+};
+
+window._floatPad = function(fw, fh) {
+  return { mx: Math.round(fw * 0.06), my: Math.round(fh * 0.06) };
+};
+
+window._ensureFloatWrap = function(el, fw, fh) {
+  const { mx, my } = window._floatPad(fw, fh);
+  let wrap = el.querySelector('._float_wrap');
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.className = '_float_wrap';
+    const ec = el.querySelector('.ec');
+    if (ec) {
+      ec.parentNode.insertBefore(wrap, ec);
+      wrap.appendChild(ec);
+    } else {
+      while (el.firstChild) wrap.appendChild(el.firstChild);
+      el.appendChild(wrap);
+    }
+  }
+  wrap.style.cssText = 'position:absolute;left:' + (-mx) + 'px;top:' + (-my) + 'px;width:' + (fw + 2 * mx) + 'px;height:' + (fh + 2 * my) + 'px;overflow:visible;pointer-events:none;';
+  const child = wrap.firstElementChild;
+  if (child) {
+    child.style.position = 'absolute';
+    child.style.left = mx + 'px';
+    child.style.top = my + 'px';
+    child.style.width = fw + 'px';
+    child.style.height = fh + 'px';
+    child.style.boxSizing = 'border-box';
+  }
+  if (el._floatOvSaved === undefined) el._floatOvSaved = el.style.overflow || '';
+  el.style.overflow = 'visible';
+  return wrap.firstElementChild || wrap;
+};
+
+function _captionClip(dir, phase, u, w, h) {
+  w = w || 200;
+  h = h || 200;
+  if (dir === 'right') {
+    const left = Math.round((phase === 'appear' ? (1 - u) : u) * w);
+    return `inset(0 0 0 ${left}px)`;
+  }
+  if (dir === 'left') {
+    const right = Math.round((phase === 'appear' ? (1 - u) : u) * w);
+    return `inset(0 ${right}px 0 0)`;
+  }
+  if (dir === 'down') {
+    const top = Math.round((phase === 'appear' ? (1 - u) : u) * h);
+    return `inset(${top}px 0 0 0)`;
+  }
+  const bottom = Math.round((phase === 'appear' ? (1 - u) : u) * h);
+  return `inset(0 0 ${bottom}px 0)`;
+}
+
+function _captionGroupBounds(items) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  (items || []).forEach(it => {
+    const x = it.x != null ? it.x : 0, y = it.y != null ? it.y : 0;
+    const w = it.w || 200, h = it.h || 200;
+    minX = Math.min(minX, x); minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x + w); maxY = Math.max(maxY, y + h);
+  });
+  if (!isFinite(minX)) return null;
+  return { x: minX, y: minY, w: Math.max(1, maxX - minX), h: Math.max(1, maxY - minY) };
+}
+
+function _captionGroupVisibleRect(dir, phase, u, G) {
+  if (dir === 'right') {
+    if (phase === 'appear') {
+      const edge = G.x + u * G.w;
+      return { left: G.x, top: G.y, right: edge, bottom: G.y + G.h };
+    }
+    if (phase === 'exit') {
+      const edge = G.x + u * G.w;
+      return { left: edge, top: G.y, right: G.x + G.w, bottom: G.y + G.h };
+    }
+  } else if (dir === 'left') {
+    if (phase === 'appear') {
+      const edge = G.x + (1 - u) * G.w;
+      return { left: edge, top: G.y, right: G.x + G.w, bottom: G.y + G.h };
+    }
+    if (phase === 'exit') {
+      const edge = G.x + (1 - u) * G.w;
+      return { left: G.x, top: G.y, right: edge, bottom: G.y + G.h };
+    }
+  } else if (dir === 'down') {
+    if (phase === 'appear') {
+      const edge = G.y + u * G.h;
+      return { left: G.x, top: G.y, right: G.x + G.w, bottom: edge };
+    }
+    if (phase === 'exit') {
+      const edge = G.y + u * G.h;
+      return { left: G.x, top: edge, right: G.x + G.w, bottom: G.y + G.h };
+    }
+  } else {
+    if (phase === 'appear') {
+      const edge = G.y + (1 - u) * G.h;
+      return { left: G.x, top: edge, right: G.x + G.w, bottom: G.y + G.h };
+    }
+    if (phase === 'exit') {
+      const edge = G.y + (1 - u) * G.h;
+      return { left: G.x, top: G.y, right: G.x + G.w, bottom: edge };
+    }
+  }
+  return { left: G.x, top: G.y, right: G.x + G.w, bottom: G.y + G.h };
+}
+
+function _captionClipGroup(dir, phase, u, G, mx, my, mw, mh) {
+  const vis = _captionGroupVisibleRect(dir, phase, u, G);
+  const vLeft = Math.max(mx, vis.left);
+  const vTop = Math.max(my, vis.top);
+  const vRight = Math.min(mx + mw, vis.right);
+  const vBottom = Math.min(my + mh, vis.bottom);
+  const left = Math.max(0, Math.round(vLeft - mx));
+  const top = Math.max(0, Math.round(vTop - my));
+  const right = Math.max(0, Math.round((mx + mw) - vRight));
+  const bottom = Math.max(0, Math.round((my + mh) - vBottom));
+  return `inset(${top}px ${right}px ${bottom}px ${left}px)`;
+}
+
+function _captionStageForGroup(wrap, inner, dir, w, h, bounds, phase) {
+  const { dx, dy } = _captionShift(bounds.w, bounds.h);
+  wrap.style.right = 'auto';
+  wrap.style.bottom = 'auto';
+  inner.style.left = '0';
+  inner.style.top = '0';
+  _captionLockInnerSize(inner, w, h);
+  if (dir === 'right') {
+    wrap.style.top = '0';
+    wrap.style.height = h + 'px';
+    wrap.style.left = '0';
+    wrap.style.width = (phase === 'exit' ? (w + dx) : w) + 'px';
+  } else if (dir === 'left') {
+    wrap.style.top = '0';
+    wrap.style.height = h + 'px';
+    if (phase === 'exit') {
+      wrap.style.left = (-dx) + 'px';
+      wrap.style.width = (w + dx) + 'px';
+    } else {
+      wrap.style.left = '0';
+      wrap.style.width = w + 'px';
+    }
+  } else if (dir === 'down') {
+    wrap.style.left = '0';
+    wrap.style.width = w + 'px';
+    wrap.style.top = '0';
+    wrap.style.height = (phase === 'exit' ? (h + dy) : h) + 'px';
+  } else {
+    wrap.style.left = '0';
+    wrap.style.width = w + 'px';
+    if (phase === 'exit') {
+      wrap.style.top = (-dy) + 'px';
+      wrap.style.height = (h + dy) + 'px';
+    } else {
+      wrap.style.top = '0';
+      wrap.style.height = h + 'px';
+    }
+  }
+}
+
+function _captionWrapFramesGroup(bounds, mx, my, mw, mh, dir, phase, steps) {
+  steps = steps || 24;
+  return Array.from({ length: steps + 1 }, (_, i) => {
+    const u = i / steps;
+    const clip = _captionClipGroup(dir, phase, u, bounds, mx, my, mw, mh);
+    return { clipPath: clip, WebkitClipPath: clip };
+  });
+}
+
+function _captionInnerFramesGroup(gw, gh, dir, phase, steps) {
+  steps = steps || 24;
+  return Array.from({ length: steps + 1 }, (_, i) => {
+    const u = i / steps;
+    return {
+      transform: _captionTranslate(dir, phase, gw, gh, u),
+      opacity: phase === 'appear' ? u : 1 - u
+    };
+  });
+}
+
+function _captionPrepHiddenGroup(wrap, inner, dir, bounds, mx, my, mw, mh) {
+  _captionStageForGroup(wrap, inner, dir, mw, mh, bounds, 'appear');
+  const clip = _captionClipGroup(dir, 'appear', 0, bounds, mx, my, mw, mh);
+  wrap.style.clipPath = clip;
+  wrap.style.webkitClipPath = clip;
+  inner.style.transform = _captionTranslate(dir, 'appear', bounds.w, bounds.h, 0);
+  inner.style.opacity = '0';
+}
+
+function _captionHoldVisibleGroup(wrap, inner, dir, bounds, mx, my, mw, mh) {
+  _captionStageForGroup(wrap, inner, dir, mw, mh, bounds, 'hold');
+  const clip = _captionClipGroup(dir, 'hold', 1, bounds, mx, my, mw, mh);
+  wrap.style.clipPath = clip;
+  wrap.style.webkitClipPath = clip;
+  inner.style.transform = '';
+  inner.style.opacity = '1';
+}
+
+function _captionPlayPhaseGroup(items, bounds, dir, phase, ms, easing) {
+  const steps = 24;
+  const innerFrames = _captionInnerFramesGroup(bounds.w, bounds.h, dir, phase, steps);
+  const anims = items.map(it => {
+    _captionStageForGroup(it.wrap, it.inner, dir, it.w, it.h, bounds, phase);
+    _captionClearStyles(it.wrap, it.inner);
+    const wrapFrames = _captionWrapFramesGroup(bounds, it.x, it.y, it.w, it.h, dir, phase, steps);
+    const aw = it.wrap.animate(wrapFrames, { duration: ms, easing, fill: 'forwards' });
+    const ai = it.inner.animate(innerFrames, { duration: ms, easing, fill: 'forwards' });
+    return Promise.all([aw.finished, ai.finished]).catch(() => {});
+  });
+  return Promise.all(anims).then(() => {});
+}
+
+function _captionShift(w, h) {
+  return { dx: Math.round(w * 0.1), dy: Math.round(h * 0.1) };
+}
+
+function _captionStageFor(wrap, inner, dir, w, h, phase) {
+  const { dx, dy } = _captionShift(w, h);
+  wrap.style.right = 'auto';
+  wrap.style.bottom = 'auto';
+  inner.style.left = '0';
+  inner.style.top = '0';
+  _captionLockInnerSize(inner, w, h);
+  if (dir === 'right') {
+    wrap.style.top = '0';
+    wrap.style.height = h + 'px';
+    wrap.style.left = '0';
+    wrap.style.width = (phase === 'exit' ? (w + dx) : w) + 'px';
+  } else if (dir === 'left') {
+    wrap.style.top = '0';
+    wrap.style.height = h + 'px';
+    if (phase === 'exit') {
+      wrap.style.left = (-dx) + 'px';
+      wrap.style.width = (w + dx) + 'px';
+    } else {
+      wrap.style.left = '0';
+      wrap.style.width = w + 'px';
+    }
+  } else if (dir === 'down') {
+    wrap.style.left = '0';
+    wrap.style.width = w + 'px';
+    wrap.style.top = '0';
+    wrap.style.height = (phase === 'exit' ? (h + dy) : h) + 'px';
+  } else {
+    wrap.style.left = '0';
+    wrap.style.width = w + 'px';
+    if (phase === 'exit') {
+      wrap.style.top = (-dy) + 'px';
+      wrap.style.height = (h + dy) + 'px';
+    } else {
+      wrap.style.top = '0';
+      wrap.style.height = h + 'px';
+    }
+  }
+}
+
+function _captionResetStage(wrap) {
+  if (!wrap) return;
+  wrap.style.left = wrap.style.top = wrap.style.width = wrap.style.height = '';
+  wrap.style.right = wrap.style.bottom = '';
+}
+
+function _captionTranslate(dir, phase, w, h, u) {
+  const dx = w * 0.1, dy = h * 0.1;
+  let x = 0, y = 0;
+  if (dir === 'right') {
+    if (phase === 'appear') x = -dx * (1 - u);
+    else x = dx * u;
+  } else if (dir === 'left') {
+    if (phase === 'appear') x = dx * (1 - u);
+    else x = -dx * u;
+  } else if (dir === 'down') {
+    if (phase === 'appear') y = -dy * (1 - u);
+    else y = dy * u;
+  } else {
+    if (phase === 'appear') y = dy * (1 - u);
+    else y = -dy * u;
+  }
+  return `translate(${x.toFixed(2)}px,${y.toFixed(2)}px)`;
+}
+
+function _captionWrapFrames(w, h, dir, phase, steps) {
+  steps = steps || 24;
+  return Array.from({ length: steps + 1 }, (_, i) => {
+    const u = i / steps;
+    const clip = _captionClip(dir, phase, u, w, h);
+    return { clipPath: clip, WebkitClipPath: clip };
+  });
+}
+
+function _captionInnerFrames(w, h, dir, phase, steps) {
+  steps = steps || 24;
+  return Array.from({ length: steps + 1 }, (_, i) => {
+    const u = i / steps;
+    return {
+      transform: _captionTranslate(dir, phase, w, h, u),
+      opacity: phase === 'appear' ? u : 1 - u
+    };
+  });
+}
+
+function _captionFreeEl(el) {
+  if (!el || el._capOvSaved !== undefined) return;
+  el._capOvSaved = el.style.overflow || '';
+  el.style.overflow = 'visible';
+}
+
+function _captionRestoreEl(el) {
+  if (!el || el._capOvSaved === undefined) return;
+  el.style.overflow = el._capOvSaved;
+  delete el._capOvSaved;
+}
+
+function _captionLockInnerSize(inner, w, h) {
+  inner.style.width = w + 'px';
+  inner.style.height = h + 'px';
+  inner.style.maxWidth = w + 'px';
+  inner.style.maxHeight = h + 'px';
+  inner.style.boxSizing = 'border-box';
+}
+
+function _captionClearStyles(wrap, inner) {
+  if (wrap) {
+    wrap.style.removeProperty('clip-path');
+    wrap.style.removeProperty('-webkit-clip-path');
+  }
+  if (inner) {
+    inner.style.removeProperty('transform');
+    inner.style.removeProperty('opacity');
+  }
+}
+
+function _captionPrepHidden(wrap, inner, dir, w, h) {
+  _captionStageFor(wrap, inner, dir, w, h, 'appear');
+  const clip = _captionClip(dir, 'appear', 0, w, h);
+  wrap.style.clipPath = clip;
+  wrap.style.webkitClipPath = clip;
+  inner.style.transform = _captionTranslate(dir, 'appear', w, h, 0);
+  inner.style.opacity = '0';
+}
+
+function _captionPlayPhase(wrap, inner, w, h, dir, phase, ms, easing) {
+  _captionStageFor(wrap, inner, dir, w, h, phase);
+  _captionClearStyles(wrap, inner);
+  const aw = wrap.animate(_captionWrapFrames(w, h, dir, phase), { duration: ms, easing, fill: 'forwards' });
+  const ai = inner.animate(_captionInnerFrames(w, h, dir, phase), { duration: ms, easing, fill: 'forwards' });
+  return Promise.all([aw.finished, ai.finished]).catch(() => {});
+}
+
+function _captionHoldVisible(wrap, inner, dir, w, h) {
+  _captionStageFor(wrap, inner, dir, w, h, 'hold');
+  wrap.style.clipPath = 'inset(0)';
+  wrap.style.webkitClipPath = 'inset(0)';
+  inner.style.transform = '';
+  inner.style.opacity = '1';
+}
+
+function _ensureCaptionWrap(el) {
+  let wrap = el.querySelector('._caption_wrap');
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.className = '_caption_wrap';
+    wrap.style.cssText = 'position:absolute;inset:0;overflow:visible;pointer-events:none;';
+    const inner = document.createElement('div');
+    inner.className = '_caption_inner';
+    inner.style.cssText = 'position:absolute;left:0;top:0;';
+    while (el.firstChild) inner.appendChild(el.firstChild);
+    wrap.appendChild(inner);
+    el.appendChild(wrap);
+    return { wrap, inner };
+  }
+  let inner = wrap.querySelector('._caption_inner');
+  if (!inner) {
+    inner = document.createElement('div');
+    inner.className = '_caption_inner';
+    inner.style.cssText = 'position:absolute;left:0;top:0;';
+    while (wrap.firstChild) inner.appendChild(wrap.firstChild);
+    wrap.appendChild(inner);
+  }
+  return { wrap, inner };
+}
+
+window._animChainDuration = function(a) {
+  if (!a) return 600;
+  if (a.name === 'captionSlide') {
+    const d = +(a.duration || 600) || 600;
+    const h = +(a.holdDuration || 2000) || 2000;
+    return d + h + d;
+  }
+  return a.duration || 600;
+};
+
+window._resetCaptionSlide = function(el, unwrap) {
+  if (!el) return;
+  _captionRestoreEl(el);
+  el.style.visibility = '';
+  const wrap = el.querySelector('._caption_wrap');
+  if (!wrap) return;
+  _captionResetStage(wrap);
+  const inner = wrap.querySelector('._caption_inner');
+  [inner, wrap].forEach(node => {
+    if (!node) return;
+    node.getAnimations().forEach(a => { try { a.cancel(); } catch (e) {} });
+  });
+  if (unwrap) {
+    const src = inner || wrap;
+    while (src.firstChild) el.insertBefore(src.firstChild, wrap);
+    wrap.remove();
+  } else if (inner) {
+    _captionClearStyles(wrap, inner);
+  }
+};
+
+window._prepCaptionSlideInitial = function(el, a, w, h) {
+  const dir = a.captionDir || 'right';
+  const { wrap, inner } = _ensureCaptionWrap(el);
+  _captionLockInnerSize(inner, w, h);
+  _captionPrepHidden(wrap, inner, dir, w, h);
+};
+
+window._fireCaptionSlideAnimGroup = function(entries, a, delay, opts) {
+  opts = opts || {};
+  if (!entries || !entries.length) return;
+  const hideAfter = opts.hideAfter !== false;
+  const appearMs = +(a.duration || 600) || 600;
+  const holdMs = +(a.holdDuration || 2000) || 2000;
+  const exitMs = +(a.duration || 600) || 600;
+  const dir = a.captionDir || 'right';
+
+  const items = entries.map(e => {
+    const w = e.w || parseInt(e.el.style.width) || 200;
+    const h = e.h || parseInt(e.el.style.height) || 200;
+    const x = e.x != null ? e.x : (parseInt(e.el.style.left) || 0);
+    const y = e.y != null ? e.y : (parseInt(e.el.style.top) || 0);
+    const parts = _ensureCaptionWrap(e.el);
+    return { el: e.el, x, y, w, h, wrap: parts.wrap, inner: parts.inner };
+  });
+  const bounds = items.length > 1 ? _captionGroupBounds(items) : null;
+  const groupMode = !!(bounds && items.length > 1);
+
+  if (window._activeCaptionRun) {
+    window._activeCaptionRun.cancelled = true;
+    clearTimeout(window._activeCaptionRun.holdTimer);
+  }
+  const run = { cancelled: false, holdTimer: null };
+  window._activeCaptionRun = run;
+
+  items.forEach(it => {
+    if (delay > 0) {
+      if (groupMode) _captionPrepHiddenGroup(it.wrap, it.inner, dir, bounds, it.x, it.y, it.w, it.h);
+      else {
+        window._prepCaptionSlideInitial(it.el, a, it.w, it.h);
+      }
+      _captionFreeEl(it.el);
+    }
+  });
+
+  const finishHide = () => {
+    if (run.cancelled) return;
+    items.forEach(it => {
+      _captionRestoreEl(it.el);
+      if (hideAfter) it.el.style.visibility = 'hidden';
+      else window._resetCaptionSlide(it.el, true);
+    });
+    if (window._activeCaptionRun === run) window._activeCaptionRun = null;
+  };
+
+  const playPhase = (phase, ms, ease) => {
+    if (groupMode) return _captionPlayPhaseGroup(items, bounds, dir, phase, ms, ease);
+    const it = items[0];
+    return _captionPlayPhase(it.wrap, it.inner, it.w, it.h, dir, phase, ms, ease);
+  };
+
+  const runExit = () => {
+    if (run.cancelled) return;
+    playPhase('exit', exitMs, 'ease-in').then(finishHide).catch(finishHide);
+  };
+
+  setTimeout(() => {
+    if (run.cancelled) return;
+    items.forEach(it => {
+      _captionFreeEl(it.el);
+      it.el.style.visibility = '';
+    });
+    playPhase('appear', appearMs, 'ease-out').then(() => {
+      if (run.cancelled) return;
+      items.forEach(it => {
+        if (groupMode) _captionHoldVisibleGroup(it.wrap, it.inner, dir, bounds, it.x, it.y, it.w, it.h);
+        else _captionHoldVisible(it.wrap, it.inner, dir, it.w, it.h);
+      });
+      run.holdTimer = setTimeout(runExit, holdMs);
+    }).catch(finishHide);
+  }, delay || 0);
+};
+
+window._fireCaptionSlideAnim = function(el, a, delay, w, h, opts) {
+  window._fireCaptionSlideAnimGroup([{ el, w, h }], a, delay, opts);
+};
+
+const _DANCE_PREVIEW_FRAMES = [
+  { transform: 'scaleX(1) scaleY(1) rotate(0deg)', easing: 'cubic-bezier(.42,0,.3,1.4)' },
+  { transform: 'scaleX(1.12) scaleY(0.82) rotate(-2deg)', easing: 'cubic-bezier(.6,0,.4,1.3)' },
+  { transform: 'scaleX(0.9) scaleY(1.1) rotate(1.5deg)', easing: 'cubic-bezier(.42,0,.3,1.4)' },
+  { transform: 'scaleX(1.1) scaleY(0.85) rotate(-1.5deg)', easing: 'cubic-bezier(.6,0,.4,1.3)' },
+  { transform: 'scaleX(0.92) scaleY(1.08) rotate(2deg)', easing: 'cubic-bezier(.42,0,.3,1.4)' },
+  { transform: 'scaleX(1.06) scaleY(0.9) rotate(-1deg)', easing: 'cubic-bezier(.5,0,.35,1.3)' },
+  { transform: 'scaleX(0.97) scaleY(1.03) rotate(0.5deg)', easing: 'cubic-bezier(.4,0,.6,1)' },
+  { transform: 'scaleX(1) scaleY(1) rotate(0deg)' }
+];
+
+let _animPreviewTimer = null;
+
+window._animGroupDomEls = function(el) {
+  if (!el) return [];
+  const gid = el.dataset && el.dataset.groupId;
+  if (!gid) return [el];
+  const cv = document.getElementById('canvas');
+  if (!cv) return [el];
+  const gEls = Array.from(cv.querySelectorAll('.el[data-group-id="' + gid + '"]'));
+  return gEls.length > 1 ? gEls : [el];
+};
+
+window._clearAnimHoverPreview = function(el) {
+  if (!el) return;
+  clearTimeout(_animPreviewTimer);
+  if (window._activeCaptionRun) {
+    window._activeCaptionRun.cancelled = true;
+    clearTimeout(window._activeCaptionRun.holdTimer);
+    window._activeCaptionRun = null;
+  }
+  window._animGroupDomEls(el).forEach(e => {
+    if (typeof window._resetCaptionSlide === 'function') window._resetCaptionSlide(e, true);
+    e.style.visibility = '';
+    [e, e.querySelector('.ec'), e.querySelector('.tel'), e.querySelector('.shape-text')].forEach(t => {
+      if (!t) return;
+      t.getAnimations().forEach(a => { try { a.cancel(); } catch (err) {} });
+      t.style.animation = '';
+      t.style.transform = t === e ? (t.dataset.rot ? `rotate(${t.dataset.rot}deg)` : '') : '';
+    });
+  });
+};
+
 // Exposed globals so inline onclick handlers can access them
 window._selectedAnimName = null;
 window._selectedAnimCat  = null;
-let _animPreviewTimer = null;
 
 (function(){
   const _sel       = ()=> (typeof sel!=='undefined')?sel:null;
@@ -100,6 +678,126 @@ let _animPreviewTimer = null;
   const _saveState = ()=> typeof saveState ==='function'&&saveState();
   const _pushUndo  = ()=> typeof pushUndo  ==='function'&&pushUndo();
   const _toast     = (m,t)=> typeof toast  ==='function'&&toast(m,t);
+
+  function _animCanvas() { return document.getElementById('canvas'); }
+
+  function _slide() {
+    const all = _slides();
+    const i = _cur();
+    return all && all[i] ? all[i] : null;
+  }
+
+  function _animGroupDomEls(el) {
+    return typeof window._animGroupDomEls === 'function' ? window._animGroupDomEls(el) : (el ? [el] : []);
+  }
+
+  function _animGroupData(el) {
+    const s = _slide();
+    if (!s || !el) return [];
+    return _animGroupDomEls(el).map(dom => {
+      const d = s.els.find(x => x.id === dom.dataset.id);
+      return d ? { dom, d } : null;
+    }).filter(Boolean);
+  }
+
+  function _animGroupDataById(elId) {
+    const s = _slide();
+    if (!s) return [];
+    const d = s.els.find(x => x.id === elId);
+    if (!d) return [];
+    if (d.groupId) {
+      const members = s.els.filter(x => x.groupId === d.groupId);
+      if (members.length > 1) {
+        const cv = _animCanvas();
+        return members.map(md => {
+          const dom = cv && cv.querySelector('.el[data-id="' + md.id + '"]');
+          return dom ? { dom, d: md } : null;
+        }).filter(Boolean);
+      }
+    }
+    const cv = _animCanvas();
+    const dom = cv && cv.querySelector('.el[data-id="' + elId + '"]');
+    return dom ? [{ dom, d }] : [];
+  }
+
+  function _syncDomAnims(pairs) {
+    const cv = _animCanvas();
+    if (!cv) return;
+    pairs.forEach(({ dom, d }) => {
+      const node = dom || cv.querySelector('.el[data-id="' + d.id + '"]');
+      if (node) node.dataset.anims = JSON.stringify(d.anims || []);
+    });
+  }
+
+  function _cloneAnimsForMember(sourceAnims, domEl) {
+    if (!sourceAnims || !sourceAnims.length) return [];
+    const tel = domEl && (domEl.querySelector('.tel') || domEl.querySelector('.shape-text') || domEl.querySelector('.ec'));
+    const html = tel ? tel.innerHTML : '';
+    let prevTo = html;
+    return sourceAnims.map(a => {
+      const copy = JSON.parse(JSON.stringify(a));
+      if (copy.name === 'typewriter') {
+        copy.fromHtml = prevTo;
+        copy.toHtml = (a.fromHtml === a.toHtml) ? html : (a.toHtml || html);
+        prevTo = copy.toHtml;
+      }
+      return copy;
+    });
+  }
+
+  function _syncAnimsOrderToGroup(elId, newAnims) {
+    const s = _slides()[_cur()];
+    if (!s) return;
+    const d = s.els.find(x => x.id === elId);
+    if (!d || !d.groupId) return;
+    const cv = _animCanvas();
+    s.els.forEach(md => {
+      if (md.groupId !== d.groupId || md.id === elId) return;
+      const dom = cv && cv.querySelector('.el[data-id="' + md.id + '"]');
+      md.anims = _cloneAnimsForMember(newAnims, dom);
+      if (dom) dom.dataset.anims = JSON.stringify(md.anims);
+    });
+  }
+
+  window._syncGroupAnimsOnGroup = function(groupId, leaderId) {
+    const s = _slides()[_cur()];
+    if (!s || !groupId) return;
+    const members = s.els.filter(x => x.groupId === groupId);
+    if (members.length < 2) return;
+    const leader = members.find(x => x.id === leaderId) || members.reduce((best, m) =>
+      ((m.anims && m.anims.length) > (best.anims && best.anims.length) ? m : best), members[0]);
+    if (!leader.anims || !leader.anims.length) return;
+    const cv = _animCanvas();
+    members.forEach(md => {
+      if (md.id === leader.id) return;
+      const dom = cv && cv.querySelector('.el[data-id="' + md.id + '"]');
+      md.anims = _cloneAnimsForMember(leader.anims, dom);
+      if (dom) dom.dataset.anims = JSON.stringify(md.anims);
+    });
+  };
+
+  function _makeAnim(animName, cat, domEl, d) {
+    const anim = { name: animName, cat, duration: 600, delay: 0, trigger: 'auto' };
+    if (animName === 'moveTo') { anim.tx = 100; anim.ty = 0; }
+    if (animName === 'orbitTo') { anim.orbitR = 120; anim.orbitDir = 'cw'; anim.orbitDeg = 360; anim.orbitCx = 0; anim.orbitCy = -120; }
+    if (animName === 'rotate') { anim.rotateDir = 'cw'; anim.rotateDeg = 360; }
+    if (animName === 'dance') { anim.swingCount = 1; anim.duration = 1200; }
+    if (animName === 'float') { anim.swingCount = 10; anim.duration = 5000; }
+    if (animName === 'captionSlide') { anim.holdDuration = 2000; anim.captionDir = 'right'; }
+    if (animName === 'typewriter') {
+      anim.charDelay = 40;
+      const _prevTw = (d.anims || []).filter(x => x.name === 'typewriter');
+      if (_prevTw.length > 0) {
+        anim.fromHtml = _prevTw[_prevTw.length - 1].toHtml || '';
+        anim.toHtml = _prevTw[_prevTw.length - 1].toHtml || '';
+      } else {
+        const _tel = domEl.querySelector('.tel') || domEl.querySelector('.shape-text') || domEl.querySelector('.ec');
+        anim.fromHtml = _tel ? _tel.innerHTML : '';
+        anim.toHtml = _tel ? _tel.innerHTML : '';
+      }
+    }
+    return anim;
+  }
 
   window.openAnimPanel = function(){
     try{
@@ -130,7 +828,10 @@ let _animPreviewTimer = null;
   window.setElTrigger = function(val){
     try{
       const el=_sel(); if(!el) return;
-      if(val) el.dataset.isTrigger='true'; else delete el.dataset.isTrigger;
+      _animGroupDomEls(el).forEach(node => {
+        if (val) node.dataset.isTrigger = 'true';
+        else delete node.dataset.isTrigger;
+      });
       _save(); renderAnimPanel(); _saveState();
     }catch(e){}
   };
@@ -155,9 +856,10 @@ let _animPreviewTimer = null;
       const relDelay = a.delay || 0;
       let absDelay;
       const _isLive = typeof ANIM_INFO!=='undefined' && ANIM_INFO[a.name] && ANIM_INFO[a.name].cat==='live';
+      const _isLiveLoop = _isLive && a.name !== 'captionSlide' && a.name !== 'typewriter';
       if(i === 0){
         absDelay = relDelay;
-      } else if(_isLive){
+      } else if(_isLiveLoop){
         // live стартует немедленно (absDelay = только явная задержка пользователя)
         absDelay = relDelay;
       } else if(trigger === 'withPrev'){
@@ -165,10 +867,10 @@ let _animPreviewTimer = null;
       } else {
         absDelay = prevStart + prevDur + relDelay;
       }
-      // live не сдвигает цепочку
-      if(!_isLive){
+      // live-loop не сдвигает цепочку; captionSlide/typewriter — конечные, сдвигают
+      if(!_isLiveLoop){
         prevStart = absDelay;
-        prevDur = a.duration || 600;
+        prevDur = window._animChainDuration(a);
       }
       return {anim: a, absDelay};
     });
@@ -177,36 +879,17 @@ let _animPreviewTimer = null;
   window.addAnimToSel = function(animName, cat){
     try{
       const el=_sel(); if(!el){ alert('Выберите объект на слайде'); return; }
+      const targets = _animGroupData(el);
+      if (!targets.length) return;
       _pushUndo();
-      const s=_slides()[_cur()]; if(!s) return;
-      const d=s.els.find(x=>x.id===el.dataset.id); if(!d) return;
-      if(!d.anims) d.anims=[];
-      const anim = {name:animName, cat, duration:600, delay:0, trigger:'auto'};
-      // For moveTo: default offset = 100px right, initial ghost visible
-      if(animName==='moveTo'){ anim.tx=100; anim.ty=0; }
-      // For orbitTo: default radius, direction, degrees
-      if(animName==='orbitTo'){ anim.orbitR=120; anim.orbitDir='cw'; anim.orbitDeg=360; anim.orbitCx=0; anim.orbitCy=-120; }
-      if(animName==='rotate'){ anim.rotateDir='cw'; anim.rotateDeg=360; }
-      if(animName==='dance'){ anim.swingCount=1; anim.duration=1200; }
-      if(animName==='float'){ anim.swingCount=10; anim.duration=5000; }
-      if(animName==='typewriter'){
-        anim.charDelay = 40;
-        // Если уже есть typewriter-анимации — fromHtml = toHtml последней из них
-        const _prevTw = d.anims.filter(x => x.name==='typewriter');
-        if(_prevTw.length > 0){
-          anim.fromHtml = _prevTw[_prevTw.length-1].toHtml || '';
-          anim.toHtml   = _prevTw[_prevTw.length-1].toHtml || '';
-        } else {
-          // Первая typewriter — берём текущий текст из DOM
-          const _domEl = el;
-          const _tel = _domEl.querySelector('.tel') || _domEl.querySelector('.shape-text') || _domEl.querySelector('.ec');
-          anim.fromHtml = _tel ? _tel.innerHTML : '';
-          anim.toHtml   = _tel ? _tel.innerHTML : '';
-        }
-      }
-      d.anims.push(anim);
-      el.dataset.anims=JSON.stringify(d.anims);
+      targets.forEach(({ dom, d }) => {
+        if (!d.anims) d.anims = [];
+        d.anims.push(_makeAnim(animName, cat, dom, d));
+      });
+      _syncDomAnims(targets);
+      if (typeof window._clearAnimHoverPreview === 'function') window._clearAnimHoverPreview(el);
       _save(); renderAnimPanel(); _saveState();
+      if (targets.length > 1) _toast('Анимация добавлена группе (' + targets.length + ')', 'ok');
       if(animName==='moveTo' && typeof renderMotionOverlay==='function') renderMotionOverlay();
       if(animName==='orbitTo' && typeof renderMotionOverlay==='function') renderMotionOverlay();
     }catch(e){ console.warn('[10-animations] addAnimToSel:', e.message); }
@@ -221,12 +904,12 @@ let _animPreviewTimer = null;
   window.removeAnim = function(elId, animIdx){
     try{
       _pushUndo();
-      const s=_slides()[_cur()]; if(!s) return;
-      const d=s.els.find(x=>x.id===elId); if(!d||!d.anims) return;
-      d.anims.splice(animIdx,1);
-      // No delay recalc - delays are relative, they stay valid
-      const domEl=document.getElementById('canvas').querySelector('[data-id="'+elId+'"]');
-      if(domEl) domEl.dataset.anims=JSON.stringify(d.anims);
+      const targets = _animGroupDataById(elId);
+      targets.forEach(({ d }) => {
+        if (!d.anims) return;
+        d.anims.splice(animIdx, 1);
+      });
+      _syncDomAnims(targets);
       _save(); renderAnimPanel(); _saveState();
       if(typeof renderMotionOverlay==='function') renderMotionOverlay();
     }catch(e){}
@@ -234,18 +917,21 @@ let _animPreviewTimer = null;
 
   window.updateAnimProp = function(elId, animIdx, prop, val){
     try{
-      const s=_slides()[_cur()]; if(!s) return;
-      const d=s.els.find(x=>x.id===elId); if(!d||!d.anims||!d.anims[animIdx]) return;
-      if(val === undefined){ delete d.anims[animIdx][prop]; }
-      else if(prop==='duration'||prop==='delay'||prop==='navTarget'||prop==='charDelay'||prop==='tx'||prop==='ty'||prop==='orbitR'||prop==='orbitDeg'||prop==='rotateDeg') d.anims[animIdx][prop]=+val;
-      else d.anims[animIdx][prop]=val;
-      const domEl=document.getElementById('canvas').querySelector('[data-id="'+elId+'"]');
-      if(domEl) domEl.dataset.anims=JSON.stringify(d.anims);
-      // Also sync animJson on the panel row so drag-reorder stays current
-      const _animPanel=document.getElementById('anim-panel');
-      if(_animPanel){
-        const _rows=[..._animPanel.querySelectorAll('.anim-row[data-el-id="'+elId+'"]')];
-        if(_rows[animIdx]) _rows[animIdx].dataset.animJson=JSON.stringify(d.anims[animIdx]);
+      const twTextProps = ['fromHtml', 'toHtml'];
+      const targets = twTextProps.includes(prop)
+        ? _animGroupDataById(elId).filter(x => x.d.id === elId)
+        : _animGroupDataById(elId);
+      targets.forEach(({ d }) => {
+        if (!d.anims || !d.anims[animIdx]) return;
+        if (val === undefined) delete d.anims[animIdx][prop];
+        else if (prop === 'duration' || prop === 'delay' || prop === 'navTarget' || prop === 'charDelay' || prop === 'holdDuration' || prop === 'tx' || prop === 'ty' || prop === 'orbitR' || prop === 'orbitDeg' || prop === 'rotateDeg') d.anims[animIdx][prop] = +val;
+        else d.anims[animIdx][prop] = val;
+      });
+      _syncDomAnims(targets);
+      const _animPanel = document.getElementById('anim-panel');
+      if (_animPanel) {
+        const _rows = [..._animPanel.querySelectorAll('.anim-row[data-el-id="' + elId + '"]')];
+        if (_rows[animIdx]) _rows[animIdx].dataset.animJson = JSON.stringify(targets[0].d.anims[animIdx]);
       }
       _save(); _saveState();
     }catch(e){}
@@ -255,12 +941,12 @@ let _animPreviewTimer = null;
     try{
       if(!sel) return;
       pushUndo();
-      // Удаляем только у выбранного объекта (не всего слайда)
-      const d=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
-      if(!d) return;
-      d.anims=[];
-      sel.dataset.anims='[]';
-      // Убираем overlay сразу
+      const targets = _animGroupData(sel);
+      if (!targets.length) return;
+      targets.forEach(({ dom, d }) => {
+        d.anims = [];
+        dom.dataset.anims = '[]';
+      });
       if(typeof renderMotionOverlay==='function') renderMotionOverlay();
       save(); saveState(); drawThumbs();
       renderAnimPanel();
@@ -268,60 +954,144 @@ let _animPreviewTimer = null;
     }catch(e){ console.error('clearAllAnims:',e); }
   };
 
-  // Play single animation on element without accumulated delay
+  // Play single animation on element(s) without accumulated delay
   function playAnimOnEl(animName, animData){
     const el = _sel(); if(!el) return;
-    // rotate uses Web Animations API
-    if(animName === 'rotate'){
-      const dir = (animData && animData.rotateDir||'cw')==='cw' ? 1 : -1;
-      const deg = (animData && animData.rotateDeg!=null ? animData.rotateDeg : 360) * dir;
-      const dur = (animData && animData.duration) || 600;
-      el.animate([{transform:'rotate(0deg)'},{transform:`rotate(${deg}deg)`}],
-        {duration:dur, easing:'ease-in-out', fill:'none'});
-      return;
-    }
-    if(animName === 'swing'){
-      const sox = animData && animData.swingOx != null ? animData.swingOx : 0;
-      const d2 = (typeof slides!=='undefined' && typeof cur!=='undefined') ?
-        slides[cur]&&slides[cur].els.find(x=>el.dataset&&x.id===el.dataset.id) : null;
-      const sh = d2 ? d2.h : (parseInt(el.style.height)||200);
-      const sw = d2 ? d2.w : (parseInt(el.style.width)||300);
-      const soy = animData && animData.swingOy != null ? animData.swingOy : sh/2;
-      const ox = (50 + sox/sw*100).toFixed(2)+'%';
-      const oy = (50 + soy/sh*100).toFixed(2)+'%';
-      // Run on .ec child so el's rotation transform is preserved
-      const swTarget = el.querySelector('.ec') || el;
-      swTarget.style.transformOrigin = ox+' '+oy;
-      const anim = swTarget.animate([
-        {transform:'rotate(0deg)'},{transform:'rotate(30deg)'},{transform:'rotate(-30deg)'},
-        {transform:'rotate(20deg)'},{transform:'rotate(-20deg)'},{transform:'rotate(10deg)'},
-        {transform:'rotate(-10deg)'},{transform:'rotate(5deg)'},{transform:'rotate(-3deg)'},
-        {transform:'rotate(0deg)'}
-      ], {duration:1200, easing:'ease-in-out', fill:'none'});
-      anim.onfinish = () => { swTarget.style.transformOrigin = ''; };
+    if (typeof window._clearAnimHoverPreview === 'function') window._clearAnimHoverPreview(el);
+    const targets = _animGroupDomEls(el);
+    if (animName === 'float') {
+      const slide = (typeof slides !== 'undefined' && typeof cur !== 'undefined') ? slides[cur] : null;
+      let sharedFrames = null;
+      if (slide && el.dataset.groupId) {
+        const members = _animGroupData(el).map(x => x.d);
+        if (members.length > 1) sharedFrames = window._floatFramesForGroup(members, el.dataset.groupId);
+      }
+      targets.forEach(oneEl => {
+        const fw = parseInt(oneEl.style.width) || 200, fh = parseInt(oneEl.style.height) || 200;
+        const floatTarget = typeof window._ensureFloatWrap === 'function'
+          ? window._ensureFloatWrap(oneEl, fw, fh)
+          : (oneEl.querySelector('.ec') || oneEl);
+        floatTarget.animate(sharedFrames || _floatFrames(fw, fh), { duration: 3000, fill: 'none', iterations: 1 });
+      });
       clearTimeout(_animPreviewTimer);
-      _animPreviewTimer = setTimeout(()=>{ swTarget.style.transformOrigin = ''; }, 1400);
+      _animPreviewTimer = setTimeout(() => {
+        targets.forEach(oneEl => {
+          const fw = parseInt(oneEl.style.width) || 200, fh = parseInt(oneEl.style.height) || 200;
+          const floatTarget = typeof window._ensureFloatWrap === 'function'
+            ? window._ensureFloatWrap(oneEl, fw, fh)
+            : (oneEl.querySelector('.ec') || oneEl);
+          floatTarget.style.transform = '';
+        });
+      }, 3100);
       return;
     }
-    const cssClass = ANIM_CSS[animName]; if(!cssClass) return;
-    // Emphasis/live animations (dance, pulse, shake etc.) set transform absolutely —
-    // run them on .ec child so they don't override el's rotation transform
-    const isEmphasisLive = ['dance','pulse','shake','flash','swing','float'].includes(animName);
-    const animTarget = isEmphasisLive ? (el.querySelector('.ec') || el) : el;
-    if(animName === 'float'){
-      const fw = parseInt(el.style.width)||200, fh = parseInt(el.style.height)||200;
-      const floatTarget = el.querySelector('.ec') || el;
-      const previewFrames = _floatFrames(fw, fh);
-      floatTarget.animate(previewFrames, {duration:3000, fill:'none', iterations:1});
+    if (animName === 'captionSlide') {
+      const capA = Object.assign({ duration: 600, holdDuration: 2000, captionDir: 'right' }, animData || {});
+      const entries = targets.map(oneEl => {
+        const d2 = (typeof slides !== 'undefined' && typeof cur !== 'undefined') ?
+          slides[cur] && slides[cur].els.find(x => oneEl.dataset && x.id === oneEl.dataset.id) : null;
+        return {
+          el: oneEl,
+          x: d2 ? d2.x : (parseInt(oneEl.style.left) || 0),
+          y: d2 ? d2.y : (parseInt(oneEl.style.top) || 0),
+          w: d2 ? d2.w : (parseInt(oneEl.style.width) || 200),
+          h: d2 ? d2.h : (parseInt(oneEl.style.height) || 200)
+        };
+      });
+      if (typeof window._fireCaptionSlideAnimGroup === 'function') {
+        window._fireCaptionSlideAnimGroup(entries, capA, 0, { hideAfter: false });
+      }
       clearTimeout(_animPreviewTimer);
-      _animPreviewTimer = setTimeout(()=>{ floatTarget.style.transform=''; }, 3100);
+      _animPreviewTimer = setTimeout(() => {
+        targets.forEach(t => { if (typeof window._resetCaptionSlide === 'function') window._resetCaptionSlide(t, true); });
+      }, window._animChainDuration(capA) + 50);
       return;
     }
-    animTarget.style.animation = '';
-    void animTarget.offsetWidth;
-    animTarget.style.animation = cssClass + ' 0.6s ease-out 0s ' + (isEmphasisLive ? 'none' : 'both');
+    const runOn = (oneEl) => {
+      if(animName === 'rotate'){
+        const dir = (animData && animData.rotateDir||'cw')==='cw' ? 1 : -1;
+        const deg = (animData && animData.rotateDeg!=null ? animData.rotateDeg : 360) * dir;
+        const dur = (animData && animData.duration) || 600;
+        oneEl.animate([{transform:'rotate(0deg)'},{transform:`rotate(${deg}deg)`}],
+          {duration:dur, easing:'ease-in-out', fill:'none'});
+        return;
+      }
+      if(animName === 'swing'){
+        const sox = animData && animData.swingOx != null ? animData.swingOx : 0;
+        const d2 = (typeof slides!=='undefined' && typeof cur!=='undefined') ?
+          slides[cur]&&slides[cur].els.find(x=>oneEl.dataset&&x.id===oneEl.dataset.id) : null;
+        const sh = d2 ? d2.h : (parseInt(oneEl.style.height)||200);
+        const sw = d2 ? d2.w : (parseInt(oneEl.style.width)||300);
+        const soy = animData && animData.swingOy != null ? animData.swingOy : sh/2;
+        const ox = (50 + sox/sw*100).toFixed(2)+'%';
+        const oy = (50 + soy/sh*100).toFixed(2)+'%';
+        const swTarget = oneEl.querySelector('.ec') || oneEl;
+        swTarget.style.transformOrigin = ox+' '+oy;
+        const anim = swTarget.animate([
+          {transform:'rotate(0deg)'},{transform:'rotate(30deg)'},{transform:'rotate(-30deg)'},
+          {transform:'rotate(20deg)'},{transform:'rotate(-20deg)'},{transform:'rotate(10deg)'},
+          {transform:'rotate(-10deg)'},{transform:'rotate(5deg)'},{transform:'rotate(-3deg)'},
+          {transform:'rotate(0deg)'}
+        ], {duration:1200, easing:'ease-in-out', fill:'none'});
+        anim.onfinish = () => { swTarget.style.transformOrigin = ''; };
+        return;
+      }
+      const cssClass = ANIM_CSS[animName]; if(!cssClass) return;
+      const isEmphasisLive = ['dance','pulse','shake','flash','swing','float'].includes(animName);
+      const animTarget = isEmphasisLive ? (oneEl.querySelector('.ec') || oneEl) : oneEl;
+      if(animName === 'dance'){
+        const target = oneEl.querySelector('.ec') || oneEl;
+        target.getAnimations().forEach(a => { try { a.cancel(); } catch (e) {} });
+        const dur = (animData && animData.duration) || 1200;
+        const anim = target.animate(_DANCE_PREVIEW_FRAMES, { duration: dur, iterations: 1, fill: 'none' });
+        anim.onfinish = () => { try { anim.cancel(); } catch (e) {} target.style.transform = ''; };
+        return;
+      }
+      animTarget.style.animation = '';
+      void animTarget.offsetWidth;
+      animTarget.style.animation = cssClass + ' 0.6s ease-out 0s ' + (isEmphasisLive ? 'none' : 'both');
+    };
+    targets.forEach(runOn);
     clearTimeout(_animPreviewTimer);
-    _animPreviewTimer = setTimeout(()=>{ animTarget.style.animation = ''; }, 700);
+    if (animName === 'captionSlide') {
+      const a = Object.assign({ duration: 600, holdDuration: 2000, captionDir: 'right' }, animData || {});
+      _animPreviewTimer = setTimeout(() => {
+        targets.forEach(t => { if (typeof window._resetCaptionSlide === 'function') window._resetCaptionSlide(t, true); });
+      }, window._animChainDuration(a) + 50);
+    } else if (animName === 'swing') {
+      _animPreviewTimer = setTimeout(() => {
+        targets.forEach(oneEl => {
+          const swTarget = oneEl.querySelector('.ec') || oneEl;
+          swTarget.style.transformOrigin = '';
+        });
+      }, 1400);
+    } else if (animName === 'dance') {
+      const dur = (animData && animData.duration) || 1200;
+      _animPreviewTimer = setTimeout(() => {
+        targets.forEach(oneEl => {
+          const target = oneEl.querySelector('.ec') || oneEl;
+          target.style.transform = '';
+        });
+      }, dur + 100);
+    } else if (animName === 'float') {
+      _animPreviewTimer = setTimeout(() => {
+        targets.forEach(oneEl => {
+          const fw = parseInt(oneEl.style.width) || 200, fh = parseInt(oneEl.style.height) || 200;
+          const floatTarget = typeof window._ensureFloatWrap === 'function'
+            ? window._ensureFloatWrap(oneEl, fw, fh)
+            : (oneEl.querySelector('.ec') || oneEl);
+          floatTarget.style.transform = '';
+        });
+      }, 3100);
+    } else if (ANIM_CSS[animName]) {
+      _animPreviewTimer = setTimeout(() => {
+        targets.forEach(oneEl => {
+          const isEmphasisLive = ['dance','pulse','shake','flash','swing','float'].includes(animName);
+          const animTarget = isEmphasisLive ? (oneEl.querySelector('.ec') || oneEl) : oneEl;
+          animTarget.style.animation = '';
+        });
+      }, 700);
+    }
   }
 
   window.renderAnimPanel = function(){
@@ -338,9 +1108,9 @@ let _animPreviewTimer = null;
     const el = _sel();
     const assignedNames = new Set();
     if(el){
-      const s=_slides()[_cur()];
-      const d=s&&s.els.find(x=>x.id===el.dataset.id);
-      if(d&&d.anims) d.anims.forEach(a=>assignedNames.add(a.name));
+      _animGroupData(el).forEach(({ d }) => {
+        if (d.anims) d.anims.forEach(a => assignedNames.add(a.name));
+      });
     }
     if(!window._openAnimCat) window._openAnimCat = 'entrance';
 
@@ -388,6 +1158,10 @@ let _animPreviewTimer = null;
         item.addEventListener('mouseenter', () => {
           playAnimOnEl(it.name, {});
         });
+        item.addEventListener('mouseleave', () => {
+          const el2 = _sel();
+          if (el2 && typeof window._clearAnimHoverPreview === 'function') window._clearAnimHoverPreview(el2);
+        });
         item.addEventListener('click', e => {
           e.preventDefault();
           window._selectedAnimName = it.name;
@@ -428,13 +1202,24 @@ let _animPreviewTimer = null;
     const selEl = _sel();
     const typeNames = {text:'Текст', image:'Изображение', shape:'Фигура', table:'Таблица', icon:'Иконка', code:'Код', markdown:'Markdown', svg:'SVG'};
 
-    // Build flat list of all anims across all elements
+    // Build flat list of all anims across all elements (one row per group, not per member)
     const allAnims = [];
+    const seenGroups = new Set();
     if(s && s.els) s.els.forEach(d=>{
       if(d.anims && d.anims.length){
-        const sameType = s.els.filter(x=>x.type===d.type);
-        const idx = sameType.length > 1 ? sameType.findIndex(x=>x.id===d.id)+1 : 0;
-        const elName = (typeNames[d.type]||d.type||'Объект') + (idx>0?' '+idx:'');
+        if (d.groupId) {
+          if (seenGroups.has(d.groupId)) return;
+          seenGroups.add(d.groupId);
+        }
+        let elName;
+        if (d.groupId) {
+          const gCount = s.els.filter(x => x.groupId === d.groupId).length;
+          elName = 'Группа' + (gCount > 1 ? ' (' + gCount + ')' : '');
+        } else {
+          const sameType = s.els.filter(x=>x.type===d.type);
+          const idx = sameType.length > 1 ? sameType.findIndex(x=>x.id===d.id)+1 : 0;
+          elName = (typeNames[d.type]||d.type||'Объект') + (idx>0?' '+idx:'');
+        }
         d.anims.forEach((a, ai) => allAnims.push({d, a, ai, elName}));
       }
     });
@@ -455,7 +1240,8 @@ let _animPreviewTimer = null;
       const info = ANIM_INFO[a.name] || {label:a.name, cat:'entrance'};
       const catLabel = info.cat==='entrance'?'Вход':info.cat==='exit'?'Выход':info.cat==='motion'?'Движение':info.cat==='live'?'Живая':'Акцент';
       const trigger = a.trigger || 'auto';
-      const isSelected = selEl && selEl.dataset.id === d.id;
+      const isSelected = selEl && (selEl.dataset.id === d.id ||
+        (d.groupId && selEl.dataset.groupId === d.groupId));
 
       const row = document.createElement('div');
       row.className = 'anim-row' + (isSelected ? ' anim-row-sel' : '');
@@ -532,9 +1318,12 @@ let _animPreviewTimer = null;
               try{ newAnimsByEl[elId].push(JSON.parse(r.dataset.animJson)); } catch(e){}
             });
 
-            // Update data model
-            s.els.forEach(dd => {
-              if(newAnimsByEl[dd.id] !== undefined) dd.anims = newAnimsByEl[dd.id];
+            // Update data model + sync order to grouped members
+            Object.keys(newAnimsByEl).forEach(elId => {
+              const nd = s.els.find(x => x.id === elId);
+              if (!nd) return;
+              nd.anims = newAnimsByEl[elId];
+              _syncAnimsOrderToGroup(elId, nd.anims);
             });
 
             // Update canvas DOM dataset.anims so save() reads correct order
@@ -561,8 +1350,9 @@ let _animPreviewTimer = null;
 
       const propGrid = document.createElement('div');
       propGrid.className = 'anim-row-props';
-      propGrid.innerHTML = `
-        <label>Задержка, мс<input type="number" value="${a.delay||0}" min="0" max="10000" step="100" oninput="updateAnimProp('${d.id}',${ai},'delay',this.value)" onchange="updateAnimProp('${d.id}',${ai},'delay',this.value)"></label>
+      propGrid.innerHTML = a.name === 'captionSlide'
+        ? `<label>Задержка, мс<input type="number" value="${a.delay||0}" min="0" max="10000" step="100" oninput="updateAnimProp('${d.id}',${ai},'delay',this.value)" onchange="updateAnimProp('${d.id}',${ai},'delay',this.value)"></label>`
+        : `<label>Задержка, мс<input type="number" value="${a.delay||0}" min="0" max="10000" step="100" oninput="updateAnimProp('${d.id}',${ai},'delay',this.value)" onchange="updateAnimProp('${d.id}',${ai},'delay',this.value)"></label>
         <label>Длит., мс<input type="number" value="${a.duration||600}" min="50" max="5000" step="50" oninput="updateAnimProp('${d.id}',${ai},'duration',this.value)" onchange="updateAnimProp('${d.id}',${ai},'duration',this.value)"></label>`;
       props.appendChild(propGrid);
 
@@ -746,6 +1536,44 @@ let _animPreviewTimer = null;
         hint2.style.cssText='font-size:8px;color:var(--text3);margin-top:5px;line-height:1.4;';
         hint2.textContent='⭕ Перетащите центр окружности, тяните ручку для изменения радиуса';
         props.appendChild(hint2);
+      }
+
+      // captionSlide: hold + direction
+      if(a.name === 'captionSlide'){
+        const capGrid = document.createElement('div');
+        capGrid.className = 'anim-row-props';
+        capGrid.style.marginTop = '4px';
+        capGrid.innerHTML = `<label>Появ./исчез., мс<input type="number" value="${a.duration||600}" min="50" max="5000" step="50" oninput="updateAnimProp('${d.id}',${ai},'duration',this.value)" onchange="updateAnimProp('${d.id}',${ai},'duration',this.value)"></label>`
+          + `<label>Пауза, мс<input type="number" value="${a.holdDuration||2000}" min="0" max="15000" step="100" oninput="updateAnimProp('${d.id}',${ai},'holdDuration',this.value)" onchange="updateAnimProp('${d.id}',${ai},'holdDuration',this.value)"></label>`;
+        props.appendChild(capGrid);
+        const capDirWrap = document.createElement('div');
+        capDirWrap.style.cssText = 'margin-top:4px;display:grid;grid-template-columns:1fr 1fr;gap:4px;';
+        const capDirs = [
+          { v: 'right', l: '➡ Слева направо' },
+          { v: 'left',  l: '⬅ Справа налево' },
+          { v: 'down',  l: '⬇ Сверху вниз' },
+          { v: 'up',    l: '⬆ Снизу вверх' },
+        ];
+        capDirs.forEach(btn => {
+          const b = document.createElement('button');
+          b.textContent = btn.l;
+          b.style.cssText = `padding:3px 4px;font-size:9px;font-family:inherit;border-radius:3px;cursor:pointer;border:1px solid var(--border2);background:${(a.captionDir||'right')===btn.v?'var(--accent)':'var(--surface3)'};color:${(a.captionDir||'right')===btn.v?'#fff':'var(--text2)'};transition:.1s;`;
+          b.addEventListener('mousedown', e => e.preventDefault());
+          b.addEventListener('click', () => {
+            updateAnimProp(d.id, ai, 'captionDir', btn.v);
+            capDirWrap.querySelectorAll('button').forEach((bb, bi) => {
+              const isActive = capDirs[bi].v === btn.v;
+              bb.style.background = isActive ? 'var(--accent)' : 'var(--surface3)';
+              bb.style.color = isActive ? '#fff' : 'var(--text2)';
+            });
+          });
+          capDirWrap.appendChild(b);
+        });
+        props.appendChild(capDirWrap);
+        const capHint = document.createElement('div');
+        capHint.style.cssText = 'font-size:8px;color:var(--text3);margin-top:5px;line-height:1.4;';
+        capHint.textContent = '📰 Появление из прозрачности + сдвиг ~10% размера, пауза, исчезновение в прозрачность';
+        props.appendChild(capHint);
       }
 
       // rotate: direction + degrees

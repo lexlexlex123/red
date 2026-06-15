@@ -186,4 +186,19 @@ outCats += `];\n`;
 
 fs.writeFileSync(OUTPUT_CATS, outCats, 'utf8');
 console.log(`image-cats.js: ${activeCats.length} категорий`);
+
+// ── Список растров для PWA service worker ────────────────────────
+const rasterPaths = entries.filter(e => !e.isSvg && e.path).map(e => './' + e.path.replace(/\\/g, '/'));
+const OUTPUT_PWA = path.join(__dirname, '..', 'pwa-precache-images.js');
+let outPwa = `// Автогенерация: node images/build-index.js — не редактировать вручную
+// Дата: ${new Date().toISOString()}
+self.PRECACHE_IMAGES = [
+`;
+for (const p of rasterPaths) {
+  outPwa += `  ${JSON.stringify(p)},\n`;
+}
+outPwa += `];\n`;
+fs.writeFileSync(OUTPUT_PWA, outPwa, 'utf8');
+console.log(`pwa-precache-images.js: ${rasterPaths.length} файлов для офлайн-кэша`);
+
 console.log(`\nГотово! Обновите браузер (F5).`);

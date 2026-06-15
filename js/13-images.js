@@ -96,16 +96,153 @@ function stopTextEditing() {
   }
 }
 
+// ══════════════ UNIFORM SHADOW (expand from silhouette, no offset) ══════════════
+window._shadowPad = function(ss, sb, sw) {
+  ss = Math.max(0, +ss || 0);
+  sb = Math.max(0, +sb || 0);
+  sw = Math.max(0, +sw || 0);
+  const eff = sb > 0 && typeof window._shadowEffectiveBlur === 'function'
+    ? window._shadowEffectiveBlur(ss, sb) : sb;
+  return Math.ceil(ss + eff * 3.5 + sw + 20);
+};
+
+window._shadowFilterObbPct = function(ss, sb, sw, w, h, axis) {
+  const pad = window._shadowPad(ss, sb, sw);
+  const dim = Math.max(1, axis === 'y' ? (+h || 100) : (+w || 100));
+  return Math.min(250, Math.max(55, Math.ceil(pad / dim * 100)));
+};
+
+window._shadowFilterDefUser = function(id, ss, sb, sc, w, h, sw) {
+  const pad = window._shadowPad(ss, sb, sw);
+  w = Math.max(1, +w || 100);
+  h = Math.max(1, +h || 100);
+  return `<filter id="${id}" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="${-pad}" y="${-pad}" width="${w + pad * 2}" height="${h + pad * 2}">`
+    + window._shadowFilterInner(ss, sb, sc)
+    + `</filter>`;
+};
+
+window._shadowFilterDefObb = function(id, ss, sb, sc, w, h, sw) {
+  const px = window._shadowFilterObbPct(ss, sb, sw, w, h, 'x');
+  const py = window._shadowFilterObbPct(ss, sb, sw, w, h, 'y');
+  return `<filter id="${id}" filterUnits="objectBoundingBox" x="-${px}%" y="-${py}%" width="${100 + px * 2}%" height="${100 + py * 2}%">`
+    + window._shadowFilterInner(ss, sb, sc)
+    + `</filter>`;
+};
+
+// Extra blur on top of user value — only when blur > 0 (softens morphology corners)
+window._shadowEffectiveBlur = function(ss, sb) {
+  ss = Math.max(0, +ss || 0);
+  sb = Math.max(0, +sb || 0);
+  if (sb <= 0) return 0;
+  return sb + Math.max(1.2, ss * 0.45);
+};
+
+window._syncShapeShadowLayout = function(el, d, w, h) {
+  const svgDiv = el && el.querySelector('.shape-svg');
+  if (!svgDiv) return 0;
+  const on = d && (d.shadow === true || d.shadow === 'true');
+  const pad = on ? window._shadowPad(d.shadowSize, d.shadowBlur, d.sw) : 0;
+  if (pad > 0) {
+    svgDiv.style.cssText =
+      'position:absolute;left:-' + pad + 'px;top:-' + pad + 'px;' +
+      'width:calc(100% + ' + (pad * 2) + 'px);height:calc(100% + ' + (pad * 2) + 'px);overflow:visible;';
+    el.style.overflow = 'visible';
+    const selEl = el.querySelector('.sel-el');
+    if (selEl) selEl.style.overflow = 'visible';
+    const ec = el.querySelector('.ec');
+    if (ec) ec.style.overflow = 'visible';
+    const svgEl = svgDiv.querySelector('svg');
+    if (svgEl) svgEl.style.overflow = 'visible';
+  } else {
+    svgDiv.style.cssText = 'position:absolute;inset:0;overflow:visible;';
+  }
+  return pad;
+};
+
+window._shadowFilterInner = function(ss, sb, sc) {
+  ss = Math.max(0, +ss || 0);
+  sb = Math.max(0, +sb || 0);
+  sc = sc || '#000000';
+  let chain = `<feMorphology in="SourceAlpha" operator="dilate" radius="${ss}" result="spread"/>`;
+  if (sb > 0) {
+    const blurDev = typeof window._shadowEffectiveBlur === 'function'
+      ? window._shadowEffectiveBlur(ss, sb) : sb;
+    chain += `<feGaussianBlur in="spread" stdDeviation="${blurDev}" result="blur"/>`;
+    chain += `<feFlood flood-color="${sc}" flood-opacity="0.65" result="color"/>`;
+    chain += `<feComposite in="color" in2="blur" operator="in" result="shadow"/>`;
+  } else {
+    chain += `<feFlood flood-color="${sc}" flood-opacity="1" result="color"/>`;
+    chain += `<feComposite in="color" in2="spread" operator="in" result="shadow"/>`;
+  }
+  chain += `<feMerge><feMergeNode in="shadow"/><feMergeNode in="SourceGraphic"/></feMerge>`;
+  return chain;
+};
+
+window._shadowFilterDef = function(id, ss, sb, sc, w, h, sw) {
+  return window._shadowFilterDefObb(id, ss, sb, sc, w, h, sw != null ? sw : 0);
+};
+
+window._shadowFilterDefPct = function(id, ss, sb, sc, w, h, sw) {
+  return window._shadowFilterDefObb(id, ss, sb, sc, w, h, sw != null ? sw : 0);
+};
+
+window._ensureShadowFilterHost = function() {
+  let host = document.getElementById('_shadow_filter_svg');
+  if (!host) {
+    host = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    host.id = '_shadow_filter_svg';
+    host.setAttribute('aria-hidden', 'true');
+    host.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden;pointer-events:none';
+    const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+    host.appendChild(defs);
+    document.body.appendChild(host);
+  }
+  return host.querySelector('defs');
+};
+
+window._applyImgShadowFilter = function(el, d) {
+  if (!el || !d || !d.imgShadow) {
+    if (el) el.style.filter = '';
+    return;
+  }
+  const ss = d.imgShadowSize != null ? +d.imgShadowSize : 4;
+  const sb = d.imgShadowBlur != null ? +d.imgShadowBlur : 15;
+  const sc = d.imgShadowColor || '#000000';
+  const fid = 'imgsh_' + (el.dataset.id || 'x');
+  const defs = window._ensureShadowFilterHost();
+  const old = defs.querySelector('#' + fid);
+  if (old) old.remove();
+  const filter = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
+  filter.setAttribute('id', fid);
+  filter.setAttribute('x', '-50%');
+  filter.setAttribute('y', '-50%');
+  filter.setAttribute('width', '200%');
+  filter.setAttribute('height', '200%');
+  filter.innerHTML = window._shadowFilterInner(ss, sb, sc);
+  defs.appendChild(filter);
+  el.style.filter = 'url(#' + fid + ')';
+};
+
+window._imgShadowFilterMarkup = function(d) {
+  if (!d || !d.imgShadow) return null;
+  const ss = d.imgShadowSize != null ? +d.imgShadowSize : 4;
+  const sb = d.imgShadowBlur != null ? +d.imgShadowBlur : 15;
+  const sc = d.imgShadowColor || '#000000';
+  const fid = 'imgsh_' + (d.id || 'x');
+  return { fid: fid, markup: window._shadowFilterDefPct(fid, ss, sb, sc) };
+};
+
 // ══════════════ IMAGE PROPS ══════════════
 function updateImgStyle(prop,val){
   if(!sel||sel.dataset.type!=='image')return;
   pushUndo();
   const d=slides[cur].els.find(e=>e.id===sel.dataset.id);if(!d)return;
-  const propMap={fit:'imgFit',rx:'imgRx',bw:'imgBw',bc:'imgBc',shadow:'imgShadow',shadowBlur:'imgShadowBlur',shadowColor:'imgShadowColor',opacity:'imgOpacity'};
+  const propMap={fit:'imgFit',rx:'imgRx',bw:'imgBw',bc:'imgBc',borderStyle:'imgBorderStyle',frame:'imgFrame',shadow:'imgShadow',shadowBlur:'imgShadowBlur',shadowSize:'imgShadowSize',shadowColor:'imgShadowColor',opacity:'imgOpacity'};
   const key=propMap[prop];if(!key)return;
-  const parsed=prop==='rx'||prop==='bw'?+val:prop==='shadow'?!!val:prop==='opacity'?+val:val;
+  const parsed=prop==='rx'||prop==='bw'||prop==='shadowBlur'||prop==='shadowSize'?+val:prop==='shadow'?!!val:prop==='opacity'?+val:val;
   d[key]=parsed;
   sel.dataset[key]=parsed; // also store in DOM dataset for reliable save()
+  if(prop==='shadow'){try{const opts=document.getElementById('img-shadow-options');if(opts)opts.style.display=parsed?'flex':'none';}catch(e){}}
   applyImgStyles(sel,d);commitAll();
 }
 
@@ -179,16 +316,28 @@ function updateImgPosition(){
   applyImgStyles(sel,d);commitAll();
 }
 
+function updateImgStyleScheme(prop, val, schemeRef) {
+  if (!sel || sel.dataset.type !== 'image') return;
+  const d = slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (!d) return;
+  if (prop === 'shadowColor') {
+    d.imgShadowColorScheme = schemeRef !== undefined ? (schemeRef || null) : d.imgShadowColorScheme;
+    if (schemeRef) sel.dataset.imgShadowColorScheme = JSON.stringify(schemeRef);
+    else delete sel.dataset.imgShadowColorScheme;
+  }
+  updateImgStyle(prop, val);
+}
+
 function applyImgStyles(el,d){
   const img=el.querySelector('img');if(!img)return;
   const c=el.querySelector('.iel');
   const rx=d.imgRx||0;
   const bw=d.imgBw||0;
-  const shadow=d.imgShadow?`drop-shadow(0 4px ${d.imgShadowBlur||15}px ${d.imgShadowColor||'#000'})`:null;
+  if (d.imgShadow && typeof window._applyImgShadowFilter === 'function') window._applyImgShadowFilter(el, d);
+  else el.style.filter = '';
   el.style.borderRadius='';
   el.style.overflow='visible';
   el.style.border='none';
-  el.style.filter=shadow||'';
   if(c){
     c.style.position='absolute';
     c.style.inset='0';
@@ -216,6 +365,7 @@ function applyImgStyles(el,d){
     flipTarget.style.transformOrigin = '';
   }
   if(typeof applyImgCrop==='function')applyImgCrop(el,d);
+  if(typeof applyImgBorderFrame==='function')applyImgBorderFrame(el,d);
 }
 
 function imgSetAsSlideBg(){
@@ -252,9 +402,12 @@ function syncImgProps(el,d){
     document.getElementById('img-bc-preview').style.background=bc;
   }catch(e){}
   try{document.getElementById('img-shadow').checked=!!d.imgShadow;}catch(e){}
-  try{document.getElementById('img-sb').value=d.imgShadowBlur||15;}catch(e){}
-  try{document.getElementById('img-sc').value=d.imgShadowColor||'#000000';}catch(e){}
+  try{const opts=document.getElementById('img-shadow-options');if(opts)opts.style.display=d.imgShadow?'flex':'none';}catch(e){}
+  try{document.getElementById('img-sb').value=d.imgShadowBlur!=null?d.imgShadowBlur:15;}catch(e){}
+  try{document.getElementById('img-ss').value=d.imgShadowSize!=null?d.imgShadowSize:4;}catch(e){}
+  try{const sc=d.imgShadowColor||'#000000';document.getElementById('img-sc-preview').style.background=sc;}catch(e){}
   try{document.getElementById('img-op').value=d.imgOpacity!=null?+d.imgOpacity:1;}catch(e){}
+  if(typeof syncImgBorderUI==='function')syncImgBorderUI(d);
 }
 
 // ── SVG ID isolation — prevents id conflicts between multiple SVGs in DOM ──
@@ -378,16 +531,25 @@ function mkEl(d){
     c.classList.add('iel');const img=document.createElement('img');
     if(d.src)img.setAttribute('src',typeof assetUrl==='function'?assetUrl(d.src):d.src);
     img.draggable=false;
-    img.onload=()=>{if(typeof window._exportRememberImg==='function')window._exportRememberImg(img);};
-    if(img.complete&&img.naturalWidth&&typeof window._exportRememberImg==='function')window._exportRememberImg(img);
+    const _onImgReady=()=>{
+      if(typeof window._exportRememberImg==='function')window._exportRememberImg(img);
+      if(d._pptxSrcRect&&typeof applyPptxSrcRectCrop==='function'&&applyPptxSrcRectCrop(el,d,img)){
+        if(typeof applyImgStyles==='function')applyImgStyles(el,d);
+      }
+    };
+    img.onload=_onImgReady;
+    if(img.complete&&img.naturalWidth)_onImgReady();
     c.appendChild(img);
     // Store all img properties in dataset for reliable save()
     if(d.imgFit)el.dataset.imgFit=d.imgFit;
     if(d.imgRx!=null)el.dataset.imgRx=d.imgRx;
     if(d.imgBw!=null)el.dataset.imgBw=d.imgBw;
     if(d.imgBc)el.dataset.imgBc=d.imgBc;
+    if(d.imgBorderStyle)el.dataset.imgBorderStyle=d.imgBorderStyle;
+    if(d.imgFrame)el.dataset.imgFrame=d.imgFrame;
     if(d.imgShadow!=null)el.dataset.imgShadow=d.imgShadow;
     if(d.imgShadowBlur!=null)el.dataset.imgShadowBlur=d.imgShadowBlur;
+    if(d.imgShadowSize!=null)el.dataset.imgShadowSize=d.imgShadowSize;
     if(d.imgShadowColor)el.dataset.imgShadowColor=d.imgShadowColor;
     if(d.imgOpacity!=null)el.dataset.imgOpacity=d.imgOpacity;
     if(d.imgPosX)el.dataset.imgPosX=d.imgPosX;
@@ -506,6 +668,10 @@ function mkEl(d){
     if(d.fillGrad2)el.dataset.fillGrad2=d.fillGrad2;
     if(d.fillGradDir!=null)el.dataset.fillGradDir=d.fillGradDir;
     if(d.cloudSeed!=null){el.dataset.cloudSeed=d.cloudSeed;}
+    if(d.cloudForm){el.dataset.cloudForm=d.cloudForm;}
+    if(d.cloudRefW>0){el.dataset.cloudRefW=d.cloudRefW;}
+    if(d.cloudRefH>0){el.dataset.cloudRefH=d.cloudRefH;}
+    if(d.cloudFramed){el.dataset.cloudFramed='1';}
     if(d.paraSkew!=null){el.dataset.paraSkew=d.paraSkew;}
     if(d.shape==='chevron'||d.shape==='chevronLeft'){
       if(d.chevSkew==null) d.chevSkew=25;
@@ -523,7 +689,10 @@ function mkEl(d){
     if(d.arcEnd!=null){el.dataset.arcEnd=d.arcEnd;}
     if(d.tailX!==undefined){el.dataset.tailX=d.tailX;el.dataset.tailY=d.tailY;}
     el.dataset.sw=d.sw!=null?d.sw:2;el.dataset.rx=d.rx||0;el.dataset.fillOp=d.fillOp!=null?d.fillOp:1;
-    el.dataset.shadow=d.shadow||false;el.dataset.shadowBlur=d.shadowBlur||8;el.dataset.shadowColor=d.shadowColor||'#000000';
+    el.dataset.shadow=d.shadow?'true':'false';
+    el.dataset.shadowBlur=d.shadowBlur!=null?d.shadowBlur:4;
+    el.dataset.shadowSize=d.shadowSize!=null?d.shadowSize:3;
+    el.dataset.shadowColor=d.shadowColor||'#000000';
     if(d.strokeStyle)el.dataset.strokeStyle=d.strokeStyle;
     // Apply clip-path so hit area matches shape, not bounding box
     _applyShapeClipPath(el, d);
@@ -583,7 +752,22 @@ function mkEl(d){
       el.style.zIndex='0';
       el.style.cursor='default';
       el.classList.add('decor-el');
-
+      if(typeof _ensureGlDecorCfg==='function') _ensureGlDecorCfg(d);
+      else if(typeof _ensureCrystalCfg==='function') _ensureCrystalCfg(d);
+      const _glCfg=d._glCfg||d._crystalCfg;
+      const _GlDecor=typeof _glDecorByRenderer==='function'?_glDecorByRenderer(d._decorRenderer)
+        :(d._decorRenderer==='crystal'&&typeof CrystalDecor!=='undefined'?CrystalDecor
+        :(d._decorRenderer==='dna'&&typeof DnaDecor!=='undefined'?DnaDecor
+        :(d._decorRenderer==='galaxy'&&typeof GalaxyDecor!=='undefined'?GalaxyDecor
+        :(d._decorRenderer==='caustics'&&typeof CausticsDecor!=='undefined'?CausticsDecor:null))));
+      if(_GlDecor && _glCfg){
+        c.style.position='relative';
+        const _glLayer=document.createElement('div');
+        _glLayer.className='decor-gl-layer';
+        _glLayer.style.cssText='position:absolute;inset:0;pointer-events:none;z-index:1;';
+        c.appendChild(_glLayer);
+        el._glDecorUnmount=_GlDecor.mount(_glLayer, Object.assign({id:d.id}, _glCfg));
+      }
     }
   }else if(d.type==='icon'){
     c.style.cssText='width:100%;height:100%;overflow:visible;display:flex;align-items:center;justify-content:center;';
@@ -593,7 +777,7 @@ function mkEl(d){
     const _mkSvg=d.iconFitted&&d.svgContent
       ? d.svgContent
       : ((_mkIc&&typeof _buildIconSVG==='function')
-          ?_buildIconSVG(_mkIc,d.iconColor||'#3b82f6',d.iconSw!=null?d.iconSw:1.8,d.iconStyle||'stroke',_mkShadow,d.shadowBlur,d.shadowColor)
+          ?_buildIconSVG(_mkIc,d.iconColor||'#3b82f6',d.iconSw!=null?d.iconSw:1.8,d.iconStyle||'stroke',_mkShadow,d.shadowBlur,d.shadowColor,d.shadowSize,d.id)
           :(d.svgContent||''));
     const _iconSvgRaw = _mkSvg;
     const _iconUid = 'icon_' + (d.id||('u'+Math.random().toString(36).slice(2)));
@@ -604,8 +788,9 @@ function mkEl(d){
     el.dataset.iconColor=d.iconColor||'#3b82f6';
     el.dataset.iconSw=d.iconSw!=null?d.iconSw:1.8;
     el.dataset.iconStyle=d.iconStyle||'stroke';
-    el.dataset.shadow=_mkShadow;
-    el.dataset.shadowBlur=d.shadowBlur||8;
+    el.dataset.shadow=_mkShadow?'true':'false';
+    el.dataset.shadowBlur=d.shadowBlur!=null?d.shadowBlur:4;
+    el.dataset.shadowSize=d.shadowSize!=null?d.shadowSize:3;
     el.dataset.shadowColor=d.shadowColor||'#000000';
     // Double-click to replace icon
     el.addEventListener('dblclick',function(e){e.stopPropagation();window._iconReplaceMode=true;if(typeof openIconModal==='function')openIconModal();});
@@ -614,16 +799,34 @@ function mkEl(d){
     // Layer 1: clip div — clips iframe to border-radius
     const clip=document.createElement('div');
     clip.style.cssText='position:absolute;inset:0;overflow:hidden;border-radius:inherit;';
+    if(typeof ensureAppletHtmlFromData==='function') ensureAppletHtmlFromData(d);
     const iframe=document.createElement('iframe');iframe.srcdoc=d.appletHtml||'<p>Applet</p>';
     iframe.style.cssText='width:100%;height:100%;border:none;background:transparent;';
     iframe.setAttribute('allowtransparency','true');
     iframe.sandbox = 'allow-scripts'; // allow-same-origin removed — postMessage works with '*' targetOrigin
+    if(d.appletId==='generator'||d.appletId==='timer'||d.appletId==='clock'){
+      iframe.addEventListener('load', function(){
+        if(d.appletId==='generator'&&typeof refreshGeneratorEl==='function') refreshGeneratorEl(d.id, {domOnly:true});
+        else if(d.appletId==='timer'&&typeof refreshTimerEl==='function') refreshTimerEl(d.id, {domOnly:true});
+        else if(d.appletId==='clock'&&typeof refreshClockEl==='function') refreshClockEl(d.id, {domOnly:true});
+      }, {once:true});
+    }
+    if(d.appletId==='notes'){
+      iframe.addEventListener('load', function(){
+        if(typeof refreshNotesEl==='function') refreshNotesEl(d.id, {domOnly:true});
+      }, {once:true});
+    }
     clip.appendChild(iframe);
     // Layer 2: border overlay div — sits ON TOP of clip, pointer-events:none, never clipped
     const bord=document.createElement('div');bord.className='applet-border-overlay';
     bord.style.cssText='position:absolute;inset:0;border-radius:inherit;pointer-events:none;box-sizing:border-box;';
-    const tog=document.createElement('button');tog.className='applet-toggle';tog.textContent='Interact';
-    tog.onclick=(ev)=>{ev.stopPropagation();wrap.classList.toggle('interactive');tog.textContent=wrap.classList.contains('interactive')?'Done':'Interact';};
+    const tog=document.createElement('button');tog.className='applet-toggle';
+    const _appletInteractLbl=()=>(typeof t==='function'?t('appletInteract'):'Interact');
+    const _appletDoneLbl=()=>(typeof t==='function'?t('appletDone'):'Done');
+    tog.textContent=_appletInteractLbl();
+    tog.title=(typeof t==='function'?t('appletInteractHint'):'Enable editing inside the applet');
+    tog.setAttribute('aria-label', _appletInteractLbl());
+    tog.onclick=(ev)=>{ev.stopPropagation();wrap.classList.toggle('interactive');const on=wrap.classList.contains('interactive');tog.textContent=on?_appletDoneLbl():_appletInteractLbl();tog.setAttribute('aria-label', on?_appletDoneLbl():_appletInteractLbl());};
     wrap.append(clip,bord,tog);c.appendChild(wrap);
     el.dataset.appletId=d.appletId||'';
     el.dataset.appletHtml=d.appletHtml||'';
@@ -660,13 +863,6 @@ function mkEl(d){
     }
     // Always store rx in dataset so save() can read it back (even when 0)
     el.dataset.genRx = d.rx !== undefined ? d.rx : 0;
-    // Apply border on overlay div using refreshGeneratorEl (handles resolved color, postMessage, etc.)
-    // Schedule after DOM is inserted so domEl.querySelector works
-    if(d.appletId==='generator'){
-      requestAnimationFrame(function(){
-        if(typeof refreshGeneratorEl==='function') refreshGeneratorEl(d.id);
-      });
-    }
     if(d.appletId==='timer'){
       el.dataset.tmMin          = d.tmMin          !== undefined ? d.tmMin          : 5;
       el.dataset.tmSec          = d.tmSec          !== undefined ? d.tmSec          : 0;
@@ -688,9 +884,6 @@ function mkEl(d){
       el.dataset.genColorScheme  = d.genColorScheme  ? JSON.stringify(d.genColorScheme)  : '';
       el.dataset.genBgScheme     = d.genBgScheme     ? JSON.stringify(d.genBgScheme)     : '';
       el.dataset.genBorderScheme = d.genBorderScheme ? JSON.stringify(d.genBorderScheme) : '';
-      requestAnimationFrame(function(){
-        if(typeof refreshTimerEl==='function') refreshTimerEl(d.id);
-      });
     }
     if(d.appletId==='clock'){
       el.dataset.genFontSize    = d.genFontSize    !== undefined ? d.genFontSize    : 48;
@@ -709,9 +902,10 @@ function mkEl(d){
       el.dataset.genColorScheme  = d.genColorScheme  ? JSON.stringify(d.genColorScheme)  : '';
       el.dataset.genBgScheme     = d.genBgScheme     ? JSON.stringify(d.genBgScheme)     : '';
       el.dataset.genBorderScheme = d.genBorderScheme ? JSON.stringify(d.genBorderScheme) : '';
-      requestAnimationFrame(function(){
-        if(typeof refreshClockEl==='function') refreshClockEl(d.id);
-      });
+    }
+    if(d.appletId==='notes'){
+      el.dataset.notesText = encodeURIComponent(d.notesText || '');
+      el.dataset.notesBg = d.notesBg || '';
     }
   }else if(d.type==='pagenum'){
     c.style.cssText='width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:visible;pointer-events:none;';
@@ -741,6 +935,7 @@ function mkEl(d){
     });
   }
   el.append(c,lb,trigBadge);cv.appendChild(el);
+  if(d.type==='shape'&&typeof window._syncShapeShadowLayout==='function')window._syncShapeShadowLayout(el,d,d.w,d.h);
   // Управляем анимацией декора после вставки в DOM
   if(d._isDecor){
     setTimeout(function(){

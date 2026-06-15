@@ -321,28 +321,28 @@
   // Добавляет зоны вращения в 4 угла bbox группы
   function _addGroupRotationZones(overlay, gid, members, bx, by, bw, bh) {
     var R = 22; // радиус зоны вращения
+    var gcx = bx + bw / 2, gcy = by + bh / 2;
     var corners = [
-      {x: bx,      y: by,      angle: 315},
-      {x: bx+bw,   y: by,      angle: 45 },
-      {x: bx,      y: by+bh,   angle: 225},
-      {x: bx+bw,   y: by+bh,   angle: 135},
+      {x: bx,      y: by     },
+      {x: bx+bw,   y: by     },
+      {x: bx,      y: by+bh  },
+      {x: bx+bw,   y: by+bh  },
     ];
     corners.forEach(function(corner) {
       var zone = document.createElement('div');
-      // Курсор вращения
-            var svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"22\" height=\"22\" viewBox=\"0 0 22 22\">"
-        + "<g transform=\"rotate(" + corner.angle + " 11 11)\">"
-        + "<path d=\"M5 14 A8 8 0 0 1 17 14\" stroke=\"black\" stroke-width=\"4\" fill=\"none\" stroke-linecap=\"butt\"/>"
-        + "<path d=\"M5 14 A8 8 0 0 1 17 14\" stroke=\"white\" stroke-width=\"2.5\" fill=\"none\" stroke-linecap=\"butt\"/>"
-        + "<polygon points=\"0.5,11.5 5,14 3,18\" fill=\"black\"/>"
-        + "<polygon points=\"1.3,12.2 5,14 3.5,17.2\" fill=\"white\"/>"
-        + "<polygon points=\"21.5,11.5 17,14 19,18\" fill=\"black\"/>"
-        + "<polygon points=\"20.7,12.2 17,14 18.5,17.2\" fill=\"white\"/>"
-        + "</g></svg>";
-      var cursor = 'url("data:image/svg+xml,' + encodeURIComponent(svg) + '") 11 11, crosshair';
       zone.style.cssText = 'position:absolute;width:' + (R*2) + 'px;height:' + (R*2) + 'px;'
         + 'left:' + (corner.x - R) + 'px;top:' + (corner.y - R) + 'px;'
-        + 'pointer-events:auto;cursor:' + cursor + ';z-index:9998;';
+        + 'pointer-events:auto;cursor:crosshair;z-index:9998;';
+      zone.addEventListener('mousemove', function(e) {
+        if (typeof _updateRotCursorFromPivot !== 'function') return;
+        var p = typeof _toCanvasCoords === 'function'
+          ? _toCanvasCoords(e.clientX, e.clientY)
+          : { x: corner.x, y: corner.y };
+        _updateRotCursorFromPivot(gcx, gcy, p.x, p.y);
+      });
+      zone.addEventListener('mouseleave', function() {
+        if (typeof _setRotCursor === 'function') _setRotCursor('');
+      });
       zone.addEventListener('mousedown', function(e) {
         if (e.button !== 0) return;
         e.preventDefault(); e.stopPropagation();
@@ -369,6 +369,9 @@
     var startMouseX = (e.clientX - rect.left + cwrap.scrollLeft - (typeof ZOOM_PAD !== 'undefined' ? ZOOM_PAD : 0)) / _z;
     var startMouseY = (e.clientY - rect.top  + cwrap.scrollTop  - (typeof ZOOM_PAD !== 'undefined' ? ZOOM_PAD : 0)) / _z;
     var a0 = Math.atan2(startMouseY - cy, startMouseX - cx) * 180 / Math.PI;
+    if (typeof _updateRotCursorFromPivot === 'function') {
+      _updateRotCursorFromPivot(cx, cy, startMouseX, startMouseY);
+    }
 
     // Начальные углы и позиции всех элементов
     var startStates = members.map(function(ge) {
@@ -389,6 +392,9 @@
       var mx = (e2.clientX - rect.left + cwrap.scrollLeft - (typeof ZOOM_PAD !== 'undefined' ? ZOOM_PAD : 0)) / _z;
       var my = (e2.clientY - rect.top  + cwrap.scrollTop  - (typeof ZOOM_PAD !== 'undefined' ? ZOOM_PAD : 0)) / _z;
       var a = Math.atan2(my - cy, mx - cx) * 180 / Math.PI;
+      if (typeof _updateRotCursorFromPivot === 'function') {
+        _updateRotCursorFromPivot(cx, cy, mx, my);
+      }
       var delta = a - a0;
       if (e2.shiftKey) delta = Math.round(delta / 15) * 15;
       currentDeg = delta;
@@ -422,6 +428,7 @@
 
     function onUp() {
       window._anyDragging = false;
+      if (typeof _setRotCursor === 'function') _setRotCursor('');
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
 
@@ -506,7 +513,7 @@
         ge.style.width  = newElW + 'px';
         ge.style.height = newElH + 'px';
         var d = (typeof slides !== 'undefined') && slides[cur] && slides[cur].els.find(function(x) { return x.id === ge.dataset.id; });
-        if (d && ge.dataset.type === 'shape' && typeof renderShapeEl === 'function') renderShapeEl(ge, d);
+        if (d && ge.dataset.type === 'shape' && typeof renderShapeEl === 'function') renderShapeEl(ge, d, { remapCloud: true });
       });
 
       // Перерисовываем весь overlay с новыми координатами
@@ -656,6 +663,9 @@
       var d = els.find(function(x) { return x.id === domEl.dataset.id; });
       if (d) d.groupId = newGid;
     });
+    if (typeof window._syncGroupAnimsOnGroup === 'function') {
+      window._syncGroupAnimsOnGroup(newGid, toGroup[0].dataset.id);
+    }
     if (typeof save === 'function') save();
     if (typeof saveState === 'function') saveState();
     if (typeof clearMultiSel === 'function') clearMultiSel();

@@ -3,9 +3,21 @@
 
 (function(){
 
+// Миграция Groq → GigaChat (очистка устаревшего кэша чата)
+(function _aiMigrateFromGroq(){
+  const BUILD = 'gigachat-1';
+  if(localStorage.getItem('sf-ai-build') === BUILD) return;
+  localStorage.setItem('sf-ai-build', BUILD);
+  try{ delete window._aiUseGroq; }catch(e){}
+  try{
+    const raw = localStorage.getItem('sf-ai-chat') || '';
+    if(/groq/i.test(raw)) localStorage.removeItem('sf-ai-chat');
+  }catch(e){}
+})();
+
 // ── Константы ──────────────────────────────────────────────────────────────
 const AI_THEMES = ['Ocean Night','Midnight','Neon City','Coral Blaze','Forest Deep','Solar Flare','Rose Gold','Arctic Blue','Sage Night','Citrus Dark','Crimson','Deep Teal','Slate Storm','Aurora','Copper','Galaxy','Clean White','Warm Paper','Soft Indigo','Mint Fresh','Rose Petal','Sky Day','Corporate','Lavender','Peach','Slate Clean','Teal Light','Newspaper','Sakura','Lemon','Olive','Navy Gold','Obsidian','Blood Moon','Matrix','Ocean Deep','Void'];
-const AI_LAYOUTS = ['Призма','Аврора','Взрыв','Схема','Оригами','Ореол','Аркада','Закат','Слои','Кристалл','Метро','Рельеф','Космос','Океан','Огонь','Пустыня','Матрица'];
+const AI_LAYOUTS = ['Призма','Аврора','Взрыв','Схема','Оригами','Ореол','Закат','Слои','Кристалл','Метро','Рельеф','Космос','Океан','Огонь','Пустыня','Матрица'];
 
 // ── Состояние чата ──────────────────────────────────────────────────────────
 let _history = []; // {role, content}[]
@@ -16,40 +28,55 @@ let _log = [];   // лог всех сессий
 // Загружаем лог из localStorage
 try { _log = JSON.parse(localStorage.getItem('sf-ai-log')||'[]'); } catch(e){ _log=[]; }
 
-// Groq API — бесплатный, быстрый, поддерживает русский
-const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_MODEL = 'llama-3.1-8b-instant'; // бесплатная, быстрая, хорошо следует инструкциям
+// GigaChat (Сбер) — бесплатный для физлиц, русский, через локальный прокси /api/ai/cloud
+const GIGACHAT_MODEL = 'GigaChat';
 let _modelReady = false;
+let _cloudReady = false;
 
-function _getGroqKey(){
-  // Сначала из файла ai-config.json (загружается при старте)
-  if(window._aiConfigKey) return window._aiConfigKey;
-  return localStorage.getItem('sf-groq-key') || '';
+function _getGigaCreds(){
+  if(window._aiConfigCreds) return window._aiConfigCreds;
+  let v = localStorage.getItem('sf-gigachat-creds') || '';
+  if(!v){
+    const old = localStorage.getItem('sf-groq-key');
+    if(old){ localStorage.setItem('sf-gigachat-creds', old); localStorage.removeItem('sf-groq-key'); v = old; }
+  }
+  return v;
 }
-function _setGroqKey(val){
-  localStorage.setItem('sf-groq-key', val);
-  window._aiConfigKey = null; // localStorage приоритетнее после ручного ввода
+function _setGigaCreds(val){
+  localStorage.setItem('sf-gigachat-creds', val);
+  localStorage.removeItem('sf-groq-key');
+  window._aiConfigCreds = null;
 }
 
-// Загружаем ключ из ai-config.json если есть
 (function _loadConfigKey(){
   if(location.protocol === 'file:') return;
   fetch('./ai-config.json?_=' + Date.now())
     .then(r => r.ok ? r.json() : null)
     .then(cfg => {
-      if(cfg && cfg.groq_api_key){
-        window._aiConfigKey = cfg.groq_api_key;
-        // Обновляем UI если панель уже открыта
+      if(cfg && cfg.groq_api_key && !cfg.gigachat_credentials){
+        console.warn('[AI] ai-config.json содержит устаревший groq_api_key — замените на gigachat_credentials (см. ai-config.example.json)');
+      }
+      if(cfg && cfg.gigachat_credentials){
+        window._aiConfigCreds = cfg.gigachat_credentials;
+        if(cfg.gigachat_model) window._gigachatModel = cfg.gigachat_model;
         const hint = document.getElementById('ai-status-hint');
-        if(hint && !localStorage.getItem('sf-groq-key')){
+        if(hint && !localStorage.getItem('sf-gigachat-creds')){
           hint.style.color = '#34d399';
-          hint.textContent = '✓ Groq готов (ai-config.json) · ' + GROQ_MODEL;
+          hint.textContent = '✓ GigaChat готов (ai-config.json) · ' + (window._gigachatModel || GIGACHAT_MODEL);
         }
-        window._modelReady = true;
+        _checkCloudAI().then(ok => { _cloudReady = ok; if(ok) _modelReady = true; });
       }
     })
-    .catch(()=>{}); // файла нет — не страшно
+    .catch(()=>{});
 })();
+
+async function _checkCloudAI(){
+  try{
+    const r = await fetch('/api/ai/status');
+    const d = await r.json();
+    return !!(d.ok && d.provider === 'gigachat');
+  }catch(e){ return false; }
+}
 
 
 // ── Системный промпт ─────────────────────────────────────────────────────────
@@ -191,7 +218,7 @@ setLayout, setTheme, applyStyleAll, setTransition, addFormula, addPageNum, remov
 ]|||Создал 3 слайда о фотосинтезе с кратким текстом на каждом.`;
 }
 
-// ── AI Backend: WebLLM (приоритет) или Groq ──────────────────────────────────
+// ── AI Backend: GigaChat (облако) или WebLLM (локально) ─────────────────────
 
 async function _callAI(userMsg){
   _history.push({role:'user', content: userMsg});
@@ -199,32 +226,41 @@ async function _callAI(userMsg){
   const _isPres = /\u0441\u043e\u0437\u0434\u0430\u0439|\u043d\u0430\u043f\u0438\u0448\u0438|\u0441\u0434\u0435\u043b\u0430\u0439|\u043f\u0440\u0438\u0434\u0443\u043c\u0430\u0439|\u043f\u043e\u0434\u0433\u043e\u0442\u043e\u0432\u044c/i.test(userMsg) &&
                   /\u043f\u0440\u0435\u0437\u0435\u043d\u0442\u0430\u0446|\u0441\u043b\u0430\u0439\u0434/i.test(userMsg);
 
-  // Groq — если есть ключ И (нет WebLLM ИЛИ пользователь выбрал Groq)
-  const key = _getGroqKey();
-  if(key && (window._aiUseGroq || !window._webllmReady)){
-    // Фильтруем историю: чередуем user/assistant, убираем дубли
+  // GigaChat через локальный прокси (run.bat → node js/server.js)
+  const useCloud = window._aiUseCloud !== false && (_cloudReady || _getGigaCreds());
+  if(useCloud && (window._aiUseCloud || !window._webllmReady)){
+    if(!_cloudReady) _cloudReady = await _checkCloudAI();
+    if(!_cloudReady && !_getGigaCreds()){
+      throw new Error('NO_KEY');
+    }
     const _cleanHistory = [];
     let _lastRole = 'system';
     for(const h of _history){
-      if(h.role === _lastRole) continue; // пропускаем два подряд одинаковых
+      if(h.role === _lastRole) continue;
       _cleanHistory.push({role:h.role, content:h.content});
       _lastRole = h.role;
     }
-    // Последнее сообщение должно быть от user
     while(_cleanHistory.length && _cleanHistory[_cleanHistory.length-1].role !== 'user'){
       _cleanHistory.pop();
     }
-    const resp = await fetch(GROQ_URL, {
+    const creds = _getGigaCreds();
+    const resp = await fetch('/api/ai/cloud', {
       method:'POST',
-      headers:{'Authorization':'Bearer '+key,'Content-Type':'application/json'},
-      body: JSON.stringify({model:GROQ_MODEL,
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
         messages:[{role:'system',content:_sysPrompt()},..._cleanHistory],
-        temperature:0.3, max_tokens:4000, stream:false})
+        temperature:0.3,
+        max_tokens:4000,
+        gigachat_credentials: creds || undefined
+      })
     });
-    if(!resp.ok){const e=await resp.json().catch(()=>({error:{message:resp.statusText}}));throw new Error(e?.error?.message||resp.statusText);}
-    const data=await resp.json();
-    const txt=data.choices?.[0]?.message?.content||'';
-    _history[_history.length-1]={role:'assistant',content:txt};
+    const data = await resp.json().catch(()=>({}));
+    if(!resp.ok){
+      const msg = data?.error?.message || resp.statusText;
+      throw new Error(msg);
+    }
+    const txt = data.choices?.[0]?.message?.content || '';
+    _history[_history.length-1] = {role:'assistant', content:txt};
     return txt;
   }
 
@@ -452,15 +488,16 @@ function _createUI(){
       if(!msgs) return;
       if(!saved.length){
         // Нет истории — показываем приветствие
-        if(initMsg) initMsg.innerHTML = '<div class="ai-msg ai-msg-bot" style="background:rgba(99,102,241,.15);border:1px solid rgba(99,102,241,.2);border-radius:10px;padding:8px 12px;color:var(--text1);line-height:1.5;max-width:90%">Привет! Я помогу с презентацией 🎨<br><br><span id="ai-status-hint" style="font-size:11px;color:#fbbf24">⚙ Нажми <b>⚙ Ключ</b> и вставь бесплатный Groq API ключ</span></div>';
+        if(initMsg) initMsg.innerHTML = '<div class="ai-msg ai-msg-bot" style="background:rgba(99,102,241,.15);border:1px solid rgba(99,102,241,.2);border-radius:10px;padding:8px 12px;color:var(--text1);line-height:1.5;max-width:90%">Привет! Я помогу с презентацией 🎨<br><br><span id="ai-status-hint" style="font-size:11px;color:#fbbf24">⚙ Нажми <b>⚙ Ключ</b> и вставь бесплатный GigaChat API ключ</span></div>';
         return;
       }
       // Есть история — скрываем init-msg, показываем историю
       if(initMsg) initMsg.style.display = 'none';
       saved.forEach(item=>{
         // Фильтруем устаревшие ошибочные сообщения
+        if(item.html && /groq/i.test(item.html)) return;
         if(item.role !== 'user' && item.html &&
-           (item.html.includes('Groq недоступен при открытии через file://') ||
+           (item.html.includes('GigaChat недоступен при открытии через file://') ||
             item.html.includes('локальный сервер') ||
             item.html.includes('Live Server'))){
           return; // пропускаем
@@ -526,7 +563,7 @@ function _createUI(){
     // Показываем приветствие
     if(initMsg){
       initMsg.style.display = '';
-      initMsg.innerHTML = '<div style="background:rgba(99,102,241,.15);border:1px solid rgba(99,102,241,.2);border-radius:10px;padding:8px 12px;color:var(--text1);line-height:1.5;max-width:90%">Привет! Я помогу с презентацией 🎨<br><br><span id="ai-status-hint" style="font-size:11px;color:#fbbf24">⚙ Нажми <b>⚙ Ключ</b> и вставь бесплатный Groq API ключ</span></div>';
+      initMsg.innerHTML = '<div style="background:rgba(99,102,241,.15);border:1px solid rgba(99,102,241,.2);border-radius:10px;padding:8px 12px;color:var(--text1);line-height:1.5;max-width:90%">Привет! Я помогу с презентацией 🎨<br><br><span id="ai-status-hint" style="font-size:11px;color:#fbbf24">⚙ Нажми <b>⚙ Ключ</b> и вставь бесплатный GigaChat API ключ</span></div>';
     }
     _history = [];
     try{ localStorage.removeItem('sf-ai-chat'); }catch(e){}
@@ -543,13 +580,13 @@ function _createUI(){
       if(typeof _updateModelChip==='function') _updateModelChip();
       // Обновляем статус ключа
       const hint = document.getElementById('ai-status-hint');
-      const key = _getGroqKey();
+      const key = _getGigaCreds();
       if(window._webllmReady){
         if(hint){ hint.style.color='#a78bfa'; hint.textContent='✓ WebLLM · ' + (window._webllmModelId||'загружена'); }
         if(typeof _updateModelChip==='function') _updateModelChip();
         _modelReady=true;
       } else if(key && hint){
-        hint.style.color='#34d399'; hint.textContent='✓ Groq готов · ' + GROQ_MODEL; _modelReady=true;
+        hint.style.color='#34d399'; hint.textContent='✓ GigaChat готов · ' + (window._gigachatModel || GIGACHAT_MODEL); _modelReady=true;
       }
     }
   };
@@ -592,7 +629,7 @@ function _createUI(){
       window._webllmEngine   = engine;
       window._webllmReady    = true;
       window._webllmModelId  = cfg.modelId;
-      window._aiUseGroq = false; // WebLLM загружен — по умолчанию используем его
+      window._aiUseCloud = false; // WebLLM загружен — по умолчанию используем его
       if(typeof _updateModelChip==='function') _updateModelChip();
       window._webllmSysPrompt = `You are a JSON-only presentation assistant. OUTPUT ONLY A JSON ARRAY — start with [ end with ].
 NO text before or after the array. NO markdown. ONLY valid JSON array.
@@ -634,7 +671,7 @@ Wide margins: [{"cmd":"setPadding","padding":70}]`;
         hint.style.color = _offline ? '#64748b' : '#fbbf24';
         hint.textContent = _offline
           ? '📡 Офлайн · WebLLM недоступен'
-          : (!_getGroqKey() ? '⚙ Загрузи WebLLM (🧠) или добавь Groq ключ' : '✓ Groq готов · ' + (window.GROQ_MODEL||''));
+          : (!_cloudReady && !_getGigaCreds() ? '⚙ Запустите run.bat и настройте GigaChat в ai-config.json' : '✓ GigaChat готов · ' + (window._gigachatModel || GIGACHAT_MODEL));
       }
     }
   })();
@@ -945,7 +982,7 @@ function _execCommands(cmds){
                 y: cmd.y != null ? cmd.y : sn2((ch2 - sz) / 2),
                 w:sz, h:sz,
                 iconId:ic.id, iconPath:ic.p, iconColor:color, iconSw:sw, iconStyle:style,
-                svgContent, rot:0, anims:[], shadow:false, shadowBlur:8, shadowColor:'#000000'
+                svgContent, rot:0, anims:[], shadow:false, shadowBlur:8, shadowSize:3, shadowColor:'#000000'
               };
               slides[cur].els.push(d);
               if(typeof mkEl==='function') mkEl(d);
@@ -1351,9 +1388,9 @@ async function _send(){
   }
 
   // Умный перехват запросов на создание презентации для WebLLM
-  // WebLLM маленькие модели не всегда генерируют полный массив — форсируем через Groq если доступен
+  // WebLLM маленькие модели не всегда генерируют полный массив — форсируем через GigaChat если доступен
   // Или используем расширенный промпт с принудительным форматом
-  if(window._webllmReady && !_getGroqKey()){
+  if(window._webllmReady && !_getGigaCreds()){
     const _isPres = /создай|напиши|сделай|придумай|подготовь/.test(text.toLowerCase()) &&
                     /презентац|слайд/.test(text.toLowerCase());
     if(_isPres){
@@ -1371,8 +1408,12 @@ async function _send(){
     }
   }
 
-  if(!window._webllmReady && !_getGroqKey()){
-    _addMsg('⚠ Нет AI модели. Загрузи WebLLM (кнопка 🧠 WebLLM) или добавь Groq ключ (⚙ Ключ).', 'assistant');
+  if(!window._webllmReady && !_cloudReady && !_getGigaCreds()){
+    const ok = await _checkCloudAI();
+    if(ok) _cloudReady = true;
+  }
+  if(!window._webllmReady && !_cloudReady){
+    _addMsg('⚠ Нет AI. Запустите run.bat, добавьте ключ GigaChat в ai-config.json (см. ai-config.example.json) или загрузите WebLLM (🧠).', 'assistant');
     return;
   }
 
@@ -1421,10 +1462,10 @@ async function _send(){
   } catch(err){
     _entry.error = err.message;
     let errMsg = 'Ошибка: ' + err.message;
-    if(err.message === 'NO_KEY') errMsg = window._webllmReady ? '⚠ WebLLM не отвечает. Перезагрузите модель.' : '⚠ Нет AI: загрузи WebLLM (кнопка 🧠) или добавь Groq API ключ.';
-    else if(err.message.includes('Failed to fetch')) errMsg = '⚠ Нет соединения с Groq. Проверьте ключ и подключение к интернету.';
-    else if(err.message.includes('401')) errMsg = '⚠ Неверный Groq API ключ. Нажмите чип модели для смены.';
-    else if(err.message.includes('429')) errMsg = '⚠ Превышен лимит запросов Groq. Подожди минуту.';
+    if(err.message === 'NO_KEY') errMsg = window._webllmReady ? '⚠ WebLLM не отвечает. Перезагрузите модель.' : '⚠ Нет AI: загрузи WebLLM (кнопка 🧠) или добавь GigaChat API ключ.';
+    else if(err.message.includes('Failed to fetch')) errMsg = '⚠ Нет связи с сервером. Запустите run.bat (не python напрямую) и проверьте интернет.';
+    else if(err.message.includes('401')) errMsg = '⚠ Неверный GigaChat API ключ. Нажмите чип модели для смены.';
+    else if(err.message.includes('429')) errMsg = '⚠ Превышен лимит запросов GigaChat. Подожди минуту.';
     _addMsg(errMsg, 'assistant');
   } finally {
     _logEntry(_entry);
@@ -1466,64 +1507,66 @@ function aiChip(text){
   if(inp){ inp.value = text; inp.focus(); }
 }
 
-function _showGroqKeyModal(){
-  let modal = document.getElementById('ai-groq-modal');
+function _showGigaChatKeyModal(){
+  let modal = document.getElementById('ai-gigachat-modal');
   if(!modal){
     modal = document.createElement('div');
-    modal.id = 'ai-groq-modal';
+    modal.id = 'ai-gigachat-modal';
     modal.style.cssText = 'position:fixed;inset:0;z-index:9200;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;';
     modal.innerHTML = `
       <div style="width:440px;max-width:95vw;background:var(--surface);border:1px solid var(--border2);border-radius:14px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.6);font-family:inherit">
-        <div style="font-weight:600;color:var(--text1);font-size:15px;margin-bottom:6px">🔑 Groq API ключ</div>
-        <div style="font-size:12px;color:var(--text3,#64748b);margin-bottom:4px;line-height:1.6">
-          Groq — бесплатный сервис для запуска LLM. Ключ хранится только в вашем браузере.
+        <div style="font-weight:600;color:var(--text1);font-size:15px;margin-bottom:6px">🔑 GigaChat API ключ</div>
+        <div style="font-size:12px;color:var(--text3,#64748b);margin-bottom:6px;line-height:1.6">
+          GigaChat (Сбер) — бесплатно для физлиц, хорошо понимает русский.
         </div>
-        <div style="font-size:12px;color:var(--text3,#64748b);margin-bottom:16px">
-          Получить бесплатный ключ: <a href="https://console.groq.com" target="_blank" style="color:#818cf8">console.groq.com</a> → API Keys → Create
+        <div style="font-size:12px;color:var(--text3,#64748b);margin-bottom:16px;line-height:1.6">
+          1. Получите ключ: <a href="https://developers.sber.ru/studio" target="_blank" style="color:#818cf8">developers.sber.ru/studio</a> → GigaChat API → Authorization key<br>
+          2. Вставьте в <code style="font-size:11px">ai-config.json</code> → <code>gigachat_credentials</code> и перезапустите <b>run.bat</b><br>
+          3. Или вставьте ключ ниже (только в этом браузере)
         </div>
         <div style="position:relative;margin-bottom:10px">
-          <input id="ai-groq-input" type="password" placeholder="gsk_..." style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:9px 38px 9px 12px;color:var(--text1);font-family:monospace;font-size:12px;outline:none;">
-          <button onclick="const i=document.getElementById('ai-groq-input');i.type=i.type==='password'?'text':'password'" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text3,#64748b);cursor:pointer">
+          <input id="ai-gigachat-input" type="password" placeholder="Authorization key…" style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:9px 38px 9px 12px;color:var(--text1);font-family:monospace;font-size:12px;outline:none;">
+          <button onclick="const i=document.getElementById('ai-gigachat-input');i.type=i.type==='password'?'text':'password'" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text3,#64748b);cursor:pointer">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
           </button>
         </div>
-        <div id="ai-groq-status" style="font-size:11px;margin-bottom:14px;min-height:16px"></div>
+        <div id="ai-gigachat-status" style="font-size:11px;margin-bottom:14px;min-height:16px"></div>
         <div style="display:flex;gap:8px;justify-content:flex-end">
-          <button onclick="document.getElementById('ai-groq-modal').style.display='none'" style="padding:7px 16px;border-radius:7px;border:1px solid var(--border2);background:none;color:var(--text2,#94a3b8);cursor:pointer;font-size:12px">Отмена</button>
-          <button onclick="aiSaveGroqKey()" style="padding:7px 18px;border-radius:7px;border:none;background:linear-gradient(135deg,#6366f1,#a855f7);color:#fff;cursor:pointer;font-size:12px;font-weight:500">Сохранить</button>
+          <button onclick="document.getElementById('ai-gigachat-modal').style.display='none'" style="padding:7px 16px;border-radius:7px;border:1px solid var(--border2);background:none;color:var(--text2,#94a3b8);cursor:pointer;font-size:12px">Отмена</button>
+          <button onclick="aiSaveGigaChatKey()" style="padding:7px 18px;border-radius:7px;border:none;background:linear-gradient(135deg,#6366f1,#a855f7);color:#fff;cursor:pointer;font-size:12px;font-weight:500">Сохранить</button>
         </div>
       </div>
     `;
     modal.addEventListener('click', e=>{ if(e.target===modal) modal.style.display='none'; });
     document.body.appendChild(modal);
   }
-  const cur = _getGroqKey();
-  const inp = document.getElementById('ai-groq-input');
+  const cur = _getGigaCreds();
+  const inp = document.getElementById('ai-gigachat-input');
   inp.value = cur || '';
-  const st = document.getElementById('ai-groq-status');
+  const st = document.getElementById('ai-gigachat-status');
   if(cur){ st.style.color='#34d399'; st.textContent='✓ Ключ сохранён: ' + cur.slice(0,8)+'...'+cur.slice(-4); }
   else { st.style.color='#f87171'; st.textContent='✗ Ключ не задан'; }
   modal.style.display='flex';
   setTimeout(()=>inp.focus(),50);
 }
 
-window.aiShowKeyModal = function(){ _showGroqKeyModal(); };
+window.aiShowKeyModal = function(){ _showGigaChatKeyModal(); };
 
-// ── Переключатель модели (WebLLM ↔ Groq) ─────────────────────────────────
-window._aiUseGroq = false; // по умолчанию WebLLM если активен
+// ── Переключатель модели (WebLLM ↔ GigaChat) ─────────────────────────────────
+window._aiUseCloud = false; // по умолчанию WebLLM если активен
 
 function _updateModelChip(){
   const chip = document.getElementById('ai-model-chip');
   const hint = document.getElementById('ai-status-hint');
   if(!chip) return;
-  const useGroq = window._aiUseGroq || (!window._webllmReady);
-  if(useGroq){
-    const key = _getGroqKey();
+  const useGigaChat = window._aiUseCloud || (!window._webllmReady);
+  if(useGigaChat){
+    const key = _getGigaCreds();
     chip.style.borderColor = key ? 'rgba(52,211,153,.5)' : 'rgba(251,191,36,.4)';
     chip.style.color = key ? '#34d399' : '#fbbf24';
     chip.style.background = key ? 'rgba(52,211,153,.1)' : 'rgba(251,191,36,.1)';
-    chip.textContent = key ? '✓ Groq' : '⚙ Groq';
-    if(hint && key){ hint.style.color='#34d399'; hint.textContent='✓ Groq · '+GROQ_MODEL; }
+    chip.textContent = key ? '✓ GigaChat' : '⚙ GigaChat';
+    if(hint && key){ hint.style.color='#34d399'; hint.textContent='✓ GigaChat · ' + (window._gigachatModel || GIGACHAT_MODEL); }
   } else {
     const mid = window._webllmModelId || '';
     chip.style.borderColor = 'rgba(74,222,128,.5)';
@@ -1563,10 +1606,10 @@ function _showModelSelectModal(){
 function _refreshModelSelectModal(){
   const body = document.getElementById('ai-model-select-body');
   if(!body) return;
-  const isWebLLM = window._webllmReady && !window._aiUseGroq;
-  const isGroq   = window._aiUseGroq || (!window._webllmReady && !!_getGroqKey());
+  const isWebLLM = window._webllmReady && !window._aiUseCloud;
+  const isGigaChat   = window._aiUseCloud || (!window._webllmReady && !!_getGigaCreds());
   const wllmId   = (window._webllmModelId||'').split('-').slice(0,3).join('-') || 'не загружена';
-  const groqKey  = _getGroqKey();
+  const gigaKey  = _getGigaCreds();
 
   body.innerHTML = `
     <!-- WebLLM -->
@@ -1581,17 +1624,17 @@ function _refreshModelSelectModal(){
       <div style="font-size:11px;color:var(--text2)">Модель в браузере, без интернета. ${window._webllmReady ? 'Модель: '+wllmId : 'Не загружена'}</div>
       ${window._webllmReady ? '<div style="margin-top:6px"><button onclick="event.stopPropagation();window._changeWebLLMModel()" style="font-size:10px;padding:3px 8px;border-radius:5px;border:1px solid var(--border2);background:var(--surface2);color:var(--text2);cursor:pointer">🔄 Сменить модель</button></div>' : '<div style="margin-top:6px;font-size:10px;color:#a78bfa">Нажмите чтобы загрузить модель</div>'}
     </div>
-    <!-- Groq -->
-    <div style="border:2px solid ${isGroq?'#34d399':'var(--border2)'};border-radius:10px;padding:12px;cursor:pointer;transition:border-color .15s"
-      onclick="window._selectGroq()"
-      onmouseenter="this.style.borderColor='#34d399'" onmouseleave="this.style.borderColor='${isGroq?'#34d399':'var(--border2)'}'"
+    <!-- GigaChat -->
+    <div style="border:2px solid ${isGigaChat?'#34d399':'var(--border2)'};border-radius:10px;padding:12px;cursor:pointer;transition:border-color .15s"
+      onclick="window._selectGigaChat()"
+      onmouseenter="this.style.borderColor='#34d399'" onmouseleave="this.style.borderColor='${isGigaChat?'#34d399':'var(--border2)'}'"
     >
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-        <span style="font-weight:600;font-size:13px;color:var(--text)">⚡ Groq API</span>
-        ${isGroq ? '<span style="font-size:10px;color:#34d399;font-weight:600">● Активна</span>' : ''}
+        <span style="font-weight:600;font-size:13px;color:var(--text)">⚡ GigaChat API</span>
+        ${isGigaChat ? '<span style="font-size:10px;color:#34d399;font-weight:600">● Активна</span>' : ''}
       </div>
-      <div style="font-size:11px;color:var(--text2)">Быстрый бесплатный API. ${groqKey ? 'Ключ: '+groqKey.slice(0,8)+'...' : 'Ключ не задан'}</div>
-      <div style="margin-top:6px"><button onclick="event.stopPropagation();window._editGroqKey()" style="font-size:10px;padding:3px 8px;border-radius:5px;border:1px solid var(--border2);background:var(--surface2);color:var(--text2);cursor:pointer">${groqKey ? '✏️ Изменить ключ' : '+ Добавить ключ'}</button></div>
+      <div style="font-size:11px;color:var(--text2)">Российский облачный AI (Сбер). ${gigaKey ? 'Ключ в браузере: '+gigaKey.slice(0,8)+'...' : (_cloudReady ? 'Настроен в ai-config.json' : 'Нужен ключ в ai-config.json')}</div>
+      <div style="margin-top:6px"><button onclick="event.stopPropagation();window._editGigaChatKey()" style="font-size:10px;padding:3px 8px;border-radius:5px;border:1px solid var(--border2);background:var(--surface2);color:var(--text2);cursor:pointer">${gigaKey ? '✏️ Изменить ключ' : '+ Добавить ключ'}</button></div>
     </div>`;
 }
 
@@ -1602,27 +1645,27 @@ window._selectWebLLM = function(){
     _showWebLLMInChat();
     return;
   }
-  window._aiUseGroq = false;
+  window._aiUseCloud = false;
   _updateModelChip();
   _refreshModelSelectModal();
   setTimeout(()=>{ document.getElementById('ai-model-select-modal').style.display='none'; }, 300);
 };
 
-window._selectGroq = function(){
-  window._aiUseGroq = true;
+window._selectGigaChat = function(){
+  window._aiUseCloud = true;
   _updateModelChip();
-  if(!_getGroqKey()){
+  if(!_getGigaCreds()){
     document.getElementById('ai-model-select-modal').style.display='none';
-    _showGroqKeyModal();
+    _showGigaChatKeyModal();
   } else {
     _refreshModelSelectModal();
     setTimeout(()=>{ document.getElementById('ai-model-select-modal').style.display='none'; }, 300);
   }
 };
 
-window._editGroqKey = function(){
+window._editGigaChatKey = function(){
   document.getElementById('ai-model-select-modal').style.display='none';
-  _showGroqKeyModal();
+  _showGigaChatKeyModal();
 };
 
 window._changeWebLLMModel = function(){
@@ -1631,13 +1674,13 @@ window._changeWebLLMModel = function(){
 };
 
 function _aiMenuClose(){ const m=document.getElementById('ai-model-menu'); if(m)m.remove(); }
-function _aiMenuWebLLM(){ window._aiUseGroq=false; _updateModelChip(); _aiMenuClose(); }
-function _aiMenuGroq(){ window._aiUseGroq=true; _updateModelChip(); _aiMenuClose(); if(!_getGroqKey())_showGroqKeyModal(); }
+function _aiMenuWebLLM(){ window._aiUseCloud=false; _updateModelChip(); _aiMenuClose(); }
+function _aiMenuGigaChat(){ window._aiUseCloud=true; _updateModelChip(); _aiMenuClose(); if(!_getGigaCreds())_showGigaChatKeyModal(); }
 function _aiMenuChange(){ _aiMenuClose(); _showWebLLMInChat(); }
 // Экспортируем в window — нужно для onclick в innerHTML
 window._aiMenuClose  = _aiMenuClose;
 window._aiMenuWebLLM = _aiMenuWebLLM;
-window._aiMenuGroq   = _aiMenuGroq;
+window._aiMenuGigaChat   = _aiMenuGigaChat;
 window._aiMenuChange = _aiMenuChange;
 
 function _showModelMenu(){
@@ -1650,25 +1693,26 @@ function _showModelMenu(){
   menu.style.cssText = 'background:var(--surface2);border:1px solid rgba(139,92,246,.35);border-radius:10px;padding:10px;margin:4px 0;display:flex;flex-direction:column;gap:6px;font-size:11px;';
   menu.innerHTML = '<div style="font-weight:600;color:#a78bfa;margin-bottom:2px;">🔀 Выбор модели</div>'+
     '<button onclick="_aiMenuWebLLM()" style="background:rgba(74,222,128,.15);border:1px solid rgba(74,222,128,.3);border-radius:6px;padding:6px 10px;color:#4ade80;cursor:pointer;text-align:left;">✅ WebLLM · '+(window._webllmModelId||'').split('-').slice(0,3).join('-')+'</button>'+
-    '<button onclick="_aiMenuGroq()" style="background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.3);border-radius:6px;padding:6px 10px;color:#fbbf24;cursor:pointer;text-align:left;">⚙ Groq API</button>'+
+    '<button onclick="_aiMenuGigaChat()" style="background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.3);border-radius:6px;padding:6px 10px;color:#fbbf24;cursor:pointer;text-align:left;">⚙ GigaChat API</button>'+
     '<button onclick="_aiMenuChange()" style="background:rgba(99,102,241,.1);border:1px solid rgba(99,102,241,.3);border-radius:6px;padding:6px 10px;color:#818cf8;cursor:pointer;text-align:left;">🔄 Сменить модель WebLLM</button>';
   msgs.appendChild(menu);
   msgs.scrollTop = msgs.scrollHeight;
 }
 
-window.aiSaveGroqKey = function(){
-  const val = (document.getElementById('ai-groq-input').value||'').trim();
-  const st = document.getElementById('ai-groq-status');
+window.aiSaveGigaChatKey = function(){
+  const val = (document.getElementById('ai-gigachat-input').value||'').trim();
+  const st = document.getElementById('ai-gigachat-status');
   if(!val){ st.style.color='#f87171'; st.textContent='✗ Введите ключ'; return; }
-  _setGroqKey(val);
-  _modelReady = true;
+  _setGigaCreds(val);
+  _cloudReady = false;
+  _checkCloudAI().then(ok => { _cloudReady = ok; _modelReady = ok || !!val; });
   const hint = document.getElementById('ai-status-hint');
-  if(hint){ hint.style.color='#34d399'; hint.textContent='✓ Groq готов · ' + GROQ_MODEL; }
-  st.style.color='#34d399'; st.textContent='✓ Сохранено';
-  window._aiUseGroq = true;
+  if(hint){ hint.style.color='#34d399'; hint.textContent='✓ GigaChat готов · ' + (window._gigachatModel || GIGACHAT_MODEL); }
+  st.style.color='#34d399'; st.textContent='✓ Сохранено в браузере';
+  window._aiUseCloud = true;
   _updateModelChip();
   if(typeof _refreshModelSelectModal==='function') _refreshModelSelectModal();
-  setTimeout(()=>{ document.getElementById('ai-groq-modal').style.display='none'; }, 600);
+  setTimeout(()=>{ document.getElementById('ai-gigachat-modal').style.display='none'; }, 600);
 };
 
 window._showLog = function(){
@@ -1844,7 +1888,7 @@ window._wllmLoadInline = async function(){
     window._webllmEngine   = engine;
     window._webllmReady    = true;
     window._webllmModelId  = modelId;
-    window._aiUseGroq = false;
+    window._aiUseCloud = false;
     if(typeof _updateModelChip==='function') _updateModelChip();
     // Сохраняем выбор модели — восстановится после перезагрузки
     try{ localStorage.setItem('sf_webllm_cfg', JSON.stringify({modelId})); }catch(_){}

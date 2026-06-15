@@ -498,24 +498,94 @@ function openFormulaEditor(existingEl){
     }
   }
 
+  function _mfHasSelection(mf){
+    if(!mf) return false;
+    try{
+      const sel = mf.selection;
+      if(sel && sel.ranges && sel.ranges.length){
+        const [a,b] = sel.ranges[0];
+        if(a !== b) return true;
+      }
+    }catch(e){}
+    try{
+      const t = mf.getValue('selection', 'latex');
+      if(t && String(t).trim()) return true;
+    }catch(e){}
+    return false;
+  }
+
+  // #0 — главный слот (основание, числитель и т.п.), остальные — пустые поля
+  function _structLatexForMathLive(template, useSelectionInPrimary){
+    if(useSelectionInPrimary){
+      return template.replace(/#0(?!\d)/g, '#@').replace(/#([1-9]\d*)/g, '#?');
+    }
+    return template.replace(/#\d+/g, '#?');
+  }
+
+  function _wrapLatexSlot(text){
+    const s = (text || '').trim();
+    if(!s) return '\\placeholder{}';
+    if(s.startsWith('{') && s.endsWith('}')) return s;
+    if(/^[a-zA-Z0-9]$/.test(s)) return s;
+    if(/^[\\][a-zA-Z]+/.test(s)) return s;
+    return '{' + s + '}';
+  }
+
+  function _structLatexForTextarea(template, selectedText){
+    const ph = '\\placeholder{}';
+    if(selectedText && selectedText.trim()){
+      const slot = _wrapLatexSlot(selectedText);
+      return template.replace(/#0(?!\d)/g, slot).replace(/#([1-9]\d*)/g, ph);
+    }
+    return template.replace(/#\d+/g, ph);
+  }
+
+  function _syncFormulaEditorFromMf(mf){
+    const newLatex = mf.getValue('latex');
+    const tas = linesContainer.querySelectorAll('.fm-line-ta');
+    const ta = tas[_activeLineIdx] || tas[0];
+    if(ta){ ta.value = newLatex; }
+    clearTimeout(_renderTimeout); _renderTimeout = setTimeout(doPreview, 300);
+  }
+
   function _insertStructLatex(latex){
-    const mf = document.getElementById('fm-mf');
+    const mf = document.getElementById('fm-mf') || _mf;
     if(mf && customElements.get('math-field')){
       mf.focus();
-      // #0,#1,... → #? — MathLive использует # как маркер placeholder
-      // selectionMode:'placeholder' автоматически переходит к следующему #?
-      const ins = latex.replace(/#\d/g,'#?');
-      try{ mf.insert(ins, {insertionMode:'replaceSelection', selectionMode:'placeholder'}); }
-      catch(e){
-        // Fallback: вставляем с \placeholder{}
-        const ins2 = latex.replace(/#\d/g,'\\placeholder{}');
-        try{ mf.insert(ins2, {insertionMode:'replaceSelection', selectionMode:'placeholder'}); }
-        catch(e2){}
+      const hasSel = _mfHasSelection(mf);
+      const ins = _structLatexForMathLive(latex, hasSel);
+      try{
+        mf.insert(ins, {insertionMode:'replaceSelection', selectionMode:'placeholder'});
+      }catch(e){
+        let selText = '';
+        if(hasSel){
+          try{ selText = mf.getValue('selection', 'latex') || ''; }catch(err){}
+        }
+        const ins2 = _structLatexForTextarea(latex, selText);
+        try{ mf.insert(ins2, {insertionMode:'replaceSelection', selectionMode:'placeholder'}); }catch(e2){}
       }
-      const newLatex = mf.getValue('latex');
-      const tas = linesContainer.querySelectorAll('.fm-line-ta');
-      const ta = tas[_activeLineIdx] || tas[0];
-      if(ta){ ta.value = newLatex; }
+      _syncFormulaEditorFromMf(mf);
+      _closeDropdown();
+      return;
+    }
+
+    // Fallback: обычный textarea
+    const tas = linesContainer.querySelectorAll('.fm-line-ta');
+    const ta = tas[_activeLineIdx] || tas[0];
+    if(ta){
+      ta.focus();
+      const start = ta.selectionStart, end = ta.selectionEnd;
+      const sel = start !== end ? ta.value.slice(start, end) : '';
+      const ins = _structLatexForTextarea(latex, sel);
+      if(sel){
+        ta.value = ta.value.slice(0, start) + ins + ta.value.slice(end);
+      }else{
+        ta.value = ta.value.slice(0, start) + ins + ta.value.slice(start);
+      }
+      const phPos = ins.indexOf('\\placeholder{}');
+      const caret = phPos >= 0 ? start + phPos + 1 : start + ins.length;
+      ta.selectionStart = ta.selectionEnd = caret;
+      ta.dispatchEvent(new Event('input'));
       clearTimeout(_renderTimeout); _renderTimeout = setTimeout(doPreview, 300);
     }
     _closeDropdown();

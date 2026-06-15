@@ -11,6 +11,7 @@ function onKey(e){
   const inPreview=document.getElementById('preview-ov').classList.contains('active');
   const lk=latinKey(e);
   if(inPreview){
+    const lk=latinKey(e);
     if(e.key==='Escape'||e.key==='F5'){
       e.preventDefault();
       if(typeof pidx!=='undefined') cur=pidx;
@@ -18,6 +19,14 @@ function onKey(e){
     }
     else if(['ArrowRight','ArrowDown',' '].includes(e.key)){e.preventDefault();nextPreview();}
     else if(['ArrowLeft','ArrowUp'].includes(e.key)){e.preventDefault();prevPreview();}
+    else if(e.key==='Home'){e.preventDefault();gotoPreviewSlide(0);}
+    else if(e.key==='End'){e.preventDefault();gotoPreviewSlide(slides.length-1);}
+    else if(e.key==='PageDown'){e.preventDefault();nextPreview();}
+    else if(e.key==='PageUp'){e.preventDefault();prevPreview();}
+    else if(lk==='b'||lk==='B'){e.preventDefault();togglePreviewBlack();}
+    else if(lk==='l'||lk==='L'){e.preventDefault();togglePresLoop();}
+    else if(lk==='s'||lk==='S'){e.preventDefault();togglePresShuffle();}
+    else if(/^[0-9]$/.test(e.key)){e.preventDefault();_previewJumpDigit(e.key);}
     return;
   }
   if(e.key==='F5'){
@@ -33,6 +42,8 @@ function onKey(e){
       if(document.activeElement&&document.activeElement!==document.body){
         document.activeElement.blur();
       }
+      const _selEl = typeof sel !== 'undefined' ? sel : null;
+      if (_selEl && typeof window._clearAnimHoverPreview === 'function') window._clearAnimHoverPreview(_selEl);
       // Сохраняем все данные (включая состояние незафиксированных полей)
       if(typeof save==='function') save();
       // Снимаем текущий кадр декора для синхронизации в просмотре
