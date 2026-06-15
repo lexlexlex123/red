@@ -511,13 +511,38 @@ function getAppletHtml(appletId, palette){
   return a.html||'';
 }
 
+function _qrPosFromClient(clientX, clientY, w, h){
+  let x=Math.round((canvasW-w)/2), y=Math.round((canvasH-h)/2);
+  if(clientX!=null&&clientY!=null&&typeof _toCanvasCoords==='function'){
+    const pos=_toCanvasCoords(clientX, clientY);
+    x=Math.max(0, Math.min(canvasW-w, Math.round(pos.x-w/2)));
+    y=Math.max(0, Math.min(canvasH-h, Math.round(pos.y-h/2)));
+  }
+  return {x, y};
+}
+
+// Editable QR applet (_isQR image with props panel)
+function insertQRAppletAt(text, clientX, clientY){
+  text=String(text||'').trim();
+  if(!text){
+    if(typeof toast==='function') toast(typeof t==='function'?t('toastQrNeedText'):'Select or enter text first', 'warn');
+    return;
+  }
+  const a=APPLETS.find(x=>x.id==='qr');
+  if(!a) return;
+  insertApplet(a, {qrText:text, clientX, clientY});
+  if(typeof syncProps==='function') syncProps();
+}
+
 // Insert applet onto current slide
-function insertApplet(a){
+function insertApplet(a, opts){
+  opts=opts||{};
   if(typeof pushUndo==="function")pushUndo();
   const aspect=a.aspectRatio||null;
   const w=300, h=aspect?Math.round(w/aspect):320;
-  const x=Math.round((canvasW-w)/2);
-  const y=Math.round((canvasH-h)/2);
+  const pos=_qrPosFromClient(opts.clientX, opts.clientY, w, h);
+  const x=pos.x;
+  const y=pos.y;
   // Generator defaults
   const cfg = (a.id==='generator'||a.id==='timer') ? {genMin:1,genMax:100,genStep:1,palette:_appletTheme()} : null;
   const html=typeof a.htmlFn==='function'?a.htmlFn(_appletTheme(),cfg):a.html||'';
@@ -538,6 +563,7 @@ function insertApplet(a){
   };
   // QR: генерируем сразу как image элемент
   if(a.id === 'qr'){
+    if(opts.qrText!=null) d.qrText=String(opts.qrText).trim()||d.qrText;
     const qrUrl = renderQRDataURL(d.qrText, d.qrBg, d.qrColor, 400);
     const qrEl = {
       id: d.id, type:'image', x:d.x, y:d.y, w:d.w, h:d.h,

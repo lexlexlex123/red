@@ -860,10 +860,237 @@
   document.addEventListener('keydown', function (e) {
     if (!e.ctrlKey) return;
     var active = document.activeElement;
-    if (active && (active.tagName==='INPUT'||active.tagName==='TEXTAREA'||active.contentEditable==='true')) return;
-    if (e.key==='g' && !e.shiftKey) { e.preventDefault(); window.groupSelected(); }
-    if ((e.key==='G'||e.key==='g') && e.shiftKey) { e.preventDefault(); window.ungroupSelected(); }
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.contentEditable === 'true')) return;
+    if (e.code === 'KeyG' && !e.shiftKey) { e.preventDefault(); window.groupSelected(); }
+    if (e.code === 'KeyG' && e.shiftKey) { e.preventDefault(); window.ungroupSelected(); }
   });
+
+  // ── Контекстное меню объектов (ПКМ) ─────────────────────────
+
+  var _EL_CTX_ICONS = {
+    group: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="2" width="8" height="8" rx="1.5"/><rect x="14" y="2" width="8" height="8" rx="1.5"/><rect x="2" y="14" width="8" height="8" rx="1.5"/><rect x="14" y="14" width="8" height="8" rx="1.5"/><path d="M10 6h4M10 18h4M6 10v4M18 10v4" stroke-linecap="round"/></svg>',
+    ungroup: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="2" width="8" height="8" rx="1.5"/><rect x="14" y="2" width="8" height="8" rx="1.5"/><rect x="2" y="14" width="8" height="8" rx="1.5"/><rect x="14" y="14" width="8" height="8" rx="1.5"/><line x1="1" y1="23" x2="23" y2="1" stroke-width="1.5"/></svg>',
+    dup: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>',
+    copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V6a2 2 0 012-2h10"/></svg>',
+    paste: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M9 12h6M9 16h6"/></svg>',
+    qr: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="15" y="15" width="3" height="3"/><rect x="19" y="15" width="2" height="2"/><rect x="15" y="19" width="2" height="2"/><rect x="19" y="19" width="2" height="2"/><path d="M6.5 6.5h.01M17.5 6.5h.01M6.5 17.5h.01"/></svg>',
+    del: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>'
+  };
+
+  function _elCtxLabels() {
+    var tr = typeof t === 'function' ? t : function (k) { return k; };
+    var en = typeof getLang === 'function' && getLang() === 'en';
+    return {
+      group: en ? 'Group' : 'Сгруппировать',
+      ungroup: en ? 'Ungroup' : 'Разгруппировать',
+      dup: tr('btnDuplicate'),
+      copy: tr('ctxCopySlide'),
+      paste: tr('ctxPasteSlide'),
+      qrCreate: tr('ctxCreateQr'),
+      del: tr('btnDelete')
+    };
+  }
+
+  function _elCtxCopyLabel(count) {
+    var L = _elCtxLabels();
+    if (count <= 1) return L.copy;
+    var tr = typeof t === 'function' ? t : function (k) { return k; };
+    return tr('ctxCopySlidesN').replace('{n}', String(count));
+  }
+
+  function _elCtxDeleteLabel(count) {
+    var L = _elCtxLabels();
+    if (count <= 1) return L.del;
+    var tr = typeof t === 'function' ? t : function (k) { return k; };
+    return tr('ctxDeleteSlidesN').replace('{n}', String(count));
+  }
+
+  function _hideElCtxMenu() {
+    var m = document.getElementById('el-ctx-menu');
+    if (m) m.style.display = 'none';
+  }
+
+  function _showElCtxMenu(x, y, items) {
+    var m = document.getElementById('el-ctx-menu');
+    if (!m) {
+      m = document.createElement('div');
+      m.id = 'el-ctx-menu';
+      m.className = 'slide-ctx-menu';
+      document.body.appendChild(m);
+      document.addEventListener('mousedown', function (e) { if (!m.contains(e.target)) _hideElCtxMenu(); });
+      document.addEventListener('keydown', function (e) { if (e.key === 'Escape') _hideElCtxMenu(); });
+      window.addEventListener('scroll', function () { _hideElCtxMenu(); }, true);
+    }
+    m.innerHTML = '';
+    items.forEach(function (it) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'slide-ctx-item' + (it.warn ? ' slide-ctx-warn' : '') + (it.disabled ? ' disabled' : '');
+      btn.innerHTML = '<span class="slide-ctx-ico">' + it.icon + '</span><span class="slide-ctx-lbl">' + it.label + '</span>';
+      if (!it.disabled) {
+        btn.onmousedown = function (e) { e.preventDefault(); };
+        btn.onclick = function (e) { e.stopPropagation(); _hideElCtxMenu(); it.action(); };
+      }
+      m.appendChild(btn);
+    });
+    m.style.display = 'block';
+    m.style.visibility = 'hidden';
+    m.style.left = '0';
+    m.style.top = '0';
+    var mw = m.offsetWidth, mh = m.offsetHeight, pad = 8;
+    var lx = x, ly = y;
+    if (lx + mw + pad > window.innerWidth) lx = window.innerWidth - mw - pad;
+    if (ly + mh + pad > window.innerHeight) ly = window.innerHeight - mh - pad;
+    if (lx < pad) lx = pad;
+    if (ly < pad) ly = pad;
+    m.style.left = lx + 'px';
+    m.style.top = ly + 'px';
+    m.style.visibility = '';
+  }
+
+  function _ctxTargetEls() {
+    var ms = (typeof multiSel !== 'undefined') ? multiSel : null;
+    if (ms && ms.size > 0) return Array.from(ms);
+    if (typeof sel !== 'undefined' && sel) return [sel];
+    return [];
+  }
+
+  function _ctxGroupMenuState(elems) {
+    if (!elems.length) return { showGroup: false, showUngroup: false };
+    if (elems.length < 2) {
+      return { showGroup: false, showUngroup: !!getGroupId(elems[0]) };
+    }
+    var groupIds = new Set();
+    elems.forEach(function (el) { var g = getGroupId(el); if (g) groupIds.add(g); });
+    if (groupIds.size === 1) {
+      var gid = groupIds.values().next().value;
+      var full = getGroupDomEls(gid);
+      if (full.length >= 2 && full.length === elems.length) {
+        var set = new Set(elems);
+        if (full.every(function (ge) { return set.has(ge); })) {
+          return { showGroup: false, showUngroup: true };
+        }
+      }
+    }
+    return { showGroup: true, showUngroup: false };
+  }
+
+  function _ctxGetTextFromEl(textEl) {
+    var tel = textEl.querySelector('.tel') || textEl.querySelector('.ec');
+    if (!tel) return '';
+    var sel = window.getSelection();
+    if (sel && sel.rangeCount && !sel.isCollapsed) {
+      var r = sel.getRangeAt(0);
+      if (tel.contains(r.commonAncestorContainer)) {
+        return (sel.toString() || '').trim();
+      }
+    }
+    return (tel.innerText || tel.textContent || '').trim();
+  }
+
+  function _openCanvasCtxMenu(x, y) {
+    var L = _elCtxLabels();
+    var canPaste = typeof clipboard !== 'undefined' && clipboard && clipboard.length > 0;
+    _showElCtxMenu(x, y, [{
+      icon: _EL_CTX_ICONS.paste,
+      label: L.paste,
+      disabled: !canPaste,
+      action: function () { if (typeof pasteSelected === 'function') pasteSelected(); }
+    }]);
+  }
+
+  function _openElCtxMenu(x, y, opts) {
+    opts = opts || {};
+    var elems = _ctxTargetEls();
+    if (!elems.length) return;
+    var st = _ctxGroupMenuState(elems);
+    var L = _elCtxLabels();
+    var multi = elems.length > 1;
+    var canPaste = typeof clipboard !== 'undefined' && clipboard && clipboard.length > 0;
+    var items = [];
+    var qrText = (opts.qrText || '').trim();
+    if (qrText) {
+      items.push({
+        icon: _EL_CTX_ICONS.qr,
+        label: L.qrCreate,
+        action: function () {
+          if (typeof insertQRAppletAt === 'function') insertQRAppletAt(qrText, x, y);
+        }
+      });
+    }
+    if (st.showUngroup) {
+      items.push({ icon: _EL_CTX_ICONS.ungroup, label: L.ungroup, action: function () { window.ungroupSelected(); } });
+    } else if (st.showGroup) {
+      items.push({ icon: _EL_CTX_ICONS.group, label: L.group, action: function () { window.groupSelected(); } });
+    }
+    items.push({
+      icon: _EL_CTX_ICONS.dup,
+      label: L.dup,
+      action: function () {
+        if (multi) {
+          if (typeof copySelected === 'function') copySelected();
+          if (typeof pasteSelected === 'function') pasteSelected();
+        } else if (typeof dupEl === 'function') dupEl();
+      }
+    });
+    items.push({
+      icon: _EL_CTX_ICONS.copy,
+      label: _elCtxCopyLabel(elems.length),
+      action: function () { if (typeof copySelected === 'function') copySelected(); }
+    });
+    items.push({
+      icon: _EL_CTX_ICONS.paste,
+      label: L.paste,
+      disabled: !canPaste,
+      action: function () { if (typeof pasteSelected === 'function') pasteSelected(); }
+    });
+    items.push({
+      icon: _EL_CTX_ICONS.del,
+      label: _elCtxDeleteLabel(elems.length),
+      warn: true,
+      action: function () { if (typeof deleteSelected === 'function') deleteSelected(); }
+    });
+    _showElCtxMenu(x, y, items);
+  }
+
+  function _initElCtxMenu() {
+    var canvas = cv();
+    if (!canvas || canvas._elCtxBound) return;
+    canvas._elCtxBound = true;
+    canvas.addEventListener('contextmenu', function (e) {
+      var hit = e.target && e.target.closest ? e.target.closest('.el') : null;
+
+      if (!hit && canvas.contains(e.target)) {
+        e.preventDefault();
+        e.stopPropagation();
+        _openCanvasCtxMenu(e.clientX, e.clientY);
+        return;
+      }
+      if (!hit || !canvas.contains(hit)) return;
+      if (hit.classList.contains('decor-el') || hit.dataset.type === 'pagenum') return;
+
+      var isText = hit.dataset.type === 'text';
+      if (!isText) {
+        if (hit.dataset.editing === 'true') return;
+        var active = document.activeElement;
+        if (active && active.contentEditable === 'true' && hit.contains(active)) return;
+      }
+
+      var ms = (typeof multiSel !== 'undefined') ? multiSel : null;
+      var inSel = (ms && ms.has(hit)) || (typeof sel !== 'undefined' && sel === hit);
+      var qrText = isText ? _ctxGetTextFromEl(hit) : '';
+      if (!inSel && typeof pick === 'function') pick(hit);
+      e.preventDefault();
+      e.stopPropagation();
+      _openElCtxMenu(e.clientX, e.clientY, { qrText: qrText });
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _initElCtxMenu);
+  } else {
+    _initElCtxMenu();
+  }
 
   // ── Патч copySelected: копировать всю группу при выборе одного элемента ──
 

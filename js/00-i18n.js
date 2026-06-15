@@ -56,6 +56,8 @@ const LANG_DATA = {
     ctxPasteSlide: 'Paste',
     ctxCopySlidesN: 'Copy ({n})',
     ctxDeleteSlidesN: 'Delete ({n})',
+    ctxCreateQr: 'Create QR',
+    toastQrNeedText: 'Select or enter text first',
     // Animations
     animFadeIn: 'Fade In', animSlideUp: 'Slide Up', animZoomIn: 'Zoom In',
     animBounce: 'Bounce', animSpin: 'Spin', animFadeOut: 'Fade Out',
@@ -375,6 +377,8 @@ const LANG_DATA = {
     ctxPasteSlide: 'Вставить',
     ctxCopySlidesN: 'Копировать ({n})',
     ctxDeleteSlidesN: 'Удалить ({n})',
+    ctxCreateQr: 'Создать QR',
+    toastQrNeedText: 'Сначала выделите или введите текст',
     // Анимации
     btnClearAnims: 'Очистить',
     animFadeIn: 'Появление', animSlideUp: 'Подъём', animZoomIn: 'Масштаб',
