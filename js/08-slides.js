@@ -9,10 +9,17 @@ function _cloneSlideData(src, stripDecor){
 
 function _remapSlideElIds(s){
   const map = {};
-  (s.els || []).forEach(d => {
-    const old = d.id;
-    map[old] = 'e' + (++ec);
-    d.id = map[old];
+  const oldIds = (s.els || []).map(d => d.id);
+  oldIds.forEach(old => { map[old] = 'e' + (++ec); });
+  if (s.animOrder) {
+    s.animOrder.forEach(entry => {
+      if (entry.elId && map[entry.elId]) entry.elId = map[entry.elId];
+    });
+  }
+  (s.els || []).forEach((d, i) => {
+    const oldId = oldIds[i];
+    d.id = map[oldId];
+    _remapClonedElementRefs(d, oldId, d.id, map);
   });
   if(s.connectors){
     s.connectors.forEach(c => {
@@ -20,6 +27,82 @@ function _remapSlideElIds(s){
       if(c.toId && map[c.toId]) c.toId = map[c.toId];
     });
   }
+}
+
+function _mapClonedElId(tid, oldId, newId, idMap) {
+  if (!tid) return tid;
+  if (tid === oldId) return newId;
+  if (idMap && idMap[tid]) return idMap[tid];
+  return tid;
+}
+
+function _remapClonedElementRefs(d, oldId, newId, idMap) {
+  if (d.anims && d.anims.length) {
+    d.anims.forEach(a => {
+      if (a.triggerElId) a.triggerElId = _mapClonedElId(a.triggerElId, oldId, newId, idMap);
+    });
+  }
+  if (d.maTriggerElId) d.maTriggerElId = _mapClonedElId(d.maTriggerElId, oldId, newId, idMap);
+  if (d.maTriggerElIds && d.maTriggerElIds.length) {
+    d.maTriggerElIds = d.maTriggerElIds.map(tid => _mapClonedElId(tid, oldId, newId, idMap));
+  }
+  if (d.hfLinkedCodeId) d.hfLinkedCodeId = _mapClonedElId(d.hfLinkedCodeId, oldId, newId, idMap);
+  if (d.hfParentId) d.hfParentId = _mapClonedElId(d.hfParentId, oldId, newId, idMap);
+}
+
+function _freshElementDataFromDom(elId) {
+  const s = slides[cur];
+  if (!s) return null;
+  const d = s.els.find(x => x.id === elId);
+  if (!d) return null;
+  const fresh = JSON.parse(JSON.stringify(d));
+  const cv = document.getElementById('canvas');
+  const dom = cv && cv.querySelector('.el[data-id="' + elId + '"]');
+  if (dom) {
+    if (dom.dataset.anims) {
+      try { fresh.anims = JSON.parse(dom.dataset.anims); } catch (e) {}
+    }
+    if (dom.dataset.isTrigger === 'true') fresh.isTrigger = true;
+    else delete fresh.isTrigger;
+  }
+  return fresh;
+}
+
+function _copyElementDataList(elIds) {
+  if (typeof save === 'function') save();
+  return elIds.map(elId => _freshElementDataFromDom(elId)).filter(Boolean);
+}
+
+function _cloneElementDataList(els, opts) {
+  opts = opts || {};
+  const idMap = {};
+  const pairs = els.map(d => {
+    const nd = JSON.parse(JSON.stringify(d));
+    const oldId = nd.id;
+    nd.id = 'e' + (++ec);
+    idMap[oldId] = nd.id;
+    return { oldId, nd };
+  });
+  pairs.forEach(({ oldId, nd }) => _remapClonedElementRefs(nd, oldId, nd.id, idMap));
+  if (opts.offset) {
+    const off = opts.offset;
+    pairs.forEach(({ nd }) => { nd.x = (nd.x || 0) + off; nd.y = (nd.y || 0) + off; });
+  }
+  return pairs.map(p => p.nd);
+}
+
+function _syncSlideAnimsFromDom(slideIdx) {
+  const si = slideIdx != null ? slideIdx : cur;
+  const s = slides[si];
+  const cv = document.getElementById('canvas');
+  if (!s || !cv) return;
+  cv.querySelectorAll('.el[data-id]').forEach(el => {
+    const d = s.els.find(x => x.id === el.dataset.id);
+    if (!d || el.dataset.anims == null) return;
+    try { d.anims = JSON.parse(el.dataset.anims); } catch (e) {}
+    if (el.dataset.isTrigger === 'true') d.isTrigger = true;
+    else delete d.isTrigger;
+  });
 }
 
 function _buildSlideObject(tmpl){
@@ -140,6 +223,7 @@ function copySlidesSelected(){
   save();
   _slideClipboard = indices.map(idx => _cloneSlideData(slides[idx], true));
   if(typeof _xclipSaveSlides==='function') _xclipSaveSlides(_slideClipboard);
+  if(typeof window._markSlideClipboardCopy==='function') window._markSlideClipboardCopy();
   if(typeof toast==='function'){
     const msg=indices.length>1
       ? (typeof t==='function'?t('ctxCopySlidesN').replace('{n}', String(indices.length)):'Copied '+indices.length+' slides')
@@ -152,6 +236,7 @@ function copySlideAt(i){
   if(!slides[i]) return;
   _slideClipboard = [_cloneSlideData(slides[i], true)];
   if(typeof _xclipSaveSlides==='function') _xclipSaveSlides(_slideClipboard);
+  if(typeof window._markSlideClipboardCopy==='function') window._markSlideClipboardCopy();
 }
 
 function hasSlideClipboard(){

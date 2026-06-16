@@ -37,6 +37,7 @@ const ANIM_CATS = [
       {name:'fadeOut',  label:'Исчезновение', icon:'💨'},
       {name:'slideOut', label:'Выезд',        icon:'↩'},
       {name:'zoomOut',  label:'Уменьшение',   icon:'🔎'},
+      {name:'splitHalf', label:'Пополам',     icon:'✂️'},
     ]
   },
   {
@@ -132,19 +133,19 @@ window._floatPad = function(fw, fh) {
 window._ensureFloatWrap = function(el, fw, fh) {
   const { mx, my } = window._floatPad(fw, fh);
   let wrap = el.querySelector('._float_wrap');
+  const content = window._animContentTarget(el);
   if (!wrap) {
     wrap = document.createElement('div');
     wrap.className = '_float_wrap';
-    const ec = el.querySelector('.ec');
-    if (ec) {
-      ec.parentNode.insertBefore(wrap, ec);
-      wrap.appendChild(ec);
+    if (content && content !== el && content.parentNode) {
+      content.parentNode.insertBefore(wrap, content);
+      wrap.appendChild(content);
     } else {
       while (el.firstChild) wrap.appendChild(el.firstChild);
       el.appendChild(wrap);
     }
   }
-  wrap.style.cssText = 'position:absolute;left:' + (-mx) + 'px;top:' + (-my) + 'px;width:' + (fw + 2 * mx) + 'px;height:' + (fh + 2 * my) + 'px;overflow:visible;pointer-events:none;';
+  wrap.style.cssText = 'position:absolute;left:' + (-mx) + 'px;top:' + (-my) + 'px;width:' + (fw + 2 * mx) + 'px;height:' + (fh + 2 * my) + 'px;overflow:visible;pointer-events:none;border-radius:inherit;';
   const child = wrap.firstElementChild;
   if (child) {
     child.style.position = 'absolute';
@@ -513,7 +514,111 @@ window._animChainDuration = function(a) {
     const h = +(a.holdDuration || 2000) || 2000;
     return d + h + d;
   }
+  if (a.name === 'splitHalf') return +(a.duration || 800) || 800;
   return a.duration || 600;
+};
+
+function _ensureSplitHalfWrap(el) {
+  let wrap = el.querySelector('._split_wrap');
+  if (wrap) {
+    return {
+      wrap,
+      leftHalf: wrap.querySelector('._split_left'),
+      rightHalf: wrap.querySelector('._split_right'),
+    };
+  }
+  const w = parseInt(el.style.width, 10) || el.offsetWidth || 200;
+  const nodes = [];
+  while (el.firstChild) nodes.push(el.removeChild(el.firstChild));
+  const clones = nodes.map(n => n.cloneNode(true));
+
+  el._splitOvSaved = el.style.overflow || '';
+  el.style.overflow = 'visible';
+
+  wrap = document.createElement('div');
+  wrap.className = '_split_wrap';
+  wrap.style.cssText = 'position:absolute;inset:0;overflow:visible;pointer-events:none;z-index:2;';
+
+  const leftHalf = document.createElement('div');
+  leftHalf.className = '_split_left';
+  leftHalf.style.cssText = 'position:absolute;left:0;top:0;width:50%;height:100%;overflow:hidden;transform-origin:100% 50%;will-change:transform,opacity;';
+  const leftInner = document.createElement('div');
+  leftInner.className = '_split_inner';
+  leftInner.style.cssText = 'position:absolute;left:0;top:0;width:' + w + 'px;height:100%;';
+  nodes.forEach(n => leftInner.appendChild(n));
+
+  const rightHalf = document.createElement('div');
+  rightHalf.className = '_split_right';
+  rightHalf.style.cssText = 'position:absolute;right:0;top:0;width:50%;height:100%;overflow:hidden;transform-origin:0% 50%;will-change:transform,opacity;';
+  const rightInner = document.createElement('div');
+  rightInner.className = '_split_inner';
+  rightInner.style.cssText = 'position:absolute;left:' + (-w / 2) + 'px;top:0;width:' + w + 'px;height:100%;';
+  clones.forEach(n => rightInner.appendChild(n));
+
+  leftHalf.appendChild(leftInner);
+  rightHalf.appendChild(rightInner);
+  wrap.appendChild(leftHalf);
+  wrap.appendChild(rightHalf);
+  el.appendChild(wrap);
+  return { wrap, leftHalf, rightHalf };
+}
+
+window._resetSplitHalf = function(el, unwrap) {
+  if (!el) return;
+  const wrap = el.querySelector('._split_wrap');
+  if (!wrap) return;
+  wrap.querySelectorAll('._split_left,._split_right').forEach(h => {
+    h.getAnimations().forEach(a => { try { a.cancel(); } catch (e) {} });
+    h.style.transform = '';
+    h.style.opacity = '';
+  });
+  if (unwrap) {
+    const leftInner = wrap.querySelector('._split_left ._split_inner');
+    if (leftInner) {
+      while (leftInner.firstChild) el.insertBefore(leftInner.firstChild, wrap);
+    }
+    wrap.remove();
+    if (el._splitOvSaved !== undefined) {
+      el.style.overflow = el._splitOvSaved;
+      delete el._splitOvSaved;
+    } else {
+      el.style.overflow = '';
+    }
+  }
+};
+
+window._fireSplitHalfAnim = function(el, a, delay, opts) {
+  opts = opts || {};
+  const dur = +(a.duration || 800) || 800;
+  const dl = delay || 0;
+  const w = parseInt(el.style.width, 10) || el.offsetWidth || 200;
+  const h = parseInt(el.style.height, 10) || el.offsetHeight || 200;
+  const fall = Math.round(h * 0.45);
+  const spread = Math.round(w * 0.22);
+  const rot = 14;
+  const easing = 'cubic-bezier(0.4, 0, 1, 1)';
+
+  setTimeout(() => {
+    const parts = _ensureSplitHalfWrap(el);
+    const leftFrames = [
+      { transform: 'translate(0px, 0px) rotate(0deg)', opacity: 1 },
+      { transform: 'translate(' + (-spread) + 'px, ' + fall + 'px) rotate(' + (-rot) + 'deg)', opacity: 0 }
+    ];
+    const rightFrames = [
+      { transform: 'translate(0px, 0px) rotate(0deg)', opacity: 1 },
+      { transform: 'translate(' + spread + 'px, ' + fall + 'px) rotate(' + rot + 'deg)', opacity: 0 }
+    ];
+    const p1 = parts.leftHalf.animate(leftFrames, { duration: dur, easing, fill: 'forwards' });
+    const p2 = parts.rightHalf.animate(rightFrames, { duration: dur, easing, fill: 'forwards' });
+    Promise.all([p1.finished, p2.finished]).then(() => {
+      if (opts.hideAfter !== false) {
+        el.style.visibility = 'hidden';
+        el.style.pointerEvents = 'none';
+      }
+      if (opts.onHide) opts.onHide();
+      if (opts.unwrap) window._resetSplitHalf(el, true);
+    }).catch(() => {});
+  }, dl);
 };
 
 window._resetCaptionSlide = function(el, unwrap) {
@@ -636,6 +741,117 @@ const _DANCE_PREVIEW_FRAMES = [
 
 let _animPreviewTimer = null;
 
+const _LIVE_WRAP_CSS = 'position:absolute;inset:0;pointer-events:none;overflow:visible;border-radius:inherit;';
+
+window._isTextBlock = function(el) {
+  return !!(el && (el.dataset.type === 'text' || el.dataset.type === 'markdown'));
+};
+
+window._ensureTextBodyWrap = function(el) {
+  if (!window._isTextBlock(el)) return el.querySelector('.ec') || el.querySelector('.psel-txt') || el;
+  let body = el.querySelector('._text_body');
+  if (body) return body;
+  body = document.createElement('div');
+  body.className = '_text_body';
+  body.style.cssText = 'position:absolute;inset:0;border-radius:inherit;overflow:hidden;z-index:0;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;';
+  const bg = el.querySelector('.el-bg-layer');
+  const ec = el.querySelector('.ec') || el.querySelector('.tel');
+  const anchor = bg || ec;
+  if (anchor && anchor.parentNode === el) {
+    el.insertBefore(body, anchor);
+    if (bg) body.appendChild(bg);
+    if (ec) body.appendChild(ec);
+  } else if (ec && ec.parentNode === el) {
+    el.insertBefore(body, ec);
+    body.appendChild(ec);
+  }
+  if (typeof applyTextRadius === 'function') applyTextRadius(el);
+  return body;
+};
+
+window._animContentTarget = function(el) {
+  if (window._isTextBlock(el)) return window._ensureTextBodyWrap(el);
+  return el.querySelector('.ec') || el.querySelector('.iel') || el.querySelector('.psel-txt') || el;
+};
+
+window._ensureDanceWrap = function(el) {
+  let wrap = el.querySelector('._dance_wrap');
+  if (wrap) return wrap;
+  wrap = document.createElement('div');
+  wrap.className = '_dance_wrap';
+  wrap.style.cssText = _LIVE_WRAP_CSS;
+  const content = window._animContentTarget(el);
+  if (content && content !== el && content.parentNode) {
+    content.parentNode.insertBefore(wrap, content);
+    wrap.appendChild(content);
+  } else {
+    while (el.firstChild) wrap.appendChild(el.firstChild);
+    el.appendChild(wrap);
+  }
+  return wrap;
+};
+
+function _restoreTextBodyLayout(body) {
+  if (!body || !body.classList.contains('_text_body')) return;
+  body.style.position = 'absolute';
+  body.style.left = '0';
+  body.style.top = '0';
+  body.style.width = '100%';
+  body.style.height = '100%';
+  body.style.boxSizing = 'border-box';
+  body.style.transform = '';
+  body.style.display = 'flex';
+  body.style.flexDirection = 'column';
+  body.style.alignItems = 'stretch';
+}
+
+function _unwrapLiveWrap(el, className) {
+  const wrap = el && el.querySelector(className);
+  if (!wrap || !wrap.parentNode) return;
+  while (wrap.firstChild) wrap.parentNode.insertBefore(wrap.firstChild, wrap);
+  wrap.remove();
+}
+
+window._resetLiveAnimPreview = function(el, unwrap) {
+  if (!el) return;
+  if (el._floatOvSaved !== undefined) {
+    el.style.overflow = el._floatOvSaved;
+    delete el._floatOvSaved;
+  }
+  const fWrap = el.querySelector('._float_wrap');
+  if (fWrap) {
+    const child = fWrap.firstElementChild;
+    [fWrap, child].forEach(n => {
+      if (!n) return;
+      n.getAnimations().forEach(a => { try { a.cancel(); } catch (e) {} });
+    });
+    if (child) {
+      child.style.transform = '';
+      if (child.classList.contains('_text_body')) _restoreTextBodyLayout(child);
+      else {
+        child.style.position = '';
+        child.style.left = '';
+        child.style.top = '';
+        child.style.width = '';
+        child.style.height = '';
+        child.style.boxSizing = '';
+      }
+    }
+    fWrap.style.transform = '';
+    if (unwrap) _unwrapLiveWrap(el, '._float_wrap');
+  }
+  const dWrap = el.querySelector('._dance_wrap');
+  if (dWrap) {
+    dWrap.getAnimations().forEach(a => { try { a.cancel(); } catch (e) {} });
+    dWrap.style.transform = '';
+    if (unwrap) _unwrapLiveWrap(el, '._dance_wrap');
+  }
+  if (el.dataset.type === 'text') {
+    if (typeof applyTextRadius === 'function') applyTextRadius(el);
+    if (el.dataset.valign && typeof applyTextVAlign === 'function') applyTextVAlign(el, el.dataset.valign);
+  }
+};
+
 window._animGroupDomEls = function(el) {
   if (!el) return [];
   const gid = el.dataset && el.dataset.groupId;
@@ -656,13 +872,15 @@ window._clearAnimHoverPreview = function(el) {
   }
   window._animGroupDomEls(el).forEach(e => {
     if (typeof window._resetCaptionSlide === 'function') window._resetCaptionSlide(e, true);
+    if (typeof window._resetSplitHalf === 'function') window._resetSplitHalf(e, true);
     e.style.visibility = '';
-    [e, e.querySelector('.ec'), e.querySelector('.tel'), e.querySelector('.shape-text')].forEach(t => {
+    [e, e.querySelector('._text_body'), e.querySelector('.ec'), e.querySelector('.tel'), e.querySelector('.iel'), e.querySelector('.shape-text'), e.querySelector('._dance_wrap')].forEach(t => {
       if (!t) return;
       t.getAnimations().forEach(a => { try { a.cancel(); } catch (err) {} });
       t.style.animation = '';
       t.style.transform = t === e ? (t.dataset.rot ? `rotate(${t.dataset.rot}deg)` : '') : '';
     });
+    if (typeof window._resetLiveAnimPreview === 'function') window._resetLiveAnimPreview(e, true);
   });
 };
 
@@ -671,6 +889,7 @@ window._selectedAnimName = null;
 window._selectedAnimCat  = null;
 
 (function(){
+  let _animDragJustEnded = false;
   const _sel       = ()=> (typeof sel!=='undefined')?sel:null;
   const _slides    = ()=> (typeof slides!=='undefined')?slides:[];
   const _cur       = ()=> (typeof cur!=='undefined')?cur:0;
@@ -729,6 +948,67 @@ window._selectedAnimCat  = null;
     });
   }
 
+  function _animOrderKey(elId, ai) { return elId + ':' + ai; }
+
+  function _slideAnimLeader(d, slide) {
+    if (!d || !d.groupId || !slide || !slide.els) return d;
+    const members = slide.els.filter(x => x.groupId === d.groupId);
+    if (members.length <= 1) return d;
+    for (let i = 0; i < slide.els.length; i++) {
+      if (members.some(m => m.id === slide.els[i].id)) return slide.els[i];
+    }
+    return d;
+  }
+
+  function _ensureAnimOrder(slide) {
+    if (!slide) return;
+    const entries = [];
+    const used = new Set();
+    const seenGroups = new Set();
+
+    const pushEntry = (elId, ai) => {
+      const d = slide.els && slide.els.find(x => x.id === elId);
+      if (!d || !d.anims || ai < 0 || ai >= d.anims.length) return;
+      const leader = _slideAnimLeader(d, slide);
+      const k = _animOrderKey(leader.id, ai);
+      if (used.has(k)) return;
+      used.add(k);
+      entries.push({ elId: leader.id, ai });
+    };
+
+    if (Array.isArray(slide.animOrder)) {
+      slide.animOrder.forEach(({ elId, ai }) => pushEntry(elId, +ai));
+    }
+
+    if (slide.els) {
+      slide.els.forEach(d => {
+        if (d.groupId) {
+          const leader = _slideAnimLeader(d, slide);
+          if (leader.id !== d.id) return;
+          if (seenGroups.has(d.groupId)) return;
+          seenGroups.add(d.groupId);
+        }
+        (d.anims || []).forEach((a, ai) => pushEntry(d.id, ai));
+      });
+    }
+
+    slide.animOrder = entries;
+  }
+
+  window._ensureAnimOrder = _ensureAnimOrder;
+
+  window._buildSlideAnimGlobalList = function(slide) {
+    const list = [];
+    if (!slide || !slide.els) return list;
+    _ensureAnimOrder(slide);
+    slide.animOrder.forEach(({ elId, ai }) => {
+      const d = slide.els.find(x => x.id === elId);
+      if (!d || !d.anims || !d.anims[ai]) return;
+      list.push({ d, a: d.anims[ai], i: ai });
+    });
+    return list;
+  };
+
   function _cloneAnimsForMember(sourceAnims, domEl) {
     if (!sourceAnims || !sourceAnims.length) return [];
     const tel = domEl && (domEl.querySelector('.tel') || domEl.querySelector('.shape-text') || domEl.querySelector('.ec'));
@@ -784,6 +1064,7 @@ window._selectedAnimCat  = null;
     if (animName === 'dance') { anim.swingCount = 1; anim.duration = 1200; }
     if (animName === 'float') { anim.swingCount = 10; anim.duration = 5000; }
     if (animName === 'captionSlide') { anim.holdDuration = 2000; anim.captionDir = 'right'; }
+    if (animName === 'splitHalf') { anim.duration = 800; }
     if (animName === 'typewriter') {
       anim.charDelay = 40;
       const _prevTw = (d.anims || []).filter(x => x.name === 'typewriter');
@@ -818,12 +1099,296 @@ window._selectedAnimCat  = null;
 
   window.closeAnimPanel = function(){
     try{
+      if (typeof window._animTriggerPickCancel === 'function') window._animTriggerPickCancel();
       const wrap = document.getElementById('props-anim-wrap');
       const scroll = document.getElementById('props-scroll');
       if(wrap) wrap.style.display='none';
       if(scroll) scroll.style.display='';
     }catch(e){}
   };
+
+  function _animTriggerLabel(elId) {
+    if (!elId) return '';
+    const s = _slides()[_cur()];
+    if (!s) return elId;
+    const dd = s.els.find(e => e.id === elId);
+    if (!dd) return elId;
+    const labels = { text:'Текст', image:'Изображение', shape:'Фигура', icon:'Значок', table:'Таблица', code:'Код', markdown:'Markdown', mediavideo:'Видео', mediaaudio:'Аудио' };
+    const type = labels[dd.type] || dd.type;
+    let name = '';
+    if (dd.type === 'text') {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = dd.html || '';
+      name = tmp.textContent.slice(0, 24).trim();
+    } else if (dd.type === 'image' && dd.src) {
+      name = dd.src.split('/').pop().slice(0, 20);
+    }
+    return name ? `${type}: ${name}` : type;
+  }
+
+  let _animPickerCtx = null;
+  let _animPickEscHandler = null;
+
+  window._animTriggerPickCancel = function() {
+    _animPickerCtx = null;
+    const ov = document.getElementById('_anim-picker-ov');
+    if (ov) ov.remove();
+    document.querySelectorAll('.anim-trig-pick-hint').forEach(h => { h.style.display = 'none'; });
+    if (_animPickEscHandler) {
+      document.removeEventListener('keydown', _animPickEscHandler);
+      _animPickEscHandler = null;
+    }
+  };
+
+  function _rememberPreNavTrigger(anim, trigSelVal) {
+    if (!anim) return;
+    const t = (anim.trigger && anim.trigger !== 'nav') ? anim.trigger : (trigSelVal || 'auto');
+    if (t === 'nav') return;
+    anim.preNavTrigger = t;
+    if (t === 'element' && anim.triggerElId) anim.preNavTriggerElId = anim.triggerElId;
+    else delete anim.preNavTriggerElId;
+  }
+
+  function _restorePreNavChanges(anim) {
+    const t = anim.preNavTrigger || 'auto';
+    const changes = { trigger: t, navTarget: undefined };
+    if (t === 'element' && anim.preNavTriggerElId) changes.triggerElId = anim.preNavTriggerElId;
+    return changes;
+  }
+
+  window._animTriggerPick = function(ownerElId, animIdx) {
+    _animPickerCtx = { ownerElId, animIdx };
+    document.querySelectorAll('.anim-trig-pick-hint').forEach(h => { h.style.display = 'none'; });
+    const row = document.querySelector('.anim-row[data-el-id="' + ownerElId + '"][data-ai="' + animIdx + '"]');
+    const hint = row && row.querySelector('.anim-trig-pick-hint');
+    if (hint) hint.style.display = 'block';
+    const cv = document.getElementById('canvas');
+    if (!cv) return;
+    let ov = document.getElementById('_anim-picker-ov');
+    if (ov) ov.remove();
+    ov = document.createElement('div');
+    ov.id = '_anim-picker-ov';
+    ov.style.cssText = 'position:absolute;inset:0;z-index:99999;cursor:crosshair;';
+    ov.addEventListener('mousedown', function(e) {
+      e.stopPropagation();
+      e.preventDefault();
+      ov.remove();
+      const allEls = document.elementsFromPoint(e.clientX, e.clientY);
+      let target = null;
+      for (const el2 of allEls) {
+        const found = el2.matches && el2.matches('.el[data-id]') ? el2 : (el2.closest ? el2.closest('.el[data-id]') : null);
+        if (found && !found.classList.contains('decor-el')) { target = found; break; }
+      }
+      if (target && _animPickerCtx) {
+        const { ownerElId, animIdx } = _animPickerCtx;
+        const s = _slides()[_cur()];
+        const dd = s && s.els.find(x => x.id === ownerElId);
+        const anim = dd && dd.anims && dd.anims[animIdx];
+        if (anim) {
+          anim.preNavTrigger = 'element';
+          anim.preNavTriggerElId = target.dataset.id;
+        }
+        updateAnimProp(ownerElId, animIdx, 'triggerElId', target.dataset.id);
+        _animPickerCtx = null;
+        _refreshAnimTrigPickRow(ownerElId, animIdx);
+        window._animTriggerPickCancel();
+      } else {
+        window._animTriggerPickCancel();
+      }
+    });
+    cv.appendChild(ov);
+    if (_animPickEscHandler) document.removeEventListener('keydown', _animPickEscHandler);
+    _animPickEscHandler = function(e) {
+      if (e.key === 'Escape') window._animTriggerPickCancel();
+    };
+    document.addEventListener('keydown', _animPickEscHandler);
+  };
+
+  window._animTriggerClear = function(ownerElId, animIdx) {
+    updateAnimProp(ownerElId, animIdx, 'triggerElId', undefined);
+    _refreshAnimTrigPickRow(ownerElId, animIdx);
+  };
+
+  function _readAnimLive(elId, animIdx, fallback) {
+    try {
+      const cv = _animCanvas();
+      const dom = cv && cv.querySelector('.el[data-id="' + elId + '"]');
+      if (dom && dom.dataset.anims) {
+        const parsed = JSON.parse(dom.dataset.anims);
+        if (parsed[animIdx]) return parsed[animIdx];
+      }
+    } catch (e) {}
+    return fallback;
+  }
+
+  function _setAnimTriggerBatch(elId, animIdx, changes) {
+    const targets = _animGroupDataById(elId);
+    targets.forEach(({ d: dd }) => {
+      if (!dd.anims || !dd.anims[animIdx]) return;
+      const anim = dd.anims[animIdx];
+      Object.keys(changes).forEach(k => {
+        if (changes[k] === undefined) delete anim[k];
+        else anim[k] = changes[k];
+      });
+      if (changes.trigger && changes.trigger !== 'nav') {
+        anim.preNavTrigger = changes.trigger;
+        if (changes.trigger === 'element') {
+          if (changes.triggerElId) anim.preNavTriggerElId = changes.triggerElId;
+          else if (anim.triggerElId) anim.preNavTriggerElId = anim.triggerElId;
+        } else delete anim.preNavTriggerElId;
+      }
+    });
+    _syncDomAnims(targets);
+    const row = document.querySelector('.anim-row[data-el-id="' + elId + '"][data-ai="' + animIdx + '"]');
+    if (row && targets[0]) row.dataset.animJson = JSON.stringify(targets[0].d.anims[animIdx]);
+    _save(); _saveState();
+  }
+
+  window._flushAnimPanelToDom = function() {
+    try {
+      document.querySelectorAll('.anim-row[data-el-id]').forEach(row => {
+        const elId = row.dataset.elId;
+        const ai = parseInt(row.dataset.ai, 10);
+        if (!elId || isNaN(ai)) return;
+        const navCheck = row.querySelector('.anim-nav-check');
+        const navSel = row.querySelector('.anim-nav-row select');
+        const trigSel = row.querySelector('.anim-trig-sel');
+        if (!navCheck || !navCheck.checked) return;
+
+        const targets = _animGroupDataById(elId);
+        if (!targets.length) return;
+
+        targets.forEach(({ d: dd }) => {
+          const anim = dd.anims && dd.anims[ai];
+          if (!anim) return;
+          const curTrig = (anim.trigger && anim.trigger !== 'nav')
+            ? anim.trigger
+            : (trigSel && trigSel.value ? trigSel.value : 'auto');
+          if (!anim.preNavTrigger || anim.preNavTrigger === 'nav') {
+            if (curTrig !== 'nav') {
+              anim.preNavTrigger = curTrig;
+              if (curTrig === 'element' && anim.triggerElId) anim.preNavTriggerElId = anim.triggerElId;
+            }
+          }
+          anim.trigger = 'nav';
+          if (navSel) anim.navTarget = +navSel.value;
+        });
+        _syncDomAnims(targets);
+      });
+    } catch (e) {}
+  };
+
+  function _buildAnimTrigPickWrap(d, ai, a) {
+    const trigPickWrap = document.createElement('div');
+    trigPickWrap.className = 'anim-trig-pick-wrap';
+    trigPickWrap.style.cssText = 'margin-top:4px;display:flex;flex-direction:column;gap:4px;';
+
+    const pickBtn = document.createElement('button');
+    pickBtn.type = 'button';
+    pickBtn.className = 'anim-trig-pick-btn';
+    pickBtn.style.cssText = 'width:100%;padding:4px 8px;font-size:9px;font-family:inherit;border-radius:4px;cursor:pointer;border:1px solid var(--border2);background:var(--surface3);color:var(--text2);';
+    pickBtn.textContent = '🎯 Выбрать объект';
+    pickBtn.addEventListener('mousedown', e => e.stopPropagation());
+    pickBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      window._animTriggerPick(d.id, ai);
+    });
+    trigPickWrap.appendChild(pickBtn);
+
+    const hint = document.createElement('div');
+    hint.className = 'anim-trig-pick-hint';
+    hint.style.cssText = 'display:none;font-size:8px;color:var(--accent);line-height:1.3;';
+    hint.textContent = 'Кликните по объекту на слайде';
+    trigPickWrap.appendChild(hint);
+
+    if (a.triggerElId) {
+      const chip = document.createElement('div');
+      chip.dataset.animTrigChip = '1';
+      chip.style.cssText = 'display:flex;align-items:center;gap:5px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:3px 7px;';
+      const lbl = document.createElement('span');
+      lbl.style.cssText = 'flex:1;font-size:10px;color:var(--text);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+      lbl.textContent = _animTriggerLabel(a.triggerElId);
+      const clr = document.createElement('button');
+      clr.type = 'button';
+      clr.style.cssText = 'flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px;padding:0 2px;line-height:1;';
+      clr.textContent = '✕';
+      clr.title = 'Убрать объект';
+      clr.addEventListener('mousedown', e => e.stopPropagation());
+      clr.addEventListener('click', e => { e.stopPropagation(); window._animTriggerClear(d.id, ai); });
+      chip.appendChild(lbl);
+      chip.appendChild(clr);
+      trigPickWrap.appendChild(chip);
+    }
+
+    return trigPickWrap;
+  }
+
+  function _refreshAnimTrigPickRow(elId, animIdx) {
+    const row = document.querySelector('.anim-row[data-el-id="' + elId + '"][data-ai="' + animIdx + '"]');
+    if (!row) return;
+    const pickWrap = row.querySelector('.anim-trig-pick-wrap');
+    if (!pickWrap) return;
+    pickWrap.querySelectorAll('[data-anim-trig-chip]').forEach(c => c.remove());
+    const s = _slides()[_cur()];
+    const dd = s && s.els.find(x => x.id === elId);
+    const anim = dd && dd.anims && dd.anims[animIdx];
+    if (anim && anim.triggerElId) {
+      const chip = document.createElement('div');
+      chip.dataset.animTrigChip = '1';
+      chip.style.cssText = 'display:flex;align-items:center;gap:5px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:3px 7px;';
+      const lbl = document.createElement('span');
+      lbl.style.cssText = 'flex:1;font-size:10px;color:var(--text);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+      lbl.textContent = _animTriggerLabel(anim.triggerElId);
+      const clr = document.createElement('button');
+      clr.type = 'button';
+      clr.style.cssText = 'flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px;padding:0 2px;line-height:1;';
+      clr.textContent = '✕';
+      clr.title = 'Убрать объект';
+      clr.addEventListener('mousedown', e => e.stopPropagation());
+      clr.addEventListener('click', e => { e.stopPropagation(); window._animTriggerClear(elId, animIdx); });
+      chip.appendChild(lbl);
+      chip.appendChild(clr);
+      pickWrap.appendChild(chip);
+    }
+  }
+
+  function _updateAnimRowTriggerUI(row, elId, animIdx, head, trigSel) {
+    const s = _slides()[_cur()];
+    const dd = s && s.els.find(x => x.id === elId);
+    const anim = dd && dd.anims && dd.anims[animIdx];
+    if (!anim) return;
+    const trigger = anim.trigger || 'auto';
+    const effTrig = trigger === 'nav' ? (anim.preNavTrigger || 'auto') : trigger;
+    const TRIGGER_ICONS = {
+      auto: '▶',
+      click: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" width="10" height="10" style="vertical-align:middle"><path d="M5 1v7l2-1.5 1.5 3 1-.5-1.5-3 2.5-.5z"/></svg>',
+      withPrev: '⟳',
+      element: '👆',
+      nav: '→'
+    };
+    if (trigSel) {
+      if ([...trigSel.options].some(o => o.value === effTrig)) trigSel.value = effTrig;
+      trigSel.disabled = trigger === 'nav';
+    }
+    const iconSpan = head && head.querySelector('.anim-trig-icon');
+    if (iconSpan) iconSpan.innerHTML = TRIGGER_ICONS[trigger] || TRIGGER_ICONS[effTrig] || '▶';
+    const props = row.querySelector('.anim-row-props-wrap');
+    let pickWrap = row.querySelector('.anim-trig-pick-wrap');
+    if (trigger === 'element') {
+      if (!pickWrap && props && trigSel) {
+        pickWrap = _buildAnimTrigPickWrap(dd, animIdx, anim);
+        const navRow = row.querySelector('.anim-nav-row');
+        if (navRow) props.insertBefore(pickWrap, navRow);
+        else props.appendChild(pickWrap);
+      } else if (pickWrap) {
+        _refreshAnimTrigPickRow(elId, animIdx);
+      }
+    } else if (pickWrap) {
+      pickWrap.remove();
+    }
+    const navCheck = row.querySelector('.anim-nav-check');
+    if (navCheck) navCheck.checked = (trigger === 'nav');
+  }
 
   window.setElTrigger = function(val){
     try{
@@ -882,10 +1447,16 @@ window._selectedAnimCat  = null;
       const targets = _animGroupData(el);
       if (!targets.length) return;
       _pushUndo();
+      const slide = _slides()[_cur()];
       targets.forEach(({ dom, d }) => {
         if (!d.anims) d.anims = [];
         d.anims.push(_makeAnim(animName, cat, dom, d));
       });
+      if (slide && targets[0]) {
+        _ensureAnimOrder(slide);
+        const leader = _slideAnimLeader(targets[0].d, slide);
+        slide.animOrder.push({ elId: leader.id, ai: leader.anims.length - 1 });
+      }
       _syncDomAnims(targets);
       if (typeof window._clearAnimHoverPreview === 'function') window._clearAnimHoverPreview(el);
       _save(); renderAnimPanel(); _saveState();
@@ -904,11 +1475,18 @@ window._selectedAnimCat  = null;
   window.removeAnim = function(elId, animIdx){
     try{
       _pushUndo();
+      const slide = _slides()[_cur()];
       const targets = _animGroupDataById(elId);
       targets.forEach(({ d }) => {
         if (!d.anims) return;
         d.anims.splice(animIdx, 1);
       });
+      if (slide && slide.animOrder) {
+        const leader = _slideAnimLeader(targets[0] && targets[0].d, slide) || { id: elId };
+        slide.animOrder = slide.animOrder
+          .filter(x => !(x.elId === leader.id && x.ai === animIdx))
+          .map(x => x.elId === leader.id && x.ai > animIdx ? { elId: x.elId, ai: x.ai - 1 } : x);
+      }
       _syncDomAnims(targets);
       _save(); renderAnimPanel(); _saveState();
       if(typeof renderMotionOverlay==='function') renderMotionOverlay();
@@ -985,6 +1563,19 @@ window._selectedAnimCat  = null;
       }, 3100);
       return;
     }
+    if (animName === 'splitHalf') {
+      const splitA = Object.assign({ duration: 800, cat: 'exit' }, animData || {});
+      targets.forEach(oneEl => {
+        if (typeof window._fireSplitHalfAnim === 'function') {
+          window._fireSplitHalfAnim(oneEl, splitA, 0, { hideAfter: false, unwrap: false });
+        }
+      });
+      clearTimeout(_animPreviewTimer);
+      _animPreviewTimer = setTimeout(() => {
+        targets.forEach(t => { if (typeof window._resetSplitHalf === 'function') window._resetSplitHalf(t, true); });
+      }, (splitA.duration || 800) + 50);
+      return;
+    }
     if (animName === 'captionSlide') {
       const capA = Object.assign({ duration: 600, holdDuration: 2000, captionDir: 'right' }, animData || {});
       const entries = targets.map(oneEl => {
@@ -1025,7 +1616,7 @@ window._selectedAnimCat  = null;
         const soy = animData && animData.swingOy != null ? animData.swingOy : sh/2;
         const ox = (50 + sox/sw*100).toFixed(2)+'%';
         const oy = (50 + soy/sh*100).toFixed(2)+'%';
-        const swTarget = oneEl.querySelector('.ec') || oneEl;
+        const swTarget = window._isTextBlock(oneEl) ? window._ensureTextBodyWrap(oneEl) : (oneEl.querySelector('.ec') || oneEl);
         swTarget.style.transformOrigin = ox+' '+oy;
         const anim = swTarget.animate([
           {transform:'rotate(0deg)'},{transform:'rotate(30deg)'},{transform:'rotate(-30deg)'},
@@ -1038,13 +1629,15 @@ window._selectedAnimCat  = null;
       }
       const cssClass = ANIM_CSS[animName]; if(!cssClass) return;
       const isEmphasisLive = ['dance','pulse','shake','flash','swing','float'].includes(animName);
-      const animTarget = isEmphasisLive ? (oneEl.querySelector('.ec') || oneEl) : oneEl;
+      const animTarget = window._isTextBlock(oneEl)
+        ? window._ensureTextBodyWrap(oneEl)
+        : (isEmphasisLive ? (oneEl.querySelector('.ec') || oneEl) : oneEl);
       if(animName === 'dance'){
-        const target = oneEl.querySelector('.ec') || oneEl;
-        target.getAnimations().forEach(a => { try { a.cancel(); } catch (e) {} });
+        const danceTarget = window._ensureDanceWrap(oneEl);
+        danceTarget.getAnimations().forEach(a => { try { a.cancel(); } catch (e) {} });
         const dur = (animData && animData.duration) || 1200;
-        const anim = target.animate(_DANCE_PREVIEW_FRAMES, { duration: dur, iterations: 1, fill: 'none' });
-        anim.onfinish = () => { try { anim.cancel(); } catch (e) {} target.style.transform = ''; };
+        const anim = danceTarget.animate(_DANCE_PREVIEW_FRAMES, { duration: dur, iterations: 1, fill: 'none' });
+        anim.onfinish = () => { try { anim.cancel(); } catch (e) {} danceTarget.style.transform = ''; };
         return;
       }
       animTarget.style.animation = '';
@@ -1061,7 +1654,7 @@ window._selectedAnimCat  = null;
     } else if (animName === 'swing') {
       _animPreviewTimer = setTimeout(() => {
         targets.forEach(oneEl => {
-          const swTarget = oneEl.querySelector('.ec') || oneEl;
+          const swTarget = window._isTextBlock(oneEl) ? window._ensureTextBodyWrap(oneEl) : (oneEl.querySelector('.ec') || oneEl);
           swTarget.style.transformOrigin = '';
         });
       }, 1400);
@@ -1069,26 +1662,24 @@ window._selectedAnimCat  = null;
       const dur = (animData && animData.duration) || 1200;
       _animPreviewTimer = setTimeout(() => {
         targets.forEach(oneEl => {
-          const target = oneEl.querySelector('.ec') || oneEl;
-          target.style.transform = '';
+          if (typeof window._resetLiveAnimPreview === 'function') window._resetLiveAnimPreview(oneEl, true);
         });
       }, dur + 100);
     } else if (animName === 'float') {
       _animPreviewTimer = setTimeout(() => {
         targets.forEach(oneEl => {
-          const fw = parseInt(oneEl.style.width) || 200, fh = parseInt(oneEl.style.height) || 200;
-          const floatTarget = typeof window._ensureFloatWrap === 'function'
-            ? window._ensureFloatWrap(oneEl, fw, fh)
-            : (oneEl.querySelector('.ec') || oneEl);
-          floatTarget.style.transform = '';
+          if (typeof window._resetLiveAnimPreview === 'function') window._resetLiveAnimPreview(oneEl, true);
         });
       }, 3100);
     } else if (ANIM_CSS[animName]) {
       _animPreviewTimer = setTimeout(() => {
         targets.forEach(oneEl => {
           const isEmphasisLive = ['dance','pulse','shake','flash','swing','float'].includes(animName);
-          const animTarget = isEmphasisLive ? (oneEl.querySelector('.ec') || oneEl) : oneEl;
+          const animTarget = window._isTextBlock(oneEl)
+            ? window._ensureTextBodyWrap(oneEl)
+            : (isEmphasisLive ? (oneEl.querySelector('.ec') || oneEl) : oneEl);
           animTarget.style.animation = '';
+          if (oneEl.dataset.type === 'text' && typeof applyTextRadius === 'function') applyTextRadius(oneEl);
         });
       }, 700);
     }
@@ -1195,33 +1786,35 @@ window._selectedAnimCat  = null;
   }
 
   function renderAssignedAnims(){
+    if (typeof window._animTriggerPickCancel === 'function') window._animTriggerPickCancel();
     const container = document.getElementById('anim-assigned-list');
     if(!container) return;
+
+    const openRows = new Set();
+    container.querySelectorAll('.anim-row.anim-row-open').forEach(r => {
+      if (r.dataset.elId != null && r.dataset.ai != null) openRows.add(r.dataset.elId + ':' + r.dataset.ai);
+    });
 
     const s = _slides()[_cur()];
     const selEl = _sel();
     const typeNames = {text:'Текст', image:'Изображение', shape:'Фигура', table:'Таблица', icon:'Иконка', code:'Код', markdown:'Markdown', svg:'SVG'};
 
-    // Build flat list of all anims across all elements (one row per group, not per member)
+    _ensureAnimOrder(s);
     const allAnims = [];
-    const seenGroups = new Set();
-    if(s && s.els) s.els.forEach(d=>{
-      if(d.anims && d.anims.length){
-        if (d.groupId) {
-          if (seenGroups.has(d.groupId)) return;
-          seenGroups.add(d.groupId);
-        }
-        let elName;
-        if (d.groupId) {
-          const gCount = s.els.filter(x => x.groupId === d.groupId).length;
-          elName = 'Группа' + (gCount > 1 ? ' (' + gCount + ')' : '');
-        } else {
-          const sameType = s.els.filter(x=>x.type===d.type);
-          const idx = sameType.length > 1 ? sameType.findIndex(x=>x.id===d.id)+1 : 0;
-          elName = (typeNames[d.type]||d.type||'Объект') + (idx>0?' '+idx:'');
-        }
-        d.anims.forEach((a, ai) => allAnims.push({d, a, ai, elName}));
+    if (s && s.animOrder) s.animOrder.forEach(({ elId, ai }) => {
+      const d = s.els.find(x => x.id === elId);
+      const a = d && d.anims && d.anims[ai];
+      if (!d || !a) return;
+      let elName;
+      if (d.groupId) {
+        const gCount = s.els.filter(x => x.groupId === d.groupId).length;
+        elName = 'Группа' + (gCount > 1 ? ' (' + gCount + ')' : '');
+      } else {
+        const sameType = s.els.filter(x => x.type === d.type);
+        const idx = sameType.length > 1 ? sameType.findIndex(x => x.id === d.id) + 1 : 0;
+        elName = (typeNames[d.type] || d.type || 'Объект') + (idx > 0 ? ' ' + idx : '');
       }
+      allAnims.push({ d, a, ai, elName });
     });
 
     container.innerHTML = '';
@@ -1237,9 +1830,11 @@ window._selectedAnimCat  = null;
     container.appendChild(lbl);
 
     allAnims.forEach(({d, a, ai, elName}, flatIdx) => {
-      const info = ANIM_INFO[a.name] || {label:a.name, cat:'entrance'};
+      const aLive = _readAnimLive(d.id, ai, a);
+      const info = ANIM_INFO[aLive.name || a.name] || {label:(aLive.name||a.name), cat:'entrance'};
       const catLabel = info.cat==='entrance'?'Вход':info.cat==='exit'?'Выход':info.cat==='motion'?'Движение':info.cat==='live'?'Живая':'Акцент';
-      const trigger = a.trigger || 'auto';
+      const trigger = aLive.trigger || 'auto';
+      const trigSelValue = trigger === 'nav' ? (aLive.preNavTrigger || 'auto') : trigger;
       const isSelected = selEl && (selEl.dataset.id === d.id ||
         (d.groupId && selEl.dataset.groupId === d.groupId));
 
@@ -1247,14 +1842,15 @@ window._selectedAnimCat  = null;
       row.className = 'anim-row' + (isSelected ? ' anim-row-sel' : '');
       row.dataset.elId = d.id;
       row.dataset.ai = ai;
-      row.dataset.animJson = JSON.stringify(a);
+      row.dataset.animJson = JSON.stringify(aLive);
 
       // ── Header (drag handle + click to toggle) ──
       const TRIGGER_ICONS = {
         auto: '▶',
         click: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" width="10" height="10" style="vertical-align:middle"><path d="M5 1v7l2-1.5 1.5 3 1-.5-1.5-3 2.5-.5z"/></svg>',
         withPrev: '⟳',
-        element: '👆'
+        element: '👆',
+        nav: '→'
       };
       const trigIcon = TRIGGER_ICONS[trigger] || '▶';
       const head = document.createElement('div');
@@ -1304,21 +1900,22 @@ window._selectedAnimCat  = null;
           document.removeEventListener('mouseup', onUp);
 
           if(!didDrag) return; // normal click — let it propagate naturally
+          _animDragJustEnded = true;
 
-          // Rebuild anim arrays from DOM order + stored JSON
           if(s && s.els){
             const finalRows = [...container.querySelectorAll('.anim-row')];
+            const orderedAnims = finalRows.map(r => {
+              try {
+                return { elId: r.dataset.elId, anim: JSON.parse(r.dataset.animJson) };
+              } catch (e) { return null; }
+            }).filter(x => x && x.elId && x.anim);
 
-            // Group new anim order by elId
             const newAnimsByEl = {};
-            finalRows.forEach(r => {
-              const elId = r.dataset.elId;
-              if(!elId || !r.dataset.animJson) return;
-              if(!newAnimsByEl[elId]) newAnimsByEl[elId] = [];
-              try{ newAnimsByEl[elId].push(JSON.parse(r.dataset.animJson)); } catch(e){}
+            orderedAnims.forEach(({ elId, anim }) => {
+              if (!newAnimsByEl[elId]) newAnimsByEl[elId] = [];
+              newAnimsByEl[elId].push(anim);
             });
 
-            // Update data model + sync order to grouped members
             Object.keys(newAnimsByEl).forEach(elId => {
               const nd = s.els.find(x => x.id === elId);
               if (!nd) return;
@@ -1326,7 +1923,11 @@ window._selectedAnimCat  = null;
               _syncAnimsOrderToGroup(elId, nd.anims);
             });
 
-            // Update canvas DOM dataset.anims so save() reads correct order
+            s.animOrder = orderedAnims.map(({ elId, anim }) => ({
+              elId,
+              ai: (newAnimsByEl[elId] || []).indexOf(anim)
+            }));
+
             const canvas = document.getElementById('canvas');
             s.els.forEach(dd => {
               if(!dd.anims) return;
@@ -1347,6 +1948,8 @@ window._selectedAnimCat  = null;
       const props = document.createElement('div');
       props.className = 'anim-row-props-wrap';
       props.style.display = 'none';
+      props.addEventListener('mousedown', e => e.stopPropagation());
+      props.addEventListener('click', e => e.stopPropagation());
 
       const propGrid = document.createElement('div');
       propGrid.className = 'anim-row-props';
@@ -1611,39 +2214,44 @@ window._selectedAnimCat  = null;
       // Trigger select for all anims
       {
         const trigSel = document.createElement('select');
+        trigSel.className = 'anim-trig-sel';
         trigSel.style.cssText = 'width:100%;background:var(--surface3);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:2px 5px;font-size:9px;font-family:inherit;margin-top:4px;';
         [{v:'auto',l:'▶ Авто'},{v:'click',l:'После клика'},{v:'withPrev',l:'⟳ Вместе с предыдущей'},{v:'element',l:'👆 Триггер (клик по объекту)'}].forEach(opt=>{
           const o=document.createElement('option'); o.value=opt.v; o.textContent=opt.l;
-          if(trigger===opt.v) o.selected=true;
           trigSel.appendChild(o);
         });
+        if ([...trigSel.options].some(o => o.value === trigSelValue)) trigSel.value = trigSelValue;
+        trigSel.disabled = trigger === 'nav';
         trigSel.addEventListener('mousedown', e=>e.stopPropagation());
+        trigSel.addEventListener('click', e=>e.stopPropagation());
         trigSel.addEventListener('change', ()=>{
           const newTrig = trigSel.value;
-          updateAnimProp(d.id, ai, 'trigger', newTrig);
-          // Clear navTarget when switching away from nav trigger
-          if(newTrig !== 'nav') {
-            updateAnimProp(d.id, ai, 'navTarget', undefined);
-          }
-          // Update row.dataset.animJson to keep drag-reorder in sync
-          const _s = (typeof _slides==='function'?_slides():[slides[cur]||{}]);
-          const _d2 = (_s[typeof _cur==='function'?_cur():cur]||{els:[]}).els.find(x=>x.id===d.id);
-          if(_d2 && _d2.anims && _d2.anims[ai]) row.dataset.animJson = JSON.stringify(_d2.anims[ai]);
+          const changes = { trigger: newTrig };
+          if (newTrig !== 'element') changes.triggerElId = undefined;
+          if (newTrig !== 'nav') changes.navTarget = undefined;
+          _setAnimTriggerBatch(d.id, ai, changes);
           const iconSpan = head.querySelector('.anim-trig-icon');
           if(iconSpan) iconSpan.innerHTML = TRIGGER_ICONS[newTrig] || '▶';
-          // Force re-render to persist and show correct value
-          requestAnimationFrame(()=>{ if(typeof renderAnimPanel==='function') renderAnimPanel(); });
+          row.dataset.animJson = JSON.stringify(_readAnimLive(d.id, ai, aLive));
+          _updateAnimRowTriggerUI(row, d.id, ai, head, trigSel);
+          const navCheck = row.querySelector('.anim-nav-check');
+          if (navCheck && newTrig === 'element') navCheck.checked = false;
         });
         props.appendChild(trigSel);
+
+        if (trigger === 'element') {
+          props.appendChild(_buildAnimTrigPickWrap(d, ai, aLive));
+        }
       }
 
       const navRow = document.createElement('div');
+      navRow.className = 'anim-nav-row';
       navRow.style.cssText = 'margin-top:4px;display:flex;align-items:center;gap:4px;';
       const navCheck = document.createElement('input');
       navCheck.type='checkbox';
-      navCheck.className='tog'; // use CSS later — for now inline
+      navCheck.className='tog anim-nav-check';
       navCheck.style.cssText='accent-color:var(--accent);flex-shrink:0;';
-      navCheck.checked = (trigger==='nav' || (typeof a.navTarget==='number' && trigger!=='element'));
+      navCheck.checked = (trigger === 'nav');
       const navLabel = document.createElement('label');
       navLabel.style.cssText='font-size:9px;color:var(--text2);display:flex;align-items:center;gap:4px;cursor:pointer;flex:1;min-width:0;';
       navLabel.textContent='→ Слайд:';
@@ -1654,29 +2262,58 @@ window._selectedAnimCat  = null;
         const o = document.createElement('option');
         o.value = si;
         o.textContent = (si+1) + '. ' + (ss.title||('Слайд '+(si+1)));
-        if(si === (typeof a.navTarget==='number' ? a.navTarget : _cur()+1)) o.selected = true;
+        if(si === (typeof aLive.navTarget==='number' ? aLive.navTarget : _cur()+1)) o.selected = true;
         navSel.appendChild(o);
       });
       const applyNav = ()=>{
-        if(navCheck.checked){ updateAnimProp(d.id,ai,'trigger','nav'); updateAnimProp(d.id,ai,'navTarget',+navSel.value); }
-        else { updateAnimProp(d.id,ai,'trigger',trigSel.value); updateAnimProp(d.id,ai,'navTarget',undefined); }
+        navSel.disabled = !navCheck.checked;
+        trigSel.disabled = navCheck.checked;
+        if(navCheck.checked){
+          const s0 = _slides()[_cur()];
+          const d0 = s0 && s0.els.find(x => x.id === d.id);
+          const anim0 = d0 && d0.anims && d0.anims[ai];
+          if (anim0) _rememberPreNavTrigger(anim0, trigSel.value);
+          _setAnimTriggerBatch(d.id, ai, { trigger: 'nav', navTarget: +navSel.value });
+          const iconSpan = head.querySelector('.anim-trig-icon');
+          if(iconSpan) iconSpan.innerHTML = '→';
+        } else {
+          const s0 = _slides()[_cur()];
+          const d0 = s0 && s0.els.find(x => x.id === d.id);
+          const anim0 = d0 && d0.anims && d0.anims[ai];
+          const changes = anim0 ? _restorePreNavChanges(anim0) : { trigger: trigSel.value || 'auto', navTarget: undefined };
+          _setAnimTriggerBatch(d.id, ai, changes);
+          if ([...trigSel.options].some(o => o.value === changes.trigger)) trigSel.value = changes.trigger;
+          const iconSpan = head.querySelector('.anim-trig-icon');
+          if(iconSpan) iconSpan.innerHTML = TRIGGER_ICONS[changes.trigger] || '▶';
+          _updateAnimRowTriggerUI(row, d.id, ai, head, trigSel);
+        }
       };
       navCheck.addEventListener('mousedown', e=>e.stopPropagation());
-      navCheck.addEventListener('change', ()=>{ navSel.disabled=!navCheck.checked; applyNav(); });
+      navCheck.addEventListener('change', applyNav);
       navSel.addEventListener('mousedown', e=>e.stopPropagation());
-      navSel.addEventListener('change', applyNav);
+      navSel.addEventListener('change', ()=>{ if(navCheck.checked) applyNav(); });
       navLabel.prepend(navCheck); navLabel.appendChild(navSel);
       navRow.appendChild(navLabel);
       props.appendChild(navRow);
 
       row.appendChild(props);
 
+      if (openRows.has(d.id + ':' + ai)) {
+        props.style.display = 'block';
+        row.classList.add('anim-row-open');
+      }
+
       // Toggle on header click
       head.addEventListener('click', e=>{
-        if(e._fromDrag) return;
-        const open = props.style.display !== 'none';
-        props.style.display = open ? 'none' : 'block';
-        row.classList.toggle('anim-row-open', !open);
+        if(e._fromDrag || _animDragJustEnded){ _animDragJustEnded = false; return; }
+        const wasOpen = props.style.display !== 'none';
+        if (!wasOpen) {
+          const cv = document.getElementById('canvas');
+          const domEl = cv && cv.querySelector('.el[data-id="' + d.id + '"]');
+          if (domEl && typeof pick === 'function') pick(domEl);
+        }
+        props.style.display = wasOpen ? 'none' : 'block';
+        row.classList.toggle('anim-row-open', !wasOpen);
       });
 
       container.appendChild(row);

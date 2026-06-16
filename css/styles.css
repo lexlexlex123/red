@@ -195,9 +195,11 @@ input[type=text],input[type=number],input[type=email],textarea,[contenteditable=
 .el[data-type=shape].sel{border-color:var(--selb)!important;}
 .ec{width:100%;height:100%;overflow:visible;}
 .ec.tel{overflow:hidden;}
-/* Вертикальное выравнивание — flex на .el, .ec.tel — flex-child без фиксированной высоты */
+/* Вертикальное выравнивание — flex на ._text_body (или .el), .ec.tel — flex-child */
 .el[data-type=text]{display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;}
-.el[data-type=text] > .ec.tel{flex:none;width:100%;height:auto !important;min-height:0;box-sizing:border-box;}
+.el[data-type=text] > ._text_body{position:absolute;inset:0;z-index:0;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;overflow:hidden;border-radius:inherit;}
+.el[data-type=text] ._text_body .ec.tel,
+.el[data-type=text] > .ec.tel{flex:none;width:100%;height:auto !important;min-height:0;box-sizing:border-box;position:relative;z-index:1;}
 .ec.md-el{overflow:auto;}
 .ec.code-el{overflow:auto;}
 .rh{position:absolute;width:8px;height:8px;background:#fff;border:1.5px solid var(--selb);border-radius:50%;z-index:9999;display:none;box-shadow:0 1px 4px rgba(0,0,0,.5);pointer-events:auto;}
@@ -471,6 +473,7 @@ input[type=color]{caret-color:transparent;outline:none;}
 input[type=color]:focus{outline:none;box-shadow:none;}
 .psel{position:absolute;overflow:hidden;}
 .psel.has-swing{overflow:visible;}
+.psel.has-dance{overflow:visible;}
 #p-exit{position:fixed;top:14px;right:16px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:rgba(255,255,255,.6);padding:5px 13px;border-radius:6px;cursor:pointer;font-size:11px;font-family:inherit;z-index:902;transition:.15s;backdrop-filter:blur(6px);}
 #p-exit:hover{background:rgba(255,255,255,.2);color:#fff;}
 #p-prev,#p-next{position:fixed;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);color:rgba(255,255,255,.25);width:46px;height:46px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.2s;z-index:902;backdrop-filter:blur(6px);}
@@ -628,7 +631,6 @@ input[type=color]:focus{outline:none;box-shadow:none;}
 
 /* Background layer for text elements — absolute fill, behind text */
 .el-bg-layer{position:absolute;inset:0;z-index:0;pointer-events:none;border-radius:inherit;}
-.el[data-type=text] > .ec.tel{position:relative;z-index:1;}
 
 /* ══════════════════════════════════════════════════
    IMPROVEMENTS: Version History & Layout Preview

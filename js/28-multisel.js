@@ -234,19 +234,17 @@ function pickMulti(el,shiftKey){
 
 // ══════════════ GROUP COPY / PASTE ══════════════
 function copySelected(){
-  const elsToCopy=[];
+  const ids = [];
   if(multiSel.size>1){
-    multiSel.forEach(domEl=>{
-      const d=slides[cur]&&slides[cur].els.find(x=>x.id===domEl.dataset.id);
-      if(d)elsToCopy.push(JSON.parse(JSON.stringify(d)));
-    });
+    multiSel.forEach(domEl=>{ if(domEl.dataset.id) ids.push(domEl.dataset.id); });
   } else if(sel){
-    const d=slides[cur]&&slides[cur].els.find(x=>x.id===sel.dataset.id);
-    if(d)elsToCopy.push(JSON.parse(JSON.stringify(d)));
+    ids.push(sel.dataset.id);
   }
+  const elsToCopy = _copyElementDataList(ids);
   if(!elsToCopy.length)return (typeof toast==="function")&&toast(t('toastNothingSelected'));
   clipboard=elsToCopy;
   if(typeof _xclipSaveElements==='function') _xclipSaveElements(elsToCopy);
+  if(typeof window._markElementClipboardCopy==='function') window._markElementClipboardCopy();
   if(typeof toast==="function")toast(t('toastElementsCopied')+elsToCopy.length+t('toastElementsSuffix'),'ok');
 }
 
@@ -254,18 +252,25 @@ function pasteSelected(){
   if(typeof _xclipHydrateElements==='function') _xclipHydrateElements();
   if(!clipboard.length)return (typeof toast==="function")&&toast(t('toastNothingToPaste'));
   if(!slides[cur])return;
+  if(clipboard.length===1&&typeof urlFromElementData==='function'){
+    const url=urlFromElementData(clipboard[0]);
+    if(url&&typeof insertQRAppletAt==='function'){
+      insertQRAppletAt(url, null, null);
+      return;
+    }
+  }
   if(typeof pushUndo==="function")pushUndo();
   clearMultiSel();if(sel)sel.classList.remove('sel');sel=null;
-  clipboard.forEach(d=>{
-    const nd=JSON.parse(JSON.stringify(d)); // deep clone — preserves ALL settings
-    nd.id='e'+(++ec);
-    // No position offset — paste at exact same position (like PowerPoint)
+  const clones = _cloneElementDataList(clipboard, { offset: 0 });
+  clones.forEach(nd=>{
     slides[cur].els.push(nd);
     mkEl(nd);
     const domEl=document.getElementById('canvas').querySelector('[data-id="'+nd.id+'"]');
     if(domEl)addToMultiSel(domEl);
   });
   save();if(typeof drawThumbs==="function")drawThumbs();if(typeof saveState==="function")saveState();
+  if(typeof renderAnimPanel==='function')renderAnimPanel();
+  if(typeof renderMotionOverlay==='function')renderMotionOverlay();
   if(multiSel.size===1){const only=[...multiSel][0];clearMultiSel();pick(only);}
   else if(multiSel.size>1){pick([...multiSel].slice(-1)[0]);if(typeof toast==="function")toast(t('toastElementsPasted')+multiSel.size+t('toastElementsSuffix'),'ok');}
 }

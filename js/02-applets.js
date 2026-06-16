@@ -511,6 +511,57 @@ function getAppletHtml(appletId, palette){
   return a.html||'';
 }
 
+function isPasteableUrl(s){
+  s=String(s||'').trim().replace(/^[<"']+|[>"']+$/g,'').replace(/[.,;:!?)]+$/g,'');
+  if(!s||s.length>2048) return false;
+  if(/^https?:\/\//i.test(s)){
+    try{ new URL(s); return true; }catch(e){ return /^https?:\/\/\S+$/i.test(s); }
+  }
+  if(/^www\./i.test(s)) return /^www\.\S+$/i.test(s);
+  return false;
+}
+
+function normalizePasteUrl(s){
+  s=String(s||'').trim().replace(/^[<"']+|[>"']+$/g,'').replace(/[.,;:!?)]+$/g,'');
+  if(/^www\./i.test(s)) return 'https://'+s;
+  return s;
+}
+
+function extractPasteUrl(plain, html){
+  if(html){
+    try{
+      const tmp=document.createElement('div');
+      tmp.innerHTML=html;
+      const a=tmp.querySelector('a[href]');
+      if(a){
+        const href=(a.getAttribute('href')||'').trim();
+        if(isPasteableUrl(href)) return normalizePasteUrl(href);
+      }
+    }catch(e){}
+    const hrefM=String(html).match(/href\s*=\s*["'](https?:\/\/[^"']+)["']/i);
+    if(hrefM&&isPasteableUrl(hrefM[1])) return normalizePasteUrl(hrefM[1]);
+  }
+  const plainStr=String(plain||'').trim();
+  if(!plainStr) return null;
+  if(isPasteableUrl(plainStr)) return normalizePasteUrl(plainStr);
+  const httpM=plainStr.match(/https?:\/\/[^\s<>"']+/i);
+  if(httpM&&isPasteableUrl(httpM[0])) return normalizePasteUrl(httpM[0]);
+  const wwwM=plainStr.match(/\bwww\.[^\s<>"']+/i);
+  if(wwwM&&isPasteableUrl(wwwM[0])) return normalizePasteUrl(wwwM[0]);
+  const firstLine=plainStr.split(/\r?\n/)[0].trim();
+  if(isPasteableUrl(firstLine)) return normalizePasteUrl(firstLine);
+  return null;
+}
+
+function urlFromElementData(d){
+  if(!d||d.type!=='text') return null;
+  return extractPasteUrl((function(){
+    const tmp=document.createElement('div');
+    tmp.innerHTML=d.html||'';
+    return (tmp.innerText||tmp.textContent||'').trim();
+  })(), d.html||'');
+}
+
 function _qrPosFromClient(clientX, clientY, w, h){
   let x=Math.round((canvasW-w)/2), y=Math.round((canvasH-h)/2);
   if(clientX!=null&&clientY!=null&&typeof _toCanvasCoords==='function'){

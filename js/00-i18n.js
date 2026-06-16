@@ -58,6 +58,8 @@ const LANG_DATA = {
     ctxDeleteSlidesN: 'Delete ({n})',
     ctxCreateQr: 'Create QR',
     toastQrNeedText: 'Select or enter text first',
+    toastQrPasted: 'QR code inserted',
+    toastTextPasted: 'Text pasted',
     // Animations
     animFadeIn: 'Fade In', animSlideUp: 'Slide Up', animZoomIn: 'Zoom In',
     animBounce: 'Bounce', animSpin: 'Spin', animFadeOut: 'Fade Out',
@@ -379,6 +381,7 @@ const LANG_DATA = {
     ctxDeleteSlidesN: 'Удалить ({n})',
     ctxCreateQr: 'Создать QR',
     toastQrNeedText: 'Сначала выделите или введите текст',
+    toastQrPasted: 'QR-код вставлен',
     // Анимации
     btnClearAnims: 'Очистить',
     animFadeIn: 'Появление', animSlideUp: 'Подъём', animZoomIn: 'Масштаб',

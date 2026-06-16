@@ -404,30 +404,36 @@ function setTextVAlign(va){
 }
 function applyTextVAlign(el,va){
   const ec=el.querySelector('.ec.tel');if(!ec)return;
+  const body=el.querySelector('._text_body');
+  const host=body||el;
   // Remove legacy padding-top approach
   ec.style.paddingTop='';
   // Remove any old wrapper from previous implementations
   const oldWrap=ec.querySelector('.ec-valign-wrap');
   if(oldWrap){while(oldWrap.firstChild)ec.insertBefore(oldWrap.firstChild,oldWrap);oldWrap.remove();}
   el.dataset.valign=va||'top';
-  // Flex on the .el container — .ec.tel becomes the flex child
-  // This is pure CSS math, no scrollHeight hacks needed
   if(!va||va==='top'){
     delete el.dataset.valign;
-    el.style.display='';
-    el.style.flexDirection='';
-    el.style.alignItems='';
-    el.style.justifyContent='';
+    if(body){
+      host.style.display='flex';
+      host.style.flexDirection='column';
+      host.style.alignItems='stretch';
+      host.style.justifyContent='flex-start';
+    }else{
+      el.style.display='';
+      el.style.flexDirection='';
+      el.style.alignItems='';
+      el.style.justifyContent='';
+    }
     ec.style.flex='';
     ec.style.width='';
     return;
   }
-  el.style.display='flex';
-  el.style.flexDirection='column';
-  el.style.alignItems='stretch'; // ec stretches to full width always
-  if(va==='middle') el.style.justifyContent='center';
-  else if(va==='bottom') el.style.justifyContent='flex-end';
-  // ec is a flex child — no fixed height, sized by content
+  host.style.display='flex';
+  host.style.flexDirection='column';
+  host.style.alignItems='stretch';
+  if(va==='middle') host.style.justifyContent='center';
+  else if(va==='bottom') host.style.justifyContent='flex-end';
   ec.style.flex='none';
   ec.style.width='100%';
 }
@@ -501,12 +507,13 @@ function setTextBgBlur(v){
   commitAll();
 }
 function _getBgLayer(el){
-  let layer=el.querySelector('.el-bg-layer');
+  const host=el.querySelector('._text_body')||el;
+  let layer=host.querySelector('.el-bg-layer');
   if(!layer){
     layer=document.createElement('div');
     layer.className='el-bg-layer';
     layer.style.cssText='position:absolute;inset:0;z-index:0;pointer-events:none;border-radius:inherit;';
-    el.insertBefore(layer,el.firstChild);
+    host.insertBefore(layer,host.firstChild);
   }
   return layer;
 }

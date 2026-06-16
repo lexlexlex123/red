@@ -934,7 +934,15 @@ function mkEl(d){
       el.appendChild(rh);
     });
   }
-  el.append(c,lb,trigBadge);cv.appendChild(el);
+  let _appendMain = c;
+  if (d.type === 'text') {
+    const body = document.createElement('div');
+    body.className = '_text_body';
+    body.style.cssText = 'position:absolute;inset:0;border-radius:inherit;overflow:hidden;z-index:0;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;';
+    body.appendChild(c);
+    _appendMain = body;
+  }
+  el.append(_appendMain, lb, trigBadge);cv.appendChild(el);
   if(d.type==='shape'&&typeof window._syncShapeShadowLayout==='function')window._syncShapeShadowLayout(el,d,d.w,d.h);
   // Управляем анимацией декора после вставки в DOM
   if(d._isDecor){

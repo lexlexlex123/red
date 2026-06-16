@@ -1,9 +1,96 @@
 // ══════════════ KEYBOARD ══════════════
 let elClipboard=null; // stores copied element data
+const CLIP_MARKER_TYPE='application/x-red-slides';
+const CLIP_SENTINEL='\u200B'; // legacy marker in old clipboard sessions
+
+window._markElementClipboardCopy=function(){
+  _clearSystemClipboardForObjectCopy('elements');
+};
+window._markSlideClipboardCopy=function(){
+  _clearSystemClipboardForObjectCopy('slides');
+};
+
+function _clearSystemClipboardForObjectCopy(kind){
+  window._clipSource=kind;
+  window._slidesInternalCopy=true;
+  try{
+    const ta=document.createElement('textarea');
+    ta.setAttribute('aria-hidden','true');
+    ta.value='';
+    ta.style.cssText='position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0;';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  }catch(e){}
+  window._slidesInternalCopy=false;
+  try{
+    if(navigator.clipboard&&navigator.clipboard.write&&window.ClipboardItem){
+      const payload=JSON.stringify({app:'slides',kind,t:Date.now()});
+      navigator.clipboard.write([
+        new ClipboardItem({
+          [CLIP_MARKER_TYPE]:new Blob([payload],{type:CLIP_MARKER_TYPE}),
+          'text/plain':new Blob([''],{type:'text/plain'}),
+          'text/html':new Blob([''],{type:'text/html'})
+        })
+      ]).catch(()=>{});
+      return;
+    }
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText('').catch(()=>{});
+    }
+  }catch(e){}
+}
+
+document.addEventListener('copy',(e)=>{
+  if(window._slidesInternalCopy){
+    e.preventDefault();
+    if(e.clipboardData){
+      e.clipboardData.setData('text/plain','');
+      try{e.clipboardData.setData('text/html','');}catch(err){}
+    }
+    return;
+  }
+  if(e.defaultPrevented) return;
+  window._clipSource='external';
+  if(typeof clipboard!=='undefined') clipboard=[];
+  elClipboard=null;
+  if(typeof _xclipSaveElements==='function') _xclipSaveElements(null);
+}, true);
 
 // Russian ↔ Latin key mapping for Ctrl shortcuts
 const RU_TO_EN={'й':'q','ц':'w','у':'e','к':'r','е':'t','н':'y','г':'u','ш':'i','щ':'o','з':'p','х':'[','ъ':']','ф':'a','ы':'s','в':'d','а':'f','п':'g','р':'h','о':'j','л':'k','д':'l','ж':';','э':"'",'я':'z','ч':'x','с':'c','м':'v','и':'b','т':'n','ь':'m',',':'<','.':'>','Й':'Q','Ц':'W','У':'E','К':'R','Е':'T','Н':'Y','Г':'U','Ш':'I','Щ':'O','З':'P','Ф':'A','Ы':'S','В':'D','А':'F','П':'G','Р':'H','О':'J','Л':'K','Д':'L','Я':'Z','Ч':'X','С':'C','М':'V','И':'B','Т':'N','Ь':'M'};
 function latinKey(e){return RU_TO_EN[e.key]||e.key;}
+
+function _clipHasRealText(plain, html){
+  const plainTrim=String(plain||'').trim();
+  if(plainTrim&&plainTrim!==CLIP_SENTINEL) return true;
+  if(html&&String(html).trim()){
+    try{
+      const tmp=document.createElement('div');
+      tmp.innerHTML=html;
+      const t=(tmp.innerText||tmp.textContent||'').trim();
+      if(t&&t!==CLIP_SENTINEL) return true;
+    }catch(e){}
+  }
+  return false;
+}
+
+function _pasteElementFromClipboard(){
+  if(typeof _xclipHydrateAll==='function') _xclipHydrateAll();
+  const hasInternal=(typeof clipboard!=='undefined'&&clipboard.length)||elClipboard;
+  if(hasInternal){
+    if(typeof pasteSelected==='function') pasteSelected();
+    return true;
+  }
+  if(typeof hasSlideClipboard==='function'&&hasSlideClipboard()){
+    const at=typeof slides!=='undefined'?slides.length:0;
+    if(typeof pasteSlideAt==='function') pasteSlideAt(at);
+    return true;
+  }
+  return false;
+}
 
 function onKey(e){
   const editing=document.activeElement.contentEditable==='true';
@@ -44,9 +131,7 @@ function onKey(e){
       }
       const _selEl = typeof sel !== 'undefined' ? sel : null;
       if (_selEl && typeof window._clearAnimHoverPreview === 'function') window._clearAnimHoverPreview(_selEl);
-      // Сохраняем все данные (включая состояние незафиксированных полей)
-      if(typeof save==='function') save();
-      // Снимаем текущий кадр декора для синхронизации в просмотре
+      // Сохранение и синхронизация анимаций — в startPreview (flush + sync + save)
       if(typeof _layoutAnimated!=='undefined' && _layoutAnimated && typeof _decorPausedAt!=='undefined'){
         document.querySelectorAll('.decor-el svg').forEach(function(svg){
           try{
@@ -71,8 +156,8 @@ function onKey(e){
   if(e.ctrlKey||e.metaKey){
     if(lk==='z'&&!editing){e.preventDefault();doUndo();return;}
     if((lk==='y'||lk==='Z')&&!editing){e.preventDefault();doRedo();return;}
-    if(lk==='d'&&!editing){e.preventDefault();if(multiSel.size>1){copySelected();pasteSelected();}else dupEl();return;}
-    if(lk==='c'&&!editing){
+    if(lk==='d'&&!editing&&!inInput){e.preventDefault();if(multiSel.size>1){copySelected();pasteSelected();}else dupEl();return;}
+    if(lk==='c'&&!editing&&!inInput){
       const hasElSel=!!sel||(typeof multiSel!=='undefined'&&multiSel.size>0);
       if(!hasElSel){
         e.preventDefault();
@@ -81,19 +166,11 @@ function onKey(e){
       }
       e.preventDefault();copySelected();return;
     }
-    if(lk==='v'&&!editing){
+    if(lk==='v'&&!editing&&!inInput){
       if(typeof _xclipHydrateAll==='function') _xclipHydrateAll();
-      const hasInternal=(typeof clipboard!=='undefined'&&clipboard.length)||(typeof elClipboard!=='undefined'&&elClipboard);
-      if(hasInternal){e.preventDefault();pasteSelected();return;}
-      if(typeof hasSlideClipboard==='function'&&hasSlideClipboard()){
-        e.preventDefault();
-        const at=typeof slides!=='undefined'?slides.length:0;
-        if(typeof pasteSlideAt==='function') pasteSlideAt(at);
-        return;
-      }
       return;
     }
-    if(lk==='a'&&!editing){
+    if(lk==='a'&&!editing&&!inInput){
       e.preventDefault();
       clearMultiSel();
       document.getElementById('canvas').querySelectorAll('.el').forEach(el=>addToMultiSel(el));
@@ -151,9 +228,10 @@ function onKey(e){
 }
 function copyEl(){
   if(!sel)return;
-  const d=slides[cur].els.find(el=>el.id===sel.dataset.id);if(!d)return;
-  elClipboard=JSON.parse(JSON.stringify(d));
+  elClipboard=_freshElementDataFromDom(sel.dataset.id);
+  if(!elClipboard)return;
   if(typeof _xclipSaveElements==='function') _xclipSaveElements([elClipboard]);
+  if(typeof window._markElementClipboardCopy==='function') window._markElementClipboardCopy();
   if(typeof toast==="function")toast(t('toastCopied'),'ok');
 }
 function pasteEl(){
@@ -162,21 +240,34 @@ function pasteEl(){
     if(typeof clipboard!=='undefined'&&clipboard.length) elClipboard=clipboard[0];
   }
   if(!elClipboard)return (typeof toast==="function")&&toast(t('toastNothingPaste'));
+  if(typeof urlFromElementData==='function'){
+    const url=urlFromElementData(elClipboard);
+    if(url&&typeof insertQRAppletAt==='function'){
+      insertQRAppletAt(url, null, null);
+      return;
+    }
+  }
   if(typeof pushUndo==="function")pushUndo();
-  const nd=JSON.parse(JSON.stringify(elClipboard));
-  nd.id='e'+(++ec); // no offset — paste at same position
+  const nd=_cloneElementDataList([elClipboard], { offset: 0 })[0];
   slides[cur].els.push(nd);mkEl(nd);
   // Select the pasted element
   const newEl=document.getElementById('canvas').querySelector('[data-id="'+nd.id+'"]');
   if(newEl)pick(newEl);
   save();if(typeof drawThumbs==="function")drawThumbs();if(typeof saveState==="function")saveState();
+  if(typeof renderAnimPanel==='function')renderAnimPanel();
+  if(typeof renderMotionOverlay==='function')renderMotionOverlay();
   if(typeof toast==="function")toast(t('toastPasted'),'ok');
 }
 function dupEl(){
   if(!sel)return;if(typeof pushUndo==="function")pushUndo();
-  const d=slides[cur].els.find(el=>el.id===sel.dataset.id);if(!d)return;
-  const nd=JSON.parse(JSON.stringify(d));nd.id='e'+(++ec);nd.x+=20;nd.y+=20;
-  slides[cur].els.push(nd);mkEl(nd);save();if(typeof drawThumbs==="function")drawThumbs();if(typeof saveState==="function")saveState();
+  const d=_freshElementDataFromDom(sel.dataset.id);if(!d)return;
+  const nd=_cloneElementDataList([d], { offset: 20 })[0];
+  slides[cur].els.push(nd);mkEl(nd);
+  const newEl=document.getElementById('canvas').querySelector('[data-id="'+nd.id+'"]');
+  if(newEl)pick(newEl);
+  save();if(typeof drawThumbs==="function")drawThumbs();if(typeof saveState==="function")saveState();
+  if(typeof renderAnimPanel==='function')renderAnimPanel();
+  if(typeof renderMotionOverlay==='function')renderMotionOverlay();
 }
 
 
@@ -225,33 +316,48 @@ function _addImageToCanvas(src) {
 }
 
 document.addEventListener('paste', async (e) => {
-  // Don't intercept when editing text or typing in inputs
   const ae = document.activeElement;
   const editing = ae.contentEditable === 'true';
   const inInput = ['INPUT','SELECT','TEXTAREA'].includes(ae.tagName);
   const inPreview = document.getElementById('preview-ov').classList.contains('active');
-  // Allow paste into table cells only when actually double-click editing (el has data-editing)
   const inTableCell = ae.matches && ae.matches('td,th') && editing;
   const elEditing = ae.closest && ae.closest('.el[data-editing="true"]');
-  if ((editing && !inTableCell) || (inTableCell && elEditing) || inInput || inPreview) return;
+  if (inPreview) return;
   if (!slides[cur]) return;
 
-  const items = e.clipboardData && e.clipboardData.items;
-  if (!items) return;
-
-  // Collect all types available
-  const types = e.clipboardData.types || [];
-  const hasHTML = types.includes('text/html');
-  const hasPlain = types.includes('text/plain');
-
-  // Pre-read text items (needed to detect TSV before deciding on image)
+  const cd = e.clipboardData;
   let html = '', plain = '';
-  const textPromises = [];
-  for (const item of items) {
-    if (item.type === 'text/html') textPromises.push(new Promise(res => item.getAsString(s => { html = s; res(); })));
-    else if (item.type === 'text/plain') textPromises.push(new Promise(res => item.getAsString(s => { plain = s; res(); })));
+  if (cd) {
+    const items = cd.items ? [...cd.items] : [];
+    const textPromises = [];
+    for (const item of items) {
+      if (item.type === 'text/html') textPromises.push(new Promise(res => item.getAsString(s => { html = s; res(); })));
+      else if (item.type === 'text/plain') textPromises.push(new Promise(res => item.getAsString(s => { plain = s; res(); })));
+    }
+    if (textPromises.length) await Promise.all(textPromises);
+    if (!plain && typeof cd.getData === 'function') {
+      try { plain = cd.getData('text/plain') || ''; } catch(err) {}
+      try { if (!html) html = cd.getData('text/html') || ''; } catch(err) {}
+    }
   }
-  await Promise.all(textPromises);
+
+  // Property panel / modal inputs: text paste in field, object paste on canvas if no text
+  if (inInput) {
+    if (_clipHasRealText(plain, html)) return;
+    if (_pasteElementFromClipboard()) {
+      e.preventDefault();
+      if (ae && typeof ae.blur === 'function') ae.blur();
+    }
+    return;
+  }
+
+  if ((editing && !inTableCell) || (inTableCell && elEditing)) return;
+
+  const items = cd && cd.items ? [...cd.items] : [];
+
+  const plainTrim = plain.trim();
+  const isSentinel = plainTrim === CLIP_SENTINEL;
+  const hasRealExternalText = !!plainTrim && !isSentinel;
 
   // 0. TSV / Excel table — highest priority (Excel also puts image/png in clipboard)
   const isTSV = plain && plain.includes('\t');
@@ -274,7 +380,7 @@ document.addEventListener('paste', async (e) => {
   // 1. Check for image
   // hasText guard: skip image if there's meaningful text (Excel/app screenshot has both image+text)
   // But: copying an image from browser puts image/png + text/html with <img> tag — that should still paste as image
-  const hasRealText = plain.trim() !== '';
+  const hasRealText = hasRealExternalText;
   const htmlImgEl = html ? (() => {
     const tmp = document.createElement('div'); tmp.innerHTML = html;
     const text = (tmp.innerText || tmp.textContent || '').trim();
@@ -306,51 +412,69 @@ document.addEventListener('paste', async (e) => {
     }
   }
 
-  // text was already read above — proceed with plain/html
-  const text = plain || html;
-  if (!text || !text.trim()) return;
-
-  e.preventDefault();
-  if(typeof pushUndo==="function")pushUndo();
-
-  // Strip HTML tags to get clean text, preserve line breaks
-  let content = plain || '';
-  if (!content && html) {
-    const tmp = document.createElement('div');
-    tmp.innerHTML = html;
-    content = tmp.innerText || tmp.textContent || '';
+  // 2. URL from clipboard (plain or HTML link) → QR applet
+  const pasteUrl=typeof extractPasteUrl==='function'?extractPasteUrl(plain, html):null;
+  if(pasteUrl&&typeof insertQRAppletAt==='function'){
+    e.preventDefault();
+    insertQRAppletAt(pasteUrl, null, null);
+    if(typeof toast==='function') toast(typeof t==='function'?t('toastQrPasted'):'QR code inserted', 'ok');
+    return;
   }
-  content = content.trim();
-  if (!content) return;
 
-  // Create text element centered on canvas
-  const w = Math.min(Math.max(content.length * 14, 300), canvasW * 0.7);
-  const h = Math.max(80, Math.ceil(content.split('\n').length * 48));
-  const x = Math.round((canvasW - w) / 2);
-  const y = Math.round((canvasH - h) / 2);
+  // 3. External plain text from document
+  const hasHtmlContent=!!(html&&html.trim());
+  if(hasRealExternalText||hasHtmlContent){
+    let content=plainTrim;
+    if(!content&&html){
+      const tmp=document.createElement('div');
+      tmp.innerHTML=html;
+      content=(tmp.innerText||tmp.textContent||'').trim();
+    }
+    if(content){
+      e.preventDefault();
+      if(typeof pushUndo==='function') pushUndo();
+      const w = Math.min(Math.max(content.length * 14, 300), canvasW * 0.7);
+      const h = Math.max(80, Math.ceil(content.split('\n').length * 48));
+      const x = Math.round((canvasW - w) / 2);
+      const y = Math.round((canvasH - h) / 2);
+      const safeHtml = content
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/\n/g,'<br>');
+      const _kbThemeIdx = typeof appliedThemeIdx!=='undefined' ? appliedThemeIdx : -1;
+      const _kbTheme = _kbThemeIdx>=0 ? THEMES[_kbThemeIdx] : null;
+      const _kbScheme = {col:7, row:0};
+      const _kbDefColor = (typeof _resolveSchemeColor==='function'&&_kbTheme)
+        ? (_resolveSchemeColor(_kbScheme,_kbTheme)||'#ffffff')
+        : (_kbTheme&&!_kbTheme.dark?'#000000':'#ffffff');
+      const d = {
+        id:'e'+(++ec), type:'text',
+        x, y, w, h,
+        html: safeHtml,
+        cs: 'font-size:32px;font-weight:400;color:'+_kbDefColor+';text-align:left;line-height:1.3;',
+        rot:0, anims:[], textRole:'body',
+        textColorScheme: _kbScheme
+      };
+      slides[cur].els.push(d); mkEl(d);
+      const el = document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
+      if (el) pick(el);
+      save(); if(typeof drawThumbs==='function')drawThumbs(); if(typeof saveState==='function')saveState();
+      if(typeof toast==='function')toast((t('toastTextPasted')),'ok');
+      return;
+    }
+  }
 
-  // Escape for HTML display, preserve newlines as <br>
-  const safeHtml = content
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    .replace(/\n/g,'<br>');
-
-  const _kbThemeIdx = typeof appliedThemeIdx!=='undefined' ? appliedThemeIdx : -1;
-  const _kbTheme = _kbThemeIdx>=0 ? THEMES[_kbThemeIdx] : null;
-  const _kbScheme = {col:7, row:0};
-  const _kbDefColor = (typeof _resolveSchemeColor==='function'&&_kbTheme)
-    ? (_resolveSchemeColor(_kbScheme,_kbTheme)||'#ffffff')
-    : (_kbTheme&&!_kbTheme.dark?'#000000':'#ffffff');
-  const d = {
-    id:'e'+(++ec), type:'text',
-    x, y, w, h,
-    html: safeHtml,
-    cs: 'font-size:32px;font-weight:400;color:'+_kbDefColor+';text-align:left;line-height:1.3;',
-    rot:0, anims:[], textRole:'body',
-    textColorScheme: _kbScheme
-  };
-  slides[cur].els.push(d); mkEl(d);
-  const el = document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
-  if (el) pick(el);
-  save(); if(typeof drawThumbs==="function")drawThumbs(); if(typeof saveState==="function")saveState();
-  if(typeof toast==="function")toast((t('toastTextPasted')),'ok');
+  // 4. Internal element / slide clipboard
+  if (typeof _xclipHydrateAll === 'function') _xclipHydrateAll();
+  const hasInternal = (typeof clipboard !== 'undefined' && clipboard.length) || elClipboard;
+  if (hasInternal && (isSentinel || !hasRealExternalText || window._clipSource === 'elements')) {
+    e.preventDefault();
+    if (typeof pasteSelected === 'function') pasteSelected();
+    return;
+  }
+  if (typeof hasSlideClipboard === 'function' && hasSlideClipboard() && (isSentinel || !hasRealExternalText || window._clipSource === 'slides')) {
+    e.preventDefault();
+    const at = typeof slides !== 'undefined' ? slides.length : 0;
+    if (typeof pasteSlideAt === 'function') pasteSlideAt(at);
+    return;
+  }
 });
