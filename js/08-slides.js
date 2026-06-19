@@ -290,6 +290,7 @@ function delSlideAt(i){
 
 function pickSlide(i, keepMultiSel){
   if(typeof tblClearSel === 'function') tblClearSel();
+  if(typeof window.stopSlideAnimsOnCanvas === 'function') window.stopSlideAnimsOnCanvas();
   save();
   cur = i;
   slideSelAnchor = i;

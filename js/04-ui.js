@@ -35,7 +35,13 @@ function drawGrid(){
 function switchTab(name,btn){
   document.querySelectorAll('.rtab').forEach(t=>t.classList.remove('active'));btn.classList.add('active');
   document.querySelectorAll('[data-tab]').forEach(g=>g.style.display=g.dataset.tab===name?'flex':'none');
-  if(name==='anim'){openAnimPanel();}else{closeAnimPanel();}
+  if(name==='anim'){
+    openAnimPanel();
+    requestAnimationFrame(()=>{
+      if(typeof slides!=='undefined'&&typeof cur!=='undefined'&&typeof window.renderAnimTimelineBar==='function')
+        window.renderAnimTimelineBar(slides[cur]);
+    });
+  }else{closeAnimPanel();}
   try{localStorage.setItem('sf_active_tab',name);}catch(e){}
   // Show/hide objects panel in props
   const objSec=document.getElementById('objects-panel-section');

@@ -129,12 +129,34 @@
       <div class="rglbl"><span data-i18n="grpDesign">Дизайн</span></div>
     </div>
     <!-- ANIMATIONS -->
-    <div class="rg" data-tab="anim" style="display:none">
+    <div class="rg rg-anim-ribbon" data-tab="anim" style="display:none">
       <button class="rb" onclick="clearAllAnims()" title="Очистить анимации выбранного объекта">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         <span class="rbl" data-i18n="btnClearAnims">Очистить</span>
       </button>
-      <div class="rglbl"><span data-i18n="grpAnimations">Анимации</span></div>
+      <button class="rb" id="ribbon-anim-play-btn" type="button" onclick="toggleSlideAnimsPlayback(cur)" title="Проиграть анимации слайда">
+        <svg class="anim-play-icon" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        <svg class="anim-stop-icon" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+        <span class="rbl" id="ribbon-anim-play-lbl">Слайд</span>
+      </button>
+      <div class="anim-tl-slot" id="anim-tl-ribbon-slot">
+        <div class="anim-timeline-ribbon" id="anim-timeline-ribbon">
+          <div class="anim-tl-zoom">
+            <button type="button" class="anim-tl-zoom-btn" onclick="animTimelineZoom(-1)" title="Уменьшить шкалу">−</button>
+            <button type="button" class="anim-tl-zoom-btn" onclick="animTimelineZoom(1)" title="Увеличить шкалу">+</button>
+            <button type="button" class="anim-tl-zoom-btn anim-tl-expand-btn" id="anim-tl-expand-btn" onclick="toggleAnimTimelineDock()" title="Развернуть вниз">
+              <svg class="anim-tl-ico-down" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6l4 4 4-4"/></svg>
+              <svg class="anim-tl-ico-up" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 10l4-4 4 4"/></svg>
+            </button>
+          </div>
+          <div class="anim-tl-scroll" id="anim-tl-scroll">
+            <div class="anim-tl-inner" id="anim-tl-inner">
+              <div class="anim-tl-tracks" id="anim-timeline-tracks"></div>
+              <div class="anim-tl-ruler" id="anim-timeline-ruler"></div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
     <!-- TRANSITIONS -->
     <div class="rg rg-transitions" data-tab="transitions" style="display:none">
@@ -2058,6 +2080,11 @@
 <!-- RUBBER-BAND SELECTION -->
 <script src="libs/qrcode.min.js"></script>
 <script src="libs/jszip.min.js"></script>
+<div id="anim-tl-dock" class="anim-tl-dock" aria-hidden="true">
+  <div class="anim-tl-dock-resize" id="anim-tl-dock-resize" title="Потяните для изменения высоты"></div>
+  <div class="anim-tl-slot" id="anim-tl-dock-slot"></div>
+</div>
+
   <script src="js/00-file-protocol.js"></script>
   <script src="js/00-pwa.js"></script>
   <script src="js/00-i18n.js"></script>
@@ -2074,7 +2101,9 @@
   <script src="js/08-serialize.js"></script>
   <script src="js/08-slides.js"></script>
   <script src="js/09-shapes.js"></script>
+  <script src="config/animations.js"></script>
   <script src="js/10-animations.js"></script>
+  <script src="js/10c-anim-engine.js"></script>
   <script src="js/11-elements.js"></script>
   <script src="js/12-markdown.js"></script>
   <script src="js/13-images.js"></script>

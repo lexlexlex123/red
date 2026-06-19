@@ -1,7 +1,7 @@
 // ══════════════ IMAGE INDEX ══════════════
 // Сгенерировано автоматически: node images/build-index.js
 // НЕ РЕДАКТИРУЙТЕ ВРУЧНУЮ — изменения будут перезаписаны при следующем запуске
-// Дата: 15.06.2026, 19:05:46
+// Дата: 19.06.2026, 07:54:53
 
 const IMAGE_INDEX = [
   {id:"img1", cat:"nature", file:"flower1.png", name:"Flower1", path:"images/nature/flower1.png", isSvg:false},

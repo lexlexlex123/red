@@ -180,6 +180,12 @@ function onKey(e){
     }
   }
   if(editing||inInput)return;
+  const animTabActive=(()=>{const rg=document.querySelector('.rg[data-tab="anim"]');return rg&&getComputedStyle(rg).display!=='none';})();
+  if(e.key===' '&&!inPreview&&animTabActive&&typeof toggleSlideAnimsPlayback==='function'){
+    e.preventDefault();
+    toggleSlideAnimsPlayback(typeof cur!=='undefined'?cur:0);
+    return;
+  }
   if(sel||multiSel.size>0||(typeof window._getSelConnId==='function'&&window._getSelConnId())){
     const step=e.shiftKey?SNAP*5:SNAP;
     const allEls=multiSel.size>1?[...multiSel]:(sel?[sel]:[]);

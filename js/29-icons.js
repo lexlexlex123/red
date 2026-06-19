@@ -61,17 +61,36 @@ function buildIconGrid(catId){
   if(info)info.textContent=icons.length+' иконок';
 }
 
+function _buildOlympShapeEls(paths, color, sw) {
+  const limbSw = Math.max(+sw || 1.8, 2.4);
+  return paths.map(p => {
+    if (p.startsWith('h:') || p.startsWith('c:')) {
+      const [cx, cy, r] = p.slice(2).split(',').map(Number);
+      return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${color}" stroke="none"/>`;
+    }
+    if (p.startsWith('f:')) {
+      return `<path d="${p.slice(2)}" fill="${color}" stroke="none"/>`;
+    }
+    return `<path d="${p}" fill="none" stroke="${color}" stroke-width="${limbSw}" stroke-linecap="round" stroke-linejoin="round"/>`;
+  }).join('');
+}
+
 function _buildIconSVG(ic, color, sw, style, shadow, shadowBlur, shadowColor, shadowSize, filterUid){
   const paths=ic.p.split('||').map(p=>p.trim()).filter(Boolean);
-  const pathEls=paths.map(p=>`<path d="${p}"/>`).join('');
-  let attrs='';
-  if(style==='fill') attrs=`fill="${color}" stroke="none"`;
-  else if(style==='duotone') attrs=`fill="${color}" fill-opacity="0.18" stroke="${color}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"`;
-  else attrs=`fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"`;
   const vb=ic.vb||'0 0 24 24';
-  if(ic.vb && style==='fill') attrs=`fill="${color}" stroke="none"`;
-  else if(ic.vb && style==='duotone') attrs=`fill="${color}" fill-opacity="0.18" stroke="${color}" stroke-width="${sw}"`;
-  else if(ic.vb) attrs=`fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"`;
+  let pathEls, attrs;
+  if (ic.cat === 'olymp') {
+    pathEls = _buildOlympShapeEls(paths, color, sw);
+    attrs = 'fill="none"';
+  } else {
+    pathEls = paths.map(p => `<path d="${p}"/>`).join('');
+    if(style==='fill') attrs=`fill="${color}" stroke="none"`;
+    else if(style==='duotone') attrs=`fill="${color}" fill-opacity="0.18" stroke="${color}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"`;
+    else attrs=`fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"`;
+    if(ic.vb && style==='fill') attrs=`fill="${color}" stroke="none"`;
+    else if(ic.vb && style==='duotone') attrs=`fill="${color}" fill-opacity="0.18" stroke="${color}" stroke-width="${sw}"`;
+    else if(ic.vb) attrs=`fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"`;
+  }
   let filterDef='', filterAttr='';
   if(shadow){
     const sb=shadowBlur!=null?+shadowBlur:4;

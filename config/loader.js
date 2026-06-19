@@ -269,9 +269,19 @@
   });
 
   // ─────────────────────────────────────────────────────────────
+  // 10. АНИМАЦИИ (config/animations.js)
+  // ─────────────────────────────────────────────────────────────
+  apply('animations', function () {
+    const c = get('CFG_ANIMATIONS', null);
+    if (!c) return;
+    if (typeof window.applyAnimConfig === 'function') window.applyAnimConfig(c);
+  });
+
+  // ─────────────────────────────────────────────────────────────
   // Уведомляем что конфиги применены
   // ─────────────────────────────────────────────────────────────
   window._CFG_LOADED = true;
   console.log('[config/loader] ✓ Конфигурации применены');
+  if (typeof window.verifyAnimParity === 'function') window.verifyAnimParity();
 
 })();
