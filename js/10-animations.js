@@ -549,9 +549,15 @@ window._selectedAnimCat  = null;
     if (!s) return elId;
     const dd = s.els.find(e => e.id === elId);
     if (!dd) return elId;
-    const labels = { text:'Текст', image:'Изображение', shape:'Фигура', icon:'Значок', table:'Таблица', code:'Код', markdown:'Markdown', mediavideo:'Видео', mediaaudio:'Аудио' };
+    const labels = { text:'Текст', image:'Изображение', shape:'Фигура', icon:'Значок', table:'Таблица', code:'Код', markdown:'Markdown', mediavideo:'Видео', mediaaudio:'Аудио', applet:'Аплет' };
     const type = labels[dd.type] || dd.type;
     let name = '';
+    if (dd.type === 'applet') {
+      if (dd.appletId === 'counter') return '🔢 Счётчик';
+      if (dd.appletId === 'timer') return '⏱ Таймер';
+      if (dd.appletId === 'generator') return '🎲 Генератор';
+      return 'Аплет';
+    }
     if (dd.type === 'text') {
       const tmp = document.createElement('div');
       tmp.innerHTML = dd.html || '';
@@ -582,6 +588,7 @@ window._selectedAnimCat  = null;
     if (t === 'nav') return;
     anim.preNavTrigger = t;
     if (t === 'element' && anim.triggerElId) anim.preNavTriggerElId = anim.triggerElId;
+    else if ((t === 'counter' || t === 'timer') && anim.triggerElId) anim.preNavTriggerElId = anim.triggerElId;
     else delete anim.preNavTriggerElId;
   }
 
@@ -589,6 +596,7 @@ window._selectedAnimCat  = null;
     const t = anim.preNavTrigger || 'auto';
     const changes = { trigger: t, navTarget: undefined };
     if (t === 'element' && anim.preNavTriggerElId) changes.triggerElId = anim.preNavTriggerElId;
+    else if ((t === 'counter' || t === 'timer') && anim.preNavTriggerElId) changes.triggerElId = anim.preNavTriggerElId;
     return changes;
   }
 
@@ -620,8 +628,16 @@ window._selectedAnimCat  = null;
         const s = _slides()[_cur()];
         const dd = s && s.els.find(x => x.id === ownerElId);
         const anim = dd && dd.anims && dd.anims[animIdx];
+        const needApplet = anim && (anim.trigger === 'counter' ? 'counter' : anim.trigger === 'timer' ? 'timer' : null);
+        if (needApplet) {
+          const td = s.els.find(x => x.id === target.dataset.id);
+          if (!td || td.type !== 'applet' || td.appletId !== needApplet) {
+            window._animTriggerPickCancel();
+            return;
+          }
+        }
         if (anim) {
-          anim.preNavTrigger = 'element';
+          anim.preNavTrigger = anim.trigger || 'element';
           anim.preNavTriggerElId = target.dataset.id;
         }
         updateAnimProp(ownerElId, animIdx, 'triggerElId', target.dataset.id);
@@ -668,7 +684,7 @@ window._selectedAnimCat  = null;
       });
       if (changes.trigger && changes.trigger !== 'nav') {
         anim.preNavTrigger = changes.trigger;
-        if (changes.trigger === 'element') {
+        if (changes.trigger === 'element' || changes.trigger === 'counter' || changes.trigger === 'timer') {
           if (changes.triggerElId) anim.preNavTriggerElId = changes.triggerElId;
           else if (anim.triggerElId) anim.preNavTriggerElId = anim.triggerElId;
         } else delete anim.preNavTriggerElId;
@@ -683,6 +699,7 @@ window._selectedAnimCat  = null;
       window._alignAnimWithPrev(slide, elId, animIdx);
     }
     if (typeof window._refreshAnimTimeline === 'function') window._refreshAnimTimeline();
+    if (typeof _syncAppletPropsPanel === 'function') _syncAppletPropsPanel();
   }
 
   window._setAnimTriggerBatch = _setAnimTriggerBatch;
@@ -730,7 +747,8 @@ window._selectedAnimCat  = null;
     pickBtn.type = 'button';
     pickBtn.className = 'anim-trig-pick-btn';
     pickBtn.style.cssText = 'width:100%;padding:4px 8px;font-size:9px;font-family:inherit;border-radius:4px;cursor:pointer;border:1px solid var(--border2);background:var(--surface3);color:var(--text2);';
-    pickBtn.textContent = '🎯 Выбрать объект';
+    pickBtn.textContent = a.trigger === 'counter' ? '🔢 Выбрать счётчик'
+      : a.trigger === 'timer' ? '⏱ Выбрать таймер' : '🎯 Выбрать объект';
     pickBtn.addEventListener('mousedown', e => e.stopPropagation());
     pickBtn.addEventListener('click', e => {
       e.stopPropagation();
@@ -741,7 +759,8 @@ window._selectedAnimCat  = null;
     const hint = document.createElement('div');
     hint.className = 'anim-trig-pick-hint';
     hint.style.cssText = 'display:none;font-size:8px;color:var(--accent);line-height:1.3;';
-    hint.textContent = 'Кликните по объекту на слайде';
+    hint.textContent = a.trigger === 'counter' ? 'Кликните по счётчику на слайде'
+      : a.trigger === 'timer' ? 'Кликните по таймеру на слайде' : 'Кликните по объекту на слайде';
     trigPickWrap.appendChild(hint);
 
     if (a.triggerElId) {
@@ -807,6 +826,8 @@ window._selectedAnimCat  = null;
       click: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" width="10" height="10" style="vertical-align:middle"><path d="M5 1v7l2-1.5 1.5 3 1-.5-1.5-3 2.5-.5z"/></svg>',
       withPrev: '⟳',
       element: '👆',
+      counter: '🔢',
+      timer: '⏱',
       nav: '→'
     };
     if (trigSel) {
@@ -817,7 +838,7 @@ window._selectedAnimCat  = null;
     if (iconSpan) iconSpan.innerHTML = TRIGGER_ICONS[trigger] || TRIGGER_ICONS[effTrig] || '▶';
     const props = row.querySelector('.anim-row-props-wrap');
     let pickWrap = row.querySelector('.anim-trig-pick-wrap');
-    if (trigger === 'element') {
+    if (trigger === 'element' || trigger === 'counter' || trigger === 'timer') {
       if (!pickWrap && props && trigSel) {
         pickWrap = _buildAnimTrigPickWrap(dd, animIdx, anim);
         const navRow = row.querySelector('.anim-nav-row');
@@ -933,7 +954,56 @@ window._selectedAnimCat  = null;
       _syncDomAnims(targets);
       _save(); renderAnimPanel(); _saveState();
       if(typeof renderMotionOverlay==='function') renderMotionOverlay();
+      if (typeof window._refreshAnimTimeline === 'function') window._refreshAnimTimeline();
     }catch(e){}
+  };
+
+  window.removeAnimTlSelection = function(){
+    if (!window._animTlSel || !window._animTlSel.size) return false;
+    try {
+      _pushUndo();
+      const slide = _slides()[_cur()];
+      const byEl = new Map();
+      window._animTlSel.forEach(k => {
+        const ci = k.indexOf(':');
+        const elId = k.slice(0, ci);
+        const ai = parseInt(k.slice(ci + 1), 10);
+        if (!byEl.has(elId)) byEl.set(elId, []);
+        byEl.get(elId).push(ai);
+      });
+      const allTargets = [];
+      byEl.forEach((ais, elId) => {
+        ais.sort((a, b) => b - a);
+        const targets = _animGroupDataById(elId);
+        allTargets.push(...targets);
+        ais.forEach(ai => {
+          targets.forEach(({ d }) => {
+            if (!d.anims) return;
+            d.anims.splice(ai, 1);
+          });
+        });
+        if (slide && slide.animOrder) {
+          const leader = _slideAnimLeader(targets[0] && targets[0].d, slide) || { id: elId };
+          const removed = new Set(ais);
+          slide.animOrder = slide.animOrder
+            .filter(x => !(x.elId === leader.id && removed.has(x.ai)))
+            .map(x => {
+              if (x.elId !== leader.id) return x;
+              const dec = ais.filter(r => r < x.ai).length;
+              return dec ? { elId: x.elId, ai: x.ai - dec } : x;
+            });
+        }
+      });
+      window._animTlClearSel();
+      _syncDomAnims(allTargets);
+      _save(); renderAnimPanel(); _saveState();
+      if (typeof renderMotionOverlay === 'function') renderMotionOverlay();
+      if (typeof window._refreshAnimTimeline === 'function') window._refreshAnimTimeline();
+      return true;
+    } catch (e) {
+      console.error('removeAnimTlSelection:', e);
+      return false;
+    }
   };
 
   window.updateAnimProp = function(elId, animIdx, prop, val){
@@ -961,20 +1031,36 @@ window._selectedAnimCat  = null;
 
   window.clearAllAnims = function(){
     try{
-      if(!sel) return;
-      pushUndo();
-      const targets = _animGroupData(sel);
-      if (!targets.length) return;
-      targets.forEach(({ dom, d }) => {
-        d.anims = [];
-        dom.dataset.anims = '[]';
+      if (typeof slides === 'undefined' || typeof cur === 'undefined') return;
+      const slide = slides[cur];
+      if (!slide || !slide.els) return;
+      let had = false;
+      slide.els.forEach(d => {
+        if (d.anims && d.anims.length) had = true;
       });
-      if(typeof renderMotionOverlay==='function') renderMotionOverlay();
+      if (!had && (!slide.animOrder || !slide.animOrder.length)) return;
+      pushUndo();
+      const cv = document.getElementById('canvas');
+      slide.els.forEach(d => {
+        d.anims = [];
+        if (cv) {
+          const dom = cv.querySelector('.el[data-id="' + d.id + '"]');
+          if (dom) dom.dataset.anims = '[]';
+        }
+      });
+      slide.animOrder = [];
+      if (window._animTlClearSel) window._animTlClearSel();
+      if (window._slideAnimPlaying && typeof window.stopSlideAnimsOnCanvas === 'function') {
+        window.stopSlideAnimsOnCanvas();
+      }
+      if (typeof renderMotionOverlay === 'function') renderMotionOverlay();
       save(); saveState(); drawThumbs();
       renderAnimPanel();
-      if(typeof syncProps==='function') syncProps();
+      if (typeof syncProps === 'function') syncProps();
+      if (typeof window._refreshAnimTimeline === 'function') window._refreshAnimTimeline();
     }catch(e){ console.error('clearAllAnims:',e); }
   };
+  window.removeAllAnims = window.clearAllAnims;
 
   // Play single animation on element(s) without accumulated delay
   function playAnimOnEl(animName, animData){
@@ -1325,6 +1411,8 @@ window._selectedAnimCat  = null;
         click: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" width="10" height="10" style="vertical-align:middle"><path d="M5 1v7l2-1.5 1.5 3 1-.5-1.5-3 2.5-.5z"/></svg>',
         withPrev: '⟳',
         element: '👆',
+        counter: '🔢',
+        timer: '⏱',
         nav: '→'
       };
       const trigIcon = TRIGGER_ICONS[trigger] || '▶';
@@ -1707,7 +1795,7 @@ window._selectedAnimCat  = null;
         const trigSel = document.createElement('select');
         trigSel.className = 'anim-trig-sel';
         trigSel.style.cssText = 'width:100%;background:var(--surface3);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:2px 5px;font-size:9px;font-family:inherit;margin-top:4px;';
-        [{v:'auto',l:'▶ Авто'},{v:'click',l:'После клика'},{v:'withPrev',l:'⟳ Вместе с предыдущей'},{v:'element',l:'👆 Триггер (клик по объекту)'}].forEach(opt=>{
+        [{v:'auto',l:'▶ Авто'},{v:'click',l:'После клика'},{v:'withPrev',l:'⟳ Вместе с предыдущей'},{v:'element',l:'👆 Триггер (клик по объекту)'},{v:'counter',l:'🔢 Счётчик'},{v:'timer',l:'⏱ Таймер'}].forEach(opt=>{
           const o=document.createElement('option'); o.value=opt.v; o.textContent=opt.l;
           trigSel.appendChild(o);
         });
@@ -1718,7 +1806,7 @@ window._selectedAnimCat  = null;
         trigSel.addEventListener('change', ()=>{
           const newTrig = trigSel.value;
           const changes = { trigger: newTrig };
-          if (newTrig !== 'element') changes.triggerElId = undefined;
+          if (newTrig !== 'element' && newTrig !== 'counter' && newTrig !== 'timer') changes.triggerElId = undefined;
           if (newTrig !== 'nav') changes.navTarget = undefined;
           _setAnimTriggerBatch(d.id, ai, changes);
           const iconSpan = head.querySelector('.anim-trig-icon');
@@ -1726,11 +1814,11 @@ window._selectedAnimCat  = null;
           row.dataset.animJson = JSON.stringify(_readAnimLive(d.id, ai, aLive));
           _updateAnimRowTriggerUI(row, d.id, ai, head, trigSel);
           const navCheck = row.querySelector('.anim-nav-check');
-          if (navCheck && newTrig === 'element') navCheck.checked = false;
+          if (navCheck && (newTrig === 'element' || newTrig === 'counter' || newTrig === 'timer')) navCheck.checked = false;
         });
         props.appendChild(trigSel);
 
-        if (trigger === 'element') {
+        if (trigger === 'element' || trigger === 'counter' || trigger === 'timer') {
           props.appendChild(_buildAnimTrigPickWrap(d, ai, aLive));
         }
       }

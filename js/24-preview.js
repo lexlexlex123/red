@@ -52,6 +52,7 @@ function startPreview(startIdx){
   if(editingCell){ editingCell.contentEditable='false'; }
   if(typeof window._flushAnimPanelToDom==='function') window._flushAnimPanelToDom();
   if(typeof _syncSlideAnimsFromDom==='function') _syncSlideAnimsFromDom(cur);
+  if(typeof syncAllAppletHtmlFromData==='function') syncAllAppletHtmlFromData();
   save();pidx=startIdx||0;pTransiting=false;pTransitionTo=null;_clearPreviewTransTimers();
   pBlackScreen=false;_pJumpBuf='';clearTimeout(_pJumpTimer);
   const _pBlack=document.getElementById('p-black');if(_pBlack) _pBlack.classList.remove('on');
@@ -93,16 +94,19 @@ function startPreview(startIdx){
   po2.addEventListener('touchstart',po2._touchStart,{passive:true});
   po2.addEventListener('touchend',po2._touchEnd,{passive:true});
   // Listen for timer navigation messages from applet iframes
-  window._timerNavHandler = function(e){
-    if(!e.data || e.data.type!=='timerNav') return;
-    if(e.data.mode==='next'){
-      nextPreview();
-    } else if(e.data.mode==='slide'){
-      const to=e.data.slide;
-      if(typeof to==='number' && to>=0 && to<slides.length) gotoPreview(to,'next');
+  window._appletMessageHandler = function(e){
+    if(!e.data) return;
+    if(e.data.type==='timerNav'){
+      if(e.data.mode==='next'){
+        nextPreview();
+      } else if(e.data.mode==='slide'){
+        const to=e.data.slide;
+        if(typeof to==='number' && to>=0 && to<slides.length) gotoPreview(to,'next');
+      }
+      return;
     }
   };
-  window.addEventListener('message', window._timerNavHandler);
+  window.addEventListener('message', window._appletMessageHandler);
   const sc=pScale();
   buildPSlide(document.getElementById('psa'),pidx);
   document.getElementById('psb').innerHTML='';
@@ -154,7 +158,7 @@ function stopPreview(){
   const po=document.getElementById('preview-ov');
   if(po._stageClick){po.removeEventListener('click',po._stageClick);delete po._stageClick;}
   if(po._touchStart){po.removeEventListener('touchstart',po._touchStart);po.removeEventListener('touchend',po._touchEnd);delete po._touchStart;delete po._touchEnd;}
-  if(window._timerNavHandler){window.removeEventListener('message',window._timerNavHandler);delete window._timerNavHandler;}
+  if(window._appletMessageHandler){window.removeEventListener('message',window._appletMessageHandler);delete window._appletMessageHandler;}
   po.classList.remove('active');
   document.fullscreenElement&&document.exitFullscreen&&document.exitFullscreen();
   window.removeEventListener('resize',resizePStage);
@@ -647,6 +651,58 @@ function _pvFlushCaptionAnims(container, s, transOffset) {
     }
   });
 }
+function _pvBuildStepFromAnimIndex(anims, startAi){
+  const a = anims[startAi];
+  const step = { anims: [a], willHide: a.cat === 'exit', navTarget: null, triggerElId: a.triggerElId || '' };
+  let j = startAi + 1;
+  while(j < anims.length && anims[j].trigger === 'withPrev'){
+    const b = anims[j];
+    step.anims.push(b);
+    if(b.cat === 'exit') step.willHide = true;
+    if(typeof b.navTarget === 'number') step.navTarget = b.navTarget;
+    j++;
+  }
+  return step;
+}
+
+function _pvFireAppletAnim(ref, container, slideIdx){
+  if(!ref || !container) return;
+  const parts = String(ref).split(':');
+  if(parts.length < 2) return;
+  const elId = parts[0], ai = +parts[1];
+  const s = slides[slideIdx];
+  if(!s) return;
+  const d = s.els.find(x => x.id === elId);
+  if(!d || !d.anims || !d.anims[ai]) return;
+  const isCanvas = container.id === 'canvas';
+  const targetEl = container.querySelector((isCanvas ? '.el' : '.psel') + '[data-id="' + elId + '"]');
+  if(!targetEl) return;
+  const step = _pvBuildStepFromAnimIndex(d.anims, ai);
+  const totalDur = _pvFireElemTrigStep(targetEl, d, step, slideIdx);
+  if(!isCanvas && step.navTarget !== null){
+    setTimeout(() => {
+      clearAutoTimer();
+      gotoPreview(step.navTarget, step.navTarget > slideIdx ? 'next' : 'prev');
+    }, totalDur);
+  }
+}
+
+window.fireAppletAnimRef = function(ref, slideIdx, appletVal){
+  if(!ref) return;
+  const inPreview = document.getElementById('preview-ov')?.classList.contains('active');
+  const idx = slideIdx != null ? slideIdx : (inPreview ? pidx : cur);
+  const container = inPreview ? document.getElementById('psa') : document.getElementById('canvas');
+  if(!container || typeof fireAnim !== 'function') return;
+  if(appletVal != null){
+    const parts = String(ref).split(':');
+    if(parts.length >= 2){
+      const targetEl = container.querySelector((container.id === 'canvas' ? '.el' : '.psel') + '[data-id="' + parts[0] + '"]');
+      if(targetEl) targetEl._splitAppletLiveVal = appletVal;
+    }
+  }
+  _pvFireAppletAnim(ref, container, idx);
+};
+
 function _pvBuildElemClickSteps(anims) {
   const steps = [];
   let i2 = 0;
@@ -677,7 +733,13 @@ function _pvFireElemTrigStep(targetPsel, targetD, step, slideIdx) {
   let delay = 0;
   step.anims.forEach(a => {
     const d2 = a.delay || 0;
-    setTimeout(() => fireAnim(targetPsel, targetD, a, slideIdx), delay + d2);
+    setTimeout(() => {
+      if(a.cat === 'entrance'){
+        targetPsel.style.visibility = 'visible';
+        targetPsel.style.pointerEvents = '';
+      }
+      fireAnim(targetPsel, targetD, a, slideIdx, 0);
+    }, delay + d2);
     delay += d2 + (a.duration || 600);
   });
   return delay;
@@ -880,8 +942,8 @@ function buildPSlide(container,idx,transOffset,noScale){
       const eff = globalEffTrig[gi];
       const trig = a.trigger || 'auto';
       // element/nav/click — не в авто-карту; element/nav также вне сценария (withPrev-цепочки)
-      if(trig === 'element' || trig === 'click' || trig === 'nav') return;
-      if(eff === 'element' || eff === 'nav') return;
+      if(trig === 'element' || trig === 'click' || trig === 'nav' || trig === 'counter' || trig === 'timer') return;
+      if(eff === 'element' || eff === 'nav' || eff === 'counter' || eff === 'timer') return;
       if(eff === 'auto' || eff === 'withPrev') {
         const relDelay = a.delay||0;
         let absDelay;
@@ -993,10 +1055,14 @@ function buildPSlide(container,idx,transOffset,noScale){
       const cL=d.imgCropL||0,cT=d.imgCropT||0,cR=d.imgCropR||0,cB=d.imgCropB||0;
       const hasCrop=cL||cT||cR||cB;
       if(hasCrop){
-        const wPct=((d.w+cL+cR)/d.w*100).toFixed(4)+'%';
-        const hPct=((d.h+cT+cB)/d.h*100).toFixed(4)+'%';
-        const lPct=(-cL/d.w*100).toFixed(4)+'%';
-        const tPct=(-cT/d.h*100).toFixed(4)+'%';
+        const fW=(d._cropFullW>0)?d._cropFullW:(d.w+cL+cR);
+        const fH=(d._cropFullH>0)?d._cropFullH:(d.h+cT+cB);
+        const logVisW=Math.max(1,fW-cL-cR);
+        const logVisH=Math.max(1,fH-cT-cB);
+        const wPct=(fW/logVisW*100).toFixed(4)+'%';
+        const hPct=(fH/logVisH*100).toFixed(4)+'%';
+        const lPct=(-cL/logVisW*100).toFixed(4)+'%';
+        const tPct=(-cT/logVisH*100).toFixed(4)+'%';
         const _fxp=d.imgFlipH?-1:1,_fyp=d.imgFlipV?-1:1;
         const _trp=(_fxp===-1||_fyp===-1)?`scale(${_fxp},${_fyp})`:'';
         img.style.cssText=`position:absolute;left:${lPct};top:${tPct};width:${wPct};height:${hPct};object-fit:fill;display:block;opacity:${d.imgOpacity!=null?d.imgOpacity:1};transform:${_trp};transform-origin:center;`;
@@ -1103,9 +1169,9 @@ function buildPSlide(container,idx,transOffset,noScale){
       // Layer 1: clip div — clips iframe to border-radius
       var _aClip=document.createElement('div');
       _aClip.style.cssText='position:absolute;inset:0;overflow:hidden;border-radius:'+_aRx+';';
-      if(d.appletId==='timer'&&typeof ensureAppletHtmlFromData==='function') ensureAppletHtmlFromData(d);
+      if(typeof ensureAppletHtmlFromData==='function') ensureAppletHtmlFromData(d);
       var iframe=document.createElement('iframe');iframe.srcdoc=d.appletHtml||'';
-      var _pvPE = (d.appletId==='generator'||d.appletId==='timer') ? 'none' : 'auto';
+      var _pvPE = (d.appletId==='timer') ? 'none' : 'auto';
       iframe.style.cssText='width:100%;height:100%;border:none;background:transparent;pointer-events:'+_pvPE+';user-select:none;';
       iframe.setAttribute('allowtransparency','true');
       iframe.sandbox = 'allow-scripts';
@@ -1116,8 +1182,9 @@ function buildPSlide(container,idx,transOffset,noScale){
       }
       _aClip.appendChild(iframe);
       el.appendChild(_aClip);
+      if(d.appletId==='counter'||d.appletId==='generator') el.style.cursor = 'pointer';
       // Layer 2: border overlay — after clip in DOM, not clipped by anything
-      if(d.appletId==='generator'||d.appletId==='timer'){
+      if(d.appletId==='generator'||d.appletId==='timer'||d.appletId==='counter'){
         var _bw=d.genBorderWidth!==undefined?+d.genBorderWidth:0;
         var _bordDiv=document.createElement('div');
         _bordDiv.className='applet-border-overlay';
@@ -1241,7 +1308,7 @@ function buildPSlide(container,idx,transOffset,noScale){
     // Auto anims — from global map (already classified)
     const autoTimed = (globalAutoMap.get(d.id) || []).filter(({ anim: a }) => {
       const trig = a.trigger || 'auto';
-      return trig !== 'click' && trig !== 'element' && trig !== 'nav';
+      return trig !== 'click' && trig !== 'element' && trig !== 'nav' && trig !== 'counter' && trig !== 'timer';
     });
     if(autoTimed.length>0){
       const cssAnims    = autoTimed.filter(({anim:a})=>a.name!=='moveTo'&&a.name!=='orbitTo'&&a.name!=='rotate'&&a.name!=='captionSlide'&&a.name!=='splitHalf'&&a.name!=='typewriter'&&(typeof ANIM_INFO==='undefined'||!ANIM_INFO[a.name]||ANIM_INFO[a.name].cat!=='live'));

@@ -303,7 +303,7 @@ function applyTheme(){
           }
         }
       }
-      if(el.type==='applet' && (el.appletId==='generator'||el.appletId==='timer'||el.appletId==='clock')){
+      if(el.type==='applet' && (el.appletId==='generator'||el.appletId==='counter'||el.appletId==='timer'||el.appletId==='clock')){
         // Remap scheme-pinned colors; leave custom (null) unchanged
         if(el.genColorScheme){
           const r=_resolveSchemeColor(el.genColorScheme,theme);

@@ -45,6 +45,7 @@ function syncProps(){
   const t=sel.dataset.type;
   // Определяем специальные типы ДО показа панелей
   const isGen   = t==='applet' && sel.dataset.appletId==='generator';
+  const isCounter = t==='applet' && sel.dataset.appletId==='counter';
   const isTimer = t==='applet' && (sel.dataset.appletId==='timer'||sel.dataset.appletId==='clock');
   // Проверяем isQR через dataset И через данные slides (на случай если dataset не обновился)
   const _qrD = (t==='image') ? (slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id)) : null;
@@ -67,7 +68,7 @@ function syncProps(){
   const gmp=document.getElementById('graphprops');
   if(gmp){gmp.style.display=t==='graph'?'block':'none';if(t==='graph'&&typeof syncGraphProps==='function')syncGraphProps();}
   if(tblp){tblp.style.display=t==='table'?'flex':'none';tblp.style.flexDirection='column';if(t==='table')syncTableProps();}
-  if(genp){genp.style.display=(isGen||isTimer)?'flex':'none';genp.style.flexDirection='column';if(isGen)syncGenProps();if(isTimer&&sel.dataset.appletId==='clock'&&typeof syncClockProps==='function')syncClockProps();else if(isTimer&&typeof syncTimerProps==='function')syncTimerProps();}
+  if(genp){genp.style.display=(isGen||isCounter||isTimer)?'flex':'none';genp.style.flexDirection='column';if(isGen)syncGenProps();if(isCounter&&typeof syncCounterProps==='function')syncCounterProps();if(isTimer&&sel.dataset.appletId==='clock'&&typeof syncClockProps==='function')syncClockProps();else if(isTimer&&typeof syncTimerProps==='function')syncTimerProps();}
   if(qrp){qrp.style.display=isQR?'flex':'none';qrp.style.flexDirection='column';if(isQR)syncQRProps();}
   if(icp){
     icp.style.display=t==='icon'?'flex':'none';icp.style.flexDirection='column';
@@ -713,6 +714,22 @@ function resetTextFormatting() {
 }
 
 // ══════════════ GENERATOR PROPS ══════════════
+const _genSchemeKeys = {genColor:'genColorScheme', genBg:'genBgScheme', genBorderColor:'genBorderScheme'};
+
+function _appletColorVal(d, colorKey, schemeKey, fallback){
+  let c = d[colorKey];
+  if(c === undefined || c === null || c === ''){
+    if(d[schemeKey] && typeof _resolveSchemeColor === 'function'){
+      const ti = typeof appliedThemeIdx !== 'undefined' && appliedThemeIdx >= 0 ? appliedThemeIdx
+        : (typeof selTheme !== 'undefined' && selTheme >= 0 ? selTheme : -1);
+      const th = ti >= 0 && typeof THEMES !== 'undefined' ? THEMES[ti] : null;
+      if(th){ const r = _resolveSchemeColor(d[schemeKey], th); if(r) c = r; }
+    }
+  }
+  if(!c) c = fallback || '';
+  return c;
+}
+
 function syncGenProps(){
   // gen* props are shared visual fields for generator, timer and clock applets
   const s=slides[cur]||null;
@@ -724,6 +741,11 @@ function syncGenProps(){
   const mr=document.getElementById('gen-mode-row'); if(mr) mr.style.display='';
   const tr=document.getElementById('tm-row'); if(tr) tr.style.display='none';
   const oer2=document.getElementById('tm-onend-row'); if(oer2) oer2.style.display='none';
+  const cgr=document.getElementById('cnt-goal-row'); if(cgr) cgr.style.display='none';
+  try{
+    const animRow=document.getElementById('tm-onend-anim-row');
+    if(animRow) animRow.style.display='none';
+  }catch(e){}
   try{document.getElementById('gen-min').value  = d.genMin  !== undefined ? d.genMin  : 1;}catch(e){}
   try{document.getElementById('gen-max').value  = d.genMax  !== undefined ? d.genMax  : 100;}catch(e){}
   try{document.getElementById('gen-step').value = d.genStep !== undefined ? d.genStep : 1;}catch(e){}
@@ -747,31 +769,123 @@ function syncGenProps(){
     try{document.getElementById('gen-v'+k).classList.toggle('active', va==={t:'top',m:'middle',b:'bottom'}[k]);}catch(e){}
   });
   const _pc=typeof _appletTheme==='function'?_appletTheme():{ac1:'#6366f1',head:'#a5b4fc'};
-  const col = d.genColor || '';
-  const _colDisp = col || _pc.head || _pc.ac1;
-  try{document.getElementById('gen-color-hex').value=col; document.getElementById('gen-color-preview').style.background=_colDisp;}catch(e){}
+  const _colDisp = _appletColorVal(d, 'genColor', 'genColorScheme', _pc.head || _pc.ac1);
+  try{document.getElementById('gen-color-preview').style.background=_colDisp;}catch(e){}
   const _p2=typeof _appletTheme==='function'?_appletTheme():{ac1:'#6366f1'};
   const bg = d.genBg || '';
-  const _bgHex = bg || (_p2.ac1||'#6366f1');
+  const _bgHex = bg || _appletColorVal(d, 'genBg', 'genBgScheme', _p2.ac1||'#6366f1');
   const _bgOp = d.genBgOp !== undefined ? d.genBgOp : (bg ? 1 : 0.2);
-  try{document.getElementById('gen-bg-hex').value=bg; document.getElementById('gen-bg-swatch').style.background=_bgHex;}catch(e){}
+  try{document.getElementById('gen-bg-swatch').style.background=bg ? _bgHex : '';}catch(e){}
   try{document.getElementById('gen-bg-blur').value = d.genBgBlur !== undefined ? d.genBgBlur : 0;}catch(e){}
   try{document.getElementById('gen-bg-op').value = _bgOp;}catch(e){}
   try{document.getElementById('gen-sh-enable').checked = d.genShadowOn !== undefined ? !!d.genShadowOn : true;}catch(e){}
   try{document.getElementById('gen-sh-blur').value = d.genShadowBlur !== undefined ? d.genShadowBlur : 8;}catch(e){}
   try{const sc=d.genShadowColor||'#000000';document.getElementById('gen-sh-preview').style.background=sc;}catch(e){}
   try{
-    const bc = d.genBorderColor || '#ffffff';
+    const bc = _appletColorVal(d, 'genBorderColor', 'genBorderScheme', '#ffffff');
     const bw = d.genBorderWidth !== undefined ? d.genBorderWidth : 0;
     document.getElementById('gen-border-preview').style.background = bc || '';
     document.getElementById('gen-border-w').value = bw;
   }catch(e){}
   try{document.getElementById('gen-op').value = sel.style.opacity||1;}catch(e){}
   try{document.getElementById('gen-rx').value = parseInt(sel.style.borderRadius)||0;}catch(e){}
+  try{
+    const minInput = document.getElementById('gen-min');
+    if(minInput) minInput.oninput = () => setGenProp('genMin', +minInput.value);
+    const maxCol = document.getElementById('gen-max')?.closest('.pr');
+    if(maxCol) maxCol.style.display = '';
+    const minLbl = minInput?.closest('.pr')?.querySelector('label');
+    if(minLbl) minLbl.textContent = 'От';
+  }catch(e){}
 }
 
-// Map from gen color prop → its scheme key
-const _genSchemeKeys = {genColor:'genColorScheme', genBg:'genBgScheme', genBorderColor:'genBorderScheme'};
+function syncCounterProps(){
+  const s = slides[cur] || null;
+  if(!sel || !s) return;
+  const d = s.els.find(x => x.id === sel.dataset.id);
+  if(!d) return;
+  const ph2 = document.querySelector('#genprops .ph');
+  if(ph2) ph2.textContent = '🔢 Счётчик';
+  const mr = document.getElementById('gen-mode-row'); if(mr) mr.style.display = 'none';
+  const lr = document.getElementById('gen-lines-row'); if(lr) lr.style.display = 'none';
+  const tr = document.getElementById('tm-row'); if(tr) tr.style.display = 'none';
+  const oer2 = document.getElementById('tm-onend-row'); if(oer2) oer2.style.display = 'none';
+  try{ document.getElementById('gen-range-row').style.display = 'flex'; }catch(e){}
+  try{
+    const cgr = document.getElementById('cnt-goal-row');
+    if(cgr) cgr.style.display = 'flex';
+    const goalInput = document.getElementById('cnt-goal');
+    if(goalInput) goalInput.value = d.cntGoal !== undefined && d.cntGoal !== null && d.cntGoal !== '' ? d.cntGoal : '';
+  }catch(e){}
+  try{
+    const oer = document.getElementById('tm-onend-row');
+    if(oer){
+      oer.style.display = 'flex';
+      const onEndLbl = oer.querySelector('label');
+      if(onEndLbl) onEndLbl.textContent = 'При достижении цели';
+      const oe = d.cntOnEnd || 'none';
+      const onEndSel = document.getElementById('tm-onend');
+      if(onEndSel) onEndSel.value = oe;
+      const slideSel = document.getElementById('tm-onend-slide');
+      if(slideSel){
+        const curVal = d.cntOnEndSlide !== undefined ? +d.cntOnEndSlide : 0;
+        slideSel.innerHTML = slides.map((s, i) => {
+          const label = s.title && s.title.trim() ? s.title.trim() : ('Слайд ' + (i + 1));
+          return `<option value="${i}"${i === curVal ? ' selected' : ''}>${i + 1}. ${label}</option>`;
+        }).join('');
+      }
+      _updateAppletOnEndUI(d, 'counter');
+      if(_ensureAppletOnEndAnim(d, 'counter')){
+        if(typeof refreshCounterEl === 'function') refreshCounterEl(d.id);
+        _updateAppletOnEndUI(d, 'counter');
+      }
+    }
+  }catch(e){}
+  try{
+    const minInput = document.getElementById('gen-min');
+    if(minInput){
+      minInput.value = d.cntStart !== undefined ? d.cntStart : 0;
+      minInput.oninput = () => setGenProp('cntStart', +minInput.value);
+      const minLbl = minInput.closest('.pr')?.querySelector('label');
+      if(minLbl) minLbl.textContent = 'Начало';
+    }
+    const maxCol = document.getElementById('gen-max')?.closest('.pr');
+    if(maxCol) maxCol.style.display = 'none';
+    document.getElementById('gen-step').value = d.genStep !== undefined ? d.genStep : 1;
+  }catch(e){}
+  try{document.getElementById('gen-fs').value = d.genFontSize || 64;}catch(e){}
+  const bold = d.genBold || false;
+  try{document.getElementById('gen-bold').classList.toggle('active', bold);}catch(e){}
+  const al = d.genAlign || 'center';
+  ['l','c','r'].forEach(k=>{
+    try{document.getElementById('gen-a'+k).classList.toggle('active', al==={l:'left',c:'center',r:'right'}[k]);}catch(e){}
+  });
+  const va = d.genVAlign || 'middle';
+  ['t','m','b'].forEach(k=>{
+    try{document.getElementById('gen-v'+k).classList.toggle('active', va==={t:'top',m:'middle',b:'bottom'}[k]);}catch(e){}
+  });
+  const _pc = typeof _appletTheme === 'function' ? _appletTheme() : {ac1:'#6366f1',head:'#a5b4fc'};
+  const _colDisp = _appletColorVal(d, 'genColor', 'genColorScheme', _pc.head || _pc.ac1);
+  try{document.getElementById('gen-color-preview').style.background = _colDisp;}catch(e){}
+  const _p2 = typeof _appletTheme === 'function' ? _appletTheme() : {ac1:'#6366f1'};
+  const bg = d.genBg || '';
+  const _bgHex = bg || _appletColorVal(d, 'genBg', 'genBgScheme', _p2.ac1 || '#6366f1');
+  const _bgOp = d.genBgOp !== undefined ? d.genBgOp : (bg ? 1 : 0.2);
+  try{document.getElementById('gen-bg-swatch').style.background = bg ? _bgHex : '';}catch(e){}
+  try{document.getElementById('gen-bg-blur').value = d.genBgBlur !== undefined ? d.genBgBlur : 0;}catch(e){}
+  try{document.getElementById('gen-bg-op').value = _bgOp;}catch(e){}
+  try{document.getElementById('gen-sh-enable').checked = d.genShadowOn !== undefined ? !!d.genShadowOn : true;}catch(e){}
+  try{document.getElementById('gen-sh-blur').value = d.genShadowBlur !== undefined ? d.genShadowBlur : 8;}catch(e){}
+  try{const sc = d.genShadowColor || '#000000'; document.getElementById('gen-sh-preview').style.background = sc;}catch(e){}
+  try{
+    const bc = _appletColorVal(d, 'genBorderColor', 'genBorderScheme', '#ffffff');
+    const bw = d.genBorderWidth !== undefined ? d.genBorderWidth : 0;
+    document.getElementById('gen-border-preview').style.background = bc || '';
+    document.getElementById('gen-border-w').value = bw;
+  }catch(e){}
+  try{document.getElementById('gen-op').value = sel.style.opacity || 1;}catch(e){}
+  try{document.getElementById('gen-rx').value = parseInt(sel.style.borderRadius) || 0;}catch(e){}
+}
 
 function syncClockProps(){
   if(!sel) return;
@@ -789,6 +903,10 @@ function syncClockProps(){
   if(linesRow) linesRow.style.display = 'none';
   if(timerRow) timerRow.style.display = 'none';
   if(oer) oer.style.display = 'none';
+  try{
+    const cgr = document.getElementById('cnt-goal-row');
+    if(cgr) cgr.style.display = 'none';
+  }catch(e){}
   // Sync shared visual props (same as timer)
   try{document.getElementById('gen-fs').value = d_.genFontSize !== undefined ? d_.genFontSize : 48;}catch(e){}
   try{document.getElementById('gen-bold').classList.toggle('active', !!d_.genBold);}catch(e){}
@@ -799,12 +917,13 @@ function syncClockProps(){
   try{document.getElementById('gen-vm').classList.toggle('active', (d_.genVAlign||'middle')==='middle');}catch(e){}
   try{document.getElementById('gen-vb').classList.toggle('active', (d_.genVAlign||'middle')==='bottom');}catch(e){}
   const _pct=typeof _appletTheme==='function'?_appletTheme():{ac1:'#6366f1',head:'#a5b4fc'};
-  const tc=d_.genColor||''; const _tcDisp=tc||_pct.head||_pct.ac1;
-  try{document.getElementById('gen-color-preview').style.background=_tcDisp;document.getElementById('gen-color-hex').value=tc;}catch(e){}
+  const _tcDisp=_appletColorVal(d_, 'genColor', 'genColorScheme', _pct.head||_pct.ac1);
+  try{document.getElementById('gen-color-preview').style.background=_tcDisp;}catch(e){}
   const _pt=typeof _appletTheme==='function'?_appletTheme():{ac1:'#6366f1'};
-  const bg=d_.genBg||''; const _bgHexT=bg||(_pt.ac1||'#6366f1');
+  const bg=d_.genBg||'';
+  const _bgHexT=bg||_appletColorVal(d_, 'genBg', 'genBgScheme', _pt.ac1||'#6366f1');
   const _bgOpT=d_.genBgOp!==undefined?d_.genBgOp:(bg?1:0.2);
-  try{document.getElementById('gen-bg-swatch').style.background=_bgHexT;document.getElementById('gen-bg-hex').value=bg;}catch(e){}
+  try{document.getElementById('gen-bg-swatch').style.background=bg?_bgHexT:'';}catch(e){}
   try{document.getElementById('gen-bg-op').value=_bgOpT;}catch(e){}
   try{document.getElementById('gen-bg-blur').value=d_.genBgBlur!==undefined?d_.genBgBlur:0;}catch(e){}
   try{document.getElementById('gen-shad').classList.toggle('active',d_.genShadowOn!==false);}catch(e){}
@@ -834,9 +953,6 @@ function syncTimerProps(){
   try{
     const oe = d_.tmOnEnd || 'none';
     document.getElementById('tm-onend').value = oe;
-    const slideRow = document.getElementById('tm-onend-slide-row');
-    if(slideRow) slideRow.style.display = oe==='slide' ? 'flex' : 'none';
-    // Populate slide select
     const slideSel = document.getElementById('tm-onend-slide');
     if(slideSel){
       const curVal = d_.tmOnEndSlide !== undefined ? +d_.tmOnEndSlide : 0;
@@ -846,9 +962,16 @@ function syncTimerProps(){
         return `<option value="${i}"${sel2}>${i+1}. ${label}</option>`;
       }).join('');
     }
+    _updateAppletOnEndUI(d_, 'timer');
   }catch(e){}
   // Show onend row
   const oer = document.getElementById('tm-onend-row'); if(oer) oer.style.display='flex';
+  try{
+    const cgr = document.getElementById('cnt-goal-row');
+    if(cgr) cgr.style.display = 'none';
+    const onEndLbl = oer && oer.querySelector('label');
+    if(onEndLbl) onEndLbl.textContent = 'По окончании';
+  }catch(e){}
   // Sync shared visual props
   try{document.getElementById('gen-fs').value = d_.genFontSize !== undefined ? d_.genFontSize : 72;}catch(e){}
   try{document.getElementById('gen-bold').classList.toggle('active', !!d_.genBold);}catch(e){}
@@ -859,19 +982,18 @@ function syncTimerProps(){
   try{document.getElementById('gen-vm').classList.toggle('active', (d_.genVAlign||'middle')==='middle');}catch(e){}
   try{document.getElementById('gen-vb').classList.toggle('active', (d_.genVAlign||'middle')==='bottom');}catch(e){}
   const _pct=typeof _appletTheme==='function'?_appletTheme():{ac1:'#6366f1',head:'#a5b4fc'};
-  const tc=d_.genColor||'';
-  const _tcDisp = tc || _pct.head || _pct.ac1;
-  try{document.getElementById('gen-color-preview').style.background=_tcDisp;document.getElementById('gen-color-hex').value=tc;}catch(e){}
+  const _tcDisp = _appletColorVal(d_, 'genColor', 'genColorScheme', _pct.head || _pct.ac1);
+  try{document.getElementById('gen-color-preview').style.background=_tcDisp;}catch(e){}
   const _pt=typeof _appletTheme==='function'?_appletTheme():{ac1:'#6366f1'};
   const bg=d_.genBg||'';
-  const _bgHexT = bg || (_pt.ac1||'#6366f1');
+  const _bgHexT = bg || _appletColorVal(d_, 'genBg', 'genBgScheme', _pt.ac1||'#6366f1');
   const _bgOpT = d_.genBgOp !== undefined ? d_.genBgOp : (bg ? 1 : 0.2);
-  try{document.getElementById('gen-bg-swatch').style.background=_bgHexT;document.getElementById('gen-bg-hex').value=bg;}catch(e){}
+  try{document.getElementById('gen-bg-swatch').style.background=bg?_bgHexT:'';}catch(e){}
   try{document.getElementById('gen-bg-op').value=_bgOpT;}catch(e){}
   try{document.getElementById('gen-bg-blur').value=d_.genBgBlur!==undefined?d_.genBgBlur:0;}catch(e){}
   try{document.getElementById('gen-sh-enable').checked=d_.genShadowOn!==undefined?!!d_.genShadowOn:true;}catch(e){}
   try{document.getElementById('gen-sh-blur').value=d_.genShadowBlur!==undefined?d_.genShadowBlur:8;}catch(e){}
-  try{const sc=d_.genShadowColor||'#000000';document.getElementById('gen-sh-preview').style.background=sc;document.getElementById('gen-sh-hex').value=sc;}catch(e){}
+  try{const sc=d_.genShadowColor||'#000000';document.getElementById('gen-sh-preview').style.background=sc;}catch(e){}
   try{document.getElementById('gen-op').value=d_.opacity!==undefined?d_.opacity:1;}catch(e){}
   try{document.getElementById('gen-rx').value=d_.rx!==undefined?d_.rx:0;}catch(e){}
 }
@@ -890,31 +1012,120 @@ window.setTimerProp = function(prop, val){
 };
 
 
+function _populateAppletOnEndAnimSelect(selectEl, slide, appletElId, triggerType, currentRef){
+  if(!selectEl) return;
+  const list = typeof listAppletTriggerAnims === 'function'
+    ? listAppletTriggerAnims(slide, appletElId, triggerType) : [];
+  if(!list.length){
+    selectEl.innerHTML = '<option value="">— нет анимаций —</option>';
+    return;
+  }
+  selectEl.innerHTML = list.map(item => {
+    const lbl = typeof appletAnimOptionLabel === 'function'
+      ? appletAnimOptionLabel(slide, item.elId, item.ai) : item.ref;
+    return `<option value="${item.ref}"${item.ref === currentRef ? ' selected' : ''}>${lbl}</option>`;
+  }).join('');
+}
+
+function _ensureAppletOnEndAnim(d, appletId){
+  if(!d) return false;
+  const propEnd = appletId === 'counter' ? 'cntOnEnd' : 'tmOnEnd';
+  const propAnim = appletId === 'counter' ? 'cntOnEndAnim' : 'tmOnEndAnim';
+  if((d[propEnd] || 'none') !== 'anim' || d[propAnim]) return false;
+  const list = typeof listAppletTriggerAnims === 'function'
+    ? listAppletTriggerAnims(slides[cur], d.id, appletId === 'counter' ? 'counter' : 'timer') : [];
+  if(!list.length) return false;
+  d[propAnim] = list[0].ref;
+  return true;
+}
+
+function _updateAppletOnEndUI(d, appletId){
+  const oe = d[appletId === 'counter' ? 'cntOnEnd' : 'tmOnEnd'] || 'none';
+  const slideRow = document.getElementById('tm-onend-slide-row');
+  const animRow = document.getElementById('tm-onend-anim-row');
+  if(slideRow) slideRow.style.display = oe === 'slide' ? 'flex' : 'none';
+  if(animRow) animRow.style.display = oe === 'anim' ? 'flex' : 'none';
+  if(oe === 'anim'){
+    const animSel = document.getElementById('tm-onend-anim');
+    const curRef = d[appletId === 'counter' ? 'cntOnEndAnim' : 'tmOnEndAnim'] || '';
+    _populateAppletOnEndAnimSelect(animSel, slides[cur], d.id, appletId === 'counter' ? 'counter' : 'timer', curRef);
+  }
+}
+
+window.setAppletOnEnd = function(val){
+  if(!sel) return;
+  const aid = sel.dataset.appletId;
+  if(aid === 'counter') setCounterOnEnd(val);
+  else if(aid === 'timer') setTimerOnEnd(val);
+};
+
+window.setAppletOnEndSlide = function(val){
+  if(!sel) return;
+  const aid = sel.dataset.appletId;
+  if(aid === 'counter') setCounterProp('cntOnEndSlide', +val);
+  else if(aid === 'timer') setTimerProp('tmOnEndSlide', +val);
+};
+
+window.setAppletOnEndAnim = function(ref){
+  if(!sel) return;
+  const aid = sel.dataset.appletId;
+  if(aid === 'counter') setCounterProp('cntOnEndAnim', ref || '');
+  else if(aid === 'timer') setTimerProp('tmOnEndAnim', ref || '');
+};
+
 window.setTimerOnEnd = function(val){
   if(!sel) return;
   const elId = sel.dataset.id;
   const s = slides[cur]; if(!s) return;
   const d_ = s.els.find(x=>x.id===elId); if(!d_) return;
   d_.tmOnEnd = val;
-  // show/hide slide select
-  try{
-    const slideRow2 = document.getElementById('tm-onend-slide-row');
-    if(slideRow2) slideRow2.style.display = val==='slide' ? 'flex' : 'none';
-    if(val==='slide'){
-      const slideSel2 = document.getElementById('tm-onend-slide');
-      if(slideSel2 && slideSel2.options.length===0){
-        const curVal2 = d_.tmOnEndSlide !== undefined ? +d_.tmOnEndSlide : 0;
-        slideSel2.innerHTML = slides.map((s,i)=>{
-          const label2 = s.title && s.title.trim() ? s.title.trim() : ('Слайд '+(i+1));
-          return `<option value="${i}"${i===curVal2?' selected':''}>${i+1}. ${label2}</option>`;
-        }).join('');
-      }
-    }
-  }catch(e){}
+  try{ _updateAppletOnEndUI(d_, 'timer'); }catch(e){}
+  if(_ensureAppletOnEndAnim(d_, 'timer')) try{ _updateAppletOnEndUI(d_, 'timer'); }catch(e){}
   if(d_.appletId==='clock' && typeof refreshClockEl==='function') refreshClockEl(elId);
   else if(typeof refreshTimerEl==='function') refreshTimerEl(elId);
   if(typeof save==='function') save();
   if(typeof saveState==='function') saveState();
+};
+
+window.setCounterGoal = function(val){
+  if(!sel) return;
+  const s = slides[cur]; if(!s) return;
+  const d_ = s.els.find(x => x.id === sel.dataset.id); if(!d_ || d_.appletId !== 'counter') return;
+  if(val === '' || val == null || isNaN(+val)){
+    delete d_.cntGoal;
+  } else {
+    d_.cntGoal = +val;
+  }
+  if(typeof refreshCounterEl === 'function') refreshCounterEl(d_.id);
+  if(typeof saveState === 'function') saveState();
+};
+
+window.clearCounterGoal = function(){
+  try{
+    const goalInput = document.getElementById('cnt-goal');
+    if(goalInput) goalInput.value = '';
+  }catch(e){}
+  setCounterGoal('');
+};
+
+window.setCounterOnEnd = function(val){
+  if(!sel) return;
+  const s = slides[cur]; if(!s) return;
+  const d_ = s.els.find(x => x.id === sel.dataset.id); if(!d_ || d_.appletId !== 'counter') return;
+  d_.cntOnEnd = val;
+  try{ _updateAppletOnEndUI(d_, 'counter'); }catch(e){}
+  if(_ensureAppletOnEndAnim(d_, 'counter')) try{ _updateAppletOnEndUI(d_, 'counter'); }catch(e){}
+  if(typeof refreshCounterEl === 'function') refreshCounterEl(d_.id);
+  if(typeof saveState === 'function') saveState();
+};
+
+window.setCounterProp = function(prop, val){
+  if(!sel) return;
+  const s = slides[cur]; if(!s) return;
+  const d_ = s.els.find(x => x.id === sel.dataset.id); if(!d_ || d_.appletId !== 'counter') return;
+  d_[prop] = val;
+  if(typeof refreshCounterEl === 'function') refreshCounterEl(d_.id);
+  if(typeof saveState === 'function') saveState();
 };
 
 
@@ -925,6 +1136,7 @@ function _refreshAppletEl(d){
   if(d.appletId==='timer'     && typeof refreshTimerEl    ==='function') refreshTimerEl(d.id);
   if(d.appletId==='clock'     && typeof refreshClockEl     ==='function') refreshClockEl(d.id);
   if(d.appletId==='generator' && typeof refreshGeneratorEl==='function') refreshGeneratorEl(d.id);
+  if(d.appletId==='counter'   && typeof refreshCounterEl==='function') refreshCounterEl(d.id);
 }
 
 window.setGenProp = function(prop, val, sr){

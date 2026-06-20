@@ -1135,7 +1135,7 @@ function _handleCommand(raw) {
     if (aName && typeof window.addAnimToSel==='function') { window._selectedAnimName=aName; window.addAnimToSel(aName,'live'); }
     return;
   }
-  if (t === 'очистить анимации' && hasSel()) { if (typeof window.clearAllAnims==='function') window.clearAllAnims(); return; }
+  if (t === 'очистить анимации') { if (typeof window.clearAllAnims==='function') window.clearAllAnims(); return; }
 
   // ── Переходы ──
   if (t === 'переход fade') { if (typeof applyTransitionToAll==='function') applyTransitionToAll('fade'); return; }

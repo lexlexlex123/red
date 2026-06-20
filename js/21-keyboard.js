@@ -186,6 +186,11 @@ function onKey(e){
     toggleSlideAnimsPlayback(typeof cur!=='undefined'?cur:0);
     return;
   }
+  if((e.key==='Delete'||e.key==='Backspace')&&animTabActive&&window._animTlSel&&window._animTlSel.size>0){
+    e.preventDefault();
+    if(typeof window.removeAnimTlSelection==='function') window.removeAnimTlSelection();
+    return;
+  }
   if(sel||multiSel.size>0||(typeof window._getSelConnId==='function'&&window._getSelConnId())){
     const step=e.shiftKey?SNAP*5:SNAP;
     const allEls=multiSel.size>1?[...multiSel]:(sel?[sel]:[]);

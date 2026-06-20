@@ -795,7 +795,7 @@ function mkEl(d){
     // Double-click to replace icon
     el.addEventListener('dblclick',function(e){e.stopPropagation();window._iconReplaceMode=true;if(typeof openIconModal==='function')openIconModal();});
     }else if(d.type==='applet'){
-    const wrap=document.createElement('div');wrap.className='applet-el';
+    const wrap=document.createElement('div');wrap.className='applet-el'+(d.appletId==='counter'?' applet-counter':'');
     // Layer 1: clip div — clips iframe to border-radius
     const clip=document.createElement('div');
     clip.style.cssText='position:absolute;inset:0;overflow:hidden;border-radius:inherit;';
@@ -804,9 +804,10 @@ function mkEl(d){
     iframe.style.cssText='width:100%;height:100%;border:none;background:transparent;';
     iframe.setAttribute('allowtransparency','true');
     iframe.sandbox = 'allow-scripts'; // allow-same-origin removed — postMessage works with '*' targetOrigin
-    if(d.appletId==='generator'||d.appletId==='timer'||d.appletId==='clock'){
+    if(d.appletId==='generator'||d.appletId==='counter'||d.appletId==='timer'||d.appletId==='clock'){
       iframe.addEventListener('load', function(){
         if(d.appletId==='generator'&&typeof refreshGeneratorEl==='function') refreshGeneratorEl(d.id, {domOnly:true});
+        else if(d.appletId==='counter'&&typeof refreshCounterEl==='function') refreshCounterEl(d.id, {domOnly:true});
         else if(d.appletId==='timer'&&typeof refreshTimerEl==='function') refreshTimerEl(d.id, {domOnly:true});
         else if(d.appletId==='clock'&&typeof refreshClockEl==='function') refreshClockEl(d.id, {domOnly:true});
       }, {once:true});
@@ -854,6 +855,33 @@ function mkEl(d){
       el.dataset.genColorScheme  = d.genColorScheme  ? JSON.stringify(d.genColorScheme)  : '';
       el.dataset.genBgScheme     = d.genBgScheme     ? JSON.stringify(d.genBgScheme)     : '';
       el.dataset.genBorderScheme = d.genBorderScheme ? JSON.stringify(d.genBorderScheme) : '';
+      if(typeof window._wireGeneratorAppletClick==='function') window._wireGeneratorAppletClick(el);
+    }
+    if(d.appletId==='counter'){
+      el.style.cursor = 'pointer';
+      el.dataset.cntStart       = d.cntStart !== undefined ? d.cntStart : 0;
+      el.dataset.cntGoal        = d.cntGoal !== undefined && d.cntGoal !== null && d.cntGoal !== '' ? d.cntGoal : '';
+      el.dataset.cntOnEnd       = d.cntOnEnd || 'none';
+      el.dataset.cntOnEndSlide  = d.cntOnEndSlide !== undefined ? d.cntOnEndSlide : 0;
+      el.dataset.cntOnEndAnim   = d.cntOnEndAnim || '';
+      el.dataset.genStep        = d.genStep !== undefined ? d.genStep : 1;
+      el.dataset.genFontSize    = d.genFontSize !== undefined ? d.genFontSize : 64;
+      el.dataset.genColor       = d.genColor || '';
+      el.dataset.genBg          = d.genBg || '';
+      el.dataset.genBgBlur      = d.genBgBlur !== undefined ? d.genBgBlur : 0;
+      el.dataset.genBorderColor = d.genBorderColor || '';
+      el.dataset.genBorderWidth = d.genBorderWidth !== undefined ? d.genBorderWidth : 0;
+      el.dataset.genBgOp        = d.genBgOp !== undefined ? d.genBgOp : 1;
+      el.dataset.genShadowOn    = d.genShadowOn !== undefined ? (d.genShadowOn ? 'true' : 'false') : 'true';
+      el.dataset.genShadowBlur  = d.genShadowBlur !== undefined ? d.genShadowBlur : 8;
+      el.dataset.genShadowColor = d.genShadowColor || '';
+      el.dataset.genBold        = d.genBold ? 'true' : 'false';
+      el.dataset.genAlign       = d.genAlign || 'center';
+      el.dataset.genVAlign      = d.genVAlign || 'middle';
+      el.dataset.genColorScheme  = d.genColorScheme ? JSON.stringify(d.genColorScheme) : '';
+      el.dataset.genBgScheme     = d.genBgScheme ? JSON.stringify(d.genBgScheme) : '';
+      el.dataset.genBorderScheme = d.genBorderScheme ? JSON.stringify(d.genBorderScheme) : '';
+      if(typeof window._wireCounterAppletClick==='function') window._wireCounterAppletClick(el);
     }
     // Restore border-radius — apply to wrap (clip div inherits it), border stays visible
     if(d.rx){
@@ -868,6 +896,7 @@ function mkEl(d){
       el.dataset.tmSec          = d.tmSec          !== undefined ? d.tmSec          : 0;
       el.dataset.tmOnEnd        = d.tmOnEnd        || 'none';
       el.dataset.tmOnEndSlide   = d.tmOnEndSlide   !== undefined ? d.tmOnEndSlide   : 0;
+      el.dataset.tmOnEndAnim    = d.tmOnEndAnim    || '';
       el.dataset.genFontSize    = d.genFontSize     !== undefined ? d.genFontSize    : 72;
       el.dataset.genColor       = d.genColor        || '';
       el.dataset.genBg          = d.genBg           || '';
@@ -1205,8 +1234,8 @@ function pick(el){
   if (typeof window._deselectConn === 'function' && typeof window._getSelConnId === 'function' && window._getSelConnId()) {
     window._deselectConn(!el);
   }
-  // Exit crop mode if switching away from the cropped image
-  if(typeof exitCropModeIfActive==='function'&&_cropEl&&_cropEl!==el)exitCropModeIfActive();
+  // Apply crop when leaving the cropped image (other element or deselect)
+  if(typeof exitCropModeIfActive==='function'&&typeof _cropEl!=='undefined'&&_cropEl&&_cropEl!==el)exitCropModeIfActive();
   // Clear table cell selection when leaving a table
   if(sel&&sel.dataset.type==='table'&&sel!==el&&typeof tblClearSel==='function') tblClearSel();
   // Exit text/shape editing on previously selected element

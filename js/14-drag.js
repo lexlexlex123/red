@@ -2,6 +2,8 @@
 function mkDrag(el,c){
   let ox,oy,ol,ot,on=false,groupStart=null;
   el.addEventListener('mousedown',e=>{
+    // В режиме обрезки элемент не перетаскивается — только рамка обрезки
+    if (el.dataset.cropMode === 'true') return;
     // Block if another alpha-passthrough drag is in progress
     if (window._alphaPassthroughDrag) return;
     // Allow re-dispatched events from curve passthrough to proceed normally

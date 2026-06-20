@@ -560,7 +560,92 @@ window._fireCaptionSlideAnim = function(el, a, delay, w, h, opts) {
   window._fireCaptionSlideAnimGroup([{ el, w, h }], a, delay, opts);
 };
 
-function _ensureSplitHalfWrap(el) {
+function _splitResolveAppletLiveVal(el, liveVal) {
+  if (liveVal != null && liveVal !== '') return liveVal;
+  if (el._splitAppletLiveVal != null && el._splitAppletLiveVal !== '') return el._splitAppletLiveVal;
+  const elId = el.dataset && el.dataset.id;
+  if (!elId || typeof slides === 'undefined') return null;
+  const inPreview = document.getElementById('preview-ov')?.classList.contains('active');
+  const idx = inPreview && typeof pidx !== 'undefined' ? pidx : (typeof cur !== 'undefined' ? cur : 0);
+  const d = slides[idx]?.els?.find(x => x.id === elId);
+  if (!d || d.type !== 'applet' || d.appletId !== 'counter') return null;
+  if (d.cntGoal != null && d.cntGoal !== '') return +d.cntGoal;
+  return d.cntStart != null ? +d.cntStart : null;
+}
+
+function _patchAppletSrcdocVal(srcdoc, liveVal) {
+  if (liveVal == null || srcdoc === '') return srcdoc;
+  const txt = String(liveVal);
+  let out = srcdoc;
+  if (/var _val=/.test(out) && txt !== '' && !isNaN(+txt)) {
+    out = out.replace(/var _val=([^,]+)/, 'var _val=' + (+txt));
+  }
+  const inj = '<script>try{var _n=document.getElementById("num");if(_n)_n.textContent=' + JSON.stringify(txt) + ';}catch(e){}<\/script>';
+  if (out.indexOf('</body>') !== -1) return out.replace('</body>', inj + '</body>');
+  return out + inj;
+}
+
+function _splitPatchIframe(iframe, liveVal) {
+  if (!iframe || liveVal == null) return;
+  let srcdoc = iframe.getAttribute('srcdoc') || iframe.srcdoc || '';
+  if (!srcdoc) return;
+  iframe.srcdoc = _patchAppletSrcdocVal(srcdoc, liveVal);
+}
+
+function _splitPatchTreeIframes(node, liveVal) {
+  if (!node || liveVal == null) return;
+  if (node.tagName === 'IFRAME') {
+    _splitPatchIframe(node, liveVal);
+    return;
+  }
+  if (node.querySelectorAll) {
+    node.querySelectorAll('iframe').forEach(f => _splitPatchIframe(f, liveVal));
+  }
+}
+
+function _splitCloneNode(node, liveVal) {
+  if (node && node.tagName === 'IFRAME') {
+    const clone = node.cloneNode(false);
+    clone.style.cssText = node.style.cssText;
+    if (node.hasAttribute('allowtransparency')) clone.setAttribute('allowtransparency', node.getAttribute('allowtransparency'));
+    if (node.hasAttribute('sandbox')) clone.setAttribute('sandbox', node.getAttribute('sandbox'));
+    let srcdoc = node.getAttribute('srcdoc') || node.srcdoc || '';
+    if (liveVal != null && srcdoc) srcdoc = _patchAppletSrcdocVal(srcdoc, liveVal);
+    if (srcdoc) clone.srcdoc = srcdoc;
+    return clone;
+  }
+  const clone = node.cloneNode(false);
+  if (node.style) clone.style.cssText = node.style.cssText;
+  Array.from(node.attributes || []).forEach(attr => {
+    if (attr.name !== 'style') clone.setAttribute(attr.name, attr.value);
+  });
+  Array.from(node.childNodes).forEach(child => {
+    if (child.nodeType === 1) clone.appendChild(_splitCloneNode(child, liveVal));
+    else clone.appendChild(child.cloneNode(true));
+  });
+  return clone;
+}
+
+function _splitWaitIframes(root, cb) {
+  const iframes = root ? Array.from(root.querySelectorAll('iframe')) : [];
+  if (!iframes.length) { cb(); return; }
+  let pending = 0;
+  iframes.forEach(f => {
+    try {
+      const doc = f.contentDocument;
+      const num = doc && doc.getElementById('num');
+      if (num && num.textContent !== '') return;
+    } catch (e) {}
+    pending++;
+    f.addEventListener('load', () => {
+      pending--;
+      if (pending <= 0) cb();
+    }, { once: true });
+  });
+  if (pending === 0) cb();
+}
+
+function _ensureSplitHalfWrap(el, liveVal) {
   let wrap = el.querySelector('._split_wrap');
   if (wrap) {
     return {
@@ -569,10 +654,12 @@ function _ensureSplitHalfWrap(el) {
       rightHalf: wrap.querySelector('._split_right'),
     };
   }
+  const val = _splitResolveAppletLiveVal(el, liveVal);
   const w = parseInt(el.style.width, 10) || el.offsetWidth || 200;
   const nodes = [];
   while (el.firstChild) nodes.push(el.removeChild(el.firstChild));
-  const clones = nodes.map(n => n.cloneNode(true));
+  if (val != null) nodes.forEach(n => _splitPatchTreeIframes(n, val));
+  const clones = nodes.map(n => _splitCloneNode(n, val));
 
   el._splitOvSaved = el.style.overflow || '';
   el.style.overflow = 'visible';
@@ -641,25 +728,30 @@ window._fireSplitHalfAnim = function(el, a, delay, opts) {
   const easing = 'cubic-bezier(0.4, 0, 1, 1)';
 
   setTimeout(() => {
-    const parts = _ensureSplitHalfWrap(el);
-    const leftFrames = [
-      { transform: 'translate(0px, 0px) rotate(0deg)', opacity: 1 },
-      { transform: 'translate(' + (-spread) + 'px, ' + fall + 'px) rotate(' + (-rot) + 'deg)', opacity: 0 }
-    ];
-    const rightFrames = [
-      { transform: 'translate(0px, 0px) rotate(0deg)', opacity: 1 },
-      { transform: 'translate(' + spread + 'px, ' + fall + 'px) rotate(' + rot + 'deg)', opacity: 0 }
-    ];
-    const p1 = parts.leftHalf.animate(leftFrames, { duration: dur, easing, fill: 'forwards' });
-    const p2 = parts.rightHalf.animate(rightFrames, { duration: dur, easing, fill: 'forwards' });
-    Promise.all([p1.finished, p2.finished]).then(() => {
-      if (opts.hideAfter !== false) {
-        el.style.visibility = 'hidden';
-        el.style.pointerEvents = 'none';
-      }
-      if (opts.onHide) opts.onHide();
-      if (opts.unwrap) window._resetSplitHalf(el, true);
-    }).catch(() => {});
+    const liveVal = el._splitAppletLiveVal;
+    const parts = _ensureSplitHalfWrap(el, liveVal);
+    const runSplit = () => {
+      const leftFrames = [
+        { transform: 'translate(0px, 0px) rotate(0deg)', opacity: 1 },
+        { transform: 'translate(' + (-spread) + 'px, ' + fall + 'px) rotate(' + (-rot) + 'deg)', opacity: 0 }
+      ];
+      const rightFrames = [
+        { transform: 'translate(0px, 0px) rotate(0deg)', opacity: 1 },
+        { transform: 'translate(' + spread + 'px, ' + fall + 'px) rotate(' + rot + 'deg)', opacity: 0 }
+      ];
+      const p1 = parts.leftHalf.animate(leftFrames, { duration: dur, easing, fill: 'forwards' });
+      const p2 = parts.rightHalf.animate(rightFrames, { duration: dur, easing, fill: 'forwards' });
+      Promise.all([p1.finished, p2.finished]).then(() => {
+        if (opts.hideAfter !== false) {
+          el.style.visibility = 'hidden';
+          el.style.pointerEvents = 'none';
+        }
+        if (opts.onHide) opts.onHide();
+        if (opts.unwrap) window._resetSplitHalf(el, true);
+      }).catch(() => {});
+    };
+    if (parts.wrap && parts.wrap.querySelector('iframe')) _splitWaitIframes(parts.wrap, runSplit);
+    else runSplit();
   }, dl);
 };
 
@@ -717,6 +809,8 @@ window._animEffTrigger = function(gList) {
   return gList.map(item => {
     const t = item.a.trigger || 'auto';
     if (t === 'element') { lastTrig = 'auto'; lastRes = 'element'; return 'element'; }
+    if (t === 'counter') { lastTrig = 'auto'; lastRes = 'counter'; return 'counter'; }
+    if (t === 'timer') { lastTrig = 'auto'; lastRes = 'timer'; return 'timer'; }
     if (t === 'nav') { lastTrig = 'auto'; lastRes = 'nav'; return 'nav'; }
     if (t === 'click') { lastTrig = 'click'; lastRes = 'click'; return 'click'; }
     if (t === 'withPrev') return lastRes;
@@ -746,8 +840,8 @@ window.buildAnimSchedule = function(slide) {
   gList.forEach((item, gi) => {
     const d = item.d, a = item.a, eff = gEffTrig[gi];
     const ai = (d.anims || []).indexOf(a);
-    if (eff === 'element' || eff === 'nav') return;
-    if ((a.trigger || 'auto') === 'element' || (a.trigger || 'auto') === 'nav' || (a.trigger || 'auto') === 'click') return;
+    if (eff === 'element' || eff === 'nav' || eff === 'counter' || eff === 'timer') return;
+    if ((a.trigger || 'auto') === 'element' || (a.trigger || 'auto') === 'nav' || (a.trigger || 'auto') === 'click' || (a.trigger || 'auto') === 'counter' || (a.trigger || 'auto') === 'timer') return;
     if (eff === 'auto' || eff === 'afterPrev' || eff === 'withPrev') {
       const abs = absStartMap.has(d.id + ':' + ai) ? absStartMap.get(d.id + ':' + ai) : (a.delay || 0);
       const gPD = window._animChainDuration(a);
@@ -799,7 +893,7 @@ window.computeSlideAnimTimeline = function(slide) {
     const gi = gList.findIndex(item => item.d.id === d.id && item.a === a);
     const eff = gi >= 0 ? gEffTrig[gi] : 'auto';
     const trigger = a.trigger || 'auto';
-    if (trigger === 'element' || trigger === 'nav' || eff === 'nav') return;
+    if (trigger === 'element' || trigger === 'nav' || trigger === 'counter' || trigger === 'timer' || eff === 'nav') return;
 
     const dur = window._animChainDuration(a);
     const cat = (info[a.name] && info[a.name].cat) || a.cat || 'entrance';
@@ -927,7 +1021,7 @@ window._slideAnimPlayGen = 0;
 
 window._isTimedAnimEntry = function(a) {
   const t = (a && a.trigger) || 'auto';
-  return t !== 'element' && t !== 'nav' && t !== 'click';
+  return t !== 'element' && t !== 'nav' && t !== 'click' && t !== 'counter' && t !== 'timer';
 };
 
 window._computeAnimAbsStarts = function(slide) {
@@ -1106,6 +1200,73 @@ window._showAnimTlSnapGuide = function(xPx) {
 window._hideAnimTlSnapGuide = function() {
   const g = document.getElementById('anim-tl-snap-guide');
   if (g) g.style.display = 'none';
+};
+
+window._clearAnimTlInsertPreview = function() {
+  document.querySelectorAll('.anim-tl-seg.anim-tl-seg-gap-shift').forEach(dom => {
+    dom.classList.remove('anim-tl-seg-gap-shift');
+    dom.style.transform = '';
+  });
+};
+
+window._computeAnimTlInsertShifts = function(onLane, insertStartMs, insertDurMs) {
+  const insertEnd = insertStartMs + insertDurMs;
+  const shifts = new Map();
+  (onLane || []).forEach(s => shifts.set(window._animTlKey(s.elId, s.ai), 0));
+  if (!onLane || !onLane.length || insertDurMs <= 0) return shifts;
+  const key = s => window._animTlKey(s.elId, s.ai);
+  const getStart = s => s.absDelay + (shifts.get(key(s)) || 0);
+  const getEnd = s => getStart(s) + s.dur;
+  let guard = onLane.length * 6 + 8;
+  while (guard-- > 0) {
+    let changed = false;
+    for (const s of onLane) {
+      const sStart = getStart(s);
+      const sEnd = getEnd(s);
+      if (insertStartMs < sEnd - 0.5 && insertEnd > sStart + 0.5) {
+        const need = insertEnd - sStart;
+        if (need > (shifts.get(key(s)) || 0) + 0.5) {
+          shifts.set(key(s), need);
+          changed = true;
+        }
+      }
+    }
+    const sorted = [...onLane].sort((a, b) => getStart(a) - getStart(b) || a.ai - b.ai);
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const a = sorted[i];
+      const b = sorted[i + 1];
+      const aEnd = getEnd(a);
+      const bStart = getStart(b);
+      if (aEnd > bStart + 0.5) {
+        const need = (shifts.get(key(b)) || 0) + (aEnd - bStart);
+        if (need > (shifts.get(key(b)) || 0) + 0.5) {
+          shifts.set(key(b), need);
+          changed = true;
+        }
+      }
+    }
+    if (!changed) break;
+  }
+  return shifts;
+};
+
+window._updateAnimTlInsertPreview = function(segments, lane, insertStartMs, insertDurMs, excludeKeys, pxMs, tracksEl) {
+  window._clearAnimTlInsertPreview();
+  if (!tracksEl || insertDurMs <= 0 || lane == null || lane < 0) return;
+  const onLane = (segments || [])
+    .filter(s => s.lane === lane && !excludeKeys.has(window._animTlKey(s.elId, s.ai)))
+    .sort((a, b) => a.absDelay - b.absDelay || a.ai - b.ai);
+  const shifts = window._computeAnimTlInsertShifts(onLane, insertStartMs, insertDurMs);
+  shifts.forEach((shiftMs, k) => {
+    if (shiftMs < 0.5) return;
+    const ci = k.indexOf(':');
+    const elId = k.slice(0, ci);
+    const ai = k.slice(ci + 1);
+    const dom = tracksEl.querySelector('.anim-tl-seg[data-el-id="' + elId + '"][data-ai="' + ai + '"]');
+    if (!dom) return;
+    dom.classList.add('anim-tl-seg-gap-shift');
+    dom.style.transform = 'translateX(' + (shiftMs * pxMs) + 'px)';
+  });
 };
 
 window._snapAnimTlMove = function(rawLeftPx, durMs, snapPoints, pxMs) {
@@ -1305,6 +1466,35 @@ window._animTlSetSel = function(elId, ai) {
   window._animTlSel.add(window._animTlKey(elId, ai));
 };
 
+window._pickElForAnimTl = function(elId) {
+  if (!elId || typeof pick !== 'function') return;
+  const cv = document.getElementById('canvas');
+  const dom = cv && cv.querySelector('.el[data-id="' + elId + '"]');
+  if (dom) pick(dom);
+};
+
+window._openAnimTlCtxMenu = function(ev) {
+  if (!window._animTlSel || !window._animTlSel.size) return;
+  const tr = typeof t === 'function' ? t : k => k;
+  const count = window._animTlSel.size;
+  const label = count > 1
+    ? tr('ctxDeleteSlidesN').replace('{n}', String(count))
+    : tr('btnDelete');
+  const icon = typeof _SLIDE_CTX_ICONS !== 'undefined'
+    ? _SLIDE_CTX_ICONS.del
+    : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>';
+  if (typeof _showSlideCtxMenu === 'function') {
+    _showSlideCtxMenu(ev.clientX, ev.clientY, [{
+      icon,
+      label,
+      warn: true,
+      action: () => {
+        if (typeof window.removeAnimTlSelection === 'function') window.removeAnimTlSelection();
+      }
+    }]);
+  }
+};
+
 window._snapTimelineSegOnLane = function(segs, elId, ai) {
   const _ov = window._timelineOverlap;
   const me = () => segs.find(s => s.elId === elId && s.ai === ai);
@@ -1330,7 +1520,7 @@ window._applyTimelineSegments = function(slide, segs) {
   const _ov = window._timelineOverlap;
   const _skipTrig = anim => {
     const t = anim.trigger || 'auto';
-    return t === 'element' || t === 'nav' || t === 'click';
+    return t === 'element' || t === 'nav' || t === 'click' || t === 'counter' || t === 'timer';
   };
   segs.sort((x, y) => x.absDelay - y.absDelay || x.lane - y.lane || x.elId.localeCompare(y.elId) || x.ai - y.ai);
   slide.animOrder = segs.map(s => ({ elId: s.elId, ai: s.ai }));
@@ -1353,7 +1543,7 @@ window._applyTimelineSegments = function(slide, segs) {
     const anim = slide.els.find(x => x.id === s.elId)?.anims?.[s.ai];
     if (!anim) return;
     const t = anim.trigger || 'auto';
-    if (t === 'element' || t === 'nav' || t === 'click') return;
+    if (t === 'element' || t === 'nav' || t === 'click' || t === 'counter' || t === 'timer') return;
     if (t === 'withPrev') anim.delay = Math.max(0, s.absDelay - prevTimedStart);
     else if (gPS === 0 && gPD === 0) anim.delay = Math.max(0, s.absDelay);
     else anim.delay = Math.max(0, s.absDelay - gPS - gPD);
@@ -1708,26 +1898,24 @@ window.renderAnimTimelineBar = function(slide) {
       const tracksRect = () => tracks.getBoundingClientRect();
       const onMove = mv => {
         const dx = mv.clientX - startX;
-        const dy = mv.clientY - startY;
-        if (dragMode === 'move' && Math.abs(dy) > 4 && Math.abs(dy) > Math.abs(dx) * 0.4) dragMode = 'lane';
         if (dragMode === 'move') {
           const snap = window._snapAnimTlMove(Math.max(0, startLeft + dx), seg.dur, snapPoints, pxMs);
           const deltaPx = snap.leftPx - startLeft;
-          dragItems.forEach(item => {
-            item.dom.style.left = Math.max(0, item.startLeft + deltaPx) + 'px';
-          });
-          window._showAnimTlSnapGuide(snap.guidePx);
-        } else if (dragMode === 'lane') {
-          window._hideAnimTlSnapGuide();
           const rect = tracksRect();
           previewLane = Math.max(0, Math.floor((mv.clientY - rect.top) / laneH));
           const laneDelta = previewLane - startLane;
           dragItems.forEach(item => {
+            item.dom.style.left = Math.max(0, item.startLeft + deltaPx) + 'px';
             const nl = Math.max(0, item.startLane + laneDelta);
             item.dom.style.top = (nl * laneH + segPad) + 'px';
             item.previewLane = nl;
           });
+          window._showAnimTlSnapGuide(snap.guidePx);
+          window._updateAnimTlInsertPreview(
+            tl.segments, previewLane, snap.leftPx / pxMs, seg.dur, excludeKeys, pxMs, tracks
+          );
         } else {
+          window._clearAnimTlInsertPreview();
           const rawEnd = Math.max(startLeft + 6, startLeft + startW + dx);
           const snap = window._snapAnimTlEnd(rawEnd, snapPoints, pxMs);
           const newDur = Math.max(50, (snap.endPx - startLeft) / pxMs);
@@ -1740,12 +1928,11 @@ window.renderAnimTimelineBar = function(slide) {
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
         window._hideAnimTlSnapGuide();
-        if (dragMode === 'move' || dragMode === 'lane') {
+        window._clearAnimTlInsertPreview();
+        if (dragMode === 'move') {
           const updates = dragItems.map(item => {
             const newAbs = parseFloat(item.dom.style.left) / pxMs;
-            const laneVal = dragMode === 'lane'
-              ? (item.previewLane != null ? item.previewLane : previewLane)
-              : (parseInt(item.dom.dataset.lane, 10) || item.startLane);
+            const laneVal = item.previewLane != null ? item.previewLane : previewLane;
             return {
               elId: item.elId,
               ai: item.ai,
@@ -1772,6 +1959,7 @@ window.renderAnimTimelineBar = function(slide) {
         window._animTlToggleSel(seg.elId, seg.ai);
         ev.preventDefault();
         ev.stopPropagation();
+        window._pickElForAnimTl(seg.elId);
         window.renderAnimTimelineBar(slide);
         return;
       }
@@ -1781,8 +1969,18 @@ window.renderAnimTimelineBar = function(slide) {
           const k = window._animTlKey(dom.dataset.elId, parseInt(dom.dataset.ai, 10));
           dom.classList.toggle('anim-tl-seg-sel', window._animTlSel.has(k));
         });
+        window._pickElForAnimTl(seg.elId);
       }
       startDrag('move', ev);
+    });
+    el.addEventListener('contextmenu', ev => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const segKey = window._animTlKey(seg.elId, seg.ai);
+      if (!window._animTlSel.has(segKey)) window._animTlSetSel(seg.elId, seg.ai);
+      window._pickElForAnimTl(seg.elId);
+      window.renderAnimTimelineBar(slide);
+      window._openAnimTlCtxMenu(ev);
     });
     resize.addEventListener('mousedown', ev => startDrag('resize', ev));
     tracks.appendChild(el);
@@ -1826,6 +2024,7 @@ window.renderAnimTimelineBar = function(slide) {
       const rRight = rLeft + rW;
       const rBottom = rTop + rH;
       const selectByTimeOnly = rTop >= tracksH - 1;
+      let lastPickedElId = null;
       tracks.querySelectorAll('.anim-tl-seg').forEach(dom => {
         const l = parseFloat(dom.style.left) || 0;
         const t = parseFloat(dom.style.top) || 0;
@@ -1835,8 +2034,10 @@ window.renderAnimTimelineBar = function(slide) {
         const yOverlap = t + h >= rTop && t <= rBottom;
         if (xOverlap && (yOverlap || selectByTimeOnly)) {
           window._animTlSel.add(window._animTlKey(dom.dataset.elId, parseInt(dom.dataset.ai, 10)));
+          lastPickedElId = dom.dataset.elId;
         }
       });
+      if (lastPickedElId) window._pickElForAnimTl(lastPickedElId);
       window.renderAnimTimelineBar(slide);
     };
     document.addEventListener('mousemove', onRbMove);

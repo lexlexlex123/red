@@ -130,7 +130,7 @@
     </div>
     <!-- ANIMATIONS -->
     <div class="rg rg-anim-ribbon" data-tab="anim" style="display:none">
-      <button class="rb" onclick="clearAllAnims()" title="Очистить анимации выбранного объекта">
+      <button class="rb" onclick="clearAllAnims()" title="Очистить все анимации слайда">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         <span class="rbl" data-i18n="btnClearAnims">Очистить</span>
       </button>
@@ -606,14 +606,19 @@
           </div>
           <div id="tm-onend-row" style="display:none;flex-direction:column;gap:5px;margin-bottom:8px">
             <label style="font-size:9px;color:var(--text2)">По окончании</label>
-            <select id="tm-onend" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 6px;font-size:11px;width:100%" onchange="setTimerOnEnd(this.value)">
+            <select id="tm-onend" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 6px;font-size:11px;width:100%" onchange="setAppletOnEnd(this.value)">
               <option value="none">Ничего</option>
               <option value="next">Следующий слайд</option>
               <option value="slide">Конкретный слайд</option>
+              <option value="anim">Запустить анимацию</option>
             </select>
             <div id="tm-onend-slide-row" style="display:none;flex-direction:column;gap:4px">
               <label style="font-size:9px;color:var(--text2)">Перейти на слайд</label>
-              <select id="tm-onend-slide" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 6px;font-size:11px;width:100%" onchange="setTimerProp('tmOnEndSlide',+this.value)"></select>
+              <select id="tm-onend-slide" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 6px;font-size:11px;width:100%" onchange="setAppletOnEndSlide(+this.value)"></select>
+            </div>
+            <div id="tm-onend-anim-row" style="display:none;flex-direction:column;gap:4px">
+              <label style="font-size:9px;color:var(--text2)">Анимация</label>
+              <select id="tm-onend-anim" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 6px;font-size:11px;width:100%" onchange="setAppletOnEndAnim(this.value)"></select>
             </div>
           </div>
           <!-- Generator mode -->
@@ -635,6 +640,16 @@
               <div class="pr" style="margin:0"><label style="font-size:9px">От</label><input type="number" id="gen-min" value="1" oninput="setGenProp('genMin',+this.value)"></div>
               <div class="pr" style="margin:0"><label style="font-size:9px">До</label><input type="number" id="gen-max" value="100" oninput="setGenProp('genMax',+this.value)"></div>
               <div class="pr" style="margin:0"><label style="font-size:9px">Шаг</label><input type="number" id="gen-step" value="1" min="0.0001" oninput="setGenProp('genStep',+this.value)"></div>
+            </div>
+          </div>
+          <!-- Counter goal (hidden for generator/timer) -->
+          <div id="cnt-goal-row" style="display:none;flex-direction:column;gap:5px;margin-bottom:8px">
+            <div class="pr" style="margin:0">
+              <label style="font-size:9px">Цель</label>
+              <div style="display:flex;gap:4px;align-items:center">
+                <input type="number" id="cnt-goal" placeholder="—" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 6px;font-size:11px;box-sizing:border-box" oninput="setCounterGoal(this.value)">
+                <button title="Очистить" onclick="clearCounterGoal()" style="flex-shrink:0;background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:2px 6px;cursor:pointer;font-size:10px;white-space:nowrap">✕</button>
+              </div>
             </div>
           </div>
           <!-- Font size + Bold -->

@@ -1001,7 +1001,7 @@ function drawThumbApplet(ctx,d,sx,sy){
   if(w<2||h<2) return;
   ctx.save();
   if(d.rot){ctx.translate(x+w/2,y+h/2);ctx.rotate(d.rot*Math.PI/180);ctx.translate(-(x+w/2),-(y+h/2));}
-  const icons={calculator:'⌨',clock:'🕐',timer:'⏱',notes:'📝',qr:'▦',generator:'🎲'};
+  const icons={calculator:'⌨',clock:'🕐',timer:'⏱',notes:'📝',qr:'▦',generator:'🎲',counter:'🔢'};
   const ic=icons[d.appletId]||'◫';
   ctx.fillStyle='rgba(99,102,241,0.22)';
   ctx.strokeStyle='rgba(129,140,248,0.55)';
@@ -1052,7 +1052,15 @@ function drawThumbImage(ctx,d,sx,sy,slideIdx){
     if(_isCanvasExport()&&(!img||!img.src||!String(img.src).startsWith('data:'))) return;
     ctx.save();
     if(d.rot){ctx.translate(x+w/2,y+h/2);ctx.rotate(d.rot*Math.PI/180);ctx.translate(-(x+w/2),-(y+h/2));}
-    if(hasCrop){const fW=(d.w+cL+cR)*sx,fH=(d.h+cT+cB)*sy;ctx.save();ctx.beginPath();ctx.rect(x,y,w,h);ctx.clip();ctx.drawImage(img,x-cL*sx,y-cT*sy,fW,fH);ctx.restore();}
+    if(hasCrop){
+      const fW=d._cropFullW>0?d._cropFullW:(d.w+cL+cR);
+      const fH=d._cropFullH>0?d._cropFullH:(d.h+cT+cB);
+      const logVisW=Math.max(1,fW-cL-cR),logVisH=Math.max(1,fH-cT-cB);
+      const kx=d.w/logVisW,ky=d.h/logVisH;
+      ctx.save();ctx.beginPath();ctx.rect(x,y,w,h);ctx.clip();
+      ctx.drawImage(img,x-cL*kx*sx,y-cT*ky*sy,fW*kx*sx,fH*ky*sy);
+      ctx.restore();
+    }
     else{ctx.drawImage(img,x,y,w,h);}
     ctx.restore();
   };

@@ -310,9 +310,11 @@ function save(){
   // Snapshot table data keyed by id so the table branch below always finds fresh data
   const tableSnap={}; oldEls.forEach(d=>{if(d.type==='table')tableSnap[d.id]=d;});
   slides[cur].els=Array.from(canvas.querySelectorAll('.el')).map(el=>{
+    const _prev=oldElsById[el.dataset.id];
+    const _inCrop=el.dataset.cropMode==='true'&&_prev;
     const d={id:el.dataset.id,type:el.dataset.type,
-      x:parseInt(el.style.left),y:parseInt(el.style.top),
-      w:parseInt(el.style.width),h:parseInt(el.style.height),
+      x:_inCrop?_prev.x:parseInt(el.style.left),y:_inCrop?_prev.y:parseInt(el.style.top),
+      w:_inCrop?_prev.w:parseInt(el.style.width),h:_inCrop?_prev.h:parseInt(el.style.height),
       rot:el.dataset.rot?+el.dataset.rot:0,
       rotPivotX:el.dataset.rotPivotX?+el.dataset.rotPivotX:0,
       rotPivotY:el.dataset.rotPivotY?+el.dataset.rotPivotY:0,
@@ -598,7 +600,7 @@ function save(){
       d.appletId=el.dataset.appletId;
       d.appletHtml=el.dataset.appletHtml||'';
       if(el.dataset.appletAspect)d._appletAspect=+el.dataset.appletAspect;
-      const _gk=['tmMin','tmSec','tmOnEnd','tmOnEndSlide','genMode','genLines','genMin','genMax','genStep','genFontSize','genColor','genBg','genBgBlur','genBgOp',
+      const _gk=['tmMin','tmSec','tmOnEnd','tmOnEndSlide','tmOnEndAnim','genMode','genLines','cntStart','cntGoal','cntOnEnd','cntOnEndSlide','cntOnEndAnim','genMin','genMax','genStep','genFontSize','genColor','genBg','genBgBlur','genBgOp',
         'genBorderColor','genBorderWidth','genBold','genAlign','genVAlign',
         'genShadowOn','genShadowBlur','genShadowColor',
         'genColorScheme','genBgScheme','genBorderScheme'];
@@ -607,11 +609,12 @@ function save(){
           const v=el.dataset[k];
           if(k==='genBold') d[k]=(v==='true');
           else if(k==='genShadowOn') d[k]=(v==='true');
-          else if(['tmMin','tmSec','tmOnEndSlide','genMin','genMax','genStep','genFontSize','genBgBlur','genBgOp','genBorderWidth','genShadowBlur'].includes(k)) d[k]=+v;
+          else if(['tmMin','tmSec','tmOnEndSlide','cntStart','cntOnEndSlide','genMin','genMax','genStep','genFontSize','genBgBlur','genBgOp','genBorderWidth','genShadowBlur'].includes(k)) d[k]=+v;
           else if(['genColorScheme','genBgScheme','genBorderScheme'].includes(k)){
             try{d[k]=JSON.parse(v);}catch(e){d[k]=null;}
           }
           else if(k==='genLines'){ try{d[k]=decodeURIComponent(v);}catch(e){d[k]=v;} }
+          else if(k==='cntGoal'){ if(v!=='') d[k]=+v; }
           else d[k]=v;
         }
       });
