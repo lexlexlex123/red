@@ -297,9 +297,12 @@ function pickSlide(i, keepMultiSel){
   if(!keepMultiSel) clearSlideMultiSel();
   load();
   drawThumbs();
+  saveState();
 }
 
 function save(){
+  if(typeof window._isPreviewActive==='function'&&window._isPreviewActive())return;
+  if(window._pvRestoring)return;
   if(!slides[cur])return;
   const canvas=document.getElementById('canvas');
   // Build lookup of existing decor flags before overwriting
@@ -309,7 +312,15 @@ function save(){
   const oldElsById={}; oldEls.forEach(d=>oldElsById[d.id]=d);
   // Snapshot table data keyed by id so the table branch below always finds fresh data
   const tableSnap={}; oldEls.forEach(d=>{if(d.type==='table')tableSnap[d.id]=d;});
-  slides[cur].els=Array.from(canvas.querySelectorAll('.el')).map(el=>{
+  const _seenIds=new Set();
+  slides[cur].els=Array.from(canvas.querySelectorAll('.el')).filter(el=>{
+    if(el.classList.contains('motion-ghost')) return false;
+    const id=el.dataset.id;
+    if(!id) return true;
+    if(_seenIds.has(id)) return false;
+    _seenIds.add(id);
+    return true;
+  }).map(el=>{
     const _prev=oldElsById[el.dataset.id];
     const _inCrop=el.dataset.cropMode==='true'&&_prev;
     const d={id:el.dataset.id,type:el.dataset.type,
@@ -347,6 +358,7 @@ function save(){
         if(_od.textColorScheme!==undefined)d.textColorScheme=_od.textColorScheme;
         if(_od.textBgScheme!==undefined)d.textBgScheme=_od.textBgScheme;
         if(_od.borderScheme!==undefined)d.borderScheme=_od.borderScheme;
+        if(_od.textShadowScheme!==undefined)d.textShadowScheme=_od.textShadowScheme;
       }
       if(el.dataset.valign)d.valign=el.dataset.valign;
       if(el.dataset.textBg)d.textBg=el.dataset.textBg;
@@ -365,6 +377,15 @@ function save(){
       }
       if(el.dataset.textRole)d.textRole=el.dataset.textRole;
       if(el.dataset.textBorderW&&+el.dataset.textBorderW>0){d.textBorderW=+el.dataset.textBorderW;d.textBorderColor=el.dataset.textBorderColor||'#ffffff';d.textBorderStyle=el.dataset.textBorderStyle||'solid';}
+      const _tss=+(el.dataset.textShadowSize||0), _tsb=+(el.dataset.textShadowBlur||0), _tsw=+(el.dataset.textShadowW||0);
+      if(_tss>0||_tsb>0||_tsw>0){
+        if(_tsb>0)d.textShadowBlur=_tsb;
+        if(_tss>0)d.textShadowSize=_tss;
+        if(!d.textShadowBlur&&!d.textShadowSize&&_tsw>0)d.textShadowW=_tsw;
+        d.textShadowColor=el.dataset.textShadowColor||'#000000';
+      }else{
+        delete d.textShadowBlur; delete d.textShadowSize; delete d.textShadowW; delete d.textShadowColor;
+      }
       if(el.dataset.rx_tl||el.dataset.rx_tr||el.dataset.rx_bl||el.dataset.rx_br){
         d.rx_tl=+(el.dataset.rx_tl||0);d.rx_tr=+(el.dataset.rx_tr||0);
         d.rx_bl=+(el.dataset.rx_bl||0);d.rx_br=+(el.dataset.rx_br||0);
@@ -401,6 +422,8 @@ function save(){
       d.imgShadowBlur=el.dataset.imgShadowBlur!=null?+el.dataset.imgShadowBlur:(dd&&dd.imgShadowBlur)||15;
       d.imgShadowSize=el.dataset.imgShadowSize!=null?+el.dataset.imgShadowSize:(dd&&dd.imgShadowSize!=null?dd.imgShadowSize:4);
       d.imgShadowColor=el.dataset.imgShadowColor||(dd&&dd.imgShadowColor)||'#000000';
+      if(el.dataset.imgShadowColorScheme){try{d.imgShadowColorScheme=JSON.parse(el.dataset.imgShadowColorScheme);}catch(e){}}
+      else if(dd&&dd.imgShadowColorScheme!==undefined)d.imgShadowColorScheme=dd.imgShadowColorScheme;
       d.imgOpacity=el.dataset.imgOpacity!=null?+el.dataset.imgOpacity:(dd&&dd.imgOpacity!=null?dd.imgOpacity:1);
       d.imgPosX=el.dataset.imgPosX||(dd&&dd.imgPosX)||'center';
       d.imgPosY=el.dataset.imgPosY||(dd&&dd.imgPosY)||'center';
@@ -562,6 +585,15 @@ function save(){
       if(el.dataset.textBgDir!=null)d.textBgDir=+el.dataset.textBgDir; else delete d.textBgDir;
       if(el.dataset.textColorGrad==='1'){d.textColorGrad=true;d.textColorGrad1=el.dataset.textColorGrad1||'';d.textColorGrad2=el.dataset.textColorGrad2||'';d.textColorGradDir=+(el.dataset.textColorGradDir||90);}else{delete d.textColorGrad;delete d.textColorGrad1;delete d.textColorGrad2;delete d.textColorGradDir;}
       if(el.dataset.textBorderW&&+el.dataset.textBorderW>0){d.textBorderW=+el.dataset.textBorderW;d.textBorderColor=el.dataset.textBorderColor||'#ffffff';d.textBorderStyle=el.dataset.textBorderStyle||'solid';}
+      const _tss=+(el.dataset.textShadowSize||0), _tsb=+(el.dataset.textShadowBlur||0), _tsw=+(el.dataset.textShadowW||0);
+      if(_tss>0||_tsb>0||_tsw>0){
+        if(_tsb>0)d.textShadowBlur=_tsb;
+        if(_tss>0)d.textShadowSize=_tss;
+        if(!d.textShadowBlur&&!d.textShadowSize&&_tsw>0)d.textShadowW=_tsw;
+        d.textShadowColor=el.dataset.textShadowColor||'#000000';
+      }else{
+        delete d.textShadowBlur; delete d.textShadowSize; delete d.textShadowW; delete d.textShadowColor;
+      }
       if(el.dataset.rx_tl||el.dataset.rx_tr||el.dataset.rx_bl||el.dataset.rx_br){d.rx_tl=+(el.dataset.rx_tl||0);d.rx_tr=+(el.dataset.rx_tr||0);d.rx_bl=+(el.dataset.rx_bl||0);d.rx_br=+(el.dataset.rx_br||0);}
       const _odmd=oldElsById[d.id];if(_odmd){if(_odmd.textBgScheme!==undefined)d.textBgScheme=_odmd.textBgScheme;if(_odmd.borderScheme!==undefined)d.borderScheme=_odmd.borderScheme;}
     }
@@ -577,6 +609,10 @@ function save(){
       d.shadowBlur=el.dataset.shadowBlur!=null?+el.dataset.shadowBlur:(_oldIcon&&_oldIcon.shadowBlur!=null?_oldIcon.shadowBlur:4);
       d.shadowSize=el.dataset.shadowSize!=null?+el.dataset.shadowSize:(_oldIcon&&_oldIcon.shadowSize!=null?_oldIcon.shadowSize:3);
       d.shadowColor=el.dataset.shadowColor||(_oldIcon&&_oldIcon.shadowColor)||'#000000';
+      if(el.dataset.shadowColorScheme){try{d.shadowColorScheme=JSON.parse(el.dataset.shadowColorScheme);}catch(e){}}
+      else if(_oldIcon&&_oldIcon.shadowColorScheme!==undefined)d.shadowColorScheme=_oldIcon.shadowColorScheme;
+      if(el.dataset.iconColorScheme){try{d.iconColorScheme=JSON.parse(el.dataset.iconColorScheme);}catch(e){}}
+      else if(_oldIcon&&_oldIcon.iconColorScheme!==undefined)d.iconColorScheme=_oldIcon.iconColorScheme;
       if(_domSvg){
         d.svgContent=_domSvg.outerHTML;
         // Preserve flags from previous data
@@ -647,6 +683,7 @@ function load(){
   if(typeof DnaDecor!=='undefined') DnaDecor.unmountAll();
   if(typeof GalaxyDecor!=='undefined') GalaxyDecor.unmountAll();
   if(typeof CausticsDecor!=='undefined') CausticsDecor.unmountAll();
+  canvas.querySelectorAll('._particles_layer,._particle,#motion-ghosts,#motion-svg,.motion-ghost').forEach(e=>e.remove());
   canvas.querySelectorAll('.el').forEach(e=>e.remove());
   const s=slides[cur];loadBg(s);s.els.forEach(mkEl);
   document.getElementById('p-st').value=s.title;

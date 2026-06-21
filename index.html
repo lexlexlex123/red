@@ -595,6 +595,16 @@
               <button class="txt-border-style-btn"        data-style="zigzag"   onmousedown="event.preventDefault()" onclick="setTextBorder('style','zigzag')"  title="Зигзаг"    style="flex:1;min-width:36px;padding:3px 2px;background:var(--surface2);border:1px solid var(--border2);border-radius:3px;cursor:pointer;color:var(--text2);font-size:9px;display:flex;align-items:center;justify-content:center"><svg viewBox="0 0 28 10" width="28" height="10"><polyline points="1,8 5,2 9,8 13,2 17,8 21,2 25,8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
             </div>
           </div>
+          <!-- Text shadow -->
+          <div class="pr"><label data-i18n="propTextShadow">Тень текста</label>
+            <div style="display:flex;gap:4px;align-items:center">
+              <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;overflow:hidden;flex-shrink:0" onmousedown="openColorPanel('cp-tshadow-slot','border',function(c,sr){document.getElementById('p-tshadow-preview').style.background=c;setTextShadow('color',c,sr);})"><div id="p-tshadow-preview" style="width:100%;height:100%;background:#000000;"></div></div>
+              <input type="number" id="p-tshadow-sb" value="0" min="0" max="40" title="Размытие (0 = резкая обводка)" placeholder="blur" style="flex:1;min-width:0;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;box-sizing:border-box" oninput="setTextShadow('blur',+this.value)">
+              <input type="number" id="p-tshadow-ss" value="0" min="0" max="40" title="Толщина" placeholder="size" style="flex:1;min-width:0;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;box-sizing:border-box" oninput="setTextShadow('size',+this.value)">
+              <button title="Сбросить" onmousedown="event.preventDefault()" onclick="resetTextShadow()" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;line-height:1" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">✕</button>
+            </div>
+            <div id="cp-tshadow-slot" class="cp-slot" style="display:none;margin-top:4px" onmousedown="event.preventDefault()"></div>
+          </div>
         </div><!-- end tprops -->
         <!-- GENERATOR PROPS -->
         <div id="genprops" style="display:none">
@@ -1607,45 +1617,60 @@
         <div id="animprops" style="display:none">
           <div class="ph" data-i18n="phAnimations">Animations</div>
           <div class="anim-list" id="el-anim-list"></div>
-          <button class="mbtn-sm" onclick="removeAllAnims()" data-i18n="propClearAllAnims">Очистить всё</button>
+          <button class="mbtn-sm" onclick="clearObjectAnims()" data-i18n="propClearAllAnims">Очистить всё</button>
         </div>
         <!-- HOVER EFFECTS (separate panel, always shown for elements) -->
         <div id="hoverprops" style="display:none">
-          <div class="ph" style="margin-top:4px" data-i18n="phHoverEffect">🖱 Hover Effect</div>
-          <div style="display:flex;flex-direction:column;gap:5px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:6px">
-            <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2)"><label class="tog"><input type="checkbox" id="hfx-on" onchange="setHoverFx('enabled',this.checked)"><span class="tog-track"></span><span class="tog-thumb"></span></label> Enable on hover (cursor becomes pointer)</label>
-            <!-- Quick presets -->
-            <div style="display:flex;gap:4px;flex-wrap:wrap">
-              <button onclick="applyHoverPreset('lift')" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:3px 7px;cursor:pointer;font-size:10px">↑ Lift</button>
-              <button onclick="applyHoverPreset('lighter')" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:3px 7px;cursor:pointer;font-size:10px">☀ Lighter</button>
-              <button onclick="applyHoverPreset('darker')" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:3px 7px;cursor:pointer;font-size:10px">🌑 Darker</button>
-              <button onclick="applyHoverPreset('glow')" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:3px 7px;cursor:pointer;font-size:10px">✨ Glow</button>
-              <button onclick="applyHoverPreset('none')" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text3);border-radius:3px;padding:3px 7px;cursor:pointer;font-size:10px">✕ Clear</button>
+          <div class="ph" style="margin-top:4px">
+            <label class="tog" style="flex-shrink:0" title="Enable on hover">
+              <input type="checkbox" id="hfx-on" onchange="var _hp=document.getElementById('hfx-panel');if(_hp)_hp.style.display=this.checked?'flex':'none';setHoverFx('enabled',this.checked)">
+              <span class="tog-track"></span><span class="tog-thumb"></span>
+            </label>
+            <span data-i18n="phHoverEffect">🖱 Hover Effect</span>
+          </div>
+          <div id="hfx-panel" style="display:none;flex-direction:column;gap:5px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:6px">
+            <div id="hfx-dur-row" class="pr" style="margin:0"><label data-i18n="propHfxDuration">Duration</label>
+              <div style="display:flex;align-items:center;gap:3px">
+                <input type="number" id="hfx-dur" min="0.05" max="2" step="0.05" value="0.3" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="setHoverFx('dur',+this.value)">
+                <span style="font-size:9px;color:var(--text3)">s</span>
+              </div>
             </div>
-            <div style="display:flex;flex-direction:column;gap:5px">
+            <div class="ph" style="margin:0 0 2px;font-size:9px" data-i18n="propHfxOnHover">On hover</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4px;margin-bottom:4px">
+              <div class="pr" style="margin:0"><label>X</label><input type="number" id="hfx-x" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="setHoverFx('x',+this.value)"></div>
+              <div class="pr" style="margin:0"><label>Y</label><input type="number" id="hfx-y" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="setHoverFx('y',+this.value)"></div>
+              <div class="pr" style="margin:0"><label data-i18n="propDimW">Ш</label><input type="number" id="hfx-w" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="setHoverFx('w',Math.max(20,+this.value))"></div>
+              <div class="pr" style="margin:0"><label data-i18n="propDimH">В</label><input type="number" id="hfx-h" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="setHoverFx('h',Math.max(10,+this.value))"></div>
+            </div>
+            <div id="hfx-settings" style="display:flex;flex-direction:column;gap:5px">
+              <div class="pr" style="margin:0"><label data-i18n="propRotation">Rotation (deg)</label><input type="number" id="hfx-rot" step="1" value="0" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="setHoverFx('rot',+this.value)"></div>
+              <div style="display:flex;gap:4px;flex-wrap:wrap">
+                <button type="button" onclick="applyHoverPreset('lift')" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:3px 7px;cursor:pointer;font-size:10px">↑ Lift</button>
+                <button type="button" onclick="applyHoverPreset('lighter')" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:3px 7px;cursor:pointer;font-size:10px">☀ Lighter</button>
+                <button type="button" onclick="applyHoverPreset('darker')" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:3px 7px;cursor:pointer;font-size:10px">🌑 Darker</button>
+                <button type="button" onclick="applyHoverPreset('glow')" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:3px 7px;cursor:pointer;font-size:10px">✨ Glow</button>
+                <button type="button" onclick="applyHoverPreset('none')" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text3);border-radius:3px;padding:3px 7px;cursor:pointer;font-size:10px">✕ Clear</button>
+              </div>
               <div class="grid2">
                 <div class="pr" style="margin:0"><label data-i18n="propHfxScale">Scale</label>
                   <div style="display:flex;align-items:center;gap:3px">
-                    <input type="number" id="hfx-scale" min="0.5" max="3" step="0.05" value="1.05" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="setHoverFx('scale',+this.value)">
+                    <input type="number" id="hfx-scale" min="0.5" max="3" step="0.05" value="1" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="setHoverFx('scale',+this.value)">
                     <span style="font-size:9px;color:var(--text3)">×</span>
                   </div>
                 </div>
-                <div class="pr" style="margin:0"><label data-i18n="propHfxDuration">Duration</label>
-                  <div style="display:flex;align-items:center;gap:3px">
-                    <input type="number" id="hfx-dur" min="0.05" max="2" step="0.05" value="0.2" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="setHoverFx('dur',+this.value)">
-                    <span style="font-size:9px;color:var(--text3)">s</span>
-                  </div>
-                </div>
+                <div class="pr" style="margin:0"><label data-i18n="propHfxOpacity">Opacity</label><input type="number" id="hfx-op" min="0" max="1" step="0.05" value="1" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="setHoverFx('opacity',+this.value)"></div>
               </div>
               <div class="pr" style="margin:0"><label data-i18n="propHfxGlowColor">Glow / Shadow Color</label>
                 <div style="display:flex;gap:5px;align-items:center">
                   <div class="cp-hex" style="flex:1"><input type="color" id="hfx-col" oninput="setHoverFx('color',this.value)"><input type="text" id="hfx-col-hex" placeholder="unchanged" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 6px;font-size:11px;width:100%" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('hfx-col').value=this.value;setHoverFx('color',this.value);}"></div>
-                  <button onclick="setHoverFx('color','')" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:2px 5px;cursor:pointer;font-size:10px;white-space:nowrap">✕</button>
+                  <button type="button" onclick="setHoverFx('color','')" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:2px 5px;cursor:pointer;font-size:10px;white-space:nowrap">✕</button>
                 </div>
               </div>
               <div class="grid2">
-                <div class="pr" style="margin:0"><label data-i18n="propHfxOpacity">Opacity</label><input type="number" id="hfx-op" min="0" max="1" step="0.05" value="1" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="setHoverFx('opacity',+this.value)"></div>
                 <div class="pr" style="margin:0"><label data-i18n="propHfxShadowBlur">Shadow blur</label><input type="number" id="hfx-shadow" min="0" max="60" value="0" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="setHoverFx('shadow',+this.value)"></div>
+                <div class="pr" style="margin:0"><label data-i18n="propHfxShadowColor">Shadow color</label>
+                  <div class="cp-hex"><input type="color" id="hfx-scol" oninput="setHoverFx('shadowColor',this.value)"><input type="text" id="hfx-scol-hex" placeholder="#000000" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 6px;font-size:11px;width:100%" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('hfx-scol').value=this.value;setHoverFx('shadowColor',this.value);}"></div>
+                </div>
               </div>
             </div>
           </div>
@@ -1761,9 +1786,8 @@
     <button id="anim-panel-close" onclick="closeAnimPanel()">✕</button>
   </div>
   <div id="anim-panel-body">
-    <!-- LEFT: add button + assigned anims -->
+    <!-- LEFT: assigned anims -->
     <div id="anim-panel-left">
-      <button id="anim-add-btn" disabled onmousedown="event.preventDefault()" onclick="doAddSelectedAnim()">Выберите эффект</button>
       <div id="anim-assigned-list">
         <div id="anim-empty" style="font-size:10px;color:var(--text3);text-align:center;padding:16px 8px">Выберите объект<br>для назначения анимации</div>
       </div>

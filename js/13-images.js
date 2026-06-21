@@ -1,75 +1,219 @@
 
 // ── PNG Alpha Hit Testing ─────────────────────────────────────────────
+function _preloadAlphaCanvas(imgTag) {
+  if (!imgTag || imgTag._alphaCanvas || imgTag._alphaLoading) return;
+  if (!imgTag.complete || !imgTag.naturalWidth || !imgTag.naturalHeight) return;
+  imgTag._alphaLoading = true;
+  const src = imgTag.src || '';
+  const buildCanvas = (imageEl) => {
+    const c = document.createElement('canvas');
+    c.width = imageEl.naturalWidth; c.height = imageEl.naturalHeight;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(imageEl, 0, 0);
+    try {
+      ctx.getImageData(0, 0, 1, 1);
+      c._src = src;
+      imgTag._alphaCanvas = c;
+    } catch (e) { /* tainted */ }
+    imgTag._alphaLoading = false;
+  };
+  if (src.startsWith('data:') || location.protocol === 'file:') {
+    buildCanvas(imgTag);
+    return;
+  }
+  const loadBlob = typeof assetFetchBlob === 'function'
+    ? assetFetchBlob(src)
+    : fetch(src).then(r => r.blob());
+  loadBlob
+    .then(blob => {
+      const url = URL.createObjectURL(blob);
+      const img2 = new Image();
+      img2.onload = () => { buildCanvas(img2); URL.revokeObjectURL(url); };
+      img2.onerror = () => { imgTag._alphaLoading = false; buildCanvas(imgTag); };
+      img2.src = url;
+    })
+    .catch(() => buildCanvas(imgTag));
+}
+
+function _imgPixelAt(imgTag, clientX, clientY) {
+  const nw = imgTag.naturalWidth, nh = imgTag.naturalHeight;
+  if (!nw || !nh) return null;
+  const imgRect = imgTag.getBoundingClientRect();
+  if (!imgRect.width || !imgRect.height) return null;
+  let relX = (clientX - imgRect.left) / imgRect.width;
+  let relY = (clientY - imgRect.top) / imgRect.height;
+  const fit = imgTag.style.objectFit || (typeof getComputedStyle === 'function' ? getComputedStyle(imgTag).objectFit : '') || 'fill';
+  if (fit === 'contain' || fit === 'cover') {
+    const imgAspect = nw / nh, boxAspect = imgRect.width / imgRect.height;
+    let ox = 0, oy = 0, iw = 1, ih = 1;
+    if (fit === 'contain') {
+      if (imgAspect > boxAspect) { ih = boxAspect / imgAspect; oy = (1 - ih) / 2; }
+      else { iw = imgAspect / boxAspect; ox = (1 - iw) / 2; }
+    } else {
+      if (imgAspect > boxAspect) { iw = boxAspect / imgAspect; ox = (1 - iw) / 2; }
+      else { ih = imgAspect / boxAspect; oy = (1 - ih) / 2; }
+    }
+    relX = (relX - ox) / iw;
+    relY = (relY - oy) / ih;
+  }
+  if (relX < 0 || relY < 0 || relX > 1 || relY > 1) return null;
+  return { px: Math.floor(relX * nw), py: Math.floor(relY * nh) };
+}
+
 // Returns true if the pixel under cursor is transparent (alpha < threshold)
 function _isTransparentPixel(elOuter, clientX, clientY, threshold) {
   threshold = threshold == null ? 20 : threshold;
   try {
     const imgTag = elOuter.querySelector('img');
     if (!imgTag || !imgTag.complete || !imgTag.naturalWidth || !imgTag.naturalHeight) return false;
-
-    const src = imgTag.src || '';
-
-    // Compute pixel coords regardless of canvas availability
     const elRect = elOuter.getBoundingClientRect();
-    const elW = elRect.width, elH = elRect.height;
-    if (!elW || !elH) return false;
-    const relX = (clientX - elRect.left) / elW;
-    const relY = (clientY - elRect.top) / elH;
+    if (!elRect.width || !elRect.height) return false;
+    const relX = (clientX - elRect.left) / elRect.width;
+    const relY = (clientY - elRect.top) / elRect.height;
     if (relX < 0 || relY < 0 || relX > 1 || relY > 1) return true;
-
-    // Account for object-fit:contain letterboxing
-    const nw = imgTag.naturalWidth, nh = imgTag.naturalHeight;
-    const imgAspect = nw / nh, elAspect = elW / elH;
-    let ox = 0, oy = 0, iw = 1, ih = 1;
-    if (imgAspect > elAspect) { ih = elAspect/imgAspect; oy = (1-ih)/2; }
-    else { iw = imgAspect/elAspect; ox = (1-iw)/2; }
-    const imgRelX = (relX - ox) / iw;
-    const imgRelY = (relY - oy) / ih;
-    if (imgRelX < 0 || imgRelY < 0 || imgRelX > 1 || imgRelY > 1) return true;
-
-    const px = Math.floor(imgRelX * nw);
-    const py = Math.floor(imgRelY * nh);
-
-    // Use cached alpha canvas if ready
+    const pt = _imgPixelAt(imgTag, clientX, clientY);
+    if (!pt) return true;
+    const src = imgTag.src || '';
     if (imgTag._alphaCanvas && imgTag._alphaCanvas._src === src) {
-      const data = imgTag._alphaCanvas.getContext('2d').getImageData(px, py, 1, 1).data;
+      const data = imgTag._alphaCanvas.getContext('2d').getImageData(pt.px, pt.py, 1, 1).data;
       return data[3] < threshold;
     }
+    _preloadAlphaCanvas(imgTag);
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
 
-    // Build canvas (data: URLs work without CORS; file:// needs fetch workaround)
-    if (!imgTag._alphaLoading) {
-      imgTag._alphaLoading = true;
-      const buildCanvas = (imageEl) => {
-        const c = document.createElement('canvas');
-        c.width = imageEl.naturalWidth; c.height = imageEl.naturalHeight;
-        const ctx = c.getContext('2d', {willReadFrequently: true});
-        ctx.drawImage(imageEl, 0, 0);
-        try {
-          ctx.getImageData(0, 0, 1, 1); // test readability
-          c._src = src;
-          imgTag._alphaCanvas = c;
-        } catch(e) { /* still tainted */ }
-      };
+function _isParticleDomNode(node) {
+  if (!node) return false;
+  if (node.classList && (node.classList.contains('_particles_layer') || node.classList.contains('_particle')
+    || node.classList.contains('_particle_vis_root') || node.classList.contains('_particle_vis'))) return true;
+  return !!(node.closest && node.closest('._particles_layer, ._particle'));
+}
 
-      if (src.startsWith('data:') || location.protocol === 'file:') {
-        buildCanvas(imgTag);
+function _pointHitsEl(el, clientX, clientY, threshold) {
+  if (!el) return false;
+  if (el.classList && el.classList.contains('has-particles')) return false;
+  threshold = threshold == null ? 20 : threshold;
+  const type = el.dataset.type;
+  if (type === 'image' || (type === 'graph' && el.querySelector('img'))) {
+    return !_isTransparentPixel(el, clientX, clientY, threshold);
+  }
+  if (type === 'shape') {
+    const elems = document.elementsFromPoint(clientX, clientY);
+    for (const e of elems) {
+      const owner = e.closest('.el, .psel');
+      if (owner !== el) continue;
+      if (el.dataset.shape === 'curve') {
+        if (e.tagName === 'path') return true;
+        if (e.tagName === 'svg' && e.classList.contains('shape-hit-area')) return true;
       } else {
-        const loadBlob = typeof assetFetchBlob === 'function'
-          ? assetFetchBlob(src)
-          : fetch(src).then(r => r.blob());
-        loadBlob
-          .then(blob => {
-            const url = URL.createObjectURL(blob);
-            const img2 = new Image();
-            img2.onload = () => { buildCanvas(img2); URL.revokeObjectURL(url); };
-            img2.src = url;
-          })
-          .catch(() => buildCanvas(imgTag));
+        const tags = ['path', 'rect', 'ellipse', 'circle', 'polygon', 'polyline'];
+        if (tags.includes(e.tagName)) return true;
+        if (e.classList && e.classList.contains('shape-hit-area')) return true;
+        const sh = typeof SHAPES !== 'undefined' ? SHAPES.find(s => s.id === el.dataset.shape) : null;
+        if (e === el && sh && sh.noFill) continue;
       }
     }
-    return false; // canvas not ready yet — will work on next click
-  } catch(e) {
     return false;
+  }
+  return true;
+}
+
+function _findElAtPoint(clientX, clientY, opts) {
+  opts = opts || {};
+  const selector = opts.selector || '.el';
+  const excludeDecor = opts.excludeDecor !== false;
+  const container = opts.container || document.getElementById('canvas');
+  const threshold = opts.threshold;
+  const elems = document.elementsFromPoint(clientX, clientY);
+  for (const elem of elems) {
+    if (_isParticleDomNode(elem)) continue;
+    const el = elem.matches && elem.matches(selector) ? elem : (elem.closest ? elem.closest(selector) : null);
+    if (!el) continue;
+    if (el.classList && el.classList.contains('has-particles')) continue;
+    if (excludeDecor && el.classList.contains('decor-el')) continue;
+    if (container && !container.contains(el)) continue;
+    if (!_pointHitsEl(el, clientX, clientY, threshold)) continue;
+    return el;
+  }
+  return null;
+}
+
+function _forwardClickThrough(e, opts) {
+  opts = opts || {};
+  const selector = opts.selector || '.psel';
+  const resolved = _findElAtPoint(e.clientX, e.clientY, opts);
+  const top = e.target.closest && e.target.closest(selector);
+  if (!resolved || resolved === top) return false;
+  e.stopPropagation();
+  e.preventDefault();
+  resolved.dispatchEvent(new MouseEvent('click', {
+    bubbles: true, cancelable: true,
+    clientX: e.clientX, clientY: e.clientY, view: window
+  }));
+  return true;
+}
+
+function _elWantsPointer(el) {
+  if (!el) return false;
+  if (el._isTrigger || el._hasLink) return true;
+  const aid = el.dataset.appletId;
+  if (aid === 'counter' || aid === 'generator') return true;
+  if (el.style && el.style.cursor === 'pointer') return true;
+  return false;
+}
+
+let _alphaCursorPatchEl = null;
+let _alphaCursorPatchSaved = '';
+
+function _resetAlphaHoverCursor(opts) {
+  opts = opts || {};
+  if (_alphaCursorPatchEl && _alphaCursorPatchEl.isConnected) {
+    _alphaCursorPatchEl.style.cursor = _alphaCursorPatchSaved;
+  }
+  _alphaCursorPatchEl = null;
+  _alphaCursorPatchSaved = '';
+  if (opts.overlay) opts.overlay.style.cursor = '';
+}
+
+function _updateAlphaHoverCursor(e, opts) {
+  opts = opts || {};
+  const selector = opts.selector || '.psel';
+  const container = opts.container;
+  const navSel = opts.navSelector || '#p-prev,#p-next,#p-exit,#p-info,#nav,#p-nav,.nb';
+
+  if (_alphaCursorPatchEl && _alphaCursorPatchEl.isConnected) {
+    _alphaCursorPatchEl.style.cursor = _alphaCursorPatchSaved;
+  }
+  _alphaCursorPatchEl = null;
+  _alphaCursorPatchSaved = '';
+  if (opts.overlay) opts.overlay.style.cursor = '';
+
+  if (e.target.closest && e.target.closest(navSel)) return;
+
+  if (_isParticleDomNode(e.target)) {
+    const resolvedOnly = typeof _findElAtPoint === 'function'
+      ? _findElAtPoint(e.clientX, e.clientY, opts)
+      : null;
+    if (opts.overlay) opts.overlay.style.cursor = _elWantsPointer(resolvedOnly) ? 'pointer' : '';
+    return;
+  }
+
+  let top = e.target.closest && e.target.closest(selector);
+  if (!top || (container && !container.contains(top))) return;
+
+  const resolved = typeof _findElAtPoint === 'function'
+    ? _findElAtPoint(e.clientX, e.clientY, opts)
+    : top;
+
+  if (resolved && top !== resolved) {
+    _alphaCursorPatchEl = top;
+    _alphaCursorPatchSaved = top.style.cursor || 'default';
+    top.style.cursor = _elWantsPointer(resolved) ? 'pointer' : _alphaCursorPatchSaved;
+  } else if (opts.overlay && _elWantsPointer(resolved || top)) {
+    opts.overlay.style.cursor = 'pointer';
   }
 }
 
@@ -230,6 +374,226 @@ window._imgShadowFilterMarkup = function(d) {
   const sc = d.imgShadowColor || '#000000';
   const fid = 'imgsh_' + (d.id || 'x');
   return { fid: fid, markup: window._shadowFilterDefPct(fid, ss, sb, sc) };
+};
+
+window._parseHexColor = function(c) {
+  if (!c) return { r: 0, g: 0, b: 0 };
+  c = String(c).trim();
+  if (c.charAt(0) === '#') {
+    let h = c.slice(1);
+    if (h.length === 3) h = h.split('').map(function(ch) { return ch + ch; }).join('');
+    if (h.length >= 6) {
+      return {
+        r: parseInt(h.slice(0, 2), 16) || 0,
+        g: parseInt(h.slice(2, 4), 16) || 0,
+        b: parseInt(h.slice(4, 6), 16) || 0
+      };
+    }
+  }
+  const m = c.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+  if (m) return { r: +m[1], g: +m[2], b: +m[3] };
+  return { r: 0, g: 0, b: 0 };
+};
+
+window._lerpHexColor = function(c1, c2, t) {
+  const a = window._parseHexColor(c1);
+  const b = window._parseHexColor(c2);
+  const r = Math.round(a.r + (b.r - a.r) * t);
+  const g = Math.round(a.g + (b.g - a.g) * t);
+  const bl = Math.round(a.b + (b.b - a.b) * t);
+  return '#' + [r, g, bl].map(function(x) {
+    const s = x.toString(16);
+    return s.length < 2 ? '0' + s : s;
+  }).join('');
+};
+
+window._shadowStateFromData = function(d) {
+  if (!d) return { ss: 0, sb: 0, sc: '#000000', active: false };
+  if (d.type === 'text') {
+    if (typeof window._textShadowActive === 'function' && window._textShadowActive(d)) {
+      const p = window._textShadowParams(d);
+      return { ss: p.ss, sb: p.sb, sc: p.sc, active: true };
+    }
+  } else if (d.type === 'image' && d.imgShadow) {
+    return {
+      ss: d.imgShadowSize != null ? +d.imgShadowSize : 4,
+      sb: d.imgShadowBlur != null ? +d.imgShadowBlur : 15,
+      sc: d.imgShadowColor || '#000000',
+      active: true
+    };
+  } else if (d.type === 'shape' && d.shadow) {
+    return {
+      ss: d.shadowSize != null ? +d.shadowSize : 3,
+      sb: d.shadowBlur != null ? +d.shadowBlur : 4,
+      sc: d.shadowColor || '#000000',
+      active: true
+    };
+  }
+  return { ss: 0, sb: 0, sc: '#000000', active: false };
+};
+
+window._shadowMorphNeeds = function(from, to) {
+  if (!from.active && !to.active) return false;
+  if (!!from.active !== !!to.active) return true;
+  return from.ss !== to.ss || from.sb !== to.sb || String(from.sc) !== String(to.sc);
+};
+
+window._morphEase = function(t) {
+  return t * t * (3 - 2 * t);
+};
+
+window._shapeShadowFilterNode = function(svg, fid) {
+  if (!svg) return null;
+  return svg.querySelector('filter[id="' + fid + '"]');
+};
+
+window._shapeShadowTargetNode = function(svg, fid) {
+  if (!svg) return null;
+  let node = svg.querySelector('[filter="url(#' + fid + ')"]');
+  if (node) return node;
+  return svg.querySelector('path,rect,circle,ellipse,polygon,polyline,line,g');
+};
+
+window._applyShadowValues = function(bel, d, ss, sb, sc) {
+  if (!bel || !d) return;
+  ss = Math.max(0, +ss || 0);
+  sb = Math.max(0, +sb || 0);
+  sc = sc || '#000000';
+  const active = ss > 0 || sb > 0;
+  const id = bel.dataset.id || d.id || 'x';
+  const type = d.type;
+
+  if (type === 'text') {
+    const tel = bel.querySelector('.tel') || bel.querySelector('.ec');
+    if (!tel) return;
+    const fid = 'txtsh_' + id;
+    const defs = typeof window._ensureShadowFilterHost === 'function' ? window._ensureShadowFilterHost() : null;
+    if (!active) {
+      tel.style.filter = '';
+      if (typeof window._syncTextShadowLayout === 'function') window._syncTextShadowLayout(bel, null);
+      if (defs) {
+        const old = defs.querySelector('#' + fid);
+        if (old) old.remove();
+      }
+      return;
+    }
+    if (!defs || typeof window._shadowFilterInner !== 'function') return;
+    let filter = defs.querySelector('#' + fid);
+    if (!filter) {
+      filter = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
+      filter.setAttribute('id', fid);
+      filter.setAttribute('x', '-50%');
+      filter.setAttribute('y', '-50%');
+      filter.setAttribute('width', '200%');
+      filter.setAttribute('height', '200%');
+      defs.appendChild(filter);
+    }
+    filter.innerHTML = window._shadowFilterInner(ss, sb, sc);
+    tel.style.filter = 'url(#' + fid + ')';
+    if (typeof window._syncTextShadowLayout === 'function') {
+      window._syncTextShadowLayout(bel, { textShadowSize: ss, textShadowBlur: sb, textShadowColor: sc });
+    }
+    return;
+  }
+
+  if (type === 'image') {
+    const fid = 'imgsh_' + id;
+    const defs = typeof window._ensureShadowFilterHost === 'function' ? window._ensureShadowFilterHost() : null;
+    if (!active) {
+      bel.style.filter = '';
+      if (defs) {
+        const old = defs.querySelector('#' + fid);
+        if (old) old.remove();
+      }
+      return;
+    }
+    if (!defs || typeof window._shadowFilterInner !== 'function') return;
+    let filter = defs.querySelector('#' + fid);
+    if (!filter) {
+      filter = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
+      filter.setAttribute('id', fid);
+      filter.setAttribute('x', '-50%');
+      filter.setAttribute('y', '-50%');
+      filter.setAttribute('width', '200%');
+      filter.setAttribute('height', '200%');
+      defs.appendChild(filter);
+    }
+    filter.innerHTML = window._shadowFilterInner(ss, sb, sc);
+    bel.style.filter = 'url(#' + fid + ')';
+    return;
+  }
+
+  if (type === 'shape') {
+    const svgDiv = bel.querySelector('.shape-svg');
+    const svg = svgDiv && svgDiv.querySelector('svg');
+    if (!svg) return;
+    const fid = 'sh_' + id;
+    const sw = d.sw != null ? +d.sw : 2;
+    const w = Math.max(1, +d.w || 100);
+    const h = Math.max(1, +d.h || 100);
+    if (!active) {
+      const target = window._shapeShadowTargetNode(svg, fid);
+      if (target) target.removeAttribute('filter');
+      const filterEl = window._shapeShadowFilterNode(svg, fid);
+      if (filterEl) filterEl.remove();
+      if (typeof window._syncShapeShadowLayout === 'function') {
+        window._syncShapeShadowLayout(bel, Object.assign({}, d, { shadow: false }), w, h);
+      }
+      return;
+    }
+    let filterEl = window._shapeShadowFilterNode(svg, fid);
+    const pad = typeof window._shadowPad === 'function' ? window._shadowPad(ss, sb, sw) : Math.ceil(ss + sb * 3.5 + sw + 20);
+    if (!filterEl) {
+      let defsEl = svg.querySelector('defs');
+      if (!defsEl) {
+        defsEl = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+        svg.insertBefore(defsEl, svg.firstChild);
+      }
+      filterEl = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
+      filterEl.setAttribute('id', fid);
+      filterEl.setAttribute('filterUnits', 'userSpaceOnUse');
+      filterEl.setAttribute('primitiveUnits', 'userSpaceOnUse');
+      defsEl.appendChild(filterEl);
+      const target = window._shapeShadowTargetNode(svg, fid);
+      if (target) target.setAttribute('filter', 'url(#' + fid + ')');
+    }
+    filterEl.setAttribute('x', String(-pad));
+    filterEl.setAttribute('y', String(-pad));
+    filterEl.setAttribute('width', String(w + pad * 2));
+    filterEl.setAttribute('height', String(h + pad * 2));
+    filterEl.innerHTML = window._shadowFilterInner(ss, sb, sc);
+    if (typeof window._syncShapeShadowLayout === 'function') {
+      window._syncShapeShadowLayout(bel, Object.assign({}, d, {
+        shadow: true, shadowSize: ss, shadowBlur: sb, shadowColor: sc
+      }), w, h);
+    }
+  }
+};
+
+window._morphRunShadowAnims = function(jobs, durMs) {
+  if (!jobs || !jobs.length) return;
+  const dur = Math.max(1, +durMs || 500);
+  const start = performance.now();
+  jobs.forEach(function(j) {
+    window._applyShadowValues(j.bel, j.d, j.from.ss, j.from.sb, j.from.sc);
+  });
+  function frame(now) {
+    const t = Math.min(1, (now - start) / dur);
+    const e = window._morphEase(t);
+    jobs.forEach(function(j) {
+      const ss = j.from.ss + (j.to.ss - j.from.ss) * e;
+      const sb = j.from.sb + (j.to.sb - j.from.sb) * e;
+      const sc = window._lerpHexColor(j.from.sc, j.to.sc, e);
+      window._applyShadowValues(j.bel, j.d, ss, sb, sc);
+    });
+    if (t < 1) requestAnimationFrame(frame);
+    else {
+      jobs.forEach(function(j) {
+        window._applyShadowValues(j.bel, j.d, j.to.ss, j.to.sb, j.to.sc);
+      });
+    }
+  }
+  requestAnimationFrame(frame);
 };
 
 // ══════════════ IMAGE PROPS ══════════════
@@ -519,6 +883,13 @@ function mkEl(d){
     }
     // Restore border
     if(d.textBorderW&&+d.textBorderW>0){el.dataset.textBorderW=d.textBorderW;el.dataset.textBorderColor=d.textBorderColor||'#ffffff';if(d.textBorderStyle)el.dataset.textBorderStyle=d.textBorderStyle;applyTextBorderStyle(el);}
+    if(window._textShadowActive&&window._textShadowActive(d)){
+      if(d.textShadowBlur!=null)el.dataset.textShadowBlur=d.textShadowBlur;
+      if(d.textShadowSize!=null)el.dataset.textShadowSize=d.textShadowSize;
+      if(d.textShadowW&&+d.textShadowW>0&&!d.textShadowBlur&&!d.textShadowSize)el.dataset.textShadowW=d.textShadowW;
+      el.dataset.textShadowColor=d.textShadowColor||'#000000';
+      applyTextShadowStyle(el);
+    }
     // Restore opacity
     if(d.elOpacity!=null&&+d.elOpacity!==1){el.dataset.elOpacity=d.elOpacity;el.style.opacity=d.elOpacity;}
     // Restore corner radius
@@ -533,6 +904,7 @@ function mkEl(d){
     img.draggable=false;
     const _onImgReady=()=>{
       if(typeof window._exportRememberImg==='function')window._exportRememberImg(img);
+      if(typeof _preloadAlphaCanvas==='function')_preloadAlphaCanvas(img);
       if(d._pptxSrcRect&&typeof applyPptxSrcRectCrop==='function'&&applyPptxSrcRectCrop(el,d,img)){
         if(typeof applyImgStyles==='function')applyImgStyles(el,d);
       }
@@ -551,6 +923,8 @@ function mkEl(d){
     if(d.imgShadowBlur!=null)el.dataset.imgShadowBlur=d.imgShadowBlur;
     if(d.imgShadowSize!=null)el.dataset.imgShadowSize=d.imgShadowSize;
     if(d.imgShadowColor)el.dataset.imgShadowColor=d.imgShadowColor;
+    if(d.imgShadowColorScheme)el.dataset.imgShadowColorScheme=JSON.stringify(d.imgShadowColorScheme);
+    else if(d.imgShadowColorScheme===null)delete el.dataset.imgShadowColorScheme;
     if(d.imgOpacity!=null)el.dataset.imgOpacity=d.imgOpacity;
     if(d.imgPosX)el.dataset.imgPosX=d.imgPosX;
     if(d.imgPosY)el.dataset.imgPosY=d.imgPosY;
@@ -693,6 +1067,8 @@ function mkEl(d){
     el.dataset.shadowBlur=d.shadowBlur!=null?d.shadowBlur:4;
     el.dataset.shadowSize=d.shadowSize!=null?d.shadowSize:3;
     el.dataset.shadowColor=d.shadowColor||'#000000';
+    if(d.shadowColorScheme)el.dataset.shadowColorScheme=JSON.stringify(d.shadowColorScheme);
+    else if(d.shadowColorScheme===null)delete el.dataset.shadowColorScheme;
     if(d.strokeStyle)el.dataset.strokeStyle=d.strokeStyle;
     // Apply clip-path so hit area matches shape, not bounding box
     _applyShapeClipPath(el, d);
@@ -792,6 +1168,8 @@ function mkEl(d){
     el.dataset.shadowBlur=d.shadowBlur!=null?d.shadowBlur:4;
     el.dataset.shadowSize=d.shadowSize!=null?d.shadowSize:3;
     el.dataset.shadowColor=d.shadowColor||'#000000';
+    if(d.shadowColorScheme)el.dataset.shadowColorScheme=JSON.stringify(d.shadowColorScheme);
+    else if(d.shadowColorScheme===null)delete el.dataset.shadowColorScheme;
     // Double-click to replace icon
     el.addEventListener('dblclick',function(e){e.stopPropagation();window._iconReplaceMode=true;if(typeof openIconModal==='function')openIconModal();});
     }else if(d.type==='applet'){
@@ -821,14 +1199,7 @@ function mkEl(d){
     // Layer 2: border overlay div — sits ON TOP of clip, pointer-events:none, never clipped
     const bord=document.createElement('div');bord.className='applet-border-overlay';
     bord.style.cssText='position:absolute;inset:0;border-radius:inherit;pointer-events:none;box-sizing:border-box;';
-    const tog=document.createElement('button');tog.className='applet-toggle';
-    const _appletInteractLbl=()=>(typeof t==='function'?t('appletInteract'):'Interact');
-    const _appletDoneLbl=()=>(typeof t==='function'?t('appletDone'):'Done');
-    tog.textContent=_appletInteractLbl();
-    tog.title=(typeof t==='function'?t('appletInteractHint'):'Enable editing inside the applet');
-    tog.setAttribute('aria-label', _appletInteractLbl());
-    tog.onclick=(ev)=>{ev.stopPropagation();wrap.classList.toggle('interactive');const on=wrap.classList.contains('interactive');tog.textContent=on?_appletDoneLbl():_appletInteractLbl();tog.setAttribute('aria-label', on?_appletDoneLbl():_appletInteractLbl());};
-    wrap.append(clip,bord,tog);c.appendChild(wrap);
+    wrap.append(clip,bord);c.appendChild(wrap);
     el.dataset.appletId=d.appletId||'';
     el.dataset.appletHtml=d.appletHtml||'';
     if(d._appletAspect)el.dataset.appletAspect=d._appletAspect;
@@ -855,10 +1226,8 @@ function mkEl(d){
       el.dataset.genColorScheme  = d.genColorScheme  ? JSON.stringify(d.genColorScheme)  : '';
       el.dataset.genBgScheme     = d.genBgScheme     ? JSON.stringify(d.genBgScheme)     : '';
       el.dataset.genBorderScheme = d.genBorderScheme ? JSON.stringify(d.genBorderScheme) : '';
-      if(typeof window._wireGeneratorAppletClick==='function') window._wireGeneratorAppletClick(el);
     }
     if(d.appletId==='counter'){
-      el.style.cursor = 'pointer';
       el.dataset.cntStart       = d.cntStart !== undefined ? d.cntStart : 0;
       el.dataset.cntGoal        = d.cntGoal !== undefined && d.cntGoal !== null && d.cntGoal !== '' ? d.cntGoal : '';
       el.dataset.cntOnEnd       = d.cntOnEnd || 'none';
@@ -881,7 +1250,6 @@ function mkEl(d){
       el.dataset.genColorScheme  = d.genColorScheme ? JSON.stringify(d.genColorScheme) : '';
       el.dataset.genBgScheme     = d.genBgScheme ? JSON.stringify(d.genBgScheme) : '';
       el.dataset.genBorderScheme = d.genBorderScheme ? JSON.stringify(d.genBorderScheme) : '';
-      if(typeof window._wireCounterAppletClick==='function') window._wireCounterAppletClick(el);
     }
     // Restore border-radius — apply to wrap (clip div inherits it), border stays visible
     if(d.rx){
@@ -1017,6 +1385,10 @@ function mkEl(d){
     if(d.textColorGrad&&typeof applyTextColorGrad==='function')applyTextColorGrad(el);
   }
   if(d.valign&&d.type==='text'&&typeof applyTextVAlign==='function')applyTextVAlign(el,d.valign);
+  if(d.type==='text'&&window._textShadowActive&&window._textShadowActive(d)&&typeof applyTextShadowStyle==='function'){
+    // Re-apply last so radius/valign/body-wrap setup cannot restore overflow:hidden.
+    applyTextShadowStyle(el);
+  }
   if(d.type==='table'&&d.tableBgBlur>0){
     el.style.backdropFilter=`blur(${d.tableBgBlur}px)`;el.style.webkitBackdropFilter=`blur(${d.tableBgBlur}px)`;}
   if(d.type==='svg'){el.addEventListener('dblclick',e=>{e.stopPropagation();if(typeof openSVGModalEdit==='function')openSVGModalEdit();});}
@@ -1076,61 +1448,7 @@ function mkEl(d){
     if(el.dataset.editing==='true')return; // let text editing handle it
     const cn=ev.target.className||'';
     if(typeof cn==='string'&&(cn.includes('rh')||cn.includes('db')))return;
-    if(ev.target.closest&&(ev.target.closest('.applet-el')&&ev.target.closest('.interactive')))return;
-    // PNG alpha hit test: if clicking transparent area of an image, pass click to element below
-    if(d.type==='image' && !(typeof multiSel!=='undefined'&&multiSel&&multiSel.size>1&&multiSel.has(el))){
-      const _iel = el.querySelector('.iel');
-      // Pass the outer el for correct rect (iel fills el; object-fit handled inside function)
-      if(_iel && _isTransparentPixel(el, ev.clientX, ev.clientY, 20)){
-        // Find element below in DOM stack
-        const _cv2 = document.getElementById('canvas');
-        if(_cv2){
-          const _r2 = _cv2.getBoundingClientRect();
-          const _sx2 = (typeof canvasW!=='undefined'?canvasW:_cv2.offsetWidth)/_r2.width;
-          const _sy2 = (typeof canvasH!=='undefined'?canvasH:_cv2.offsetHeight)/_r2.height;
-          const _cx2 = (ev.clientX-_r2.left)*_sx2, _cy2 = (ev.clientY-_r2.top)*_sy2;
-          const _kids2 = Array.from(_cv2.querySelectorAll('.el:not(.decor-el)'));
-          let _below2 = null;
-          for(let _i2=_kids2.length-1;_i2>=0;_i2--){
-            const _pp=_kids2[_i2]; if(_pp===el) continue;
-            const _ppx=parseInt(_pp.style.left)||0,_ppy=parseInt(_pp.style.top)||0;
-            const _ppw=parseInt(_pp.style.width)||0,_pph=parseInt(_pp.style.height)||0;
-            if(_cx2>=_ppx&&_cx2<=_ppx+_ppw&&_cy2>=_ppy&&_cy2<=_ppy+_pph){_below2=_pp;break;}
-          }
-          if(_below2){
-            ev.stopPropagation();
-            if(typeof pickMulti==='function') pickMulti(_below2, false);
-            else if(typeof pick==='function') pick(_below2);
-            // Start drag on element below
-            const _bl3=parseInt(_below2.style.left)||0,_bt3=parseInt(_below2.style.top)||0;
-            window._anyDragging=true;
-            const _ox3=ev.clientX,_oy3=ev.clientY; let _mv3=false;
-            const _mm3=mv=>{
-              if(!_mv3){_mv3=true;if(typeof pushUndo==='function')pushUndo();}
-              const _z3=typeof zoom!=='undefined'?zoom:1;
-              const _snc=document.getElementById('snap-chk');
-              let _nl3=_bl3+(mv.clientX-_ox3)/_z3,_nt3=_bt3+(mv.clientY-_oy3)/_z3;
-              if(_snc&&_snc.checked&&typeof snapV==='function'){_nl3=snapV(_nl3);_nt3=snapV(_nt3);}
-              _below2.style.left=_nl3+'px';_below2.style.top=_nt3+'px';
-              if(typeof drawGuides==='function')drawGuides(_below2);
-              if(typeof _updateHandlesOverlay==='function' && !window._curveDragging)_updateHandlesOverlay();
-            };
-            const _mu3=()=>{
-              window._anyDragging=false;
-              document.removeEventListener('mousemove',_mm3);document.removeEventListener('mouseup',_mu3);
-              if(_mv3){
-                if(typeof clearGuides==='function')clearGuides();if(typeof commitAll==='function')commitAll();
-                const _bd3=slides[cur]&&slides[cur].els.find(e=>e.id===_below2.dataset.id);
-                if(_bd3){_bd3.x=parseInt(_below2.style.left);_bd3.y=parseInt(_below2.style.top);}
-                if(typeof save==='function')save();if(typeof drawThumbs==='function')drawThumbs();if(typeof saveState==='function')saveState();
-              }
-            };
-            document.addEventListener('mousemove',_mm3);document.addEventListener('mouseup',_mu3);
-            return;
-          }
-        }
-      }
-    }
+    // PNG alpha passthrough handled in mkDrag via _findElAtPoint
     // For shapes: only pick if clicking on actual SVG shape fill, not empty bounding box area
     if(d.type==='shape'&&(d.shape==='curve')){
       // Curve: only selectable/draggable via actual stroke, not empty bbox
@@ -1170,6 +1488,7 @@ function mkEl(d){
           const _ox2=ev.clientX, _oy2=ev.clientY;
           let _mv2=false;
           const _mm2=mv=>{
+            if(typeof window._isPreviewActive==='function'&&window._isPreviewActive()){_mu2();return;}
             if(!_mv2){_mv2=true;if(typeof pushUndo==='function')pushUndo();}
             const _zoom2=typeof zoom!=='undefined'?zoom:1;
             let _nl2=_bl2+(mv.clientX-_ox2)/_zoom2,_nt2=_bt2+(mv.clientY-_oy2)/_zoom2;
@@ -1305,6 +1624,6 @@ function pick(el){
   if(typeof _updateHandlesOverlay==='function') _updateHandlesOverlay();
   // Refresh lego z-order so selected element appears on top
   if(typeof _refreshAllLegoZ==='function') _refreshAllLegoZ();
-  if(document.getElementById('anim-panel').classList.contains('open'))renderAnimPanel();
+  if(document.getElementById('props-anim-wrap')?.style.display==='flex'||document.getElementById('anim-panel')?.classList.contains('open'))renderAnimPanel();
 }
 function desel(){if(window._curveEditMode)return;clearGuides();pick(null);}

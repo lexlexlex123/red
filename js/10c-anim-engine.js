@@ -560,9 +560,36 @@ window._fireCaptionSlideAnim = function(el, a, delay, w, h, opts) {
   window._fireCaptionSlideAnimGroup([{ el, w, h }], a, delay, opts);
 };
 
+function _splitReadCounterFromEl(el) {
+  if (!el || el.dataset.appletId !== 'counter') return null;
+  const iframe = el.querySelector('iframe');
+  if (!iframe) return null;
+  try {
+    const w = iframe.contentWindow;
+    if (w && w._val != null && w._val !== '') {
+      const n = +w._val;
+      if (!isNaN(n)) return n;
+    }
+    const num = iframe.contentDocument && iframe.contentDocument.getElementById('num');
+    if (num && num.textContent != null && num.textContent !== '') {
+      const n = parseFloat(String(num.textContent).replace(/[^\d.-]/g, ''));
+      if (!isNaN(n)) return n;
+    }
+  } catch (e) {}
+  return null;
+}
+
 function _splitResolveAppletLiveVal(el, liveVal) {
-  if (liveVal != null && liveVal !== '') return liveVal;
-  if (el._splitAppletLiveVal != null && el._splitAppletLiveVal !== '') return el._splitAppletLiveVal;
+  if (liveVal != null && liveVal !== '') {
+    const n = +liveVal;
+    if (!isNaN(n)) return n;
+  }
+  if (el._splitAppletLiveVal != null && el._splitAppletLiveVal !== '') {
+    const n = +el._splitAppletLiveVal;
+    if (!isNaN(n)) return n;
+  }
+  const fromIframe = _splitReadCounterFromEl(el);
+  if (fromIframe != null && !isNaN(fromIframe)) return fromIframe;
   const elId = el.dataset && el.dataset.id;
   if (!elId || typeof slides === 'undefined') return null;
   const inPreview = document.getElementById('preview-ov')?.classList.contains('active');
@@ -575,14 +602,13 @@ function _splitResolveAppletLiveVal(el, liveVal) {
 
 function _patchAppletSrcdocVal(srcdoc, liveVal) {
   if (liveVal == null || srcdoc === '') return srcdoc;
-  const txt = String(liveVal);
+  const n = +liveVal;
+  if (isNaN(n)) return srcdoc;
   let out = srcdoc;
-  if (/var _val=/.test(out) && txt !== '' && !isNaN(+txt)) {
-    out = out.replace(/var _val=([^,]+)/, 'var _val=' + (+txt));
+  if (/var _val=/.test(out)) {
+    out = out.replace(/var _val=([^,;]+)/, 'var _val=' + n);
   }
-  const inj = '<script>try{var _n=document.getElementById("num");if(_n)_n.textContent=' + JSON.stringify(txt) + ';}catch(e){}<\/script>';
-  if (out.indexOf('</body>') !== -1) return out.replace('</body>', inj + '</body>');
-  return out + inj;
+  return out;
 }
 
 function _splitPatchIframe(iframe, liveVal) {
@@ -658,7 +684,6 @@ function _ensureSplitHalfWrap(el, liveVal) {
   const w = parseInt(el.style.width, 10) || el.offsetWidth || 200;
   const nodes = [];
   while (el.firstChild) nodes.push(el.removeChild(el.firstChild));
-  if (val != null) nodes.forEach(n => _splitPatchTreeIframes(n, val));
   const clones = nodes.map(n => _splitCloneNode(n, val));
 
   el._splitOvSaved = el.style.overflow || '';
@@ -728,7 +753,9 @@ window._fireSplitHalfAnim = function(el, a, delay, opts) {
   const easing = 'cubic-bezier(0.4, 0, 1, 1)';
 
   setTimeout(() => {
-    const liveVal = el._splitAppletLiveVal;
+    const liveVal = el._splitAppletLiveVal != null && el._splitAppletLiveVal !== ''
+      ? el._splitAppletLiveVal
+      : _splitReadCounterFromEl(el);
     const parts = _ensureSplitHalfWrap(el, liveVal);
     const runSplit = () => {
       const leftFrames = [
@@ -759,6 +786,403 @@ window._fireSplitHalfAnim = function(el, a, delay, opts) {
 
 /* EXPORT:ENGINE-TAIL */
 
+window._particlesHasAnim = function(d) {
+  return !!(d && (d.anims || []).some(a => a && a.name === 'particles'));
+};
+
+window._particlesEnsureHiddenIfNeeded = function(el, d) {
+  if (!el || !window._particlesHasAnim(d)) return;
+  el.classList.add('has-particles');
+  window._particlesHideOriginal(el);
+};
+
+window._particlesHideOriginal = function(el) {
+  if (!el || el._particlesOrigVis != null) return;
+  el._particlesOrigVis = el.style.visibility;
+  el._particlesOrigPE = el.style.pointerEvents;
+  el.style.visibility = 'hidden';
+  el.style.pointerEvents = 'none';
+};
+
+window._particlesShowOriginal = function(el) {
+  if (!el) return;
+  if (el._particlesOrigVis != null) {
+    el.style.visibility = el._particlesOrigVis;
+    el._particlesOrigVis = null;
+  } else {
+    el.style.visibility = '';
+  }
+  if (el._particlesOrigPE != null) {
+    el.style.pointerEvents = el._particlesOrigPE;
+    el._particlesOrigPE = null;
+  } else {
+    el.style.pointerEvents = '';
+  }
+};
+
+window._resetParticles = function(el) {
+  if (!el) return;
+  if (el._particlesRun) {
+    el._particlesRun.cancelled = true;
+    el._particlesRun = null;
+  }
+  if (el._particlesTimers) {
+    el._particlesTimers.forEach(t => clearTimeout(t));
+    el._particlesTimers = [];
+  }
+  if (el._particlesRaf) {
+    cancelAnimationFrame(el._particlesRaf);
+    el._particlesRaf = null;
+  }
+  const layer = el._particlesLayer;
+  if (layer && layer.parentNode) layer.parentNode.removeChild(layer);
+  el._particlesLayer = null;
+  window._particlesShowOriginal(el);
+  if (el._liveAnimsByName && el._liveAnimsByName.particles) {
+    try { delete el._liveAnimsByName.particles; } catch (e) {}
+  }
+};
+
+window._particlesResolveData = function(el, d, ew, eh) {
+  d = d || {};
+  const ds = el && el.dataset ? el.dataset : {};
+  const type = d.type || ds.type || '';
+  const out = Object.assign({ id: d.id || ds.id || 'x', type: type, w: ew, h: eh }, d);
+  if (out.elOpacity == null) {
+    if (ds.elOpacity != null) out.elOpacity = +ds.elOpacity;
+    else if (el && el.style && el.style.opacity) {
+      const o = parseFloat(el.style.opacity);
+      if (!isNaN(o)) out.elOpacity = o;
+    }
+  }
+  if (type === 'image') {
+    if (out.imgOpacity == null) {
+      if (d.imgOpacity != null) out.imgOpacity = +d.imgOpacity;
+      else if (ds.imgOpacity != null) out.imgOpacity = +ds.imgOpacity;
+      else {
+        const img = el && el.querySelector('img');
+        if (img && img.style.opacity) {
+          const io = parseFloat(img.style.opacity);
+          if (!isNaN(io)) out.imgOpacity = io;
+        }
+      }
+    }
+    if (out.imgShadow == null && ds.imgShadow != null) out.imgShadow = ds.imgShadow === 'true' || ds.imgShadow === '1';
+    if (out.imgShadowBlur == null && ds.imgShadowBlur != null) out.imgShadowBlur = +ds.imgShadowBlur;
+    if (out.imgShadowSize == null && ds.imgShadowSize != null) out.imgShadowSize = +ds.imgShadowSize;
+    if (!out.imgShadowColor && ds.imgShadowColor) out.imgShadowColor = ds.imgShadowColor;
+  }
+  if (type === 'shape') {
+    if (out.shadow == null && ds.shadow != null) out.shadow = ds.shadow === 'true' || ds.shadow === '1';
+    if (out.shadowBlur == null && ds.shadowBlur != null) out.shadowBlur = +ds.shadowBlur;
+    if (out.shadowSize == null && ds.shadowSize != null) out.shadowSize = +ds.shadowSize;
+    if (!out.shadowColor && ds.shadowColor) out.shadowColor = ds.shadowColor;
+    if (out.sw == null && ds.sw != null) out.sw = +ds.sw;
+  }
+  if (type === 'text') {
+    if (out.textShadowSize == null && ds.textShadowSize != null) out.textShadowSize = +ds.textShadowSize;
+    if (out.textShadowBlur == null && ds.textShadowBlur != null) out.textShadowBlur = +ds.textShadowBlur;
+    if (out.textShadowW == null && ds.textShadowW != null) out.textShadowW = +ds.textShadowW;
+    if (!out.textShadowColor && ds.textShadowColor) out.textShadowColor = ds.textShadowColor;
+  }
+  return out;
+};
+
+window._particlesBaseOpacity = function(pd) {
+  if (!pd || pd.elOpacity == null || isNaN(+pd.elOpacity)) return 1;
+  return Math.max(0, Math.min(1, +pd.elOpacity));
+};
+
+window._particlesApplyCloneShadow = function(host, pd, uid) {
+  if (!host || !pd) return;
+  const shFn = typeof window._shadowStateFromData === 'function' ? window._shadowStateFromData
+    : (typeof window._expShadowStateFromData === 'function' ? window._expShadowStateFromData : null);
+  const sh = shFn ? shFn(pd) : null;
+  if (!sh || !sh.active) return;
+  host.dataset.id = (pd.id || 'x') + '_pt' + uid;
+  host.dataset.type = pd.type || '';
+  if (typeof window._applyShadowValues === 'function') {
+    window._applyShadowValues(host, pd, sh.ss, sh.sb, sh.sc);
+  } else if (typeof window._expApplyShadowValues === 'function') {
+    window._expApplyShadowValues(host, pd, sh.ss, sh.sb, sh.sc);
+  }
+  host.style.overflow = 'visible';
+};
+
+function _particlesNeutralizePointer(node) {
+  if (!node || node.nodeType !== 1) return;
+  node.style.pointerEvents = 'none';
+  node.style.cursor = 'default';
+  if (node.querySelectorAll) {
+    node.querySelectorAll('*').forEach(function(n) {
+      n.style.pointerEvents = 'none';
+      n.style.cursor = 'default';
+    });
+  }
+}
+
+window._particlesCloneVisual = function(el, pd, uid) {
+  const type = (pd && pd.type) || (el.dataset && el.dataset.type) || '';
+  const root = document.createElement('div');
+  root.className = '_particle_vis_root';
+  root.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;box-sizing:border-box;';
+  const wrap = document.createElement('div');
+  wrap.className = '_particle_vis';
+  wrap.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;box-sizing:border-box;';
+  function adopt(node) {
+    if (!node) return false;
+    const c = node.cloneNode(true);
+    c.style.pointerEvents = 'none';
+    c.style.width = '100%';
+    c.style.height = '100%';
+    c.style.boxSizing = 'border-box';
+    c.style.maxWidth = '100%';
+    c.style.maxHeight = '100%';
+    wrap.appendChild(c);
+    return true;
+  }
+  if (type === 'text') {
+    const src = el.querySelector('.psel-txt') || el.querySelector('.tel') || el.querySelector('.ec');
+    if (src) {
+      const c = src.cloneNode(true);
+      c.style.pointerEvents = 'none';
+      c.style.width = '100%';
+      c.style.height = '100%';
+      c.style.boxSizing = 'border-box';
+      const txt = c.querySelector('.tel') || c.querySelector('.ec') || c.querySelector('div') || c;
+      if (txt && txt.classList) {
+        if (!txt.classList.contains('tel')) txt.classList.add('tel');
+        if (!txt.classList.contains('ec')) txt.classList.add('ec');
+      }
+      wrap.appendChild(c);
+    }
+  } else if (type === 'shape') {
+    if (!adopt(el.querySelector('.ec'))) adopt(el.querySelector('.shape-svg'));
+  } else if (type === 'image') {
+    const img = el.querySelector('img');
+    if (img) {
+      const c = img.cloneNode(true);
+      const io = pd && pd.imgOpacity != null ? +pd.imgOpacity : (img.style.opacity ? parseFloat(img.style.opacity) : 1);
+      c.style.cssText = 'width:100%;height:100%;object-fit:' + (img.style.objectFit || 'contain') + ';pointer-events:none;display:block;opacity:' + (isNaN(io) ? 1 : io) + ';';
+      wrap.appendChild(c);
+    }
+  } else if (type === 'icon' || type === 'formula' || type === 'svg') {
+    adopt(el.querySelector('svg'));
+  } else {
+    const kids = Array.from(el.children).filter(ch => !ch.classList.contains('_particles_layer'));
+    if (!kids.length || !adopt(kids[0])) {
+      wrap.style.background = 'rgba(128,128,128,.25)';
+      wrap.style.borderRadius = '4px';
+    }
+  }
+  root.appendChild(wrap);
+  if (pd && uid != null) window._particlesApplyCloneShadow(root, pd, uid);
+  if (type === 'image' && el.style && el.style.filter && !root.style.filter) {
+    root.style.filter = el.style.filter;
+  }
+  root.style.overflow = 'visible';
+  _particlesNeutralizePointer(root);
+  return root;
+};
+
+window._particlesLayerZ = function(el) {
+  if (!el) return 2;
+  const inline = parseInt(el.style.zIndex, 10);
+  if (!isNaN(inline)) return inline;
+  try {
+    const computed = parseInt(getComputedStyle(el).zIndex, 10);
+    if (!isNaN(computed)) return computed;
+  } catch (e) {}
+  return 2;
+};
+
+function _ptDef() {
+  return window.PARTICLES_DEFAULTS || {
+    particleCount: 14, ptDir: 0, ptLife: 900, ptSizeRand: 51, ptRot: 32, ptSpread: 100, duration: 3550
+  };
+}
+
+function _particlesElRot(el, d) {
+  d = d || {};
+  if (d.rot != null && !isNaN(+d.rot)) return +d.rot;
+  if (el && el.dataset && el.dataset.rot != null && el.dataset.rot !== '') return +el.dataset.rot || 0;
+  if (el && el.style && el.style.transform) {
+    const m = el.style.transform.match(/rotate\(([-\d.]+)deg\)/);
+    if (m) return +m[1] || 0;
+  }
+  try {
+    const t = el && getComputedStyle(el).transform;
+    if (t && t !== 'none') {
+      const m = new DOMMatrix(t);
+      return Math.atan2(m.b, m.a) * 180 / Math.PI;
+    }
+  } catch (e) {}
+  return 0;
+}
+
+function _particlesWorldDir(ptDir, elRot) {
+  // ptDir: 0° = up relative to element; elRot: CSS rotate(deg) on the object
+  return ((+elRot + +ptDir - 90) % 360 + 360) % 360;
+}
+
+window._fireParticlesAnim = function(el, a, delay, d, opts) {
+  opts = opts || {};
+  if (!el || !el.parentElement) return;
+  window._resetParticles(el);
+  const _d = _ptDef();
+  const count = Math.max(1, Math.min(200, +(a.particleCount != null ? a.particleCount : _d.particleCount) || _d.particleCount));
+  const ptDir = ((a.ptDir != null ? +a.ptDir : (a.particleDir != null ? +a.particleDir : _d.ptDir)) % 360 + 360) % 360;
+  const elRot = _particlesElRot(el, d);
+  const baseFlyDeg = _particlesWorldDir(ptDir, elRot);
+  const ptLife = Math.max(400, +(a.ptLife != null ? a.ptLife : _d.ptLife) || _d.ptLife);
+  const ptSizeRand = Math.max(0, Math.min(100, +(a.ptSizeRand != null ? a.ptSizeRand : _d.ptSizeRand)));
+  const ptRotDev = Math.max(0, Math.min(180, +(a.ptRot != null ? a.ptRot : _d.ptRot)));
+  const ptSpread = Math.max(0, Math.min(100, +(a.ptSpread != null ? a.ptSpread : _d.ptSpread)));
+  const spawnWindow = Math.max(400, +(a.duration != null ? a.duration : _d.duration) || _d.duration);
+  const speedFactor = 6000 / spawnWindow;
+  const swingCnt = a.swingCount != null ? a.swingCount : 1;
+  const loops = (!isFinite(swingCnt) || swingCnt >= 10) ? Infinity : Math.max(1, +swingCnt || 1);
+  const ew = (d && d.w) || parseFloat(el.style.width) || el.offsetWidth || 100;
+  const eh = (d && d.h) || parseFloat(el.style.height) || el.offsetHeight || 100;
+  const pd = window._particlesResolveData(el, d, ew, eh);
+  const baseOpacity = window._particlesBaseOpacity(pd);
+  let _ptUid = 0;
+  const container = el.parentElement;
+  const run = { cancelled: false };
+  el._particlesRun = run;
+  el._particlesTimers = [];
+  el.style.overflow = 'visible';
+  el.classList.add('has-particles');
+
+  let layer = el._particlesLayer;
+  const layerZ = window._particlesLayerZ(el);
+  if (!layer) {
+    layer = document.createElement('div');
+    layer.className = '_particles_layer';
+    el._particlesLayer = layer;
+  }
+  layer.style.cssText = 'position:absolute;inset:0;overflow:visible;pointer-events:none;z-index:' + layerZ + ';';
+  if (el.nextSibling !== layer) {
+    if (el.nextSibling) container.insertBefore(layer, el.nextSibling);
+    else container.appendChild(layer);
+  }
+  layer.innerHTML = '';
+  window._particlesHideOriginal(el);
+
+  function elPos() {
+    return {
+      x: parseFloat(el.style.left) || 0,
+      y: parseFloat(el.style.top) || 0,
+      w: ew,
+      h: eh
+    };
+  }
+
+  function particleScale() {
+    if (ptSizeRand <= 0) return 1;
+    const minS = 0.01;
+    return 1 - (ptSizeRand / 100) * Math.random() * (1 - minS);
+  }
+
+  function spawnOne(spawnAt) {
+    const tid = setTimeout(() => {
+      if (run.cancelled || !layer.parentNode) return;
+      const pos = elPos();
+      const life = ptLife * (0.55 + Math.random() * 0.9);
+      const scale = particleScale();
+      const speedMult = 0.55 + Math.random() * 0.9;
+      const pw = Math.max(4, ew * scale);
+      const ph = Math.max(4, eh * scale);
+      const sx0 = pos.x + Math.random() * Math.max(0, pos.w - pw * 0.5);
+      const sy0 = pos.y + Math.random() * Math.max(0, pos.h - ph * 0.5);
+      let flyDeg = baseFlyDeg;
+      if (ptRotDev > 0) flyDeg = baseFlyDeg + (Math.random() - 0.5) * 2 * ptRotDev;
+      flyDeg = ((flyDeg % 360) + 360) % 360;
+      const pRot = (flyDeg + 90) % 360;
+      const dirRad = flyDeg * Math.PI / 180;
+      const cosD = Math.cos(dirRad);
+      const sinD = Math.sin(dirRad);
+      const perpX = -sinD;
+      const perpY = cosD;
+      const sizeBase = Math.max(ew, eh);
+      const speedPxMs = (0.038 + Math.random() * 0.024) * speedMult * speedFactor * (0.65 + sizeBase * 0.0035);
+      const spreadPx = sizeBase * (ptSpread / 100) * 0.55;
+      const latOff = ptSpread > 0 ? (Math.random() - 0.5) * 2 * spreadPx : 0;
+      const latVel = ptSpread > 0 ? (Math.random() - 0.5) * 2 * speedPxMs * (ptSpread / 100) * 0.32 : 0;
+      const sx = sx0 + perpX * latOff;
+      const sy = sy0 + perpY * latOff;
+      const zigAmp = sizeBase * (0.012 + Math.random() * 0.018);
+      const zigFreqHz = 0.18 + Math.random() * 0.32;
+      const zigPhase = Math.random() * Math.PI * 2;
+      const fadeIn = Math.min(400, life * 0.12);
+      const fadeOut = Math.min(650, life * 0.2);
+      const uid = (_ptUid++);
+
+      const p = document.createElement('div');
+      p.className = '_particle';
+      const pTf = 'rotate(' + pRot + 'deg)';
+      p.style.cssText = 'position:absolute;left:' + sx + 'px;top:' + sy + 'px;width:' + pw + 'px;height:' + ph + 'px;opacity:0;pointer-events:none;cursor:default;overflow:visible;transform-origin:center center;transform:' + pTf + ';';
+      p.appendChild(window._particlesCloneVisual(el, pd, uid));
+      _particlesNeutralizePointer(p);
+      layer.appendChild(p);
+
+      const t0 = performance.now();
+      function tick(now) {
+        if (run.cancelled) { if (p.parentNode) p.remove(); return; }
+        const elapsed = now - t0;
+        if (elapsed >= life) { if (p.parentNode) p.remove(); return; }
+        const lifeT = elapsed / life;
+        const drift = speedPxMs * elapsed;
+        const bx = sx + cosD * drift;
+        const by = sy + sinD * drift;
+        const lat = latVel * elapsed;
+        const zig = Math.sin(elapsed * 0.001 * zigFreqHz * Math.PI * 2 + zigPhase) * zigAmp * (1 - lifeT * 0.45);
+        const x = bx + perpX * (zig + lat);
+        const y = by + perpY * (zig + lat);
+        let fadeOp;
+        if (elapsed < fadeIn) fadeOp = elapsed / fadeIn;
+        else if (elapsed > life - fadeOut) fadeOp = (life - elapsed) / fadeOut;
+        else fadeOp = 1;
+        let scale = 1;
+        if (elapsed > life - fadeOut) {
+          const tFade = 1 - Math.max(0, Math.min(1, fadeOp));
+          scale = 1 + tFade * 0.5;
+        }
+        p.style.left = x + 'px';
+        p.style.top = y + 'px';
+        p.style.transform = 'rotate(' + pRot + 'deg) scale(' + scale + ')';
+        p.style.opacity = String(Math.max(0, Math.min(1, baseOpacity * fadeOp)));
+        el._particlesRaf = requestAnimationFrame(tick);
+      }
+      el._particlesRaf = requestAnimationFrame(tick);
+    }, Math.max(0, spawnAt));
+    el._particlesTimers.push(tid);
+  }
+
+  function runCycle(cycleIdx) {
+    if (run.cancelled) return;
+    if (cycleIdx >= loops) return;
+    const base = delay + cycleIdx * (spawnWindow + ptLife * 0.85);
+    for (let i = 0; i < count; i++) {
+      const jitter = Math.random() * (spawnWindow / Math.max(1, count));
+      spawnOne(base + (i / count) * spawnWindow + jitter);
+    }
+    if (loops === Infinity || cycleIdx + 1 < loops) {
+      const nextAt = spawnWindow + ptLife * 0.85;
+      const tid = setTimeout(() => runCycle(cycleIdx + 1), nextAt);
+      el._particlesTimers.push(tid);
+    }
+  }
+
+  runCycle(0);
+
+  if (!el._liveAnims) el._liveAnims = [];
+  const handle = { cancel: () => window._resetParticles(el) };
+  el._liveAnims.push(handle);
+  if (!el._liveAnimsByName) el._liveAnimsByName = {};
+  el._liveAnimsByName.particles = handle;
+};
+
 window.ANIM_ENGINE_META = {
   fadeIn: { engine: 'css', export: 'css' },
   slideUp: { engine: 'css', export: 'css' },
@@ -781,11 +1205,12 @@ window.ANIM_ENGINE_META = {
   dance: { engine: 'live', export: 'live' },
   swing: { engine: 'live', export: 'live' },
   float: { engine: 'live', export: 'live' },
+  particles: { engine: 'custom', export: 'particles' },
   typewriter: { engine: 'custom', export: 'typewriter' },
   captionSlide: { engine: 'custom', export: 'captionSlide' },
 };
 
-window._LIVE_LOOP_NAMES = { dance: 1, swing: 1 };
+window._LIVE_LOOP_NAMES = { dance: 1, swing: 1, float: 1 };
 
 window._animChainDuration = function(a) {
   if (!a) return 600;
@@ -795,6 +1220,12 @@ window._animChainDuration = function(a) {
     return d + h + d;
   }
   if (a.name === 'splitHalf') return +(a.duration || 800) || 800;
+  if (a.name === 'particles') {
+    const _d = (typeof _ptDef === 'function' ? _ptDef() : (window.PARTICLES_DEFAULTS || { duration: 3550, ptLife: 900 }));
+    const spawn = +(a.duration || _d.duration) || _d.duration;
+    const life = +(a.ptLife || _d.ptLife) || _d.ptLife;
+    return spawn + life * 1.45;
+  }
   if (a.name === 'typewriter') {
     const cd = a.charDelay || 40;
     const fromLen = (a.fromHtml || '').replace(/<[^>]*>/g, '').length;
@@ -1105,6 +1536,8 @@ window._resetSlideAnimEl = function(el, d) {
   if (typeof window._resetCaptionSlide === 'function') window._resetCaptionSlide(el, true);
   if (typeof window._resetSplitHalf === 'function') window._resetSplitHalf(el, true);
   if (typeof window._resetLiveAnimPreview === 'function') window._resetLiveAnimPreview(el, true);
+  if (typeof window._resetParticles === 'function') window._resetParticles(el);
+  el.classList.remove('has-particles');
   if (el.dataset.type === 'text' && typeof applyTextRadius === 'function') applyTextRadius(el);
 };
 
@@ -1659,6 +2092,10 @@ window._moveAnimTimelineHost = function(where) {
   const panel = document.getElementById('anim-timeline-ribbon');
   if (!panel || !ribbon || !dock) return;
   (where === 'dock' ? dock : ribbon).appendChild(panel);
+};
+
+window._setAnimTabActive = function(active) {
+  document.body.classList.toggle('anim-tab-active', !!active);
 };
 
 window._updateAnimTlExpandBtn = function(docked) {

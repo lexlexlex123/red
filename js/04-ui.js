@@ -1438,6 +1438,7 @@ function _addRotationZones(overlay, el) {
   }
 
   document.addEventListener('mousemove', ev => {
+    if (typeof window._isPreviewActive === 'function' && window._isPreviewActive()) return;
     if (_rotDragging || !_rotEl) return;
     if (window._anyDragging) return;
     if (window._curveEditMode) { _setRotCursor(''); return; } // no rotation cursor in curve edit
@@ -1457,6 +1458,7 @@ function _addRotationZones(overlay, el) {
 
   // Capture phase: fires before ANY element's mousedown handler
   document.addEventListener('mousedown', ev => {
+    if (typeof window._isPreviewActive === 'function' && window._isPreviewActive()) return;
     if (ev.button !== 0 || !_rotEl) return;
     if (window._resizeDragging) return;
     if (window._curveEditMode) return; // don't rotate while editing curve nodes
@@ -1507,6 +1509,10 @@ function _addRotationZones(overlay, el) {
 
     let _rotRaf = null;
     const onMove = e => {
+      if (typeof window._isPreviewActive === 'function' && window._isPreviewActive()) {
+        onUp();
+        return;
+      }
       const clientX = e.clientX, clientY = e.clientY, shiftKey = e.shiftKey;
       if (_rotRaf) return; // throttle to one frame
       _rotRaf = requestAnimationFrame(() => {

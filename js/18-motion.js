@@ -123,6 +123,7 @@
 
   window.renderMotionOverlay = function(){
     _removeOverlay();
+    if(typeof window._isPreviewActive==='function'&&window._isPreviewActive()) return;
     if(!_animOpen()) return;
 
     const s = (typeof slides!=='undefined') && slides[(typeof cur!=='undefined'?cur:0)];
@@ -229,6 +230,7 @@
           dot.title = 'Перетащите для изменения центра качения';
 
           dot.addEventListener('mousedown', e=>{
+            if(typeof window._isPreviewActive==='function'&&window._isPreviewActive()) return;
             e.preventDefault(); e.stopPropagation();
             dot.style.cursor='grabbing';
             const sx=e.clientX, sy=e.clientY;
@@ -301,6 +303,7 @@
           handle.title = 'Перетащите для изменения точки назначения';
 
           handle.addEventListener('mousedown', e=>{
+            if(typeof window._isPreviewActive==='function'&&window._isPreviewActive()) return;
             e.preventDefault(); e.stopPropagation();
             const sx=e.clientX, sy=e.clientY;
             const stx=a.tx||0, sty=a.ty||0;
@@ -390,6 +393,7 @@
             const orbitHandle = _makeMoveHandle(endGx, endGy, hs, 'rgba(34,197,94,0.85)');
             orbitHandle.title = 'Перетащите конечную точку вдоль окружности';
             orbitHandle.addEventListener('mousedown', e=>{
+              if(typeof window._isPreviewActive==='function'&&window._isPreviewActive()) return;
               e.preventDefault(); e.stopPropagation();
               const onMove = ev=>{
                 const mx=(ev.clientX-canvas.getBoundingClientRect().left)/scale;
@@ -457,6 +461,7 @@
           let radiusHandle, radiusLabel; // forward ref for onMove
 
           centerDot.addEventListener('mousedown', e=>{
+            if(typeof window._isPreviewActive==='function'&&window._isPreviewActive()) return;
             e.preventDefault(); e.stopPropagation();
             const sx=e.clientX, sy=e.clientY;
             const scx=a.orbitCx||0, scy=a.orbitCy||0;
@@ -522,6 +527,7 @@
           svg.appendChild(radiusLabel);
 
           radiusHandle.addEventListener('mousedown', e=>{
+            if(typeof window._isPreviewActive==='function'&&window._isPreviewActive()) return;
             e.preventDefault(); e.stopPropagation();
             const angleToEl=Math.atan2(elCy-cy, elCx-cx);
             const onMove = ev=>{

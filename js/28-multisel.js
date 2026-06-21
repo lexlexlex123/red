@@ -67,6 +67,7 @@ function pickMulti(el,shiftKey){
   // Start rubber-band on canvas background OR on cwrap (outside canvas)
   function onDown(e){
     if(e.button!==0)return;
+    if(typeof window._isPreviewActive==='function'&&window._isPreviewActive())return;
     if(window._anyDragging)return;
     if(typeof _rotDragging!=='undefined'&&_rotDragging)return;
     // If clicked near a rotation corner — skip (let rotation handler take over)
@@ -249,6 +250,7 @@ function copySelected(){
 }
 
 function pasteSelected(){
+  if(typeof window._isPreviewActive==='function'&&window._isPreviewActive())return;
   if(typeof _xclipHydrateElements==='function') _xclipHydrateElements();
   if(!clipboard.length)return (typeof toast==="function")&&toast(t('toastNothingToPaste'));
   if(!slides[cur])return;

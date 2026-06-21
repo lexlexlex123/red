@@ -1,4 +1,33 @@
 
+window._isPreviewActive = function() {
+  const po = document.getElementById('preview-ov');
+  return !!(po && po.classList.contains('active'));
+};
+
+window._pvCleanupEditorCanvas = function(slideIdx) {
+  const cv = document.getElementById('canvas');
+  if (!cv) return;
+  cv.querySelectorAll('._particles_layer,._particle,#motion-ghosts,#motion-svg,.motion-ghost').forEach(n => n.remove());
+  if (typeof slides === 'undefined') return;
+  const idx = slideIdx != null ? slideIdx : (typeof cur !== 'undefined' ? cur : 0);
+  const s = slides[idx];
+  if (!s || !s.els) return;
+  s.els.forEach(d => {
+    const el = cv.querySelector('.el[data-id="' + d.id + '"]');
+    if (el && typeof window._resetSlideAnimEl === 'function') window._resetSlideAnimEl(el, d);
+  });
+};
+
+window._pvCancelEditorPointer = function() {
+  window._anyDragging = false;
+  window._rotDragging = false;
+  window._resizeDragging = false;
+  window._alphaPassthroughDrag = false;
+  try {
+    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window, button: 0, buttons: 0 }));
+  } catch (e) {}
+};
+
 // Лего-блоки: вспомогательная функция SVG для превью/экспорта
 function _legoMakeSVG(n,tall,base){
   const U=40,SH=10,FH=12,TH=36,SW=26;
@@ -40,10 +69,82 @@ function _legoMakeStairSVG(base,dir){
   const sideVert='';
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${bw} ${totalH}" width="${bw}" height="${totalH}" style="display:block;overflow:hidden">${studs}${body}${topBlik}${blik}${shadow}${sideVert}</svg>`;
 }
+let _pvSnapIdx=null,_pvSnapEls=null;
+window._pvRestoring=false;
 let pidx=0,pTransiting=false,pTransitionTo=null,_pTransTimers=[],autoTimer=null;
+
+window._pvRestoreSlideSnapshot=function(){
+  if(_pvSnapIdx==null||!_pvSnapEls||!slides[_pvSnapIdx]) return;
+  slides[_pvSnapIdx].els=JSON.parse(JSON.stringify(_pvSnapEls));
+  _pvSnapIdx=null;
+  _pvSnapEls=null;
+};
 let pBlackScreen=false,_pJumpBuf='',_pJumpTimer=null;
+let _pvDecorTime=null;
+function _pvDecorElData(slideIdx){
+  const s=slides[slideIdx];
+  return s&&s.els?s.els.find(d=>d._isDecor)||null:null;
+}
+function _pvDecorSvg(container,slideIdx){
+  const d=_pvDecorElData(slideIdx);
+  if(!d||!container) return null;
+  return container.querySelector('.psel[data-id="'+d.id+'"] svg');
+}
+function _pvCaptureDecorTime(container,slideIdx){
+  const svg=_pvDecorSvg(container,slideIdx);
+  if(!svg) return;
+  try{ _pvDecorTime=svg.getCurrentTime(); }catch(e){}
+}
+function _pvSeedDecorTimeFromEditor(){
+  _pvDecorTime=null;
+  if(typeof _layoutAnimated==='undefined'||!_layoutAnimated) return;
+  const cv=document.getElementById('canvas');
+  const svg=cv&&cv.querySelector('.decor-el svg');
+  if(!svg) return;
+  try{ _pvDecorTime=svg.getCurrentTime(); }catch(e){}
+}
+function _pvApplyDecorTime(svgEl){
+  if(!svgEl||_pvDecorTime==null) return;
+  requestAnimationFrame(function(){
+    try{
+      svgEl.setCurrentTime(_pvDecorTime);
+      if(typeof _layoutAnimated!=='undefined'&&!_layoutAnimated) svgEl.pauseAnimations();
+    }catch(e){}
+  });
+}
 const playedAnimSlides=new Set(); // tracks which slides had their nav-anims already played
 const hiddenElsPerSlide={}; // slideIdx -> Set of elIds that have been hidden by nav trigger
+function _attachPreviewExitHandlers(po){
+  po._previewEsc=function(e){
+    if(e.key!=='Escape') return;
+    e.preventDefault();
+    e.stopPropagation();
+    if(typeof pidx!=='undefined') cur=pidx;
+    stopPreview();
+  };
+  document.addEventListener('keydown',po._previewEsc,true);
+  po._previewFsChange=function(){
+    const ov=document.getElementById('preview-ov');
+    if(!ov||!ov.classList.contains('active')) return;
+    if(document.fullscreenElement||document.webkitFullscreenElement) return;
+    if(typeof pidx!=='undefined') cur=pidx;
+    stopPreview();
+  };
+  document.addEventListener('fullscreenchange',po._previewFsChange);
+  document.addEventListener('webkitfullscreenchange',po._previewFsChange);
+}
+function _detachPreviewExitHandlers(po){
+  if(!po) return;
+  if(po._previewEsc){
+    document.removeEventListener('keydown',po._previewEsc,true);
+    delete po._previewEsc;
+  }
+  if(po._previewFsChange){
+    document.removeEventListener('fullscreenchange',po._previewFsChange);
+    document.removeEventListener('webkitfullscreenchange',po._previewFsChange);
+    delete po._previewFsChange;
+  }
+}
 function startPreview(startIdx){
   // If a table cell is being edited, save its content first
   if(typeof tblClearSel==='function') tblClearSel();
@@ -52,8 +153,15 @@ function startPreview(startIdx){
   if(editingCell){ editingCell.contentEditable='false'; }
   if(typeof window._flushAnimPanelToDom==='function') window._flushAnimPanelToDom();
   if(typeof _syncSlideAnimsFromDom==='function') _syncSlideAnimsFromDom(cur);
+  if(typeof repairAppletAnimRefs==='function') slides.forEach(s=>repairAppletAnimRefs(s));
   if(typeof syncAllAppletHtmlFromData==='function') syncAllAppletHtmlFromData();
-  save();pidx=startIdx||0;pTransiting=false;pTransitionTo=null;_clearPreviewTransTimers();
+  if(typeof stopSlideAnimsOnCanvas==='function') stopSlideAnimsOnCanvas();
+  if(typeof window._pvCleanupEditorCanvas==='function') window._pvCleanupEditorCanvas(cur);
+  save();
+  _pvSnapIdx=cur;
+  _pvSnapEls=JSON.parse(JSON.stringify(slides[cur].els||[]));
+  pidx=startIdx||0;pTransiting=false;pTransitionTo=null;_clearPreviewTransTimers();
+  _pvSeedDecorTimeFromEditor();
   pBlackScreen=false;_pJumpBuf='';clearTimeout(_pJumpTimer);
   const _pBlack=document.getElementById('p-black');if(_pBlack) _pBlack.classList.remove('on');
   const _pJump=document.getElementById('p-jump-hint');if(_pJump){ _pJump.textContent=''; _pJump.classList.remove('on'); }
@@ -61,20 +169,30 @@ function startPreview(startIdx){
   _shuffleHistory=[pidx];
   // Blur any focused input to prevent cursor blinking in preview
   if(document.activeElement&&document.activeElement!==document.body)document.activeElement.blur();
+  try{window.getSelection()?.removeAllRanges();}catch(e){}
   // Also exit any text editing mode
   document.querySelectorAll('.el[data-editing=true]').forEach(el=>{
     const c=el.querySelector('.tel');if(c){c.contentEditable='false';delete el.dataset.editing;el.style.cursor='';}
   });
+  window._previewSelRestoreId=(typeof sel!=='undefined'&&sel&&sel.dataset.id)?sel.dataset.id:null;
+  if(typeof desel==='function') desel();
+  document.body.classList.add('preview-mode');
+  if(typeof window._pvCancelEditorPointer==='function') window._pvCancelEditorPointer();
   playedAnimSlides.clear();Object.keys(hiddenElsPerSlide).forEach(k=>delete hiddenElsPerSlide[k]);
   const po=document.getElementById('preview-ov');po.classList.add('active');
+  _attachPreviewExitHandlers(po);
   resizePStage();window.addEventListener('resize',resizePStage);
   // Click anywhere on stage (not on nav buttons or link elements) advances or fires next anim step
   const po2=document.getElementById('preview-ov');
   po2._stageClick=function(e){
     if(e.target.closest('#p-prev,#p-next,#p-exit,#p-info'))return;
-    const psel=e.target.closest('.psel');
+    const psa=document.getElementById('psa');
+    const psel=(typeof _findElAtPoint==='function'&&psa
+      ? _findElAtPoint(e.clientX,e.clientY,{container:psa,selector:'.psel',excludeDecor:true})
+      : null)||e.target.closest('.psel');
     if(psel&&psel._hasLink)return;
     if(psel&&psel._isTrigger)return;
+    if(psel&&(psel.dataset.appletId==='counter'||psel.dataset.appletId==='generator'))return;
     // Check per-slide clickNav (default true)
     if(slides[pidx]&&slides[pidx].clickNav===false){
       // Still fire click-triggered animations, just don't advance to next slide
@@ -85,6 +203,23 @@ function startPreview(startIdx){
     nextPreview();
   };
   po2.addEventListener('click',po2._stageClick);
+  po2._alphaClickCapture=function(e){
+    if(e.target.closest('#p-prev,#p-next,#p-exit,#p-info'))return;
+    const psa=document.getElementById('psa');
+    if(!psa||typeof _forwardClickThrough!=='function')return;
+    _forwardClickThrough(e,{container:psa,selector:'.psel',excludeDecor:true});
+  };
+  po2.addEventListener('click',po2._alphaClickCapture,true);
+  po2._alphaHoverCursor=function(e){
+    const psa=document.getElementById('psa');
+    if(!psa||typeof _updateAlphaHoverCursor!=='function')return;
+    _updateAlphaHoverCursor(e,{container:psa,selector:'.psel',excludeDecor:true,overlay:po2,navSelector:'#p-prev,#p-next,#p-exit,#p-info'});
+  };
+  po2._alphaHoverLeave=function(){
+    if(typeof _resetAlphaHoverCursor==='function')_resetAlphaHoverCursor({overlay:po2});
+  };
+  po2.addEventListener('mousemove',po2._alphaHoverCursor);
+  po2.addEventListener('mouseleave',po2._alphaHoverLeave);
   // Touch swipe navigation
   po2._touchStart=function(e){po2._swipeX=e.touches[0].clientX;po2._swipeY=e.touches[0].clientY;};
   po2._touchEnd=function(e){
@@ -93,6 +228,8 @@ function startPreview(startIdx){
   };
   po2.addEventListener('touchstart',po2._touchStart,{passive:true});
   po2.addEventListener('touchend',po2._touchEnd,{passive:true});
+  po2._preventSelect=function(e){e.preventDefault();};
+  po2.addEventListener('selectstart',po2._preventSelect);
   // Listen for timer navigation messages from applet iframes
   window._appletMessageHandler = function(e){
     if(!e.data) return;
@@ -147,6 +284,11 @@ function _previewJumpDigit(d){
   },700);
 }
 function stopPreview(){
+  const po=document.getElementById('preview-ov');
+  if(!po||!po.classList.contains('active')) return;
+  if(typeof window._pvCancelEditorPointer==='function') window._pvCancelEditorPointer();
+  window._pvRestoring=true;
+  _pvDecorTime=null;
   clearAutoTimer();
   _clearPreviewTransTimers();
   pTransitionTo=null;
@@ -155,17 +297,39 @@ function stopPreview(){
   const _psa=document.getElementById('psa'), _psb=document.getElementById('psb');
   if(_psa) _psa.style.visibility='';
   if(_psb) _psb.style.visibility='';
-  const po=document.getElementById('preview-ov');
+  _detachPreviewExitHandlers(po);
   if(po._stageClick){po.removeEventListener('click',po._stageClick);delete po._stageClick;}
+  if(po._alphaClickCapture){po.removeEventListener('click',po._alphaClickCapture,true);delete po._alphaClickCapture;}
+  if(po._alphaHoverCursor){po.removeEventListener('mousemove',po._alphaHoverCursor);delete po._alphaHoverCursor;}
+  if(po._alphaHoverLeave){po.removeEventListener('mouseleave',po._alphaHoverLeave);delete po._alphaHoverLeave;}
+  if(typeof _resetAlphaHoverCursor==='function')_resetAlphaHoverCursor({overlay:po});
   if(po._touchStart){po.removeEventListener('touchstart',po._touchStart);po.removeEventListener('touchend',po._touchEnd);delete po._touchStart;delete po._touchEnd;}
+  if(po._preventSelect){po.removeEventListener('selectstart',po._preventSelect);delete po._preventSelect;}
   if(window._appletMessageHandler){window.removeEventListener('message',window._appletMessageHandler);delete window._appletMessageHandler;}
   po.classList.remove('active');
+  _pResetStageZoom();
   document.fullscreenElement&&document.exitFullscreen&&document.exitFullscreen();
   window.removeEventListener('resize',resizePStage);
+  if(typeof pidx!=='undefined') cur=pidx;
+  if(typeof window._pvRestoreSlideSnapshot==='function') window._pvRestoreSlideSnapshot();
+  if(typeof stopSlideAnimsOnCanvas==='function') stopSlideAnimsOnCanvas();
+  if(typeof window._pvCleanupEditorCanvas==='function') window._pvCleanupEditorCanvas(cur);
+  [_psa,_psb].forEach(stage=>{
+    if(!stage) return;
+    stage.querySelectorAll('.psel').forEach(el=>{
+      if(typeof window._resetSlideAnimEl==='function'){
+        const d=slides[cur]&&slides[cur].els.find(x=>x.id===el.dataset.id);
+        window._resetSlideAnimEl(el,d);
+      }
+    });
+  });
   // Remember selected id before load() clears sel
-  const _prevSelId = sel ? sel.dataset.id : null;
+  const _prevSelId=window._previewSelRestoreId||null;
+  delete window._previewSelRestoreId;
   // Re-render current slide from data so all styles (textBg etc.) are restored
   load();
+  document.body.classList.remove('preview-mode');
+  window._pvRestoring=false;
   // Re-apply text backgrounds from model data (dataset may be stale after preview)
   requestAnimationFrame(()=>{
     const _cv=document.getElementById('canvas');
@@ -222,10 +386,25 @@ function stopPreview(){
   // Re-apply page numbers after rAF finishes rebuilding DOM
   requestAnimationFrame(()=>{ if(typeof pnApplyAll==='function') pnApplyAll(); requestAnimationFrame(()=>{ if(_prevSelId){const _resel=document.querySelector(`.el[data-id="${_prevSelId}"]`);if(_resel&&typeof pick==='function')pick(_resel);} }); });
 }
+function _pResetStageZoom(){
+  const stage=document.getElementById('preview-stage');
+  if(!stage) return;
+  stage.style.transition='none';
+  stage.style.transform='';
+  stage.style.transformOrigin='';
+}
+function _pSlideScale(el,sc){
+  if(!el) return;
+  el.style.transformOrigin='top left';
+  el.style.transform='scale('+sc+')';
+}
 function resizePStage(){
   const stage=document.getElementById('preview-stage');const sc=pScale();
   stage.style.width=Math.round(canvasW*sc)+'px';stage.style.height=Math.round(canvasH*sc)+'px';
+  if(pTransiting) return;
+  _pResetStageZoom();
   [document.getElementById('psa'),document.getElementById('psb')].forEach(s=>{
+    if(!s) return;
     s.style.width=canvasW+'px';s.style.height=canvasH+'px';s.style.transform='scale('+sc+')';s.style.transformOrigin='top left';
   });
 }
@@ -341,6 +520,7 @@ function skipPreviewTransition(){
     stage.style.perspective='';
     stage.style.perspectiveOrigin='';
     stage.style.transformStyle='';
+    _pResetStageZoom();
   }
   _turnFlipDestroy();
   _removeFlipWrap(a);
@@ -397,6 +577,7 @@ function gotoPreview(to,dir){
     }
     // Stop non-persistent audio from current slide
     if(typeof _mediaStopAllPreviewAudio==='function') _mediaStopAllPreviewAudio();
+    _pvCaptureDecorTime(document.getElementById('psa'),pidx);
     buildPSlide(document.getElementById('psa'),to);
     pidx=to;updatePUI();scheduleAuto();return;
   }
@@ -406,6 +587,7 @@ function gotoPreview(to,dir){
   }
   pTransiting=true;
   pTransitionTo=to;
+  _pvCaptureDecorTime(document.getElementById('psa'),pidx);
   const a=document.getElementById('psa'),b=document.getElementById('psb');buildPSlide(b,to,dur);
   if(trans==='flip'&&_turnFlipAvailable()) doTurnJsFlip(a,b,pidx,to,dir==='next',flipDur,()=>{finalizePreview(a,b,to);});
   else if(trans==='flipV') doBookFlipV(a,b,dir==='next',flipDur,()=>{finalizePreview(a,b,to);});
@@ -416,10 +598,12 @@ function finalizePreview(a,b,to){
   if(!pTransiting) return;
   _clearPreviewTransTimers();
   pTransitionTo=null;
+  _pResetStageZoom();
+  _morphCleanupExits(b);
   // Stop any ongoing transitions
   a.style.transition='none'; b.style.transition='none';
   a.style.zIndex=''; b.style.zIndex='';
-  b.querySelectorAll('.psel').forEach(el=>{el.style.willChange='';el.style.visibility='';});
+  b.querySelectorAll('.psel').forEach(el=>{el.style.willChange='';delete el.dataset.morphEnter;});
   a.querySelectorAll('.psel').forEach(el=>{el.style.willChange='';el.style.visibility='';});
   const sc=pScale();
   // Swap IDs so b becomes psa (active) without moving any DOM nodes.
@@ -430,9 +614,21 @@ function finalizePreview(a,b,to){
   pidx=to;updatePUI();pTransiting=false;scheduleAuto();
 }
 // Morph transition — match elements by id, then by objects-panel name
+function _morphEligible(d){
+  if(!d||d._isDecor) return false;
+  return !(d.anims&&d.anims.length);
+}
+function _morphPairOnTo(fd,toSlide){
+  if(!fd||!toSlide||!toSlide.els) return null;
+  const byId=toSlide.els.find(e=>e.id===fd.id&&!e._isDecor);
+  if(byId) return byId;
+  const key=typeof morphMatchKey==='function'?morphMatchKey(fd,toSlide.els):'';
+  if(!key) return null;
+  return toSlide.els.find(e=>!e._isDecor&&e.type===fd.type&&(typeof morphMatchKey==='function'?morphMatchKey(e,toSlide.els):'')===key)||null;
+}
 function _morphFindFrom(fromEls, toEl, used){
-  if(!toEl||toEl._isDecor) return null;
-  const pool=fromEls.filter(f=>!f._isDecor&&!used.has(f.id));
+  if(!toEl||toEl._isDecor||!_morphEligible(toEl)) return null;
+  const pool=fromEls.filter(f=>!f._isDecor&&!used.has(f.id)&&_morphEligible(f));
   let fd=pool.find(f=>f.id===toEl.id);
   if(fd){ used.add(fd.id); return fd; }
   const key=typeof morphMatchKey==='function'?morphMatchKey(toEl,fromEls):'';
@@ -448,20 +644,95 @@ function _morphFlipPart(d){
   return '';
 }
 function _morphReflow(el){void (el&&el.offsetHeight);}
+function _morphCleanupExits(root){
+  if(!root) return;
+  root.querySelectorAll('.psel._morph-exit').forEach(el=>el.remove());
+}
+function _morphExitClone(ael, fd, b){
+  ael.style.visibility='hidden';
+  ael.style.opacity='0';
+  ael.style.pointerEvents='none';
+  const clone=ael.cloneNode(true);
+  clone.classList.add('_morph-exit');
+  clone.style.zIndex='100';
+  clone.style.pointerEvents='none';
+  clone.style.transition='none';
+  clone.style.transformOrigin='0 0';
+  clone.style.willChange='transform,opacity';
+  clone.style.visibility='visible';
+  const baseRot=`rotate(${fd.rot||0}deg)${_morphFlipPart(fd)}`;
+  clone.style.transform=baseRot;
+  clone.style.opacity=String(fd.elOpacity!=null?fd.elOpacity:1);
+  b.appendChild(clone);
+  return clone;
+}
+function _morphAnimateJobs(jobs,dur){
+  const easing='cubic-bezier(0.4, 0, 0.2, 1)';
+  jobs.forEach(function(job){
+    const bel=job.bel;
+    if(!bel) return;
+    bel.style.visibility='visible';
+    bel.style.transition='none';
+    let fromTf,toTf,fromOp,toOp;
+    if(job.kind==='move'){
+      fromTf=job.startTf;
+      toTf=job.endTf;
+      fromOp=job.endOp;
+      toOp=job.endOp;
+    }else if(job.kind==='enter'){
+      fromTf=job.endTf+' scale(0.96) translateY(14px)';
+      toTf=job.endTf;
+      fromOp=0;
+      toOp=job.endOp;
+      bel.dataset.morphEnter='1';
+    }else{
+      fromTf=job.endTf;
+      toTf=job.endTf+' scale(0.94) translateY(10px)';
+      fromOp=job.startOp!=null?job.startOp:1;
+      toOp=0;
+    }
+    bel.style.transform=fromTf;
+    bel.style.opacity=String(fromOp);
+    void bel.offsetHeight;
+    try{
+      const anim=bel.animate(
+        [{transform:fromTf,opacity:fromOp},{transform:toTf,opacity:toOp}],
+        {duration:dur,easing:easing,fill:'forwards'}
+      );
+      anim.onfinish=function(){
+        try{anim.commitStyles();}catch(e){}
+        anim.cancel();
+      };
+    }catch(e){
+      bel.style.transition='transform '+dur+'ms '+easing+', opacity '+dur+'ms '+easing;
+      bel.style.transform=toTf;
+      bel.style.opacity=String(toOp);
+    }
+  });
+}
+function _morphHideOnFrom(ael){
+  ael.style.transition='none';
+  ael.style.opacity='0';
+  ael.style.visibility='hidden';
+  ael.style.pointerEvents='none';
+}
 function doMorphTransition(a,b,to,cb,durMs){
   const dur=durMs!=null?durMs:(typeof _effectiveTransDur==='function'?_effectiveTransDur():(transitionDur||500));
-  const ease='cubic-bezier(.4,0,.2,1)';
   const fromSlide=slides[pidx]||{els:[]};
   const toSlide=slides[to]||{els:[]};
   const usedFrom=new Set();
   const animB=[];
+  const shadowJobs=[];
+  const _shFrom=typeof window._shadowStateFromData==='function'?window._shadowStateFromData:null;
+  const _shApply=typeof window._applyShadowValues==='function'?window._applyShadowValues:null;
+  const _shNeeds=typeof window._shadowMorphNeeds==='function'?window._shadowMorphNeeds:null;
 
   b.style.opacity='1';b.style.pointerEvents='auto';b.style.zIndex='2';
   a.style.zIndex='1';a.style.opacity='1';
 
   b.querySelectorAll('.psel').forEach(bel=>{
     const td=toSlide.els.find(e=>e.id===bel.dataset.id);
-    if(!td||td._isDecor) return;
+    if(!td||td._isDecor||!_morphEligible(td)) return;
     const fd=_morphFindFrom(fromSlide.els,td,usedFrom);
     const flipEnd=_morphFlipPart(td);
     const endTf=`rotate(${td.rot||0}deg)${flipEnd}`;
@@ -476,12 +747,28 @@ function doMorphTransition(a,b,to,cb,durMs){
       bel.style.transition='none';
       bel.style.transform=startTf;
       bel.style.opacity=String(endOp);
-      animB.push({bel,endTf,op:endOp,kind:'move'});
+      animB.push({bel,endTf,op:endOp,kind:'move',startTf,endOp});
+      if(_shFrom&&_shApply&&_shNeeds){
+        const fromSh=_shFrom(fd), toSh=_shFrom(td);
+        if(_shNeeds(fromSh,toSh)){
+          _shApply(bel,td,fromSh.ss,fromSh.sb,fromSh.sc);
+          shadowJobs.push({bel,d:td,from:fromSh,to:toSh});
+        }
+      }
     } else {
       bel.style.transition='none';
-      bel.style.transform=`${endTf} scale(0.94) translateY(18px)`;
+      bel.style.visibility='visible';
+      bel.style.transform=`${endTf} scale(0.96) translateY(14px)`;
       bel.style.opacity='0';
-      animB.push({bel,endTf,op:endOp,kind:'enter'});
+      animB.push({bel,endTf,op:endOp,kind:'enter',endOp});
+      if(_shFrom&&_shApply&&_shNeeds){
+        const toSh=_shFrom(td);
+        if(toSh.active||toSh.ss>0||toSh.sb>0){
+          const fromSh={ss:0,sb:0,sc:toSh.sc,active:false};
+          _shApply(bel,td,0,0,toSh.sc);
+          shadowJobs.push({bel,d:td,from:fromSh,to:toSh});
+        }
+      }
     }
   });
 
@@ -490,38 +777,46 @@ function doMorphTransition(a,b,to,cb,durMs){
     if(!id) return;
     const fd=fromSlide.els.find(e=>e.id===id);
     if(!fd||fd._isDecor) return;
+    const td=_morphPairOnTo(fd,toSlide);
+    if(td&&(!_morphEligible(fd)||!_morphEligible(td))){
+      _morphHideOnFrom(ael);
+      return;
+    }
     if(usedFrom.has(id)){
       ael.style.transition='none';
       ael.style.opacity='0';
       ael.style.visibility='hidden';
       ael.style.pointerEvents='none';
+    } else if(!_morphEligible(fd)){
+      _morphHideOnFrom(ael);
+      return;
     } else {
-      ael.style.transformOrigin='0 0';
-      ael.style.transition='none';
+      ael.style.visibility='hidden';
+      ael.style.opacity='0';
+      ael.style.pointerEvents='none';
       const baseRot=`rotate(${fd.rot||0}deg)${_morphFlipPart(fd)}`;
-      ael.style.opacity=String(fd.elOpacity!=null?fd.elOpacity:1);
-      animB.push({bel:ael,endTf:baseRot,op:0,kind:'exit'});
+      const exitEl=_morphExitClone(ael,fd,b);
+      animB.push({bel:exitEl,endTf:baseRot,op:0,kind:'exit',startOp:fd.elOpacity!=null?fd.elOpacity:1});
+      if(_shFrom&&_shApply&&_shNeeds){
+        const fromSh=_shFrom(fd);
+        if(fromSh.active||fromSh.ss>0||fromSh.sb>0){
+          const toSh={ss:0,sb:0,sc:fromSh.sc,active:false};
+          shadowJobs.push({bel:exitEl,d:fd,from:fromSh,to:toSh});
+        }
+      }
     }
   });
 
   _morphReflow(b);
   requestAnimationFrame(()=>{
-    animB.forEach(({bel,endTf,op,kind})=>{
-      if(kind==='move'){
-        bel.style.transition=`transform ${dur}ms ${ease}`;
-        bel.style.transform=endTf;
-      } else if(kind==='enter'){
-        bel.style.transition=`transform ${dur}ms ${ease}, opacity ${Math.round(dur*0.55)}ms ease`;
-        bel.style.transform=endTf;
-        bel.style.opacity=String(op);
-      } else if(kind==='exit'){
-        bel.style.transition=`opacity ${Math.round(dur*0.5)}ms ease, transform ${dur}ms ${ease}`;
-        bel.style.opacity='0';
-        bel.style.transform=endTf+' scale(0.92)';
+    requestAnimationFrame(()=>{
+      _morphAnimateJobs(animB,dur);
+      if(shadowJobs.length&&typeof window._morphRunShadowAnims==='function'){
+        window._morphRunShadowAnims(shadowJobs,dur);
       }
+      a.style.transition=`opacity ${Math.round(dur*0.65)}ms ease`;
+      a.style.opacity='0';
     });
-    a.style.transition=`opacity ${Math.round(dur*0.65)}ms ease`;
-    a.style.opacity='0';
   });
   _previewTransLater(cb,dur+80);
 }
@@ -669,11 +964,41 @@ function _pvFireAppletAnim(ref, container, slideIdx){
   if(!ref || !container) return;
   const parts = String(ref).split(':');
   if(parts.length < 2) return;
-  const elId = parts[0], ai = +parts[1];
   const s = slides[slideIdx];
   if(!s) return;
-  const d = s.els.find(x => x.id === elId);
-  if(!d || !d.anims || !d.anims[ai]) return;
+  let elId = parts[0], ai = +parts[1];
+  let d = s.els.find(x => x.id === elId);
+  let a = d && d.anims && d.anims[ai];
+  if(typeof resolveAppletAnimRef === 'function' && typeof _isValidAppletAnimRef === 'function'){
+    let appletElId = a && a.triggerElId;
+    let trig = a && a.trigger;
+    if(!appletElId || trig === 'counter' || trig === 'timer'){
+      if(!appletElId || !_isValidAppletAnimRef(s, appletElId, ref, trig)){
+        for(const ad of s.els){
+          if(ad.type !== 'applet') continue;
+          if(ad.appletId === 'counter' && (ad.cntOnEnd || 'none') === 'anim'
+              && (!ad.cntOnEndAnim || ad.cntOnEndAnim === ref)){
+            appletElId = ad.id; trig = 'counter'; break;
+          }
+          if(ad.appletId === 'timer' && (ad.tmOnEnd || 'none') === 'anim'
+              && (!ad.tmOnEndAnim || ad.tmOnEndAnim === ref)){
+            appletElId = ad.id; trig = 'timer'; break;
+          }
+        }
+      }
+      if(appletElId && trig){
+        const resolved = resolveAppletAnimRef(s, appletElId, ref, trig);
+        if(resolved && resolved !== ref){
+          ref = resolved;
+          const p2 = resolved.split(':');
+          elId = p2[0]; ai = +p2[1];
+          d = s.els.find(x => x.id === elId);
+          a = d && d.anims && d.anims[ai];
+        }
+      }
+    }
+  }
+  if(!d || !a) return;
   const isCanvas = container.id === 'canvas';
   const targetEl = container.querySelector((isCanvas ? '.el' : '.psel') + '[data-id="' + elId + '"]');
   if(!targetEl) return;
@@ -735,8 +1060,10 @@ function _pvFireElemTrigStep(targetPsel, targetD, step, slideIdx) {
     const d2 = a.delay || 0;
     setTimeout(() => {
       if(a.cat === 'entrance'){
-        targetPsel.style.visibility = 'visible';
-        targetPsel.style.pointerEvents = '';
+        if (!(typeof window._particlesHasAnim === 'function' && window._particlesHasAnim(targetD))) {
+          targetPsel.style.visibility = 'visible';
+          targetPsel.style.pointerEvents = '';
+        }
       }
       fireAnim(targetPsel, targetD, a, slideIdx, 0);
     }, delay + d2);
@@ -805,12 +1132,6 @@ function _pvHasLaterEntrance(slide, elId, animIndex) {
       if (a && a.cat === 'entrance') return true;
     }
   }
-  const d = slide.els.find(x => x.id === elId);
-  if (d && d.anims) {
-    for (let i = animIndex + 1; i < d.anims.length; i++) {
-      if (d.anims[i].cat === 'entrance') return true;
-    }
-  }
   return false;
 }
 
@@ -838,8 +1159,12 @@ function _pvScheduleExitHide(el, ms, opts) {
 function _pvRevealForEntrance(el, d, idx) {
   _pvCancelExitHide(el);
   if (typeof window._resetSplitHalf === 'function') window._resetSplitHalf(el, true);
-  el.style.visibility = 'visible';
-  el.style.pointerEvents = '';
+  if (!(typeof window._particlesHasAnim === 'function' && window._particlesHasAnim(d))) {
+    el.style.visibility = 'visible';
+    el.style.pointerEvents = '';
+  } else if (typeof window._particlesHideOriginal === 'function') {
+    window._particlesHideOriginal(el);
+  }
   if (idx != null && d && hiddenElsPerSlide[idx]) hiddenElsPerSlide[idx].delete(d.id);
 }
 
@@ -1010,9 +1335,12 @@ function buildPSlide(container,idx,transOffset,noScale){
     const _hasSwing = (d.anims||[]).some(a=>a.name==='swing');
     const _hasFloat = (d.anims||[]).some(a=>a.name==='float');
     const _hasDance = (d.anims||[]).some(a=>a.name==='dance');
+    const _hasParticles = (d.anims||[]).some(a=>a.name==='particles');
     const _hasCaption = (d.anims||[]).some(a=>a.name==='captionSlide');
     const _sfSft=(d.shapeFlipH||d.shapeFlipV)?' scale('+(d.shapeFlipH?-1:1)+','+(d.shapeFlipV?-1:1)+')':'';
-    el.style.cssText='position:absolute;left:'+d.x+'px;top:'+d.y+'px;width:'+d.w+'px;height:'+d.h+'px;z-index:2;'+(d.type==='lego'||_hasSwing||_hasFloat||_hasDance||_hasCaption?'overflow:visible;':'overflow:hidden;')+'transform:rotate('+rot+'deg)'+_sfSft+';'+rxStr+(hasCursor?'cursor:pointer;':'cursor:default;')+(elOp!==1?'opacity:'+elOp+';':'')+_previewBdBlur;
+    if(d._isDecor) el.classList.add('is-decor');
+    const _pvZ=d._isDecor?'1':'2';
+    el.style.cssText='position:absolute;left:'+d.x+'px;top:'+d.y+'px;width:'+d.w+'px;height:'+d.h+'px;z-index:'+_pvZ+';'+(d.type==='lego'||_hasSwing||_hasFloat||_hasDance||_hasParticles||_hasCaption?'overflow:visible;':'overflow:hidden;')+'transform:rotate('+rot+'deg)'+_sfSft+';'+rxStr+(hasCursor?'cursor:pointer;':'cursor:default;')+(elOp!==1?'opacity:'+elOp+';':'')+_previewBdBlur;
     if(_hasDance) el.classList.add('has-dance');
 
     // Build content
@@ -1048,10 +1376,20 @@ function buildPSlide(container,idx,transOffset,noScale){
       c.innerHTML='<div style="width:100%;white-space:normal;word-break:break-word;">'+_pvHtml+'</div>';
       body.appendChild(c);
       el.appendChild(body);
+      if(window._textShadowActive&&window._textShadowActive(d)){
+        el.dataset.id=d.id;
+        if(d.textShadowBlur!=null)el.dataset.textShadowBlur=d.textShadowBlur;
+        if(d.textShadowSize!=null)el.dataset.textShadowSize=d.textShadowSize;
+        if(d.textShadowW&&+d.textShadowW>0&&!d.textShadowBlur&&!d.textShadowSize)el.dataset.textShadowW=d.textShadowW;
+        el.dataset.textShadowColor=d.textShadowColor||'#000000';
+        if(typeof window._applyTextShadowFilter==='function') window._applyTextShadowFilter(el,d);
+      }
       // Border for text boxes
       if(d.textBorderW&&+d.textBorderW>0){el.style.outline=(d.textBorderW||0)+'px solid '+(d.textBorderColor||'#ffffff');el.style.outlineOffset='0px';}
     }else if(d.type==='image'){
       const img=document.createElement('img');img.src=typeof assetUrl==='function'?assetUrl(d.src):d.src;
+      img.onload=function(){if(typeof _preloadAlphaCanvas==='function')_preloadAlphaCanvas(img);};
+      if(img.complete&&img.naturalWidth&&typeof _preloadAlphaCanvas==='function')_preloadAlphaCanvas(img);
       const cL=d.imgCropL||0,cT=d.imgCropT||0,cR=d.imgCropR||0,cB=d.imgCropB||0;
       const hasCrop=cL||cT||cR||cB;
       if(hasCrop){
@@ -1110,24 +1448,7 @@ function buildPSlide(container,idx,transOffset,noScale){
       const _svgStr2=d.svgContent||'';
       try{const _dp2=new DOMParser();const _doc2=_dp2.parseFromString(_svgStr2,'image/svg+xml');const _p2=_doc2.documentElement;if(_p2&&_p2.tagName!=='parsererror'){el.appendChild(document.adoptNode(_p2));}else{el.innerHTML=_svgStr2;}}catch(e){el.innerHTML=_svgStr2;}
       const svgEl=el.querySelector('svg');if(svgEl){svgEl.style.width='100%';svgEl.style.height='100%';
-        // Синхронизируем состояние анимации с редактором
-        if(d._isDecor){
-          requestAnimationFrame(function(){
-            try{
-              // Берём сохранённый кадр из _decorPausedAt (точное время паузы)
-              const _pvSi = typeof _decorSvgSlideIndex==='function'
-                ? (() => { const _pvIdx = slides ? slides.indexOf(slides[pidx]) : -1; return _pvIdx; })()
-                : pidx;
-              const _pvT = (typeof _decorPausedAt!=='undefined' && _decorPausedAt.has(_pvSi))
-                ? _decorPausedAt.get(_pvSi)
-                : null;
-              if(_pvT !== null) svgEl.setCurrentTime(_pvT);
-              if(typeof _layoutAnimated!=='undefined' && !_layoutAnimated){
-                svgEl.pauseAnimations();
-              }
-            }catch(e){}
-          });
-        }
+        if(d._isDecor) _pvApplyDecorTime(svgEl);
       }
       if(d._isDecor && (typeof _isGlDecorRenderer==='function'?_isGlDecorRenderer(d._decorRenderer):(d._decorRenderer==='crystal'||d._decorRenderer==='dna'))){
         const _pvCfg=d._glCfg||d._crystalCfg;
@@ -1162,6 +1483,7 @@ function buildPSlide(container,idx,transOffset,noScale){
       el.style.overflow='hidden';el.style.borderRadius='6px';
       if(d.graphImg){var _gi=document.createElement('img');_gi.src=d.graphImg;_gi.style.cssText='width:100%;height:100%;object-fit:fill;display:block;';el.appendChild(_gi);}
     }else if(d.type==='applet'){
+      el.dataset.appletId=d.appletId||'';
       var _aRx=(d.rx?d.rx+'px':'0px');
       // el already has position:absolute — must keep it. Remove overflow:hidden so border overlay shows.
       el.style.overflow='visible';
@@ -1171,7 +1493,7 @@ function buildPSlide(container,idx,transOffset,noScale){
       _aClip.style.cssText='position:absolute;inset:0;overflow:hidden;border-radius:'+_aRx+';';
       if(typeof ensureAppletHtmlFromData==='function') ensureAppletHtmlFromData(d);
       var iframe=document.createElement('iframe');iframe.srcdoc=d.appletHtml||'';
-      var _pvPE = (d.appletId==='timer') ? 'none' : 'auto';
+      var _pvPE = (d.appletId==='timer'||d.appletId==='counter'||d.appletId==='generator') ? 'none' : 'auto';
       iframe.style.cssText='width:100%;height:100%;border:none;background:transparent;pointer-events:'+_pvPE+';user-select:none;';
       iframe.setAttribute('allowtransparency','true');
       iframe.sandbox = 'allow-scripts';
@@ -1339,11 +1661,18 @@ function buildPSlide(container,idx,transOffset,noScale){
         setTimeout(()=>{
           const hasExit = grp.some(a => a.cat === 'exit');
           const hasEntrance = grp.some(a => a.cat === 'entrance');
+          if(el.dataset.morphEnter==='1'&&hasEntrance&&!hasExit){
+            if (!(typeof window._particlesHasAnim === 'function' && window._particlesHasAnim(d))) {
+              el.style.visibility='visible';
+            }
+            delete el.dataset.morphEnter;
+            return;
+          }
           const _animTarget = animContent;
           _animTarget.style.animation='none';
           void _animTarget.offsetWidth;
           if (hasEntrance) _pvRevealForEntrance(el, d, idx);
-          else if (!hasExit) el.style.visibility='';
+          else if (!hasExit && !(typeof window._particlesHasAnim === 'function' && window._particlesHasAnim(d))) el.style.visibility='';
           _animTarget.style.animation=grp.map(a=>{
             const cssName=ANIM_CSS[a.name]||'el-fadein';
             const dur=(a.duration||600)/1000;
@@ -1462,10 +1791,18 @@ function buildPSlide(container,idx,transOffset,noScale){
 
     // Apply hover effects
     if(d.hoverFx&&d.hoverFx.enabled){
-      applyHoverFxPreview(el,d.hoverFx,d.type==='shape');
+      applyHoverFxPreview(el,d.hoverFx,d);
+    }
+
+    if (typeof window._particlesEnsureHiddenIfNeeded === 'function') {
+      window._particlesEnsureHiddenIfNeeded(el, d);
     }
 
     container.appendChild(el);
+    if(d.type==='applet'){
+      if(d.appletId==='counter'&&typeof window._wireCounterAppletClick==='function') window._wireCounterAppletClick(el);
+      if(d.appletId==='generator'&&typeof window._wireGeneratorAppletClick==='function') window._wireGeneratorAppletClick(el);
+    }
     // Запускаем live-анимации сразу после добавления в DOM
     if(el._pendingLiveAnims && el._pendingLiveAnims.length){
       // Запускаем каждую live-анимацию через fireAnim — там правильный обработчик по имени (swing/dance/etc)
@@ -2172,6 +2509,14 @@ function fireAnim(el,d,a,idx,overrideDelay,_cumTx,_cumTy){
     return;
   }
 
+  if(a.name==='particles'){
+    const capDelay = typeof overrideDelay === 'number' ? overrideDelay : (a.delay || 0);
+    if (typeof window._fireParticlesAnim === 'function') {
+      window._fireParticlesAnim(el, a, capDelay, d);
+    }
+    return;
+  }
+
   if(a.name==='splitHalf'){
     const capDelay = typeof overrideDelay === 'number' ? overrideDelay : (a.delay || 0);
     const animIdx = (d.anims || []).indexOf(a);
@@ -2396,7 +2741,40 @@ function _bookFlipAnimate(a,b,sc,fwd,vertical,durMs,stage,cb){
     });
   });
 }
+function _animTransZoomStage(a,b,trans,dur,cb){
+  const d=dur+'ms',sc=pScale();
+  const stage=document.getElementById('preview-stage');
+  a.style.transition='none';b.style.transition='none';
+  if(stage){
+    stage.style.transition='none';
+    if(trans==='zoom'){
+      stage.style.transformOrigin='center center';
+      stage.style.transform='scale(0.88)';
+    }else{
+      stage.style.transformOrigin='';
+      stage.style.transform='';
+    }
+  }
+  b.style.pointerEvents='auto';
+  _pSlideScale(a,sc);_pSlideScale(b,sc);
+  b.style.opacity='0';a.style.opacity='1';
+  requestAnimationFrame(()=>{
+    requestAnimationFrame(()=>{
+      if(trans==='zoom'&&stage){
+        stage.style.transition='transform '+d+' ease';
+        a.style.transition='opacity '+d+' ease';b.style.transition='opacity '+d+' ease';
+        stage.style.transform='scale(1)';
+        a.style.opacity='0';b.style.opacity='1';
+      }else{
+        a.style.transition='opacity '+d+' ease';b.style.transition='opacity '+d+' ease';
+        a.style.opacity='0';b.style.opacity='1';
+      }
+      _previewTransLater(()=>{ _pResetStageZoom(); cb(); },dur+16);
+    });
+  });
+}
 function animTrans(a,b,trans,fwd,dur,cb){
+  if(trans==='zoom'||trans==='zoomOut'){ _animTransZoomStage(a,b,trans,dur,cb); return; }
   const d=dur+'ms',sc=pScale(),dir=fwd?1:-1;
   // Phase 1: disable transitions
   a.style.transition='none';b.style.transition='none';
@@ -2409,10 +2787,6 @@ function animTrans(a,b,trans,fwd,dur,cb){
       b.style.transform='scale('+sc+') translateX('+(dir*100)+'%)';b.style.opacity='1';
     } else if(trans==='slideUp'){
       b.style.transform='scale('+sc+') translateY('+(dir*100)+'%)';b.style.opacity='1';
-    } else if(trans==='zoom'){
-      b.style.opacity='0';b.style.transform='scale('+(sc*.8)+')';
-    } else if(trans==='zoomOut'){
-      b.style.opacity='0';b.style.transform='scale('+(sc*1.2)+')';
     } else if(trans==='flip'){
       _bookFlipPrepare(document.getElementById('preview-stage'),a,b,sc,fwd,false);
     } else if(trans==='flipV'){
@@ -2443,14 +2817,6 @@ function animTrans(a,b,trans,fwd,dur,cb){
       } else if(trans==='slideUp'){
         a.style.transition='transform '+d+' cubic-bezier(.4,0,.2,1)';b.style.transition='transform '+d+' cubic-bezier(.4,0,.2,1)';
         a.style.transform='scale('+sc+') translateY('+(-dir*100)+'%)';b.style.transform='scale('+sc+') translateY(0)';
-        _previewTransLater(cb,dur+16);
-      } else if(trans==='zoom'){
-        a.style.transition='opacity '+d+' ease,transform '+d+' ease';b.style.transition='opacity '+d+' ease,transform '+d+' ease';
-        a.style.opacity='0';a.style.transform='scale('+(sc*1.1)+')';b.style.opacity='1';b.style.transform='scale('+sc+')';
-        _previewTransLater(cb,dur+16);
-      } else if(trans==='zoomOut'){
-        a.style.transition='opacity '+d+' ease,transform '+d+' ease';b.style.transition='opacity '+d+' ease,transform '+d+' ease';
-        a.style.opacity='0';a.style.transform='scale('+(sc*.85)+')';b.style.opacity='1';b.style.transform='scale('+sc+')';
         _previewTransLater(cb,dur+16);
       } else if(trans==='flip'){
         _bookFlipAnimate(a,b,sc,fwd,false,dur,document.getElementById('preview-stage'),cb);

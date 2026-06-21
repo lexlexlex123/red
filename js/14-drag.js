@@ -2,6 +2,8 @@
 function mkDrag(el,c){
   let ox,oy,ol,ot,on=false,groupStart=null;
   el.addEventListener('mousedown',e=>{
+    if(typeof window._isPreviewActive==='function'&&window._isPreviewActive())return;
+    if(window._pvRestoring)return;
     // В режиме обрезки элемент не перетаскивается — только рамка обрезки
     if (el.dataset.cropMode === 'true') return;
     // Block if another alpha-passthrough drag is in progress
@@ -31,7 +33,6 @@ function mkDrag(el,c){
     if(el.dataset.type==='table'&&(e.target.tagName==='TD'||e.target.tagName==='TH'))return;
     // Clicking on table border/frame (not a cell) — clear cell selection
     if(el.dataset.type==='table'&&typeof tblClearSel==='function') tblClearSel();
-    if(e.target.closest&&e.target.closest('.interactive'))return;
     // For shapes: allow drag on SVG fill, shape-text, or the transparent hit-area overlay
     if(el.dataset.type==='shape'){
       if(el.dataset.shape==='curve'){
@@ -104,66 +105,25 @@ function mkDrag(el,c){
         if(!isSvgPart&&!e.target.closest('.shape-text')&&!isHitArea&&!isNoFillSelf)return;
       }
     }
-    // PNG alpha hit test: if clicking transparent pixel, pass click to element below
+    // PNG alpha hit test: pass click/drag through transparent image pixels
     if(el.dataset.type==='image' &&
        !(typeof multiSel!=='undefined' && multiSel && multiSel.size>1 && multiSel.has(el))){
-      const _iel2 = el.querySelector('.iel');
-      if(_iel2 && typeof _isTransparentPixel==='function' && _isTransparentPixel(_iel2, e.clientX, e.clientY, 20)){
-        // Find element below and switch to it (even if current is selected)
-        const _cv3 = document.getElementById('canvas');
-        if(_cv3){
-          const _r3=_cv3.getBoundingClientRect();
-          const _sx3=(typeof canvasW!=='undefined'?canvasW:_cv3.offsetWidth)/_r3.width;
-          const _sy3=(typeof canvasH!=='undefined'?canvasH:_cv3.offsetHeight)/_r3.height;
-          const _cx3=(e.clientX-_r3.left)*_sx3, _cy3=(e.clientY-_r3.top)*_sy3;
-          const _kids3=Array.from(_cv3.querySelectorAll('.el:not(.decor-el)'));
-          let _below3=null;
-          for(let _i3=_kids3.length-1;_i3>=0;_i3--){
-            const _p3=_kids3[_i3]; if(_p3===el) continue;
-            const _px3=parseInt(_p3.style.left)||0,_py3=parseInt(_p3.style.top)||0;
-            const _pw3=parseInt(_p3.style.width)||0,_ph3=parseInt(_p3.style.height)||0;
-            if(_cx3>=_px3&&_cx3<=_px3+_pw3&&_cy3>=_py3&&_cy3<=_py3+_ph3){_below3=_p3;break;}
-          }
-          if(_below3){
-            e.preventDefault();e.stopPropagation();
-            window._alphaPassthroughDrag=true; // prevent _below3's mkDrag from starting
-            if(typeof pickMulti==='function') pickMulti(_below3,false);
-            else if(typeof pick==='function') pick(_below3);
-            const _bl3b=parseInt(_below3.style.left)||0,_bt3b=parseInt(_below3.style.top)||0;
-            window._anyDragging=true;
-            const _ox3b=e.clientX,_oy3b=e.clientY;let _mv3b=false;
-            const _mm3b=mv=>{
-              if(!_mv3b){_mv3b=true;if(typeof pushUndo==='function')pushUndo();}
-              const _z3b=typeof zoom!=='undefined'?zoom:1;
-              const _snc3=document.getElementById('snap-chk');
-              let _nl3b=_bl3b+(mv.clientX-_ox3b)/_z3b,_nt3b=_bt3b+(mv.clientY-_oy3b)/_z3b;
-              if(_snc3&&_snc3.checked&&typeof snapV==='function'){_nl3b=snapV(_nl3b);_nt3b=snapV(_nt3b);}
-              _below3.style.left=_nl3b+'px';_below3.style.top=_nt3b+'px';
-              if(typeof drawGuides==='function')drawGuides(_below3);
-              if(typeof _scheduleHandlesOverlayUpdate==='function') _scheduleHandlesOverlayUpdate();
-              else if(typeof _updateHandlesOverlay==='function' && !window._curveDragging)_updateHandlesOverlay();
-            };
-            const _mu3b=()=>{
-              window._anyDragging=false;
-              window._alphaPassthroughDrag=false;
-              document.removeEventListener('mousemove',_mm3b);document.removeEventListener('mouseup',_mu3b);
-              if(_mv3b){
-                if(typeof clearGuides==='function')clearGuides();if(typeof commitAll==='function')commitAll();
-                const _bd3b=slides[cur]&&slides[cur].els.find(e=>e.id===_below3.dataset.id);
-                if(_bd3b){_bd3b.x=parseInt(_below3.style.left);_bd3b.y=parseInt(_below3.style.top);}
-                if(typeof save==='function')save();if(typeof drawThumbs==='function')drawThumbs();if(typeof saveState==='function')saveState();
-              }
-            };
-            document.addEventListener('mousemove',_mm3b);document.addEventListener('mouseup',_mu3b);
-            // Set on=true so this mkDrag's mm/mu handlers register but mm does nothing (on check)
-            // This prevents the upper element from starting its own drag
-            on=true; ol=parseInt(el.style.left); ot=parseInt(el.style.top);
-            document.addEventListener('mousemove',mm);
-            document.addEventListener('mouseup',mu);
-            return;
-          }
-        }
-        return; // transparent, nothing below — don't drag current element
+      const _hitBelow = typeof _findElAtPoint==='function'
+        ? _findElAtPoint(e.clientX, e.clientY, { container: document.getElementById('canvas'), selector: '.el', excludeDecor: true })
+        : el;
+      if(_hitBelow && _hitBelow !== el){
+        e.preventDefault(); e.stopPropagation();
+        if(typeof pickMulti==='function') pickMulti(_hitBelow, false);
+        else if(typeof pick==='function') pick(_hitBelow);
+        _hitBelow.dispatchEvent(new MouseEvent('mousedown', {
+          bubbles: true, cancelable: true,
+          clientX: e.clientX, clientY: e.clientY,
+          button: 0, buttons: 1
+        }));
+        return;
+      }
+      if(typeof _isTransparentPixel==='function' && _isTransparentPixel(el, e.clientX, e.clientY, 20)){
+        return;
       }
     }
     // For lego: allow drag/click on any SVG content inside .ec
@@ -202,6 +162,7 @@ function mkDrag(el,c){
     }
     const mm=e2=>{
       if(!on)return;
+      if(typeof window._isPreviewActive==='function'&&window._isPreviewActive()){mu();return;}
       if(e2.buttons===0){mu();return;}
       if(!_dragUndo){_dragUndo=true;if(typeof pushUndo==='function')pushUndo();}
       const _z=typeof _canvasZoom==='number'?_canvasZoom:1;
@@ -231,6 +192,8 @@ function mkDrag(el,c){
 }
 function mkResize(el,rh,cfg){
   rh.addEventListener('mousedown',e=>{
+    if(typeof window._isPreviewActive==='function'&&window._isPreviewActive())return;
+    if(window._pvRestoring)return;
     e.preventDefault();e.stopPropagation();
     window._resizeDragging=true;window._anyDragging=true;
     const _cwrap=document.getElementById('cwrap');if(_cwrap)_cwrap.style.cursor='';
@@ -245,6 +208,7 @@ function mkResize(el,rh,cfg){
     const _appletD=el.dataset.type==='applet'&&slides[cur]?slides[cur].els.find(x=>x.id===el.dataset.id):null;
     const appletAspect=_appletD&&_appletD._appletAspect||null;
     const mm=e2=>{
+      if(typeof window._isPreviewActive==='function'&&window._isPreviewActive()){mu();return;}
       if(e2.buttons===0){mu();return;}
       if(!_resizeUndo){_resizeUndo=true;if(typeof pushUndo==='function')pushUndo();}
       const _z=typeof _canvasZoom==='number'?_canvasZoom:1;

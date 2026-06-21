@@ -53,6 +53,8 @@ function saveState(){
 
 // Full commit: flush DOM→data then data→localStorage
 function commitAll(){
+  if(typeof window._isPreviewActive==='function'&&window._isPreviewActive())return;
+  if(window._pvRestoring)return;
   save();
   drawThumbs();
   saveState();
@@ -62,7 +64,11 @@ function loadState(){
   try{
     const raw=localStorage.getItem('sf_v4');if(!raw)return;
     const s=JSON.parse(raw);
-    slides=s.slides||[];cur=s.cur||0;ar=s.ar||'16:9';
+    slides=s.slides||[];
+    cur=s.cur||0;
+    if(slides.length) cur=Math.max(0,Math.min(cur,slides.length-1));
+    else cur=0;
+    ar=s.ar||'16:9';
     if(typeof syncAllAppletHtmlFromData==='function') syncAllAppletHtmlFromData();
     canvasW=s.canvasW||1200;canvasH=s.canvasH||(ar==='4:3'?900:675);
     globalTrans=s.globalTrans||'none';transitionDur=s.transitionDur||500;

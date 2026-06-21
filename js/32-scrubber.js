@@ -177,7 +177,10 @@
 
   window.refreshNumScrubber = function (inp) {
     if (!inp || inp.tagName !== 'INPUT' || inp.type !== 'number') return;
-    if (isFinite(getMn(inp)) && isFinite(getMx(inp)) && inp.value !== '') fill(inp);
+    if (!isFinite(getMn(inp)) || !isFinite(getMx(inp))) return;
+    const v = parseFloat(inp.value);
+    if (inp.value === '' || (getMn(inp) >= 0 && isFinite(v) && v <= 0)) unfill(inp);
+    else fill(inp);
   };
 
   window.addEventListener('load', function () {

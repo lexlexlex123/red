@@ -127,17 +127,12 @@
     }, 2000);
   };
 
-  // При beforeunload — синхронно в sessionStorage с timestamp
+  // При beforeunload — flush cur и slides в storage, затем IDB
   window.addEventListener('beforeunload', ()=>{
     try{
+      if(typeof saveState === 'function') saveState();
       const raw = localStorage.getItem('sf_v4');
-      const now = Date.now();
-      if(raw){
-        sessionStorage.setItem('sf_v4_session', raw);
-        sessionStorage.setItem('sf_v4_ts', String(now));
-        localStorage.setItem('sf_v4_ts', String(now));
-        idbSave(raw);
-      }
+      if(raw) idbSave(raw);
     }catch(e){}
   });
 

@@ -31,6 +31,7 @@ window.CFG_ANIMATIONS = {
     { id: 'dance',        label: 'Танец',         category: 'live',     enabled: true },
     { id: 'swing',        label: 'Качение',       category: 'live',     enabled: true },
     { id: 'float',        label: 'Плавание',      category: 'live',     enabled: true },
+    { id: 'particles',    label: 'Частицы',       category: 'live',     enabled: true },
     { id: 'typewriter',   label: 'Смена текста',  category: 'live',     enabled: true },
     { id: 'captionSlide', label: 'Титр в сторону', category: 'live',     enabled: true },
   ],

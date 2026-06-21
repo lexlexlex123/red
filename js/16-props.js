@@ -39,6 +39,7 @@ function syncProps(){
   if(sp)sp.style.display='none';
   ep.style.display='flex';ep.style.flexDirection='column';ns.style.display='none';
   if(hp)hp.style.display='flex';if(hp)hp.style.flexDirection='column';
+  if(typeof syncHoverFxUI==='function')syncHoverFxUI();
   syncPos();
   document.getElementById('p-rot').value=sel.dataset.rot||0;
   document.getElementById('p-link').value=sel.dataset.link||'';document.getElementById('p-linkt').value=sel.dataset.linkt||'_blank';
@@ -177,6 +178,7 @@ function syncProps(){
     // Border
     try{const _brd=document.getElementById('p-border-preview');if(_brd)_brd.style.background=sel.dataset.textBorderColor||'#ffffff';document.getElementById('p-border-w').value=sel.dataset.textBorderW||0;}catch(e){}
     try{const _tbs=sel.dataset.textBorderStyle||'solid';document.querySelectorAll('.txt-border-style-btn').forEach(b=>b.classList.toggle('active',b.dataset.style===_tbs));}catch(e){}
+    try{if(typeof syncTextShadowUI==='function') syncTextShadowUI(sel);}catch(e){}
     // Opacity
     try{const op=parseFloat(sel.dataset.elOpacity!=null?sel.dataset.elOpacity:1);document.getElementById('p-el-op').value=op;}catch(e){}
     // Padding - use new pad_t/r/b/l dataset or parse from style
@@ -352,9 +354,7 @@ function syncProps(){
         }
       });
     }
-    if(anims.length){ap.style.display='flex';ap.style.flexDirection='column';const animList=document.getElementById('el-anim-list');if(animList){animList.innerHTML='';anims.forEach((a,i)=>{const item=document.createElement('div');item.className='anim-item';const cat=a.category||'entrance';const catColor=cat==='entrance'?'#22c55e':cat==='exit'?'#ec4899':'#f59e0b';item.innerHTML='<span style="width:16px;height:16px;border-radius:50%;background:'+catColor+'20;color:'+catColor+';font-size:8px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">'+(i+1)+'</span><span style="flex:1;font-size:10px">'+(ANIM_INFO[a.name]?.label||a.name)+'</span><span style="font-size:9px;color:var(--text3)">'+formatTiming(a)+'</span>';item.style.cssText='background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:4px 8px;display:flex;align-items:center;gap:6px;margin-bottom:3px;';animList.appendChild(item);});}}else ap.style.display='none';
-    // Always sync hover fx UI when animprops is shown
-    syncHoverFxUI();
+    if(anims.length){ap.style.display='flex';ap.style.flexDirection='column';const animList=document.getElementById('el-anim-list');if(animList){animList.innerHTML='';const elId=sel.dataset.id;anims.forEach((a,i)=>{const item=document.createElement('div');item.className='el-anim-item';const cat=a.cat||a.category||'entrance';const catColor=cat==='entrance'?'#22c55e':cat==='exit'?'#ec4899':cat==='live'?'#8b5cf6':'#f59e0b';item.innerHTML='<span style="width:16px;height:16px;border-radius:50%;background:'+catColor+'20;color:'+catColor+';font-size:8px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">'+(i+1)+'</span><span style="flex:1;font-size:10px">'+(ANIM_INFO[a.name]?.label||a.name)+'</span><span style="font-size:9px;color:var(--text3)">'+formatTiming(a)+'</span>';item.style.cssText='background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:4px 8px;display:flex;align-items:center;gap:6px;margin-bottom:3px;cursor:pointer;transition:border-color .12s,background .12s;';item.title='Настроить анимацию';item.addEventListener('mousedown',e=>e.preventDefault());item.addEventListener('mouseenter',()=>{item.style.borderColor='var(--accent)';item.style.background='var(--accentl)';});item.addEventListener('mouseleave',()=>{item.style.borderColor='var(--border)';item.style.background='var(--surface2)';});item.addEventListener('click',()=>{if(typeof window.openAnimRowForEdit==='function')window.openAnimRowForEdit(elId,i);});animList.appendChild(item);});}}else ap.style.display='none';
   }
   // Sync text radius
   if(sel.dataset.type==='text')syncTextRadiusUI();
@@ -699,8 +699,12 @@ function resetTextFormatting() {
   sel.style.backdropFilter=''; sel.style.webkitBackdropFilter='';
   delete d.textColorGrad; delete d.textColorGrad1; delete d.textColorGrad2; delete d.textColorGradDir;
   delete sel.dataset.textColorGrad; delete sel.dataset.textColorGrad1; delete sel.dataset.textColorGrad2; delete sel.dataset.textColorGradDir;
+  delete d.textShadowW; delete d.textShadowBlur; delete d.textShadowSize; delete d.textShadowColor; delete d.textShadowScheme;
+  delete sel.dataset.textShadowW; delete sel.dataset.textShadowBlur; delete sel.dataset.textShadowSize; delete sel.dataset.textShadowColor;
   const ec2 = sel.querySelector('.ec');
-  if (ec2) { ec2.style.background='';ec2.style.webkitBackgroundClip='';ec2.style.backgroundClip='';ec2.style.webkitTextFillColor=''; }
+  if (ec2) { ec2.style.background='';ec2.style.webkitBackgroundClip='';ec2.style.backgroundClip='';ec2.style.webkitTextFillColor='';ec2.style.textShadow='';ec2.style.filter=''; }
+  const _tBody=sel.querySelector('._text_body');
+  if(_tBody){_tBody.style.overflow='';_tBody.style.top=_tBody.style.left=_tBody.style.right=_tBody.style.bottom='';}
 
   // 4. Re-render element
   const ecEl = sel.querySelector('.tel') || sel.querySelector('.ec');
@@ -1031,11 +1035,15 @@ function _ensureAppletOnEndAnim(d, appletId){
   if(!d) return false;
   const propEnd = appletId === 'counter' ? 'cntOnEnd' : 'tmOnEnd';
   const propAnim = appletId === 'counter' ? 'cntOnEndAnim' : 'tmOnEndAnim';
-  if((d[propEnd] || 'none') !== 'anim' || d[propAnim]) return false;
-  const list = typeof listAppletTriggerAnims === 'function'
-    ? listAppletTriggerAnims(slides[cur], d.id, appletId === 'counter' ? 'counter' : 'timer') : [];
-  if(!list.length) return false;
-  d[propAnim] = list[0].ref;
+  const trig = appletId === 'counter' ? 'counter' : 'timer';
+  const slide = slides[cur];
+  if((d[propEnd] || 'none') !== 'anim') return false;
+  if(d[propAnim] && typeof window._isValidAppletAnimRef === 'function'
+      && window._isValidAppletAnimRef(slide, d.id, d[propAnim], trig)) return false;
+  const resolved = typeof window.resolveAppletAnimRef === 'function'
+    ? window.resolveAppletAnimRef(slide, d.id, d[propAnim] || '', trig) : '';
+  if(!resolved) return false;
+  d[propAnim] = resolved;
   return true;
 }
 

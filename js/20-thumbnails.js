@@ -662,6 +662,20 @@ function drawThumbText(ctx,d,sx,sy){
   ctx.font=`${fw} ${fs.toFixed(1)}px Inter,sans-serif`;
   ctx.fillStyle=col;
   ctx.globalAlpha=d.elOpacity!=null?+d.elOpacity:1;
+  if(window._textShadowActive&&window._textShadowActive(d)){
+    let ss=+(d.textShadowSize||0), sb=+(d.textShadowBlur||0);
+    const sc=d.textShadowColor||'#000000';
+    if(!ss&&!sb&&d.textShadowW&&+d.textShadowW>0){
+      sb=+d.textShadowW;
+      ss=Math.max(1,Math.round(sb*0.35));
+    }
+    const effBlur=sb>0&&typeof window._shadowEffectiveBlur==='function'
+      ?window._shadowEffectiveBlur(ss,sb):sb;
+    ctx.shadowColor=sc;
+    ctx.shadowBlur=effBlur;
+    ctx.shadowOffsetX=ss>0?Math.max(1,Math.round(ss*0.35)):0;
+    ctx.shadowOffsetY=ctx.shadowOffsetX;
+  }
 
   // Extract lines from html, preserving list markers as text prefixes
   const tmp=document.createElement('div');tmp.innerHTML=(typeof rtMigrateHtml==='function'?rtMigrateHtml(d.html||''):d.html||'');

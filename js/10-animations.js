@@ -53,6 +53,7 @@ const ANIM_CATS = [
       {name:'dance',      label:'Танец',        icon:'💃'},
       {name:'swing',      label:'Качение',      icon:'🎷'},
       {name:'float',      label:'Плавание',     icon:'🌊'},
+      {name:'particles',  label:'Частицы',      icon:'✨'},
       {name:'typewriter', label:'Смена текста',  icon:'⌨'},
       {name:'captionSlide', label:'Титр в сторону', icon:'📰'},
     ]
@@ -61,6 +62,17 @@ const ANIM_CATS = [
 
 const ANIM_INFO = {};
 ANIM_CATS.forEach(g => g.items.forEach(it => { ANIM_INFO[it.name] = {label:it.label, icon:it.icon, cat:g.cat}; }));
+
+window.PARTICLES_DEFAULTS = {
+  particleCount: 14,
+  ptDir: 0,
+  ptLife: 900,
+  ptSizeRand: 51,
+  ptRot: 32,
+  ptSpread: 100,
+  duration: 3550,
+  swingCount: 1
+};
 
 // ── Float organic smooth drift ───────────────────────────────────
 // Uses integer-frequency sine waves so the loop is perfectly seamless.
@@ -315,6 +327,7 @@ window._clearAnimHoverPreview = function(el) {
       t.style.transform = t === e ? (t.dataset.rot ? `rotate(${t.dataset.rot}deg)` : '') : '';
     });
     if (typeof window._resetLiveAnimPreview === 'function') window._resetLiveAnimPreview(e, true);
+    if (typeof window._resetParticles === 'function') window._resetParticles(e);
   });
 };
 
@@ -364,13 +377,13 @@ window._selectedAnimCat  = null;
         const cv = _animCanvas();
         return members.map(md => {
           const dom = cv && cv.querySelector('.el[data-id="' + md.id + '"]');
-          return dom ? { dom, d: md } : null;
-        }).filter(Boolean);
+          return { dom: dom || null, d: md };
+        });
       }
     }
     const cv = _animCanvas();
     const dom = cv && cv.querySelector('.el[data-id="' + elId + '"]');
-    return dom ? [{ dom, d }] : [];
+    return [{ dom: dom || null, d }];
   }
 
   function _syncDomAnims(pairs) {
@@ -380,6 +393,13 @@ window._selectedAnimCat  = null;
       const node = dom || cv.querySelector('.el[data-id="' + d.id + '"]');
       if (node) node.dataset.anims = JSON.stringify(d.anims || []);
     });
+  }
+
+  function _repairAppletAnimRefsAfterChange() {
+    const slide = _slides()[_cur()];
+    if (!slide || typeof window.repairAppletAnimRefs !== 'function') return;
+    if (!window.repairAppletAnimRefs(slide)) return;
+    if (typeof window.syncAppletAnimRefsToDom === 'function') window.syncAppletAnimRefsToDom(_cur());
   }
 
   function _animOrderKey(elId, ai) { return elId + ':' + ai; }
@@ -499,6 +519,9 @@ window._selectedAnimCat  = null;
     if (animName === 'rotate') { anim.rotateDir = 'cw'; anim.rotateDeg = 360; }
     if (animName === 'dance') { anim.swingCount = 1; anim.duration = 1200; }
     if (animName === 'float') { anim.swingCount = 10; anim.duration = 5000; }
+    if (animName === 'particles') {
+      Object.assign(anim, window.PARTICLES_DEFAULTS);
+    }
     if (animName === 'captionSlide') { anim.holdDuration = 2000; anim.captionDir = 'right'; }
     if (animName === 'splitHalf') { anim.duration = 800; }
     if (animName === 'typewriter') {
@@ -518,6 +541,7 @@ window._selectedAnimCat  = null;
 
   window.openAnimPanel = function(){
     try{
+      if(typeof window._setAnimTabActive==='function') window._setAnimTabActive(true);
       // Show anim panel in props (handled by 04-ui.js switchTab)
       // Just ensure panel body exists and render
       const wrap = document.getElementById('props-anim-wrap');
@@ -535,6 +559,7 @@ window._selectedAnimCat  = null;
 
   window.closeAnimPanel = function(){
     try{
+      if(typeof window._setAnimTabActive==='function') window._setAnimTabActive(false);
       if (typeof window._animTriggerPickCancel === 'function') window._animTriggerPickCancel();
       const wrap = document.getElementById('props-anim-wrap');
       const scroll = document.getElementById('props-scroll');
@@ -568,11 +593,11 @@ window._selectedAnimCat  = null;
     return name ? `${type}: ${name}` : type;
   }
 
-  let _animPickerCtx = null;
+  window._animPickerCtx = null;
   let _animPickEscHandler = null;
 
   window._animTriggerPickCancel = function() {
-    _animPickerCtx = null;
+    window._animPickerCtx = null;
     const ov = document.getElementById('_anim-picker-ov');
     if (ov) ov.remove();
     document.querySelectorAll('.anim-trig-pick-hint').forEach(h => { h.style.display = 'none'; });
@@ -601,7 +626,7 @@ window._selectedAnimCat  = null;
   }
 
   window._animTriggerPick = function(ownerElId, animIdx) {
-    _animPickerCtx = { ownerElId, animIdx };
+    window._animPickerCtx = { ownerElId, animIdx };
     document.querySelectorAll('.anim-trig-pick-hint').forEach(h => { h.style.display = 'none'; });
     const row = document.querySelector('.anim-row[data-el-id="' + ownerElId + '"][data-ai="' + animIdx + '"]');
     const hint = row && row.querySelector('.anim-trig-pick-hint');
@@ -623,8 +648,8 @@ window._selectedAnimCat  = null;
         const found = el2.matches && el2.matches('.el[data-id]') ? el2 : (el2.closest ? el2.closest('.el[data-id]') : null);
         if (found && !found.classList.contains('decor-el')) { target = found; break; }
       }
-      if (target && _animPickerCtx) {
-        const { ownerElId, animIdx } = _animPickerCtx;
+      if (target && window._animPickerCtx) {
+        const { ownerElId, animIdx } = window._animPickerCtx;
         const s = _slides()[_cur()];
         const dd = s && s.els.find(x => x.id === ownerElId);
         const anim = dd && dd.anims && dd.anims[animIdx];
@@ -641,7 +666,7 @@ window._selectedAnimCat  = null;
           anim.preNavTriggerElId = target.dataset.id;
         }
         updateAnimProp(ownerElId, animIdx, 'triggerElId', target.dataset.id);
-        _animPickerCtx = null;
+        window._animPickerCtx = null;
         _refreshAnimTrigPickRow(ownerElId, animIdx);
         window._animTriggerPickCancel();
       } else {
@@ -885,7 +910,7 @@ window._selectedAnimCat  = null;
       const relDelay = a.delay || 0;
       let absDelay;
       const _isLive = typeof ANIM_INFO!=='undefined' && ANIM_INFO[a.name] && ANIM_INFO[a.name].cat==='live';
-      const _isLiveLoop = _isLive && a.name !== 'captionSlide' && a.name !== 'typewriter';
+      const _isLiveLoop = _isLive && a.name !== 'captionSlide' && a.name !== 'typewriter' && a.name !== 'particles';
       if(i === 0){
         absDelay = relDelay;
       } else if(_isLiveLoop){
@@ -907,7 +932,7 @@ window._selectedAnimCat  = null;
 
   window.addAnimToSel = function(animName, cat){
     try{
-      const el=_sel(); if(!el){ alert('Выберите объект на слайде'); return; }
+      const el=_sel(); if(!el) return;
       const targets = _animGroupData(el);
       if (!targets.length) return;
       _pushUndo();
@@ -922,15 +947,16 @@ window._selectedAnimCat  = null;
         slide.animOrder.push({ elId: leader.id, ai: leader.anims.length - 1 });
       }
       _syncDomAnims(targets);
+      _repairAppletAnimRefsAfterChange();
       if (typeof window._clearAnimHoverPreview === 'function') window._clearAnimHoverPreview(el);
       _save(); renderAnimPanel(); _saveState();
       if (targets.length > 1) _toast('Анимация добавлена группе (' + targets.length + ')', 'ok');
       if(animName==='moveTo' && typeof renderMotionOverlay==='function') renderMotionOverlay();
       if(animName==='orbitTo' && typeof renderMotionOverlay==='function') renderMotionOverlay();
+      if(typeof syncProps==='function') syncProps();
     }catch(e){ console.warn('[10-animations] addAnimToSel:', e.message); }
   };
 
-  // Called from "Добавить" button in HTML
   window.doAddSelectedAnim = function(){
     if(!window._selectedAnimName) return;
     window.addAnimToSel(window._selectedAnimName, window._selectedAnimCat);
@@ -952,6 +978,7 @@ window._selectedAnimCat  = null;
           .map(x => x.elId === leader.id && x.ai > animIdx ? { elId: x.elId, ai: x.ai - 1 } : x);
       }
       _syncDomAnims(targets);
+      _repairAppletAnimRefsAfterChange();
       _save(); renderAnimPanel(); _saveState();
       if(typeof renderMotionOverlay==='function') renderMotionOverlay();
       if (typeof window._refreshAnimTimeline === 'function') window._refreshAnimTimeline();
@@ -996,6 +1023,7 @@ window._selectedAnimCat  = null;
       });
       window._animTlClearSel();
       _syncDomAnims(allTargets);
+      _repairAppletAnimRefsAfterChange();
       _save(); renderAnimPanel(); _saveState();
       if (typeof renderMotionOverlay === 'function') renderMotionOverlay();
       if (typeof window._refreshAnimTimeline === 'function') window._refreshAnimTimeline();
@@ -1060,7 +1088,63 @@ window._selectedAnimCat  = null;
       if (typeof window._refreshAnimTimeline === 'function') window._refreshAnimTimeline();
     }catch(e){ console.error('clearAllAnims:',e); }
   };
-  window.removeAllAnims = window.clearAllAnims;
+
+  window.clearObjectAnims = function(elId){
+    try{
+      if (typeof slides === 'undefined' || typeof cur === 'undefined') return;
+      const slide = slides[cur];
+      if (!slide || !slide.els) return;
+      if (!elId) {
+        const el = _sel();
+        if (!el) return;
+        elId = el.dataset.id;
+      }
+      const d = slide.els.find(x => x.id === elId);
+      if (!d) return;
+      const targets = _animGroupDataById(elId);
+      if (!targets.length) return;
+      if (!targets.some(({ d: td }) => td.anims && td.anims.length)) return;
+      pushUndo();
+      const cv = _animCanvas();
+      const leader = _slideAnimLeader(d, slide);
+      targets.forEach(({ dom, d: td }) => {
+        td.anims = [];
+        const node = dom || (cv && cv.querySelector('.el[data-id="' + td.id + '"]'));
+        if (node) node.dataset.anims = '[]';
+      });
+      if (slide.animOrder) {
+        slide.animOrder = slide.animOrder.filter(x => x.elId !== leader.id);
+      }
+      _repairAppletAnimRefsAfterChange();
+      if (typeof renderMotionOverlay === 'function') renderMotionOverlay();
+      save(); saveState(); drawThumbs();
+      renderAnimPanel();
+      if (typeof syncProps === 'function') syncProps();
+      if (typeof window._refreshAnimTimeline === 'function') window._refreshAnimTimeline();
+    }catch(e){ console.error('clearObjectAnims:', e); }
+  };
+  window.removeAllAnims = window.clearObjectAnims;
+
+  window.openAnimRowForEdit = function(elId, animIdx){
+    try{
+      const slide = _slides()[_cur()];
+      const d = slide && slide.els.find(x => x.id === elId);
+      if (!d || animIdx == null) return;
+      const leader = _slideAnimLeader(d, slide);
+      const rowElId = leader.id;
+      const ai = +animIdx;
+      const tabBtn = document.querySelector('.rtab[onclick*="\'anim\'"]');
+      if (tabBtn && typeof switchTab === 'function') switchTab('anim', tabBtn);
+      else if (typeof window.openAnimPanel === 'function') window.openAnimPanel();
+      window._animPendingOpenRows = window._animPendingOpenRows || new Set();
+      window._animPendingOpenRows.add(rowElId + ':' + ai);
+      renderAnimPanel();
+      requestAnimationFrame(() => {
+        const row = document.querySelector('.anim-row[data-el-id="' + rowElId + '"][data-ai="' + ai + '"]');
+        if (row) row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      });
+    }catch(e){ console.warn('[10-animations] openAnimRowForEdit:', e.message); }
+  };
 
   // Play single animation on element(s) without accumulated delay
   function playAnimOnEl(animName, animData){
@@ -1091,6 +1175,23 @@ window._selectedAnimCat  = null;
           floatTarget.style.transform = '';
         });
       }, 3100);
+      return;
+    }
+    if (animName === 'particles') {
+      const _ptd = window.PARTICLES_DEFAULTS;
+      const pa = Object.assign({}, _ptd, animData || {});
+      targets.forEach(oneEl => {
+        const d2 = (typeof slides !== 'undefined' && typeof cur !== 'undefined') ?
+          slides[cur] && slides[cur].els.find(x => oneEl.dataset && x.id === oneEl.dataset.id) : null;
+        if (typeof window._fireParticlesAnim === 'function') window._fireParticlesAnim(oneEl, pa, 0, d2);
+      });
+      clearTimeout(_animPreviewTimer);
+      const previewDur = (pa.duration || _ptd.duration) + (pa.ptLife || _ptd.ptLife) * 1.5 + 800;
+      _animPreviewTimer = setTimeout(() => {
+        targets.forEach(t => {
+          if (typeof window._resetParticles === 'function') window._resetParticles(t);
+        });
+      }, previewDur);
       return;
     }
     if (animName === 'splitHalf') {
@@ -1244,6 +1345,10 @@ window._selectedAnimCat  = null;
 
   window.renderAnimPanel = function(){
     try{
+      const slide = _slides()[_cur()];
+      if(slide && typeof window.repairAppletAnimRefs === 'function' && window.repairAppletAnimRefs(slide)){
+        if(typeof window.syncAppletAnimRefsToDom === 'function') window.syncAppletAnimRefsToDom(_cur());
+      }
       renderAnimCategoryGrid();
       renderAssignedAnims();
       if (typeof window.renderAnimTimelineBar === 'function') {
@@ -1320,14 +1425,7 @@ window._selectedAnimCat  = null;
           window._selectedAnimCat  = group.cat;
           container.querySelectorAll('.anim-item').forEach(i => i.classList.remove('selected'));
           item.classList.add('selected');
-          const addBtn = document.getElementById('anim-add-btn');
-          if(addBtn){ addBtn.disabled=false; addBtn.textContent='Добавить «'+it.label+'»'; }
-        });
-        item.addEventListener('dblclick', e => {
-          e.preventDefault(); e.stopPropagation();
-          window._selectedAnimName = it.name;
-          window._selectedAnimCat  = group.cat;
-          window.addAnimToSel(it.name, group.cat);
+          if (_sel()) window.addAnimToSel(it.name, group.cat);
         });
         grid.appendChild(item);
       });
@@ -1355,6 +1453,10 @@ window._selectedAnimCat  = null;
     container.querySelectorAll('.anim-row.anim-row-open').forEach(r => {
       if (r.dataset.elId != null && r.dataset.ai != null) openRows.add(r.dataset.elId + ':' + r.dataset.ai);
     });
+    if (window._animPendingOpenRows) {
+      window._animPendingOpenRows.forEach(k => openRows.add(k));
+      window._animPendingOpenRows.clear();
+    }
 
     const s = _slides()[_cur()];
     const selEl = _sel();
@@ -1425,21 +1527,6 @@ window._selectedAnimCat  = null;
       delBtn.addEventListener('mousedown', e=>e.preventDefault());
       delBtn.addEventListener('click', e=>{e.stopPropagation(); removeAnim(d.id, ai);});
       head.appendChild(delBtn);
-
-      const prevBtn = document.createElement('button');
-      prevBtn.className = 'anim-preview-btn';
-      prevBtn.title = 'Просмотр';
-      prevBtn.textContent = '▶';
-      prevBtn.addEventListener('mousedown', e => e.preventDefault());
-      prevBtn.addEventListener('click', e => {
-        e.stopPropagation();
-        if (typeof window.stopSlideAnimsOnCanvas === 'function') window.stopSlideAnimsOnCanvas();
-        const cv = document.getElementById('canvas');
-        const domEl = cv && cv.querySelector('.el[data-id="' + d.id + '"]');
-        if (domEl && typeof pick === 'function') pick(domEl);
-        window.playAnimPreview(aLive.name, aLive);
-      });
-      head.insertBefore(prevBtn, delBtn);
 
       row.appendChild(head);
 
@@ -1515,6 +1602,7 @@ window._selectedAnimCat  = null;
             });
 
             _save(); _saveState();
+            if (typeof _repairAppletAnimRefsAfterChange === 'function') _repairAppletAnimRefsAfterChange();
           }
           renderAnimPanel();
           if(typeof renderMotionOverlay==='function') renderMotionOverlay();
@@ -1677,6 +1765,29 @@ window._selectedAnimCat  = null;
       if(a.name === 'float'){
         const _fcnt = a.swingCount != null ? a.swingCount : 1;
         props.appendChild(_mkRepeatRow('float', d, ai, _fcnt, _fcnt>=10));
+      }
+
+      // particles: direction, count, lifetime, size randomness, spawn window, repeats
+      if(a.name === 'particles'){
+        const _ptd = window.PARTICLES_DEFAULTS;
+        const ptGrid = document.createElement('div');
+        ptGrid.className = 'anim-row-props';
+        ptGrid.style.marginTop = '4px';
+        ptGrid.innerHTML = `
+          <label>Направление, °<input type="number" value="${a.ptDir!=null?a.ptDir:_ptd.ptDir}" min="0" max="360" step="5" oninput="updateAnimProp('${d.id}',${ai},'ptDir',((+this.value)%360+360)%360)" onchange="updateAnimProp('${d.id}',${ai},'ptDir',((+this.value)%360+360)%360)"></label>
+          <label>Частиц<input type="number" value="${a.particleCount!=null?a.particleCount:_ptd.particleCount}" min="1" max="200" step="1" oninput="updateAnimProp('${d.id}',${ai},'particleCount',Math.max(1,Math.min(200,+this.value||${_ptd.particleCount})))" onchange="updateAnimProp('${d.id}',${ai},'particleCount',Math.max(1,Math.min(200,+this.value||${_ptd.particleCount})))"></label>
+          <label>Время жизни, мс<input type="number" value="${a.ptLife!=null?a.ptLife:_ptd.ptLife}" min="400" max="30000" step="100" oninput="updateAnimProp('${d.id}',${ai},'ptLife',Math.max(400,+this.value||${_ptd.ptLife}))" onchange="updateAnimProp('${d.id}',${ai},'ptLife',Math.max(400,+this.value||${_ptd.ptLife}))"></label>
+          <label>Разброс размера, %<input type="number" value="${a.ptSizeRand!=null?a.ptSizeRand:_ptd.ptSizeRand}" min="0" max="100" step="1" oninput="updateAnimProp('${d.id}',${ai},'ptSizeRand',Math.max(0,Math.min(100,this.value===''?${_ptd.ptSizeRand}:+this.value)))" onchange="updateAnimProp('${d.id}',${ai},'ptSizeRand',Math.max(0,Math.min(100,this.value===''?${_ptd.ptSizeRand}:+this.value)))"></label>
+          <label>Разброс вращения, °<input type="number" value="${a.ptRot!=null?a.ptRot:_ptd.ptRot}" min="0" max="180" step="1" oninput="updateAnimProp('${d.id}',${ai},'ptRot',Math.max(0,Math.min(180,this.value===''?${_ptd.ptRot}:+this.value)))" onchange="updateAnimProp('${d.id}',${ai},'ptRot',Math.max(0,Math.min(180,this.value===''?${_ptd.ptRot}:+this.value)))"></label>
+          <label>Разброс по ширине, %<input type="number" value="${a.ptSpread!=null?a.ptSpread:_ptd.ptSpread}" min="0" max="100" step="1" oninput="updateAnimProp('${d.id}',${ai},'ptSpread',Math.max(0,Math.min(100,this.value===''?${_ptd.ptSpread}:+this.value)))" onchange="updateAnimProp('${d.id}',${ai},'ptSpread',Math.max(0,Math.min(100,this.value===''?${_ptd.ptSpread}:+this.value)))"></label>
+          <label>Период появления, мс<input type="number" value="${a.duration!=null?a.duration:_ptd.duration}" min="400" max="60000" step="100" oninput="updateAnimProp('${d.id}',${ai},'duration',Math.max(400,+this.value||${_ptd.duration}))" onchange="updateAnimProp('${d.id}',${ai},'duration',Math.max(400,+this.value||${_ptd.duration}))"></label>`;
+        props.appendChild(ptGrid);
+        const _pcnt = a.swingCount != null ? a.swingCount : 1;
+        props.appendChild(_mkRepeatRow('particles', d, ai, _pcnt, _pcnt>=10));
+        const ptHint = document.createElement('div');
+        ptHint.style.cssText = 'font-size:8px;color:var(--text3);margin-top:5px;line-height:1.4;';
+        ptHint.textContent = '✨ Копии объекта появляются по очереди, плывут и исчезают. Направление — относительно фигуры: 0° вверх (с поворотом объекта). Разброс по ширине — в стороны от направления движения.';
+        props.appendChild(ptHint);
       }
 
       // orbitTo: radius, direction, degrees
@@ -1886,13 +1997,24 @@ window._selectedAnimCat  = null;
       head.addEventListener('click', e=>{
         if(e._fromDrag || _animDragJustEnded){ _animDragJustEnded = false; return; }
         const wasOpen = props.style.display !== 'none';
+        const rowKey = d.id + ':' + ai;
         if (!wasOpen) {
           const cv = document.getElementById('canvas');
           const domEl = cv && cv.querySelector('.el[data-id="' + d.id + '"]');
-          if (domEl && typeof pick === 'function') pick(domEl);
+          const curSel = typeof sel !== 'undefined' ? sel : null;
+          const needPick = domEl && (!curSel || curSel.dataset.id !== d.id);
+          if (needPick) {
+            window._animPendingOpenRows = window._animPendingOpenRows || new Set();
+            window._animPendingOpenRows.add(rowKey);
+            if (typeof pick === 'function') pick(domEl);
+            return;
+          }
+          props.style.display = 'block';
+          row.classList.add('anim-row-open');
+          return;
         }
-        props.style.display = wasOpen ? 'none' : 'block';
-        row.classList.toggle('anim-row-open', !wasOpen);
+        props.style.display = 'none';
+        row.classList.remove('anim-row-open');
       });
 
       container.appendChild(row);
@@ -1901,11 +2023,80 @@ window._selectedAnimCat  = null;
 
 })();
 
-// Close anim-more-menu when clicking outside
-document.addEventListener('mousedown', function(e) {
-  var menu = document.getElementById('anim-more-menu');
-  if(menu && menu.style.display==='block' && !menu.contains(e.target)){
-    menu.style.display='none';
+window._isInsideAnimBlock = function(t) {
+  if (!t || !t.closest) return false;
+  return !!(
+    t.closest('.anim-row') ||
+    t.closest('#props-anim-wrap') ||
+    t.closest('#anim-assigned-list') ||
+    t.closest('#anim-panel-body') ||
+    t.closest('#_anim-picker-ov') ||
+    t.closest('.anim-trig-pick-wrap') ||
+    t.closest('select') ||
+    t.closest('.anim-tl-seg') ||
+    t.closest('.anim-tl-resize') ||
+    t.closest('.anim-tl-playhead') ||
+    t.closest('.anim-tl-snap-guide') ||
+    t.closest('.anim-item') ||
+    t.closest('#anim-more-menu') ||
+    t.closest('#anim-more-btn')
+  );
+};
+
+window._clearAnimBlockSelection = function(opts) {
+  opts = opts || {};
+  let did = false;
+  document.querySelectorAll('.anim-row.anim-row-open').forEach(row => {
+    row.classList.remove('anim-row-open');
+    const pw = row.querySelector('.anim-row-props-wrap');
+    if (pw) pw.style.display = 'none';
+    did = true;
+  });
+  if (!opts.skipTimeline && window._animTlSel && window._animTlSel.size) {
+    window._animTlClearSel();
+    did = true;
+    if (typeof slides !== 'undefined' && typeof cur !== 'undefined' &&
+        typeof window.renderAnimTimelineBar === 'function') {
+      window.renderAnimTimelineBar(slides[cur]);
+    }
   }
-});
+  if (window._selectedAnimName) {
+    window._selectedAnimName = null;
+    window._selectedAnimCat = null;
+    document.querySelectorAll('.anim-item.selected').forEach(i => i.classList.remove('selected'));
+    did = true;
+  }
+  if (opts.deselectEl !== false && typeof sel !== 'undefined' && sel) {
+    if (typeof pick === 'function') pick(null);
+    did = true;
+  } else if (did && typeof renderAnimPanel === 'function') {
+    renderAnimPanel();
+  }
+  if (did && typeof window._animTriggerPickCancel === 'function' && !window._animPickerCtx) {
+    window._animTriggerPickCancel();
+  }
+  return did;
+};
+
+// Close anim-more-menu when clicking outside; clear anim block selection on outside click
+document.addEventListener('mousedown', function(e) {
+  if (e.button !== 0) return;
+  var menu = document.getElementById('anim-more-menu');
+  if (menu && menu.style.display === 'block' && !menu.contains(e.target)) {
+    menu.style.display = 'none';
+  }
+  if (!document.body.classList.contains('anim-tab-active')) return;
+  if (e.shiftKey) return;
+  if (window._animPickerCtx) return;
+  if (e.target.closest && (e.target.closest('#ribbon') || e.target.closest('select') || e.target.closest('#_anim-picker-ov'))) return;
+  const focusedTrig = document.activeElement;
+  if (focusedTrig && focusedTrig.classList && focusedTrig.classList.contains('anim-trig-sel')) return;
+  if (window._isInsideAnimBlock(e.target)) return;
+  const inTimeline = e.target.closest('#anim-timeline-ribbon') || e.target.closest('.anim-tl-dock');
+  if (inTimeline) {
+    window._clearAnimBlockSelection({ deselectEl: false, skipTimeline: true });
+    return;
+  }
+  window._clearAnimBlockSelection({ deselectEl: false });
+}, true);
 

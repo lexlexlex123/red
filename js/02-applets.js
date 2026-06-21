@@ -989,7 +989,8 @@ function _wireAppletStepClick(el, msgType){
     if(iframe && typeof _appletPostMessage === 'function') _appletPostMessage(iframe, { type: msgType });
   };
   el.addEventListener('mousedown', ev => {
-    if(ev.target.closest('.rh') || ev.target.closest('.db') || ev.target.closest('.applet-toggle')) return;
+    if(ev.target.closest('.rh') || ev.target.closest('.db')) return;
+    ev.stopPropagation();
     downX = ev.clientX;
     downY = ev.clientY;
     moved = false;
@@ -1376,8 +1377,11 @@ window._onAppletAnimMessage = function(e){
   if(typeof window.fireAppletAnimRef !== 'function') return;
   const inPreview = document.getElementById('preview-ov')?.classList.contains('active');
   const slideIdx = inPreview && typeof pidx !== 'undefined' ? pidx : (typeof cur !== 'undefined' ? cur : 0);
+  const slide = slides[slideIdx];
   const appletVal = e.data.appletVal;
-  if(e.source && appletVal != null){
+  let ref = e.data.ref;
+  let appletElId = null;
+  if(e.source){
     const roots = [document.getElementById('canvas'), document.getElementById('psa'), document.getElementById('psb')];
     for(const root of roots){
       if(!root) continue;
@@ -1385,15 +1389,99 @@ window._onAppletAnimMessage = function(e){
         try{
           if(iframe.contentWindow !== e.source) continue;
           const appEl = iframe.closest('.el, .psel');
-          if(appEl) appEl._splitAppletLiveVal = appletVal;
+          if(appEl){
+            appletElId = appEl.dataset.id;
+            if(appletVal != null) appEl._splitAppletLiveVal = appletVal;
+          }
           break;
         }catch(err){}
       }
+      if(appletElId) break;
     }
   }
-  window.fireAppletAnimRef(e.data.ref, slideIdx, appletVal);
+  if(slide && appletElId && typeof window.resolveAppletAnimRef === 'function'){
+    const ad = slide.els.find(x => x.id === appletElId);
+    const trig = ad && ad.appletId === 'timer' ? 'timer' : 'counter';
+    if(ad && (ad.appletId === 'counter' || ad.appletId === 'timer')){
+      const resolved = window.resolveAppletAnimRef(slide, appletElId, ref, trig);
+      if(resolved && resolved !== ref){
+        ref = resolved;
+        if(ad.appletId === 'counter') ad.cntOnEndAnim = resolved;
+        else ad.tmOnEndAnim = resolved;
+      }
+    }
+  }
+  window.fireAppletAnimRef(ref, slideIdx, appletVal);
 };
 window.addEventListener('message', window._onAppletAnimMessage);
+
+window._isValidAppletAnimRef = function(slide, appletElId, ref, triggerType){
+  if(!ref || !slide || !appletElId || !triggerType) return false;
+  const parts = String(ref).split(':');
+  if(parts.length < 2) return false;
+  const elId = parts[0], ai = +parts[1];
+  if(!Number.isFinite(ai) || ai < 0) return false;
+  const d = slide.els.find(x => x.id === elId);
+  const a = d && d.anims && d.anims[ai];
+  if(!a) return false;
+  if((a.trigger || 'auto') !== triggerType) return false;
+  if(a.triggerElId !== appletElId) return false;
+  return true;
+};
+
+window.resolveAppletAnimRef = function(slide, appletElId, ref, triggerType){
+  if(window._isValidAppletAnimRef(slide, appletElId, ref, triggerType)) return ref;
+  const list = window.listAppletTriggerAnims(slide, appletElId, triggerType);
+  if(!list.length) return ref || '';
+  const oldElId = ref ? String(ref).split(':')[0] : '';
+  const pool = oldElId ? list.filter(x => x.elId === oldElId) : list;
+  const items = pool.length ? pool : list;
+  for(let i = 0; i < items.length; i++){
+    const item = items[i];
+    const d = slide.els.find(x => x.id === item.elId);
+    const a = d && d.anims && d.anims[item.ai];
+    if(a && a.cat === 'exit') return item.ref;
+  }
+  return items[items.length - 1].ref;
+};
+
+window.repairAppletAnimRefs = function(slide){
+  if(!slide) return false;
+  let changed = false;
+  (slide.els || []).forEach(d => {
+    if(d.type !== 'applet') return;
+    if(d.appletId === 'counter' && (d.cntOnEnd || 'none') === 'anim'){
+      const next = window.resolveAppletAnimRef(slide, d.id, d.cntOnEndAnim || '', 'counter');
+      if(next !== (d.cntOnEndAnim || '')){ d.cntOnEndAnim = next; changed = true; }
+    }
+    if(d.appletId === 'timer' && (d.tmOnEnd || 'none') === 'anim'){
+      const next = window.resolveAppletAnimRef(slide, d.id, d.tmOnEndAnim || '', 'timer');
+      if(next !== (d.tmOnEndAnim || '')){ d.tmOnEndAnim = next; changed = true; }
+    }
+  });
+  return changed;
+};
+
+window.syncAppletAnimRefsToDom = function(slideIdx){
+  const idx = slideIdx != null ? slideIdx : (typeof cur !== 'undefined' ? cur : 0);
+  const slide = slides[idx];
+  if(!slide) return;
+  const canvas = document.getElementById('canvas');
+  if(!canvas) return;
+  slide.els.forEach(d => {
+    if(d.type !== 'applet') return;
+    const dom = canvas.querySelector('.el[data-id="' + d.id + '"]');
+    if(!dom) return;
+    if(d.appletId === 'counter'){
+      dom.dataset.cntOnEndAnim = d.cntOnEndAnim || '';
+      if(typeof refreshCounterEl === 'function') refreshCounterEl(d.id, {domOnly:true});
+    }
+    if(d.appletId === 'timer'){
+      dom.dataset.tmOnEndAnim = d.tmOnEndAnim || '';
+      if(typeof refreshTimerEl === 'function') refreshTimerEl(d.id, {domOnly:true});
+    }
+  });
+};
 
 window.listAppletTriggerAnims = function(slide, appletElId, triggerType){
   const out = [];

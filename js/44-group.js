@@ -801,6 +801,7 @@
       _origMkDrag.apply(this, arguments);
       // Добавляем перехват mousedown в capture-фазе ПОВЕРХ оригинала
       el.addEventListener('mousedown', function (e) {
+        if (typeof window._isPreviewActive === 'function' && window._isPreviewActive()) return;
         if (e.button !== 0) return;
         // Curve stroke drag — only the curve unless user explicitly multi-selected (Shift/rubber-band)
         if (el.dataset.shape === 'curve') {
@@ -822,6 +823,7 @@
           members.set(ge, { x0: parseInt(ge.style.left)||0, y0: parseInt(ge.style.top)||0 });
         });
         function onMove() {
+          if (typeof window._isPreviewActive === 'function' && window._isPreviewActive()) return;
           if (!window._anyDragging) return;
           var dx = (parseInt(el.style.left)||0) - startL;
           var dy = (parseInt(el.style.top)||0)  - startT;

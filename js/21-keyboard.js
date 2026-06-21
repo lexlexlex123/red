@@ -246,6 +246,7 @@ function copyEl(){
   if(typeof toast==="function")toast(t('toastCopied'),'ok');
 }
 function pasteEl(){
+  if(typeof window._isPreviewActive==='function'&&window._isPreviewActive())return;
   if(typeof _xclipHydrateElements==='function') _xclipHydrateElements();
   if(!elClipboard){
     if(typeof clipboard!=='undefined'&&clipboard.length) elClipboard=clipboard[0];
@@ -270,6 +271,7 @@ function pasteEl(){
   if(typeof toast==="function")toast(t('toastPasted'),'ok');
 }
 function dupEl(){
+  if(typeof window._isPreviewActive==='function'&&window._isPreviewActive())return;
   if(!sel)return;if(typeof pushUndo==="function")pushUndo();
   const d=_freshElementDataFromDom(sel.dataset.id);if(!d)return;
   const nd=_cloneElementDataList([d], { offset: 20 })[0];

@@ -156,6 +156,19 @@ function applyTheme(){
           if(resolved) el.textBorderColor = resolved;
         }
         // borderScheme===null: custom — leave unchanged
+
+        if(el.textShadowScheme !== null && el.textShadowScheme !== undefined){
+          const resolved = _resolveSchemeColor(el.textShadowScheme, theme);
+          if(resolved) el.textShadowColor = resolved;
+        }
+        // textShadowScheme===null: custom — leave unchanged
+      }
+      if(el.type==='image'){
+        if(el.imgShadowColorScheme !== null && el.imgShadowColorScheme !== undefined){
+          const resolved = _resolveSchemeColor(el.imgShadowColorScheme, theme);
+          if(resolved) el.imgShadowColor = resolved;
+        }
+        // imgShadowColorScheme===null: custom — leave unchanged
       }
       if(el.type==='shape'){
         // Remap fill
@@ -233,8 +246,13 @@ function applyTheme(){
         if(!el.iconColorCustom){
           const newColor=theme.shapeFill||theme.tc||'#3b82f6';
           el.iconColor=newColor;
-          // Update shadow color to accent if shadow is enabled
-          if(el.shadow) el.shadowColor=theme.ac1||newColor;
+          if(el.shadow){
+            if(el.shadowColorScheme !== null && el.shadowColorScheme !== undefined){
+              const resolvedSh = _resolveSchemeColor(el.shadowColorScheme, theme);
+              if(resolvedSh) el.shadowColor = resolvedSh;
+            }
+            // shadowColorScheme===null: custom shadow — leave unchanged
+          }
           const ic=ICONS.find(function(x){return x.id===el.iconId;});
           if(ic){
             const _newSvg=_buildIconSVG(ic,newColor,el.iconSw!=null?el.iconSw:1.8,el.iconStyle||'stroke',el.shadow,el.shadowBlur,el.shadowColor,el.shadowSize,el.id);
@@ -360,6 +378,19 @@ function applyTheme(){
       delete domEl.dataset.textBg;
       delete domEl.dataset.textBgOp;
       applyTextBg(domEl);
+    }
+    if(window._textShadowActive&&window._textShadowActive(d)){
+      if(d.textShadowBlur!=null)domEl.dataset.textShadowBlur=d.textShadowBlur;
+      if(d.textShadowSize!=null)domEl.dataset.textShadowSize=d.textShadowSize;
+      if(d.textShadowW&&+d.textShadowW>0&&!d.textShadowBlur&&!d.textShadowSize)domEl.dataset.textShadowW=d.textShadowW;
+      domEl.dataset.textShadowColor=d.textShadowColor||'#000000';
+      if(typeof applyTextShadowStyle==='function') applyTextShadowStyle(domEl);
+    } else {
+      delete domEl.dataset.textShadowW;
+      delete domEl.dataset.textShadowBlur;
+      delete domEl.dataset.textShadowSize;
+      delete domEl.dataset.textShadowColor;
+      if(typeof applyTextShadowStyle==='function') applyTextShadowStyle(domEl);
     }
   });
   // Force-sync formula colors in DOM
