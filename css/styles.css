@@ -548,6 +548,11 @@ input[type=color]:focus{outline:none;box-shadow:none;}
 .psel.has-swing{overflow:visible;}
 .psel.has-dance{overflow:visible;}
 .psel.has-particles{overflow:visible;pointer-events:none;}
+/* Текст в показе — та же схема, что в редакторе: flex на ._text_body, .tel — flex-child */
+.psel[data-type=text] > ._text_body{position:absolute;inset:0;z-index:0;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;overflow:hidden;border-radius:inherit;}
+.psel[data-type=text][data-valign=middle] > ._text_body{justify-content:center;}
+.psel[data-type=text][data-valign=bottom] > ._text_body{justify-content:flex-end;}
+.psel[data-type=text] ._text_body .ec.tel{flex:none;width:100%;height:auto !important;min-height:0;box-sizing:border-box;position:relative;z-index:1;}
 .el.has-particles{overflow:visible;pointer-events:none;}
 ._particles_layer,._particles_layer *,._particle,._particle *,._particle_vis_root,._particle_vis_root *,._particle_vis,._particle_vis *{pointer-events:none!important;cursor:default!important;}
 #p-exit{position:fixed;top:14px;right:16px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:rgba(255,255,255,.6);padding:5px 13px;border-radius:6px;cursor:pointer;font-size:11px;font-family:inherit;z-index:902;transition:.15s;backdrop-filter:blur(6px);}

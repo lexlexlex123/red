@@ -193,6 +193,8 @@
       var _isMultiGroup = _groupIds.size > 1 || (_groupIds.size >= 1 && _hasNonGroup);
 
       if (_isMultiGroup && ms.size > 1) {
+        if (typeof _rotEl !== 'undefined') _rotEl = null;
+        if (typeof _clearStaleHandleHoverFlags === 'function') _clearStaleHandleHoverFlags();
         // Hide all individual .rh handles on group members
         ms.forEach(function(ge) {
           ge.querySelectorAll('.rh').forEach(function(rh) {
@@ -215,6 +217,8 @@
       if (gid) {
         var members = getGroupDomEls(gid);
         if (members.length >= 2) {
+          if (typeof _rotEl !== 'undefined') _rotEl = null;
+          if (typeof _clearStaleHandleHoverFlags === 'function') _clearStaleHandleHoverFlags();
           members.forEach(function(ge) {
             ge.querySelectorAll('.rh').forEach(function(rh) {
               rh.style.display = 'none'; rh.dataset.overlayHidden = '1';

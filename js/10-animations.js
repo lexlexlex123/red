@@ -418,16 +418,20 @@ window._selectedAnimCat  = null;
     if (!slide) return;
     const entries = [];
     const used = new Set();
-    const seenGroups = new Set();
+    const _isElSpec = typeof window._animIsElementSpecific === 'function'
+      ? window._animIsElementSpecific
+      : (n) => n === 'particles' || n === 'captionSlide' || n === 'splitHalf' || n === 'typewriter';
 
     const pushEntry = (elId, ai) => {
       const d = slide.els && slide.els.find(x => x.id === elId);
       if (!d || !d.anims || ai < 0 || ai >= d.anims.length) return;
+      const a = d.anims[ai];
       const leader = _slideAnimLeader(d, slide);
-      const k = _animOrderKey(leader.id, ai);
+      const storeId = _isElSpec(a.name) ? d.id : leader.id;
+      const k = _animOrderKey(storeId, ai);
       if (used.has(k)) return;
       used.add(k);
-      entries.push({ elId: leader.id, ai });
+      entries.push({ elId: storeId, ai });
     };
 
     if (Array.isArray(slide.animOrder)) {
@@ -436,13 +440,18 @@ window._selectedAnimCat  = null;
 
     if (slide.els) {
       slide.els.forEach(d => {
-        if (d.groupId) {
-          const leader = _slideAnimLeader(d, slide);
-          if (leader.id !== d.id) return;
-          if (seenGroups.has(d.groupId)) return;
-          seenGroups.add(d.groupId);
-        }
-        (d.anims || []).forEach((a, ai) => pushEntry(d.id, ai));
+        if (d._isDecor) return;
+        (d.anims || []).forEach((a, ai) => {
+          if (_isElSpec(a.name)) {
+            pushEntry(d.id, ai);
+            return;
+          }
+          if (d.groupId) {
+            const leader = _slideAnimLeader(d, slide);
+            if (leader.id !== d.id) return;
+          }
+          pushEntry(d.id, ai);
+        });
       });
     }
 
@@ -479,6 +488,15 @@ window._selectedAnimCat  = null;
     });
   }
 
+  function _mergeGroupAnimsFromLeader(leaderAnims, memberAnims, dom) {
+    const _isElSpec = typeof window._animIsElementSpecific === 'function'
+      ? window._animIsElementSpecific
+      : (n) => n === 'particles' || n === 'captionSlide' || n === 'splitHalf' || n === 'typewriter';
+    const kept = (memberAnims || []).filter(a => _isElSpec(a.name));
+    const shared = (leaderAnims || []).filter(a => !_isElSpec(a.name));
+    return _cloneAnimsForMember(shared, dom).concat(kept);
+  }
+
   function _syncAnimsOrderToGroup(elId, newAnims) {
     const s = _slides()[_cur()];
     if (!s) return;
@@ -488,7 +506,7 @@ window._selectedAnimCat  = null;
     s.els.forEach(md => {
       if (md.groupId !== d.groupId || md.id === elId) return;
       const dom = cv && cv.querySelector('.el[data-id="' + md.id + '"]');
-      md.anims = _cloneAnimsForMember(newAnims, dom);
+      md.anims = _mergeGroupAnimsFromLeader(newAnims, md.anims, dom);
       if (dom) dom.dataset.anims = JSON.stringify(md.anims);
     });
   }
@@ -505,7 +523,7 @@ window._selectedAnimCat  = null;
     members.forEach(md => {
       if (md.id === leader.id) return;
       const dom = cv && cv.querySelector('.el[data-id="' + md.id + '"]');
-      md.anims = _cloneAnimsForMember(leader.anims, dom);
+      md.anims = _mergeGroupAnimsFromLeader(leader.anims, md.anims, dom);
       if (dom) dom.dataset.anims = JSON.stringify(md.anims);
     });
   };
@@ -1150,7 +1168,10 @@ window._selectedAnimCat  = null;
   function playAnimOnEl(animName, animData){
     const el = _sel(); if(!el) return;
     if (typeof window._clearAnimHoverPreview === 'function') window._clearAnimHoverPreview(el);
-    const targets = _animGroupDomEls(el);
+    const _isElSpec = typeof window._animIsElementSpecific === 'function'
+      ? window._animIsElementSpecific
+      : (n) => n === 'particles' || n === 'captionSlide' || n === 'splitHalf' || n === 'typewriter';
+    const targets = _isElSpec(animName) ? [el] : _animGroupDomEls(el);
     if (animName === 'float') {
       const slide = (typeof slides !== 'undefined' && typeof cur !== 'undefined') ? slides[cur] : null;
       let sharedFrames = null;
@@ -1186,12 +1207,16 @@ window._selectedAnimCat  = null;
         if (typeof window._fireParticlesAnim === 'function') window._fireParticlesAnim(oneEl, pa, 0, d2);
       });
       clearTimeout(_animPreviewTimer);
-      const previewDur = (pa.duration || _ptd.duration) + (pa.ptLife || _ptd.ptLife) * 1.5 + 800;
-      _animPreviewTimer = setTimeout(() => {
-        targets.forEach(t => {
-          if (typeof window._resetParticles === 'function') window._resetParticles(t);
-        });
-      }, previewDur);
+      const _pcnt = pa.swingCount != null ? pa.swingCount : 1;
+      const _pInf = !isFinite(+_pcnt) || +_pcnt >= 10;
+      if (!_pInf) {
+        const previewDur = (pa.duration || _ptd.duration) + (pa.ptLife || _ptd.ptLife) * 1.5 + 800;
+        _animPreviewTimer = setTimeout(() => {
+          targets.forEach(t => {
+            if (typeof window._resetParticles === 'function') window._resetParticles(t);
+          });
+        }, previewDur * Math.max(1, +_pcnt || 1));
+      }
       return;
     }
     if (animName === 'splitHalf') {

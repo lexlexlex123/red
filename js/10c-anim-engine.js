@@ -790,6 +790,23 @@ window._particlesHasAnim = function(d) {
   return !!(d && (d.anims || []).some(a => a && a.name === 'particles'));
 };
 
+window._particlesIsInfinite = function(a) {
+  if (!a) return false;
+  const c = a.swingCount != null ? a.swingCount : 1;
+  return !isFinite(+c) || +c >= 10;
+};
+
+window._particlesCycleSpan = function(a) {
+  const _d = typeof _ptDef === 'function' ? _ptDef() : (window.PARTICLES_DEFAULTS || { duration: 3550, ptLife: 900 });
+  const spawn = Math.max(400, +(a && a.duration != null ? a.duration : _d.duration) || _d.duration);
+  const life = Math.max(400, +(a && a.ptLife != null ? a.ptLife : _d.ptLife) || _d.ptLife);
+  return spawn + life * 1.5;
+};
+
+window._animIsElementSpecific = function(name) {
+  return name === 'particles' || name === 'captionSlide' || name === 'splitHalf' || name === 'typewriter';
+};
+
 window._particlesEnsureHiddenIfNeeded = function(el, d) {
   if (!el || !window._particlesHasAnim(d)) return;
   el.classList.add('has-particles');
@@ -1041,7 +1058,9 @@ window._fireParticlesAnim = function(el, a, delay, d, opts) {
   const spawnWindow = Math.max(400, +(a.duration != null ? a.duration : _d.duration) || _d.duration);
   const speedFactor = 6000 / spawnWindow;
   const swingCnt = a.swingCount != null ? a.swingCount : 1;
-  const loops = (!isFinite(swingCnt) || swingCnt >= 10) ? Infinity : Math.max(1, +swingCnt || 1);
+  const loops = window._particlesIsInfinite(a) ? Infinity : Math.max(1, +swingCnt || 1);
+  const cycleSpan = window._particlesCycleSpan(a);
+  const animStart = performance.now();
   const ew = (d && d.w) || parseFloat(el.style.width) || el.offsetWidth || 100;
   const eh = (d && d.h) || parseFloat(el.style.height) || el.offsetHeight || 100;
   const pd = window._particlesResolveData(el, d, ew, eh);
@@ -1084,7 +1103,11 @@ window._fireParticlesAnim = function(el, a, delay, d, opts) {
     return 1 - (ptSizeRand / 100) * Math.random() * (1 - minS);
   }
 
-  function spawnOne(spawnAt) {
+  function msUntil(absFromStart) {
+    return Math.max(0, absFromStart - (performance.now() - animStart));
+  }
+
+  function spawnOne(absFromStart) {
     const tid = setTimeout(() => {
       if (run.cancelled || !layer.parentNode) return;
       const pos = elPos();
@@ -1155,21 +1178,23 @@ window._fireParticlesAnim = function(el, a, delay, d, opts) {
         el._particlesRaf = requestAnimationFrame(tick);
       }
       el._particlesRaf = requestAnimationFrame(tick);
-    }, Math.max(0, spawnAt));
+    }, msUntil(absFromStart));
     el._particlesTimers.push(tid);
   }
 
   function runCycle(cycleIdx) {
     if (run.cancelled) return;
     if (cycleIdx >= loops) return;
-    const base = delay + cycleIdx * (spawnWindow + ptLife * 0.85);
+    if (cycleIdx > 0) layer.innerHTML = '';
+    window._particlesHideOriginal(el);
+    const cycleStart = delay + cycleIdx * cycleSpan;
     for (let i = 0; i < count; i++) {
       const jitter = Math.random() * (spawnWindow / Math.max(1, count));
-      spawnOne(base + (i / count) * spawnWindow + jitter);
+      spawnOne(cycleStart + (i / count) * spawnWindow + jitter);
     }
     if (loops === Infinity || cycleIdx + 1 < loops) {
-      const nextAt = spawnWindow + ptLife * 0.85;
-      const tid = setTimeout(() => runCycle(cycleIdx + 1), nextAt);
+      const nextStart = delay + (cycleIdx + 1) * cycleSpan;
+      const tid = setTimeout(() => runCycle(cycleIdx + 1), msUntil(nextStart));
       el._particlesTimers.push(tid);
     }
   }
@@ -1224,7 +1249,12 @@ window._animChainDuration = function(a) {
     const _d = (typeof _ptDef === 'function' ? _ptDef() : (window.PARTICLES_DEFAULTS || { duration: 3550, ptLife: 900 }));
     const spawn = +(a.duration || _d.duration) || _d.duration;
     const life = +(a.ptLife || _d.ptLife) || _d.ptLife;
-    return spawn + life * 1.45;
+    const perLoop = spawn + life * 1.5;
+    const cnt = a.swingCount != null ? a.swingCount : 1;
+    const loops = window._particlesIsInfinite && window._particlesIsInfinite(a)
+      ? 1
+      : Math.max(1, +cnt || 1);
+    return perLoop * loops;
   }
   if (a.name === 'typewriter') {
     const cd = a.charDelay || 40;
@@ -1857,9 +1887,14 @@ window.playSlideAnimsOnCanvas = function(slideIdx) {
       }));
     }, Math.min.apply(null, captionQueue.map(q => q.absDelay)));
   }
-  window._slideAnimPlayTimer = setTimeout(() => {
-    window.stopSlideAnimsOnCanvas();
-  }, Math.max(totalMs, 300) + 250);
+  const _hasInfParticles = s.els.some(d => (d.anims || []).some(a =>
+    a && a.name === 'particles' && window._particlesIsInfinite && window._particlesIsInfinite(a)
+  ));
+  if (!_hasInfParticles) {
+    window._slideAnimPlayTimer = setTimeout(() => {
+      window.stopSlideAnimsOnCanvas();
+    }, Math.max(totalMs, 300) + 250);
+  }
   window._startAnimTimelinePlayhead(Math.max(totalMs, 300) + 250);
   return true;
 };

@@ -48,17 +48,27 @@ window._textShadowActive=function(d){
   if(+d.textShadowSize>0||+d.textShadowBlur>0) return true;
   return !!(d.textShadowW&&+d.textShadowW>0);
 };
+window._textShadowContentNode=function(el){
+  if(!el) return null;
+  const tel=el.querySelector('.tel')||el.querySelector('.ec');
+  if(!tel) return null;
+  const valign=tel.querySelector('.ec-valign-wrap');
+  if(valign) return valign;
+  return tel;
+};
 window._syncTextShadowLayout=function(el,d){
   if(!el) return 0;
   const body=el.querySelector('._text_body');
   const tel=el.querySelector('.tel')||el.querySelector('.ec');
+  const content=window._textShadowContentNode(el);
   const on=d&&window._textShadowActive(d);
   if(!on){
     if(body){
       body.style.overflow='';
       body.style.top=body.style.left=body.style.right=body.style.bottom='';
     }
-    if(tel) tel.style.overflow='';
+    if(tel){ tel.style.overflow=''; tel.style.filter=''; }
+    if(content&&content!==tel){ content.style.overflow=''; content.style.filter=''; }
     el.style.overflow='';
     return 0;
   }
@@ -69,14 +79,17 @@ window._syncTextShadowLayout=function(el,d){
     body.style.top=body.style.left=body.style.right=body.style.bottom='';
   }
   if(tel) tel.style.overflow='visible';
+  if(content&&content!==tel) content.style.overflow='visible';
   return typeof window._shadowPad==='function'?window._shadowPad(ss,sb,0):Math.ceil(ss+sb*3.5+20);
 };
 window._applyTextShadowFilter=function(el,d){
+  const content=window._textShadowContentNode(el);
   const tel=el&&(el.querySelector('.tel')||el.querySelector('.ec'));
-  if(!tel) return;
-  tel.style.textShadow='';
+  if(tel&&tel!==content) tel.style.filter='';
+  if(!content) return;
+  content.style.textShadow='';
   if(!el||!window._textShadowActive(d)){
-    tel.style.filter='';
+    content.style.filter='';
     window._syncTextShadowLayout(el,null);
     if(el&&el.dataset.id&&typeof window._ensureShadowFilterHost==='function'){
       const old=window._ensureShadowFilterHost().querySelector('#txtsh_'+el.dataset.id);
@@ -98,7 +111,7 @@ window._applyTextShadowFilter=function(el,d){
   filter.setAttribute('height','200%');
   filter.innerHTML=window._shadowFilterInner(ss,sb,sc);
   defs.appendChild(filter);
-  tel.style.filter='url(#'+fid+')';
+  content.style.filter='url(#'+fid+')';
   window._syncTextShadowLayout(el,d);
 };
 function syncTextShadowUI(el){

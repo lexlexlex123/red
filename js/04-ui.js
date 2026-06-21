@@ -951,6 +951,7 @@ function _updateHandlesOverlay(){
   // Allow update during rotation drag so handles track the element
   const overlay = document.getElementById('handles-overlay');
   if(!overlay) return;
+  _clearStaleHandleHoverFlags();
   overlay.innerHTML = '';
   overlay.style.pointerEvents = 'none'; // container passes through, only handles have pointer-events:auto
 
@@ -962,9 +963,10 @@ function _updateHandlesOverlay(){
     return;
   }
   // Don't show overlay handles during crop mode — crop handles take over
-  if (el.dataset.cropMode === 'true') return;
+  if (el.dataset.cropMode === 'true') { _rotEl = null; return; }
   // In curve edit mode: hide resize/rotation handles (only curve editor handles shown)
   if (window._curveEditMode && el.dataset.shape === 'curve') {
+    _rotEl = null;
     // Still call _buildCurveEditor below to show node handles
     _buildCurveEditor();
     return;
@@ -1180,6 +1182,30 @@ const _rotateCursor = (()=>{
 })();
 
 let _rotDragging = false;
+
+function _syncRotDragging(val) {
+  _rotDragging = !!val;
+  window._rotDragging = _rotDragging;
+}
+
+function _clearStaleHandleHoverFlags() {
+  if (!window._pivotDragging) window._overPivotHandle = false;
+}
+window._clearStaleHandleHoverFlags = _clearStaleHandleHoverFlags;
+
+if (!window._handleDragSafetyInit) {
+  window._handleDragSafetyInit = true;
+  document.addEventListener('mouseup', () => {
+    window._overPivotHandle = false;
+  });
+  window.addEventListener('blur', () => {
+    window._overPivotHandle = false;
+    window._pivotDragging = false;
+    window._resizeDragging = false;
+    _syncRotDragging(false);
+    window._anyDragging = false;
+  });
+}
 
 function _makeCursorForAngle(angleDeg) {
   const a = angleDeg;
@@ -1440,6 +1466,8 @@ function _addRotationZones(overlay, el) {
   document.addEventListener('mousemove', ev => {
     if (typeof window._isPreviewActive === 'function' && window._isPreviewActive()) return;
     if (_rotDragging || !_rotEl) return;
+    if (!_rotEl.isConnected) { _rotEl = null; return; }
+    if (typeof sel !== 'undefined' && sel && _rotEl !== sel) return;
     if (window._anyDragging) return;
     if (window._curveEditMode) { _setRotCursor(''); return; } // no rotation cursor in curve edit
     const cwrap2 = document.getElementById('cwrap');
@@ -1460,6 +1488,8 @@ function _addRotationZones(overlay, el) {
   document.addEventListener('mousedown', ev => {
     if (typeof window._isPreviewActive === 'function' && window._isPreviewActive()) return;
     if (ev.button !== 0 || !_rotEl) return;
+    if (!_rotEl.isConnected) { _rotEl = null; return; }
+    if (typeof sel !== 'undefined' && sel && _rotEl !== sel) return;
     if (window._resizeDragging) return;
     if (window._curveEditMode) return; // don't rotate while editing curve nodes
     const cwrap2 = document.getElementById('cwrap');
@@ -1481,7 +1511,7 @@ function _addRotationZones(overlay, el) {
     window._anyDragging = true;
     ev.stopPropagation();
     ev.preventDefault();
-    _rotDragging = true;
+    _syncRotDragging(true);
 
     const el = _rotEl;
     const W = parseInt(el.style.width)||0, H = parseInt(el.style.height)||0;
@@ -1539,8 +1569,9 @@ function _addRotationZones(overlay, el) {
     };
 
     const onUp = () => {
-      _rotDragging = false;
+      _syncRotDragging(false);
       window._anyDragging = false;
+      window._overPivotHandle = false;
       _setRotCursor('');
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);

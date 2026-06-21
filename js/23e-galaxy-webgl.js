@@ -112,7 +112,8 @@
       this.bufPos = null;
       this.bufCol = null;
       this.count = 0;
-      this.t0 = performance.now();
+      const _se = cfg.startElapsed != null ? +cfg.startElapsed : 0;
+      this.t0 = performance.now() - _se * 1000;
       this.pausedAt = null;
       this.raf = null;
       this._alive = true;

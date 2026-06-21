@@ -464,7 +464,9 @@ window._applyShadowValues = function(bel, d, ss, sb, sc) {
   const type = d.type;
 
   if (type === 'text') {
-    const tel = bel.querySelector('.tel') || bel.querySelector('.ec');
+    const tel = (typeof window._textShadowContentNode === 'function'
+      ? window._textShadowContentNode(bel)
+      : null) || bel.querySelector('.tel') || bel.querySelector('.ec');
     if (!tel) return;
     const fid = 'txtsh_' + id;
     const defs = typeof window._ensureShadowFilterHost === 'function' ? window._ensureShadowFilterHost() : null;

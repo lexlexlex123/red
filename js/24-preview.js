@@ -22,6 +22,8 @@ window._pvCancelEditorPointer = function() {
   window._anyDragging = false;
   window._rotDragging = false;
   window._resizeDragging = false;
+  window._pivotDragging = false;
+  window._overPivotHandle = false;
   window._alphaPassthroughDrag = false;
   try {
     document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window, button: 0, buttons: 0 }));
@@ -80,7 +82,7 @@ window._pvRestoreSlideSnapshot=function(){
   _pvSnapEls=null;
 };
 let pBlackScreen=false,_pJumpBuf='',_pJumpTimer=null;
-let _pvDecorTime=null;
+let _pvDecorTimes={};
 function _pvDecorElData(slideIdx){
   const s=slides[slideIdx];
   return s&&s.els?s.els.find(d=>d._isDecor)||null:null;
@@ -90,24 +92,33 @@ function _pvDecorSvg(container,slideIdx){
   if(!d||!container) return null;
   return container.querySelector('.psel[data-id="'+d.id+'"] svg');
 }
+function _pvGetDecorTime(slideIdx){
+  const t=_pvDecorTimes[slideIdx];
+  return t!=null?t:0;
+}
 function _pvCaptureDecorTime(container,slideIdx){
   const svg=_pvDecorSvg(container,slideIdx);
   if(!svg) return;
-  try{ _pvDecorTime=svg.getCurrentTime(); }catch(e){}
+  try{ _pvDecorTimes[slideIdx]=svg.getCurrentTime(); }catch(e){}
 }
 function _pvSeedDecorTimeFromEditor(){
-  _pvDecorTime=null;
+  _pvDecorTimes={};
   if(typeof _layoutAnimated==='undefined'||!_layoutAnimated) return;
   const cv=document.getElementById('canvas');
   const svg=cv&&cv.querySelector('.decor-el svg');
   if(!svg) return;
-  try{ _pvDecorTime=svg.getCurrentTime(); }catch(e){}
+  try{
+    const t=svg.getCurrentTime();
+    if(typeof cur!=='undefined') _pvDecorTimes[cur]=t;
+    if(typeof pidx!=='undefined') _pvDecorTimes[pidx]=t;
+  }catch(e){}
 }
-function _pvApplyDecorTime(svgEl){
-  if(!svgEl||_pvDecorTime==null) return;
+function _pvApplyDecorTime(svgEl,slideIdx){
+  if(!svgEl) return;
+  const t=_pvGetDecorTime(slideIdx);
   requestAnimationFrame(function(){
     try{
-      svgEl.setCurrentTime(_pvDecorTime);
+      svgEl.setCurrentTime(t);
       if(typeof _layoutAnimated!=='undefined'&&!_layoutAnimated) svgEl.pauseAnimations();
     }catch(e){}
   });
@@ -288,7 +299,7 @@ function stopPreview(){
   if(!po||!po.classList.contains('active')) return;
   if(typeof window._pvCancelEditorPointer==='function') window._pvCancelEditorPointer();
   window._pvRestoring=true;
-  _pvDecorTime=null;
+  _pvDecorTimes={};
   clearAutoTimer();
   _clearPreviewTransTimers();
   pTransitionTo=null;
@@ -917,6 +928,99 @@ function _pvGroupLeader(d, slide) {
 function _pvIsGroupFollower(d, slide) {
   return !!(d && d.groupId && _pvGroupLeader(d, slide).id !== d.id);
 }
+function _pvIsElSpecificAnim(name) {
+  return typeof window._animIsElementSpecific === 'function' && window._animIsElementSpecific(name);
+}
+function _repairGroupElementSpecificAnims(slide) {
+  if (!slide || !slide.els || typeof window._animIsElementSpecific !== 'function') return;
+  if (typeof window._ensureAnimOrder === 'function') window._ensureAnimOrder(slide);
+  const orderOwners = new Set((slide.animOrder || []).map(o => o.elId + ':' + o.ai));
+  const byGroup = {};
+  slide.els.forEach(d => {
+    if (!d.groupId) return;
+    if (!byGroup[d.groupId]) byGroup[d.groupId] = [];
+    byGroup[d.groupId].push(d);
+  });
+  Object.keys(byGroup).forEach(gid => {
+    const members = byGroup[gid];
+    if (members.length < 2) return;
+    const memberIds = new Set(members.map(m => m.id));
+    const seenSpec = {};
+    (slide.animOrder || []).forEach(o => {
+      if (!memberIds.has(o.elId)) return;
+      const md = slide.els.find(x => x.id === o.elId);
+      const a = md && md.anims && md.anims[o.ai];
+      if (!a || !window._animIsElementSpecific(a.name)) return;
+      if (seenSpec[a.name]) return;
+      seenSpec[a.name] = o;
+    });
+    members.forEach(md => {
+      if (!md.anims || !md.anims.length) return;
+      md.anims = md.anims.filter((a, ai) => {
+        if (!window._animIsElementSpecific(a.name)) return true;
+        const canon = seenSpec[a.name];
+        if (canon) return md.id === canon.elId && ai === canon.ai;
+        return orderOwners.has(md.id + ':' + ai);
+      });
+    });
+  });
+  if (typeof window._ensureAnimOrder === 'function') window._ensureAnimOrder(slide);
+}
+function _pvBuildParticlesHideSet(s, globalAutoMap, globalClickMap, hiddenSet) {
+  const hide = new Set();
+  const scanMap = (map) => {
+    if (!map) return;
+    map.forEach((entries, elId) => {
+      if (hiddenSet && hiddenSet.has(elId)) return;
+      if ((entries || []).some(x => x.anim && x.anim.name === 'particles')) hide.add(elId);
+    });
+  };
+  scanMap(globalAutoMap);
+  scanMap(globalClickMap);
+  if (!s || !s.els) return hide;
+  s.els.forEach(d => {
+    if (hiddenSet && hiddenSet.has(d.id)) return;
+    (d.anims || []).forEach(a => {
+      if (a && a.name === 'particles' && a.trigger === 'element') hide.add(d.id);
+    });
+    if (!d.groupId && window._particlesHasAnim && window._particlesHasAnim(d)) hide.add(d.id);
+  });
+  const byGroupParticles = {};
+  s.els.forEach(d => {
+    if (!d.groupId || !window._particlesHasAnim || !window._particlesHasAnim(d)) return;
+    if (!byGroupParticles[d.groupId]) byGroupParticles[d.groupId] = [];
+    byGroupParticles[d.groupId].push(d.id);
+  });
+  Object.keys(byGroupParticles).forEach(gid => {
+    const ids = byGroupParticles[gid];
+    if (ids.length === 1) hide.add(ids[0]);
+  });
+  return hide;
+}
+function _pvPushAnimToMap(map, elId, anim, absDelay, autoAfter) {
+  const arr = map.get(elId) || [];
+  arr.push(autoAfter != null ? { anim, autoAfter } : { anim, absDelay });
+  map.set(elId, arr);
+}
+function _pvDistributeScheduledAnim(s, d, a, i, absDelay, autoMap, clickMap, eff) {
+  if (_pvIsElSpecificAnim(a.name)) {
+    if (eff === 'click' || eff === 'autoAfter' || eff === 'nav') {
+      _pvPushAnimToMap(clickMap, d.id, a, null, eff === 'autoAfter');
+    } else {
+      _pvPushAnimToMap(autoMap, d.id, a, absDelay);
+    }
+    return;
+  }
+  _pvGroupMembers(d, s).forEach(md => {
+    const ma = (md.anims || [])[i];
+    if (!ma) return;
+    if (eff === 'click' || eff === 'autoAfter' || eff === 'nav') {
+      _pvPushAnimToMap(clickMap, md.id, ma, null, eff === 'autoAfter');
+    } else {
+      _pvPushAnimToMap(autoMap, md.id, ma, absDelay);
+    }
+  });
+}
 function _pvFlushCaptionAnims(container, s, transOffset) {
   const queue = container._pendingCaptionQueue;
   if (!queue || !queue.length) return;
@@ -1183,6 +1287,8 @@ function buildPSlide(container,idx,transOffset,noScale){
   if (!window._pFloatCache) window._pFloatCache = {};
   window._pFloatCache[idx] = {};
   const s=slides[idx];const sc=pScale();
+  if (typeof window._ensureAnimOrder === 'function') window._ensureAnimOrder(s);
+  _repairGroupElementSpecificAnims(s);
   container.innerHTML='';container.style.width=canvasW+'px';container.style.height=canvasH+'px';
   if(noScale){container.style.transform='';container.style.transformOrigin='';}
   else{container.style.transform='scale('+sc+')';container.style.transformOrigin='top left';}
@@ -1297,24 +1403,14 @@ function buildPSlide(container,idx,transOffset,noScale){
           gPrevStart = absDelay;
           gPrevDur   = typeof _animChainDuration === 'function' ? _animChainDuration(a) : (a.duration||600);
         }
-        _pvGroupMembers(d, s).forEach(md => {
-          const ma = (md.anims || [])[i];
-          if (!ma) return;
-          const arr = globalAutoMap.get(md.id) || [];
-          arr.push({anim: ma, absDelay});
-          globalAutoMap.set(md.id, arr);
-        });
+        _pvDistributeScheduledAnim(s, d, a, i, absDelay, globalAutoMap, globalClickMap, eff);
       } else if(eff === 'click' || eff === 'autoAfter' || eff === 'nav') {
-        _pvGroupMembers(d, s).forEach(md => {
-          const ma = (md.anims || [])[i];
-          if (!ma) return;
-          const arr = globalClickMap.get(md.id) || [];
-          arr.push({anim: ma, autoAfter: eff==='autoAfter'});
-          globalClickMap.set(md.id, arr);
-        });
+        _pvDistributeScheduledAnim(s, d, a, i, absDelay, globalAutoMap, globalClickMap, eff);
       }
     });
   }
+
+  const particlesHideSet = _pvBuildParticlesHideSet(s, globalAutoMap, globalClickMap, hiddenSet);
 
   s.els.forEach((d,_elIdx)=>{
     if(hiddenSet.has(d.id))return;
@@ -1345,14 +1441,14 @@ function buildPSlide(container,idx,transOffset,noScale){
 
     // Build content
     if(d.type==='text'){
-      const jc=d.valign==='middle'?'center':d.valign==='bottom'?'flex-end':'flex-start';
+      if(d.valign) el.dataset.valign=d.valign;
       const body=document.createElement('div');
       body.className='_text_body';
       body.style.cssText='position:absolute;inset:0;overflow:hidden;'+rxStr+'pointer-events:none;z-index:0;';
       const c=document.createElement('div');
       c.className='ec tel';
       const csStr=(d.cs||'').trim();
-      c.style.cssText=(csStr?(csStr.endsWith(';')?csStr:csStr+';'):'')+'width:100%;height:100%;overflow:hidden;'+rxStr+'padding:6px 8px;display:flex;flex-direction:column;justify-content:'+jc+';pointer-events:none;user-select:none;position:relative;z-index:1;box-sizing:border-box;';
+      c.style.cssText=(csStr?(csStr.endsWith(';')?csStr:csStr+';'):'')+'overflow:hidden;'+rxStr+'pointer-events:none;user-select:none;position:relative;z-index:1;box-sizing:border-box;';
       if(d.textColorGrad&&d.textColorGrad1){
         const _tcgDir=d.textColorGradDir!=null?d.textColorGradDir:90;
         c.style.background=`linear-gradient(${_tcgDir}deg,${d.textColorGrad1},${d.textColorGrad2||'transparent'})`;
@@ -1373,7 +1469,7 @@ function buildPSlide(container,idx,transOffset,noScale){
         body.appendChild(_pvBgLayer);
       }
       const _pvHtml = (typeof rtMigrateHtml==='function') ? rtMigrateHtml(d.html||'') : (d.html||'');
-      c.innerHTML='<div style="width:100%;white-space:normal;word-break:break-word;">'+_pvHtml+'</div>';
+      c.innerHTML=_pvHtml;
       body.appendChild(c);
       el.appendChild(body);
       if(window._textShadowActive&&window._textShadowActive(d)){
@@ -1383,6 +1479,7 @@ function buildPSlide(container,idx,transOffset,noScale){
         if(d.textShadowW&&+d.textShadowW>0&&!d.textShadowBlur&&!d.textShadowSize)el.dataset.textShadowW=d.textShadowW;
         el.dataset.textShadowColor=d.textShadowColor||'#000000';
         if(typeof window._applyTextShadowFilter==='function') window._applyTextShadowFilter(el,d);
+        el.style.overflow='visible';
       }
       // Border for text boxes
       if(d.textBorderW&&+d.textBorderW>0){el.style.outline=(d.textBorderW||0)+'px solid '+(d.textBorderColor||'#ffffff');el.style.outlineOffset='0px';}
@@ -1448,7 +1545,7 @@ function buildPSlide(container,idx,transOffset,noScale){
       const _svgStr2=d.svgContent||'';
       try{const _dp2=new DOMParser();const _doc2=_dp2.parseFromString(_svgStr2,'image/svg+xml');const _p2=_doc2.documentElement;if(_p2&&_p2.tagName!=='parsererror'){el.appendChild(document.adoptNode(_p2));}else{el.innerHTML=_svgStr2;}}catch(e){el.innerHTML=_svgStr2;}
       const svgEl=el.querySelector('svg');if(svgEl){svgEl.style.width='100%';svgEl.style.height='100%';
-        if(d._isDecor) _pvApplyDecorTime(svgEl);
+        if(d._isDecor) _pvApplyDecorTime(svgEl, idx);
       }
       if(d._isDecor && (typeof _isGlDecorRenderer==='function'?_isGlDecorRenderer(d._decorRenderer):(d._decorRenderer==='crystal'||d._decorRenderer==='dna'))){
         const _pvCfg=d._glCfg||d._crystalCfg;
@@ -1460,7 +1557,7 @@ function buildPSlide(container,idx,transOffset,noScale){
           const _pvGl=document.createElement('div');
           _pvGl.style.cssText='position:absolute;inset:0;pointer-events:none;z-index:1;';
           el.appendChild(_pvGl);
-          const cfg=Object.assign({id:d.id+'_pv'}, _pvCfg);
+          const cfg=Object.assign({id:d.id+'_pv', startElapsed:_pvGetDecorTime(idx)}, _pvCfg);
           cfg.animated=typeof _layoutAnimated!=='undefined' && _layoutAnimated && _pvCfg.animated;
           _Decor.mount(_pvGl, cfg);
         }
@@ -1746,6 +1843,7 @@ function buildPSlide(container,idx,transOffset,noScale){
               const mel = container.querySelector('.psel[data-id="'+md.id+'"]');
               const ma = animIdx >= 0 && md.anims ? md.anims[animIdx] : a;
               if (!mel || !ma) return;
+              if (_pvIsElSpecificAnim(ma.name) && md.id !== animOwner.id) return;
               setTimeout(()=>fireAnim(mel, md, ma, idx), absDelay);
             });
           });
@@ -1758,6 +1856,7 @@ function buildPSlide(container,idx,transOffset,noScale){
               const mel = container.querySelector('.psel[data-id="'+md.id+'"]');
               const ma = animIdx >= 0 && md.anims ? md.anims[animIdx] : a;
               if (!mel || !ma) return;
+              if (_pvIsElSpecificAnim(ma.name) && md.id !== animOwner.id) return;
               setTimeout(()=>fireAnim(mel, md, ma, idx, 0), t);
             });
           });
@@ -1794,7 +1893,7 @@ function buildPSlide(container,idx,transOffset,noScale){
       applyHoverFxPreview(el,d.hoverFx,d);
     }
 
-    if (typeof window._particlesEnsureHiddenIfNeeded === 'function') {
+    if (particlesHideSet.has(d.id) && typeof window._particlesEnsureHiddenIfNeeded === 'function') {
       window._particlesEnsureHiddenIfNeeded(el, d);
     }
 
@@ -2164,6 +2263,7 @@ function buildPSlide(container,idx,transOffset,noScale){
         if (!mel) return;
         const ma = (animIdx != null && md.anims && md.anims[animIdx]) ? md.anims[animIdx] : a;
         if (!ma) return;
+        if (_pvIsElSpecificAnim(ma.name) && md.id !== d.id) return;
         if(wasHidden || ma.cat === 'entrance') _pvRevealForEntrance(mel, md, idx);
         fireAnim(mel, md, ma, idx, (absDelay||0)-baseDelay);
       });
@@ -2196,6 +2296,7 @@ function buildPSlide(container,idx,transOffset,noScale){
           if (!mel) return;
           const ma = (animIdx != null && md.anims && md.anims[animIdx]) ? md.anims[animIdx] : a;
           if (!ma) return;
+          if (_pvIsElSpecificAnim(ma.name) && md.id !== d.id) return;
           if(wasHidden || ma.cat === 'entrance') _pvRevealForEntrance(mel, md, idx);
           fireAnim(mel, md, ma, idx, 0);
         });

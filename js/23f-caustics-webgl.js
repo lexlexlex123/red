@@ -53,7 +53,8 @@
       this.canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;';
       this.gl = null;
       this.prog = null;
-      this.t0 = performance.now();
+      const _se = cfg.startElapsed != null ? +cfg.startElapsed : 0;
+      this.t0 = performance.now() - _se * 1000;
       this.pausedAt = null;
       this.raf = null;
       this._alive = true;
