@@ -325,6 +325,31 @@ function _captionHoldVisible(wrap, inner, dir, w, h) {
   inner.style.opacity = '1';
 }
 
+function _captionAdoptContent(el, inner) {
+  if (typeof window._textAnimShell === 'function') {
+    const shell = window._textAnimShell(el);
+    if (shell && shell.parentNode === el) {
+      inner.appendChild(shell);
+      if (typeof window._syncTextBodyLayout === 'function') window._syncTextBodyLayout(shell);
+      return;
+    }
+  }
+  while (el.firstChild) inner.appendChild(el.firstChild);
+}
+
+function _splitTakeNodes(el) {
+  if (typeof window._textAnimShell === 'function') {
+    const shell = window._textAnimShell(el);
+    if (shell && shell.parentNode === el) {
+      el.removeChild(shell);
+      return [shell];
+    }
+  }
+  const nodes = [];
+  while (el.firstChild) nodes.push(el.removeChild(el.firstChild));
+  return nodes;
+}
+
 function _ensureCaptionWrap(el) {
   let wrap = el.querySelector('._caption_wrap');
   if (!wrap) {
@@ -334,7 +359,7 @@ function _ensureCaptionWrap(el) {
     const inner = document.createElement('div');
     inner.className = '_caption_inner';
     inner.style.cssText = 'position:absolute;left:0;top:0;';
-    while (el.firstChild) inner.appendChild(el.firstChild);
+    _captionAdoptContent(el, inner);
     wrap.appendChild(inner);
     el.appendChild(wrap);
     return { wrap, inner };
@@ -360,8 +385,8 @@ function _ensureSplitHalfWrap(el) {
     };
   }
   const w = parseInt(el.style.width, 10) || el.offsetWidth || 200;
-  const nodes = [];
-  while (el.firstChild) nodes.push(el.removeChild(el.firstChild));
+  const h = parseInt(el.style.height, 10) || el.offsetHeight || 100;
+  const nodes = _splitTakeNodes(el);
   const clones = nodes.map(n => n.cloneNode(true));
 
   el._splitOvSaved = el.style.overflow || '';
@@ -376,16 +401,22 @@ function _ensureSplitHalfWrap(el) {
   leftHalf.style.cssText = 'position:absolute;left:0;top:0;width:50%;height:100%;overflow:hidden;transform-origin:100% 50%;will-change:transform,opacity;';
   const leftInner = document.createElement('div');
   leftInner.className = '_split_inner';
-  leftInner.style.cssText = 'position:absolute;left:0;top:0;width:' + w + 'px;height:100%;';
-  nodes.forEach(n => leftInner.appendChild(n));
+  leftInner.style.cssText = 'position:absolute;left:0;top:0;width:' + w + 'px;height:' + h + 'px;';
+  nodes.forEach(n => {
+    leftInner.appendChild(n);
+    if (n.classList && n.classList.contains('_text_body') && typeof window._syncTextBodyLayout === 'function') window._syncTextBodyLayout(n);
+  });
 
   const rightHalf = document.createElement('div');
   rightHalf.className = '_split_right';
   rightHalf.style.cssText = 'position:absolute;right:0;top:0;width:50%;height:100%;overflow:hidden;transform-origin:0% 50%;will-change:transform,opacity;';
   const rightInner = document.createElement('div');
   rightInner.className = '_split_inner';
-  rightInner.style.cssText = 'position:absolute;left:' + (-w / 2) + 'px;top:0;width:' + w + 'px;height:100%;';
-  clones.forEach(n => rightInner.appendChild(n));
+  rightInner.style.cssText = 'position:absolute;left:' + (-w / 2) + 'px;top:0;width:' + w + 'px;height:' + h + 'px;';
+  clones.forEach(n => {
+    rightInner.appendChild(n);
+    if (n.classList && n.classList.contains('_text_body') && typeof window._syncTextBodyLayout === 'function') window._syncTextBodyLayout(n);
+  });
 
   leftHalf.appendChild(leftInner);
   rightHalf.appendChild(rightInner);
@@ -416,6 +447,7 @@ window._resetSplitHalf = function(el, unwrap) {
     } else {
       el.style.overflow = '';
     }
+    if (typeof window._restoreTextBlockVisuals === 'function') window._restoreTextBlockVisuals(el);
   }
 };
 
@@ -469,8 +501,44 @@ window._resetCaptionSlide = function(el, unwrap) {
     const src = inner || wrap;
     while (src.firstChild) el.insertBefore(src.firstChild, wrap);
     wrap.remove();
+    if (typeof window._restoreTextBlockVisuals === 'function') window._restoreTextBlockVisuals(el);
   } else if (inner) {
     _captionClearStyles(wrap, inner);
+  }
+};
+
+window._captionAnimDeferredByTrigger = function(anims) {
+  if (!anims || !anims.length) return null;
+  let autoBefore = false;
+  for (let i = 0; i < anims.length; i++) {
+    const a = anims[i];
+    const trig = a.trigger || 'auto';
+    if (trig === 'withPrev') continue;
+    if (a.name === 'captionSlide') {
+      if (trig === 'auto' || trig === 'autoAfter') return null;
+      return autoBefore ? null : a;
+    }
+    if (trig === 'auto' || trig === 'autoAfter') {
+      autoBefore = true;
+      continue;
+    }
+    return null;
+  }
+  return null;
+};
+
+window._hideCaptionUntilTrigger = function(el, d, anim) {
+  if (!el) return;
+  anim = anim || (d && window._captionAnimDeferredByTrigger(d.anims));
+  if (!anim) return;
+  const w = (d && d.w) || parseInt(el.style.width, 10) || el.offsetWidth || 200;
+  const h = (d && d.h) || parseInt(el.style.height, 10) || el.offsetHeight || 100;
+  if (typeof window._prepCaptionSlideInitial === 'function') {
+    window._prepCaptionSlideInitial(el, anim, w, h);
+  } else {
+    el.style.visibility = 'hidden';
+    el.style.pointerEvents = 'none';
+    el.classList.add('has-caption');
   }
 };
 
@@ -479,6 +547,10 @@ window._prepCaptionSlideInitial = function(el, a, w, h) {
   const { wrap, inner } = _ensureCaptionWrap(el);
   _captionLockInnerSize(inner, w, h);
   _captionPrepHidden(wrap, inner, dir, w, h);
+  _captionFreeEl(el);
+  el.style.visibility = 'hidden';
+  el.style.pointerEvents = 'none';
+  el.classList.add('has-caption');
 };
 
 window._fireCaptionSlideAnimGroup = function(entries, a, delay, opts) {
@@ -509,13 +581,18 @@ window._fireCaptionSlideAnimGroup = function(entries, a, delay, opts) {
   window._activeCaptionRun = run;
 
   items.forEach(it => {
-    if (delay > 0) {
+    const prepped = it.el.classList.contains('has-caption')
+      && it.el.style.visibility === 'hidden'
+      && it.el.querySelector('._caption_wrap');
+    _captionLockInnerSize(it.inner, it.w, it.h);
+    if (!prepped) {
       if (groupMode) _captionPrepHiddenGroup(it.wrap, it.inner, dir, bounds, it.x, it.y, it.w, it.h);
-      else {
-        window._prepCaptionSlideInitial(it.el, a, it.w, it.h);
-      }
-      _captionFreeEl(it.el);
+      else _captionPrepHidden(it.wrap, it.inner, dir, it.w, it.h);
+      it.el.style.visibility = 'hidden';
+      it.el.style.pointerEvents = 'none';
     }
+    _captionFreeEl(it.el);
+    it.el.classList.add('has-caption');
   });
 
   const finishHide = () => {
@@ -544,6 +621,7 @@ window._fireCaptionSlideAnimGroup = function(entries, a, delay, opts) {
     items.forEach(it => {
       _captionFreeEl(it.el);
       it.el.style.visibility = '';
+      it.el.style.pointerEvents = '';
     });
     playPhase('appear', appearMs, 'ease-out').then(() => {
       if (run.cancelled) return;
@@ -682,8 +760,8 @@ function _ensureSplitHalfWrap(el, liveVal) {
   }
   const val = _splitResolveAppletLiveVal(el, liveVal);
   const w = parseInt(el.style.width, 10) || el.offsetWidth || 200;
-  const nodes = [];
-  while (el.firstChild) nodes.push(el.removeChild(el.firstChild));
+  const h = parseInt(el.style.height, 10) || el.offsetHeight || 100;
+  const nodes = _splitTakeNodes(el);
   const clones = nodes.map(n => _splitCloneNode(n, val));
 
   el._splitOvSaved = el.style.overflow || '';
@@ -698,16 +776,22 @@ function _ensureSplitHalfWrap(el, liveVal) {
   leftHalf.style.cssText = 'position:absolute;left:0;top:0;width:50%;height:100%;overflow:hidden;transform-origin:100% 50%;will-change:transform,opacity;';
   const leftInner = document.createElement('div');
   leftInner.className = '_split_inner';
-  leftInner.style.cssText = 'position:absolute;left:0;top:0;width:' + w + 'px;height:100%;';
-  nodes.forEach(n => leftInner.appendChild(n));
+  leftInner.style.cssText = 'position:absolute;left:0;top:0;width:' + w + 'px;height:' + h + 'px;';
+  nodes.forEach(n => {
+    leftInner.appendChild(n);
+    if (n.classList && n.classList.contains('_text_body') && typeof window._syncTextBodyLayout === 'function') window._syncTextBodyLayout(n);
+  });
 
   const rightHalf = document.createElement('div');
   rightHalf.className = '_split_right';
   rightHalf.style.cssText = 'position:absolute;right:0;top:0;width:50%;height:100%;overflow:hidden;transform-origin:0% 50%;will-change:transform,opacity;';
   const rightInner = document.createElement('div');
   rightInner.className = '_split_inner';
-  rightInner.style.cssText = 'position:absolute;left:' + (-w / 2) + 'px;top:0;width:' + w + 'px;height:100%;';
-  clones.forEach(n => rightInner.appendChild(n));
+  rightInner.style.cssText = 'position:absolute;left:' + (-w / 2) + 'px;top:0;width:' + w + 'px;height:' + h + 'px;';
+  clones.forEach(n => {
+    rightInner.appendChild(n);
+    if (n.classList && n.classList.contains('_text_body') && typeof window._syncTextBodyLayout === 'function') window._syncTextBodyLayout(n);
+  });
 
   leftHalf.appendChild(leftInner);
   rightHalf.appendChild(rightInner);
@@ -738,6 +822,7 @@ window._resetSplitHalf = function(el, unwrap) {
     } else {
       el.style.overflow = '';
     }
+    if (typeof window._restoreTextBlockVisuals === 'function') window._restoreTextBlockVisuals(el);
   }
 };
 
@@ -938,11 +1023,14 @@ function _particlesNeutralizePointer(node) {
   }
 }
 
-window._particlesCloneVisual = function(el, pd, uid) {
+window._particlesCloneVisual = function(el, pd, uid, visScale) {
+  visScale = visScale == null ? 1 : visScale;
   const type = (pd && pd.type) || (el.dataset && el.dataset.type) || '';
+  const ew = (pd && pd.w) || parseFloat(el.style.width) || el.offsetWidth || 100;
+  const eh = (pd && pd.h) || parseFloat(el.style.height) || el.offsetHeight || 100;
   const root = document.createElement('div');
   root.className = '_particle_vis_root';
-  root.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;box-sizing:border-box;';
+  root.style.cssText = 'position:absolute;left:0;top:0;width:' + ew + 'px;height:' + eh + 'px;overflow:visible;pointer-events:none;box-sizing:border-box;';
   const wrap = document.createElement('div');
   wrap.className = '_particle_vis';
   wrap.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;box-sizing:border-box;';
@@ -950,29 +1038,39 @@ window._particlesCloneVisual = function(el, pd, uid) {
     if (!node) return false;
     const c = node.cloneNode(true);
     c.style.pointerEvents = 'none';
-    c.style.width = '100%';
-    c.style.height = '100%';
+    c.style.width = ew + 'px';
+    c.style.height = eh + 'px';
     c.style.boxSizing = 'border-box';
-    c.style.maxWidth = '100%';
-    c.style.maxHeight = '100%';
     wrap.appendChild(c);
     return true;
   }
   if (type === 'text') {
-    const src = el.querySelector('.psel-txt') || el.querySelector('.tel') || el.querySelector('.ec');
-    if (src) {
-      const c = src.cloneNode(true);
+    const body = el.querySelector('._text_body');
+    if (body) {
+      const c = body.cloneNode(true);
       c.style.pointerEvents = 'none';
-      c.style.width = '100%';
-      c.style.height = '100%';
+      c.style.width = ew + 'px';
+      c.style.height = eh + 'px';
       c.style.boxSizing = 'border-box';
-      const txt = c.querySelector('.tel') || c.querySelector('.ec') || c.querySelector('div') || c;
-      if (txt && txt.classList) {
-        if (!txt.classList.contains('tel')) txt.classList.add('tel');
-        if (!txt.classList.contains('ec')) txt.classList.add('ec');
-      }
+      c.style.position = 'absolute';
+      c.style.left = '0';
+      c.style.top = '0';
+      if (typeof window._syncTextBodyLayout === 'function') window._syncTextBodyLayout(c);
       wrap.appendChild(c);
+    } else {
+      const src = el.querySelector('.psel-txt') || el.querySelector('.tel') || el.querySelector('.ec');
+      if (src) {
+        const c = src.cloneNode(true);
+        c.style.pointerEvents = 'none';
+        c.style.width = ew + 'px';
+        c.style.height = eh + 'px';
+        c.style.boxSizing = 'border-box';
+        wrap.appendChild(c);
+      }
     }
+    const rxSrc = el.querySelector('._text_body') || el;
+    if (rxSrc && rxSrc.style.borderRadius) wrap.style.borderRadius = rxSrc.style.borderRadius;
+    else if (el.style.borderRadius) wrap.style.borderRadius = el.style.borderRadius;
   } else if (type === 'shape') {
     if (!adopt(el.querySelector('.ec'))) adopt(el.querySelector('.shape-svg'));
   } else if (type === 'image') {
@@ -993,6 +1091,10 @@ window._particlesCloneVisual = function(el, pd, uid) {
     }
   }
   root.appendChild(wrap);
+  if (visScale !== 1) {
+    root.style.transformOrigin = '0 0';
+    root.style.transform = 'scale(' + visScale + ')';
+  }
   if (pd && uid != null) window._particlesApplyCloneShadow(root, pd, uid);
   if (type === 'image' && el.style && el.style.filter && !root.style.filter) {
     root.style.filter = el.style.filter;
@@ -1145,7 +1247,7 @@ window._fireParticlesAnim = function(el, a, delay, d, opts) {
       p.className = '_particle';
       const pTf = 'rotate(' + pRot + 'deg)';
       p.style.cssText = 'position:absolute;left:' + sx + 'px;top:' + sy + 'px;width:' + pw + 'px;height:' + ph + 'px;opacity:0;pointer-events:none;cursor:default;overflow:visible;transform-origin:center center;transform:' + pTf + ';';
-      p.appendChild(window._particlesCloneVisual(el, pd, uid));
+      p.appendChild(window._particlesCloneVisual(el, pd, uid, scale));
       _particlesNeutralizePointer(p);
       layer.appendChild(p);
 
@@ -1568,7 +1670,8 @@ window._resetSlideAnimEl = function(el, d) {
   if (typeof window._resetLiveAnimPreview === 'function') window._resetLiveAnimPreview(el, true);
   if (typeof window._resetParticles === 'function') window._resetParticles(el);
   el.classList.remove('has-particles');
-  if (el.dataset.type === 'text' && typeof applyTextRadius === 'function') applyTextRadius(el);
+  if (el.dataset.type === 'text' && typeof window._restoreTextBlockVisuals === 'function') window._restoreTextBlockVisuals(el);
+  else if (el.dataset.type === 'text' && typeof applyTextRadius === 'function') applyTextRadius(el);
 };
 
 window._updateAnimPlayBtn = function(playing) {
@@ -1844,6 +1947,17 @@ window.playSlideAnimsOnCanvas = function(slideIdx) {
     const el = cv.querySelector('.el[data-id="' + d.id + '"]');
     if (!el) return;
     window._resetSlideAnimEl(el, d);
+    const autoList = autoMap[d.id];
+    if (autoList && autoList[0] && autoList[0].anim.name === 'captionSlide') {
+      el.style.visibility = 'hidden';
+      el.style.pointerEvents = 'none';
+      el.classList.add('has-caption');
+    }
+    const deferCap = typeof window._captionAnimDeferredByTrigger === 'function'
+      ? window._captionAnimDeferredByTrigger(d.anims) : null;
+    if (deferCap && typeof window._hideCaptionUntilTrigger === 'function') {
+      window._hideCaptionUntilTrigger(el, d, deferCap);
+    }
   });
   Object.keys(autoMap).forEach(elId => {
     const d = s.els.find(x => x.id === elId);

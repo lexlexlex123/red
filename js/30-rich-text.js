@@ -35,8 +35,14 @@ function _toCharObjs(html) {
     if (node.nodeType !== 1) return;
     const tag = node.tagName.toLowerCase();
     if (tag === 'br') { out.push({ ch: '\n', style: Object.assign({}, inh) }); return; }
-    // Skip caret anchor spans inserted by _interceptEnter (invisible zero-width space)
-    if (node.hasAttribute('data-br-anchor')) return;
+    // Skip caret anchor spans (legacy) but preserve any text typed inside them
+    if (node.hasAttribute('data-br-anchor')) {
+      for (const child of node.childNodes) {
+        if (child.nodeType === 3 && !child.textContent.replace(/\u200B/g, '')) continue;
+        walk(child, inh, false);
+      }
+      return;
+    }
     // Preserve list markers as opaque data — do NOT walk into them
     // Note: we save attributes, NOT outerHTML, because Chrome strips contenteditable="false"
     // from outerHTML of child elements when parent has contenteditable="true"
@@ -152,8 +158,40 @@ function rtMigrateHtml(html) {
 
 // ─── Edit / Save mode ─────────────────────────────────────────────
 function _rtContent(el) {
-  // If valign wrapper present, operate inside it; otherwise use el directly
-  return el.querySelector('.ec-valign-wrap') || el;
+  if (!el) return null;
+  let node = el;
+  if (!node.classList || (!node.classList.contains('ec') && !node.classList.contains('tel'))) {
+    node = el.querySelector('.tel') || el.querySelector('.ec') || el;
+  }
+  const valign = node.querySelector('.ec-valign-wrap');
+  if (valign) return valign;
+  const inner = node.querySelector('._txt_sh_inner');
+  if (inner) return inner;
+  return node;
+}
+function _rtWrapEl(el) {
+  if (!el) return null;
+  if (el.classList && el.classList.contains('el')) return el;
+  return el.closest('.el') || el.closest('.psel');
+}
+function _rtReapplyTextShadow(el) {
+  const wrap = _rtWrapEl(el);
+  if (!wrap || wrap.dataset.type !== 'text') return;
+  if (typeof window._textShadowActive === 'function' && window._textShadowActive(wrap.dataset)
+      && typeof applyTextShadowStyle === 'function') {
+    applyTextShadowStyle(wrap);
+  }
+}
+
+function _stripBrAnchors(root) {
+  if (!root || !root.querySelectorAll) return;
+  root.querySelectorAll('[data-br-anchor]').forEach(a => {
+    const t = (a.textContent || '').replace(/\u200B/g, '');
+    if (t) {
+      a.parentNode.insertBefore(document.createTextNode(t), a);
+    }
+    a.remove();
+  });
 }
 
 function _toEditMode(el) {
@@ -164,12 +202,13 @@ function _toEditMode(el) {
 
 function _toSaveMode(el) {
   const root = _rtContent(el);
-  // Track current font size so _rebuildMarkerHtml uses correct size
   const cs = el.getAttribute('style') || '';
   const fsMatch = cs.match(/font-size:\s*([\d.]+)px/);
   if (fsMatch) _lastBulletFontSize = parseFloat(fsMatch[1]);
-  // Always re-serialize to canonical br-based HTML
-  root.innerHTML = _charObjsToHtml(_toCharObjs(root.innerHTML));
+  _stripBrAnchors(root);
+  const chars = _toCharObjs(root.innerHTML);
+  const inEditMode = !root.querySelector('span[data-ch]');
+  root.innerHTML = inEditMode ? _groupedHtml(chars) : _charObjsToHtml(chars);
 }
 
 // ─── Normalize contenteditable Enter → <br> ───────────────────────
@@ -247,16 +286,9 @@ function _interceptEnter(e) {
 
   const r2 = document.createRange();
   if (atEnd) {
-    // Browser won't render cursor on a new line unless there's content or a second br after.
-    // Insert a zero-width caret anchor span that looks invisible but gives cursor a position.
-    // It has data-ch so _toCharObjs ignores it as an empty char (zero-width space gets filtered).
-    const anchor = document.createElement('span');
-    anchor.setAttribute('data-ch', '');
-    anchor.setAttribute('data-br-anchor', '1');
-    anchor.style.cssText = 'display:inline;';
-    anchor.textContent = '\u200B';
-    br.parentNode.insertBefore(anchor, br.nextSibling);
-    r2.setStart(anchor.firstChild, 1);
+    const br2 = document.createElement('br');
+    br.parentNode.insertBefore(br2, br.nextSibling);
+    r2.setStartAfter(br);
   } else {
     r2.setStartAfter(br);
   }
@@ -431,6 +463,7 @@ function rtAttachSelectionTracking(wrapEl, telEl) {
 
   telEl.addEventListener('mouseup', rtUpdateToolbarState);
   telEl.addEventListener('keyup',   rtUpdateToolbarState);
+  telEl.addEventListener('input',  rtUpdateToolbarState);
 }
 
 document.addEventListener('selectionchange', () => {
@@ -456,6 +489,8 @@ document.addEventListener('selectionchange', () => {
 // ─── Commit ───────────────────────────────────────────────────────
 function _rtCommit() {
   if (!_rtEl || !_rtElId) return;
+  const wrapEl = _rtEl.closest('.el');
+  if (wrapEl && wrapEl.dataset.editing !== 'true') return;
   const d = slides[cur] && slides[cur].els.find(e => e.id === _rtElId);
   if (d) {
     // Try to get pre-normalization HTML from dataset (set by 13-images blur before contentEditable=false)
@@ -465,7 +500,8 @@ function _rtCommit() {
       d.html = savedHtml;
     } else {
       const vw = _rtEl.querySelector('.ec-valign-wrap');
-      d.html = vw ? vw.innerHTML : _rtEl.innerHTML;
+      const root = _rtContent(_rtEl);
+      d.html = vw ? vw.innerHTML : root.innerHTML;
     }
     if (typeof drawThumbs === 'function') drawThumbs();
     if (typeof saveState === 'function') saveState();
@@ -522,6 +558,7 @@ function _applyToSelection(prop, val) {
   const inEditMode = !root.querySelector('span[data-ch]');
   const newHtml = inEditMode ? _groupedHtml(chars) : _charObjsToHtml(chars);
   root.innerHTML = newHtml;
+  _rtReapplyTextShadow(_rtEl);
   // After innerHTML rebuild the browser clears the selection. We restore it,
   // but first ensure the editor has focus — without focus the browser won't
   // display the selection highlight even if the Range is correctly set.
@@ -567,6 +604,7 @@ function _setTSWhole(prop, val, skipHtmlSync) {
     }
   }
   save(); saveState(); drawThumbs(); syncProps();
+  _rtReapplyTextShadow(sel);
   // Update button highlight state after whole-element formatting
   setTimeout(() => { if (typeof rtUpdateToolbarState === 'function') rtUpdateToolbarState(); }, 0);
 }
@@ -577,12 +615,14 @@ function _clearCharColors() {
   const d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
   if (!d) return;
   const c = sel.querySelector('.ec'); if (!c) return;
-  const chars = _toCharObjs(c.innerHTML);
+  const root = _rtContent(c);
+  const chars = _toCharObjs(root.innerHTML);
   if (!chars.length) return;
   chars.forEach(ch => { delete ch.style.color; delete ch.style._schemeRef; });
   const newHtml = _charObjsToHtml(chars);
-  c.innerHTML = newHtml;
+  root.innerHTML = newHtml;
   d.html = newHtml;
+  _rtReapplyTextShadow(sel);
 }
 
 
@@ -593,9 +633,10 @@ function _syncPropToHtml(prop, val) {
   const d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
   if (!d) return;
   const c = sel.querySelector('.ec'); if (!c) return;
+  const root = _rtContent(c);
   const camel = prop.replace(/-([a-z])/g, (_, ch) => ch.toUpperCase());
 
-  const sourceHtml = c.innerHTML;
+  const sourceHtml = root.innerHTML;
 
   const chars = _toCharObjs(sourceHtml);
 
@@ -606,8 +647,9 @@ function _syncPropToHtml(prop, val) {
   chars.forEach(ch => { ch.style[camel] = val; });
   const newHtml = _charObjsToHtml(chars);
 
-  c.innerHTML = newHtml;
+  root.innerHTML = newHtml;
   d.html = newHtml;
+  _rtReapplyTextShadow(sel);
 
 }
 
@@ -750,9 +792,11 @@ function resetTextFormatting() {
   pushUndo();
   const d = slides[cur].els.find(e=>e.id===sel.dataset.id); if (!d) return;
   const c = sel.querySelector('.ec'); if (!c) return;
-  const text = _toCharObjs(c.innerHTML).map(o=>o.ch==='\n'?'\n':o.ch).join('');
-  c.innerHTML = _charObjsToHtml([...text].map(ch=>({ch,style:{}})));
-  d.html = c.innerHTML;
+  const root = _rtContent(c);
+  const text = _toCharObjs(root.innerHTML).map(o=>o.ch==='\n'?'\n':o.ch).join('');
+  root.innerHTML = _charObjsToHtml([...text].map(ch=>({ch,style:{}})));
+  d.html = root.innerHTML;
+  _rtReapplyTextShadow(sel);
   commitAll(); syncProps();
   toast((t('toastFormattingReset')),'ok');
 }
@@ -787,6 +831,52 @@ function onColorHex(v, mode) {
 }
 
 // ─── Toolbar state ────────────────────────────────────────────────
+function _rtPxToPt(px) {
+  return Math.round(parseFloat(px) * 72 / 96);
+}
+
+function _rtCursorFontSizePx(root) {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0 || !root) return null;
+  const r = sel.getRangeAt(0);
+  if (!root.contains(r.commonAncestorContainer)) return null;
+  let node = r.startContainer;
+  if (node.nodeType === 3) node = node.parentElement;
+  while (node && node !== root) {
+    if (node.nodeType === 1) {
+      if (node.hasAttribute && node.hasAttribute('data-br-anchor')) {
+        node = node.parentElement;
+        continue;
+      }
+      const st = (node.getAttribute && node.getAttribute('style')) || '';
+      const m = st.match(/font-size\s*:\s*([\d.]+)px/i);
+      if (m) return parseFloat(m[1]);
+      if (node.hasAttribute && node.hasAttribute('data-ch')) {
+        const fs = parseFloat(window.getComputedStyle(node).fontSize);
+        if (fs) return fs;
+      }
+    }
+    node = node.parentElement;
+  }
+  const tel = root.closest('.tel') || root.closest('.ec') || root;
+  const cs = (tel.getAttribute && tel.getAttribute('style')) || '';
+  const m = cs.match(/font-size\s*:\s*([\d.]+)px/i);
+  if (m) return parseFloat(m[1]);
+  return parseFloat(window.getComputedStyle(tel).fontSize) || null;
+}
+
+function _rtUpdateFontSizeInput(root) {
+  try {
+    const inp = document.getElementById('p-fs');
+    if (!inp) return;
+    const fsPx = root ? _rtCursorFontSizePx(root) : null;
+    if (fsPx) {
+      inp.value = String(_rtPxToPt(fsPx));
+      inp.placeholder = '';
+    }
+  } catch (e) {}
+}
+
 function rtUpdateToolbarState() {
   try {
     const hint = document.getElementById('sel-hint');
@@ -806,6 +896,7 @@ function rtUpdateToolbarState() {
         setOn('ft-sup', allChars.every(c => c.style.verticalAlign === 'super'));
         setOn('ft-sub', allChars.every(c => c.style.verticalAlign === 'sub'));
         _updateListButtonState();
+        _rtUpdateFontSizeInput(root);
         return;
       }
       // Fallback: no spans yet — read from element style
@@ -816,6 +907,7 @@ function rtUpdateToolbarState() {
       setOn('ft-sup', false);
       setOn('ft-sub', false);
       _updateListButtonState();
+      _rtUpdateFontSizeInput(root);
       return;
     }
 
@@ -842,14 +934,16 @@ function rtUpdateToolbarState() {
           const selChars = _getSelectionCharEls();
           if (selChars && selChars.length > 0) {
             const sizes = [...new Set(selChars.map(c => Math.round(parseFloat(window.getComputedStyle(c).fontSize)||0)))];
-            inp.value = sizes.length === 1 ? sizes[0] : '';
+            inp.value = sizes.length === 1 ? String(_rtPxToPt(sizes[0])) : '';
             inp.placeholder = sizes.length === 1 ? '' : '—';
           } else {
             const fs = parseFloat(cs.fontSize);
-            if (fs) inp.value = Math.round(fs);
+            if (fs) inp.value = String(_rtPxToPt(fs));
           }
         }
       } catch(e){}
+    } else {
+      _rtUpdateFontSizeInput(_rtEl ? _rtContent(_rtEl) : null);
     }
   } catch(e) {}
 }
@@ -857,10 +951,11 @@ function rtUpdateToolbarState() {
 // Returns array of char span elements currently selected (via browser selection in _rtEl)
 function _getSelectionCharEls() {
   if (!_rtEl) return null;
+  const root = _rtContent(_rtEl);
   const sel = window.getSelection();
   if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
   const range = sel.getRangeAt(0);
-  const spans = Array.from(_rtEl.querySelectorAll('span[data-ch]'));
+  const spans = Array.from(root.querySelectorAll('span[data-ch]'));
   return spans.filter(sp => range.intersectsNode(sp));
 }
 
@@ -1010,6 +1105,7 @@ function _applyListToElement(listType) {
   d.html = newHtml;
   if (listType === 'bullet') d.bulletIconId = iconId;
   _attachBulletClickHandlers(root);
+  _rtReapplyTextShadow(sel);
   commitAll();
   _updateListButtonState();
 }
@@ -1115,7 +1211,55 @@ function _getCurrentTextColor(ecEl) {
   return m ? m[1] : '#ffffff';
 }
 
-// Apply color to all list markers in the current text element
+// Selected lines with markers → only those; no selection or no marker on selection → all
+function _rtMarkersForColorUpdate(root) {
+  const selIdx = _readSelFromDOM(root) || _savedSelIdx;
+  const lines = _getHtmlLines(root.innerHTML);
+  let targetLines = null;
+  if (selIdx) {
+    let pos = 0;
+    const indices = new Set();
+    lines.forEach((lineHtml, i) => {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = lineHtml;
+      let lineLen = 0;
+      function countNode(node) {
+        if (node.nodeType === 3) { lineLen += node.textContent.length; return; }
+        if (node.nodeType === 1) {
+          if (node.tagName === 'BR') { lineLen += 1; return; }
+          if (node.hasAttribute('data-list-bullet') || node.hasAttribute('data-list-num')) { lineLen += 1; return; }
+          if (node.hasAttribute('data-br-anchor')) return;
+          for (const ch of node.childNodes) countNode(ch);
+        }
+      }
+      for (const ch of tmp.childNodes) countNode(ch);
+      const start = pos, end = pos + lineLen;
+      if (selIdx.start < end && selIdx.end > start) indices.add(i);
+      pos += lineLen + 1;
+    });
+    const anyMarker = [...indices].some(i => _lineHasMarker(lines[i]));
+    if (anyMarker) targetLines = indices;
+  }
+
+  const bullets = [], nums = [];
+  let lineIdx = 0;
+  function walk(node) {
+    if (node.nodeType !== 1) return;
+    if (node.tagName === 'BR') { lineIdx++; return; }
+    if (node.hasAttribute('data-list-bullet')) {
+      if (!targetLines || targetLines.has(lineIdx)) bullets.push(node);
+      return;
+    }
+    if (node.hasAttribute('data-list-num')) {
+      if (!targetLines || targetLines.has(lineIdx)) nums.push(node);
+      return;
+    }
+    for (const ch of node.childNodes) walk(ch);
+  }
+  for (const ch of root.childNodes) walk(ch);
+  return { bullets, nums };
+}
+
 function rtBulletColorPick(color, schemeRef) {
   if (!sel || sel.dataset.type !== 'text') return;
   const d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
@@ -1128,7 +1272,8 @@ function rtBulletColorPick(color, schemeRef) {
   const sz = Math.round(parseFloat(fsMatch ? fsMatch[1] : '24'));
   _lastBulletFontSize = sz;
 
-  root.querySelectorAll('span[data-list-bullet]').forEach(sp => {
+  const { bullets, nums } = _rtMarkersForColorUpdate(root);
+  bullets.forEach(sp => {
     sp.setAttribute('data-icon-color', color);
     if (schemeRef) sp.setAttribute('data-icon-schemeref', JSON.stringify(schemeRef));
     else sp.removeAttribute('data-icon-schemeref');
@@ -1138,7 +1283,7 @@ function rtBulletColorPick(color, schemeRef) {
     const svg = _getBulletSvg(iconId, sz, iconStyle, color, iconSw);
     sp.innerHTML = svg;
   });
-  root.querySelectorAll('span[data-list-num]').forEach(sp => {
+  nums.forEach(sp => {
     if (color !== 'currentColor') {
       sp.style.color = color;
       sp.setAttribute('data-num-color', color);

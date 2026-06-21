@@ -428,6 +428,7 @@ function applyTextVAlign(el,va){
     }
     ec.style.flex='';
     ec.style.width='';
+    if(window._textShadowActive&&window._textShadowActive(el.dataset)&&typeof applyTextShadowStyle==='function') applyTextShadowStyle(el);
     return;
   }
   host.style.display='flex';
@@ -437,6 +438,7 @@ function applyTextVAlign(el,va){
   else if(va==='bottom') host.style.justifyContent='flex-end';
   ec.style.flex='none';
   ec.style.width='100%';
+  if(window._textShadowActive&&window._textShadowActive(el.dataset)&&typeof applyTextShadowStyle==='function') applyTextShadowStyle(el);
 }
 function setTextBg(col, schemeRef){
   if(!sel||sel.dataset.type!=='text')return;
@@ -528,8 +530,13 @@ function applyTextBg(el){
   // Don't clear .ec background when text color gradient is active (it holds the gradient)
   if(el.dataset.textColorGrad!=='1')c.style.background='';
   if(!col && !blur && !isGrad){
-    const old=el.querySelector('.el-bg-layer');if(old)old.remove();
-    el.style.backdropFilter='';el.style.webkitBackdropFilter='';
+    const layer=el.querySelector('.el-bg-layer');
+    if(layer)layer.style.background='';
+    const hasBorder=+(el.dataset.textBorderW||0)>0;
+    if(!hasBorder){
+      if(layer)layer.remove();
+      el.style.backdropFilter='';el.style.webkitBackdropFilter='';
+    }
     return;
   }
   const layer=_getBgLayer(el);

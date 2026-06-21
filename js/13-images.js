@@ -218,6 +218,31 @@ function _updateAlphaHoverCursor(e, opts) {
 }
 
 // ══════════════ STOP TEXT EDITING (called from anywhere) ══════════════
+window._finishTextEdit = function(el) {
+  if (!el || el.dataset.type !== 'text' || el.dataset.editing !== 'true') return;
+  const c = el.querySelector('.tel') || el.querySelector('.ec');
+  if (!c) return;
+  if (typeof _toSaveMode === 'function') _toSaveMode(c);
+  const _cwrap2 = document.getElementById('cwrap');
+  if (_cwrap2) _cwrap2.style.overflow = '';
+  const vw = c.querySelector('.ec-valign-wrap');
+  const root = (typeof _rtContent === 'function') ? _rtContent(c) : c;
+  const _snap = vw ? vw.innerHTML : (root ? root.innerHTML : c.innerHTML);
+  el.dataset._savedHtml = _snap;
+  c.contentEditable = 'false';
+  delete el.dataset.editing;
+  el.style.cursor = '';
+  if (typeof commitAll === 'function') commitAll();
+  delete el.dataset._savedHtml;
+  if (vw) vw.innerHTML = _snap;
+  else if (root && root !== c) root.innerHTML = _snap;
+  else c.innerHTML = _snap;
+  if (window._textShadowActive && window._textShadowActive(el.dataset) && typeof applyTextShadowStyle === 'function') {
+    applyTextShadowStyle(el);
+  }
+  if (typeof _attachBulletClickHandlers === 'function') _attachBulletClickHandlers(c);
+};
+
 function stopTextEditing() {
   const editing = document.querySelector('.el[data-editing="true"]');
   if (editing) {
@@ -225,18 +250,22 @@ function stopTextEditing() {
       if (typeof window._blurActiveShapeText === 'function') window._blurActiveShapeText();
       return;
     }
-    const tel = editing.querySelector('.tel');
-    if (tel) { tel.contentEditable = 'false'; tel.blur(); }
-    delete editing.dataset.editing;
-    editing.style.cursor = '';
-    commitAll();
+    if (typeof window._finishTextEdit === 'function') window._finishTextEdit(editing);
+    else {
+      const tel = editing.querySelector('.tel');
+      if (tel) tel.blur();
+    }
   }
   if (typeof window._blurActiveShapeText === 'function') window._blurActiveShapeText();
-  // Also stop any active rich-text contenteditable not tracked by dataset
   const active = document.activeElement;
   if (active && active.contentEditable === 'true' && active.classList.contains('tel')) {
-    active.contentEditable = 'false';
-    active.blur();
+    const wrap = active.closest('.el');
+    if (wrap && wrap.dataset.editing === 'true' && typeof window._finishTextEdit === 'function') {
+      window._finishTextEdit(wrap);
+    } else {
+      active.contentEditable = 'false';
+      active.blur();
+    }
   }
 }
 
@@ -464,36 +493,9 @@ window._applyShadowValues = function(bel, d, ss, sb, sc) {
   const type = d.type;
 
   if (type === 'text') {
-    const tel = (typeof window._textShadowContentNode === 'function'
-      ? window._textShadowContentNode(bel)
-      : null) || bel.querySelector('.tel') || bel.querySelector('.ec');
-    if (!tel) return;
-    const fid = 'txtsh_' + id;
-    const defs = typeof window._ensureShadowFilterHost === 'function' ? window._ensureShadowFilterHost() : null;
-    if (!active) {
-      tel.style.filter = '';
-      if (typeof window._syncTextShadowLayout === 'function') window._syncTextShadowLayout(bel, null);
-      if (defs) {
-        const old = defs.querySelector('#' + fid);
-        if (old) old.remove();
-      }
+    if (typeof window._applyTextShadowFilter === 'function') {
+      window._applyTextShadowFilter(bel, active ? { textShadowSize: ss, textShadowBlur: sb, textShadowColor: sc } : {});
       return;
-    }
-    if (!defs || typeof window._shadowFilterInner !== 'function') return;
-    let filter = defs.querySelector('#' + fid);
-    if (!filter) {
-      filter = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
-      filter.setAttribute('id', fid);
-      filter.setAttribute('x', '-50%');
-      filter.setAttribute('y', '-50%');
-      filter.setAttribute('width', '200%');
-      filter.setAttribute('height', '200%');
-      defs.appendChild(filter);
-    }
-    filter.innerHTML = window._shadowFilterInner(ss, sb, sc);
-    tel.style.filter = 'url(#' + fid + ')';
-    if (typeof window._syncTextShadowLayout === 'function') {
-      window._syncTextShadowLayout(bel, { textShadowSize: ss, textShadowBlur: sb, textShadowColor: sc });
     }
     return;
   }
@@ -852,24 +854,16 @@ function mkEl(d){
       if(_cwrap) _cwrap.style.overflow='hidden';
     });
     c.addEventListener('blur',()=>{
-      if(typeof _toSaveMode==='function') _toSaveMode(c);
-      // Restore cwrap scroll after editing
-      const _cwrap2=document.getElementById('cwrap');
-      if(_cwrap2) _cwrap2.style.overflow='';
-      // Capture HTML BEFORE contentEditable=false — browser collapses BR tags after
-      const vw = c.querySelector('.ec-valign-wrap');
-      const _snap = vw ? vw.innerHTML : c.innerHTML;
-      el.dataset._savedHtml = _snap;
-      c.contentEditable='false'; delete el.dataset.editing; el.style.cursor='';
-      commitAll();
-      delete el.dataset._savedHtml;
-      // Restore correct HTML (browser may have normalized it during contentEditable toggle)
-      if(vw) vw.innerHTML = _snap; else c.innerHTML = _snap;
-      // Re-attach bullet click handlers after DOM restore
-      if(typeof _attachBulletClickHandlers==='function') _attachBulletClickHandlers(c);
+      if(el.dataset.editing!=='true')return;
+      if(typeof window._finishTextEdit==='function') window._finishTextEdit(el);
     });
     c.addEventListener('input',()=>{ if(typeof _rtCommit==='function') _rtCommit(); else save(); });
-    c.addEventListener('keydown',e=>{if(e.key==='Escape'){c.contentEditable='false';c.blur();}else e.stopPropagation();});
+    c.addEventListener('keydown',e=>{
+      if(e.key==='Escape'){
+        if(typeof window._finishTextEdit==='function') window._finishTextEdit(el);
+        else c.blur();
+      }else e.stopPropagation();
+    });
     if(typeof rtAttachSelectionTracking==='function')rtAttachSelectionTracking(el,c);
     // Restore background — deferred to after el.append(c) so querySelector('.ec') works
     if(d.valign){el.dataset.valign=d.valign;} // applied after cv.appendChild below
@@ -884,13 +878,12 @@ function mkEl(d){
       }
     }
     // Restore border
-    if(d.textBorderW&&+d.textBorderW>0){el.dataset.textBorderW=d.textBorderW;el.dataset.textBorderColor=d.textBorderColor||'#ffffff';if(d.textBorderStyle)el.dataset.textBorderStyle=d.textBorderStyle;applyTextBorderStyle(el);}
+    if(d.textBorderW&&+d.textBorderW>0){el.dataset.textBorderW=d.textBorderW;el.dataset.textBorderColor=d.textBorderColor||'#ffffff';if(d.textBorderStyle)el.dataset.textBorderStyle=d.textBorderStyle;}
     if(window._textShadowActive&&window._textShadowActive(d)){
       if(d.textShadowBlur!=null)el.dataset.textShadowBlur=d.textShadowBlur;
       if(d.textShadowSize!=null)el.dataset.textShadowSize=d.textShadowSize;
       if(d.textShadowW&&+d.textShadowW>0&&!d.textShadowBlur&&!d.textShadowSize)el.dataset.textShadowW=d.textShadowW;
       el.dataset.textShadowColor=d.textShadowColor||'#000000';
-      applyTextShadowStyle(el);
     }
     // Restore opacity
     if(d.elOpacity!=null&&+d.elOpacity!==1){el.dataset.elOpacity=d.elOpacity;el.style.opacity=d.elOpacity;}
@@ -898,7 +891,7 @@ function mkEl(d){
     if(d.rx_tl||d.rx_tr||d.rx_bl||d.rx_br){
       el.dataset.rx_tl=d.rx_tl||0;el.dataset.rx_tr=d.rx_tr||0;
       el.dataset.rx_bl=d.rx_bl||0;el.dataset.rx_br=d.rx_br||0;
-      el.dataset.rxUnit=d.rxUnit||'px';applyTextRadius(el);
+      el.dataset.rxUnit=d.rxUnit||'px';
     }
   }else if(d.type==='image'){
     c.classList.add('iel');const img=document.createElement('img');
@@ -1387,6 +1380,12 @@ function mkEl(d){
     if(d.textColorGrad&&typeof applyTextColorGrad==='function')applyTextColorGrad(el);
   }
   if(d.valign&&d.type==='text'&&typeof applyTextVAlign==='function')applyTextVAlign(el,d.valign);
+  if(d.type==='text'){
+    if(typeof applyTextBorderStyle==='function')applyTextBorderStyle(el);
+    if(d.rx_tl||d.rx_tr||d.rx_bl||d.rx_br){
+      if(typeof applyTextRadius==='function')applyTextRadius(el);
+    }
+  }
   if(d.type==='text'&&window._textShadowActive&&window._textShadowActive(d)&&typeof applyTextShadowStyle==='function'){
     // Re-apply last so radius/valign/body-wrap setup cannot restore overflow:hidden.
     applyTextShadowStyle(el);
@@ -1564,10 +1563,11 @@ function pick(el){
     if (sel.dataset.type === 'shape' && sel.dataset.editing === 'true') {
       if (typeof window._blurActiveShapeText === 'function') window._blurActiveShapeText();
     } else if (sel.dataset.editing === 'true') {
-      const c = sel.querySelector('.tel');
-      if (c) { c.contentEditable = 'false'; c.blur(); }
-      delete sel.dataset.editing; sel.style.cursor = '';
-      commitAll();
+      if (typeof window._finishTextEdit === 'function') window._finishTextEdit(sel);
+      else {
+        const c = sel.querySelector('.tel');
+        if (c) c.blur();
+      }
     }
   }
   if (!el && typeof window._blurActiveShapeText === 'function') window._blurActiveShapeText();

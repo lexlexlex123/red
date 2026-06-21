@@ -143,10 +143,12 @@ function boot(){
     if(sel.dataset.editing!=='true')return;
     // Don't exit editing when clicking props panel
     if(e.target.closest('#props')) return;
-    const c=sel.querySelector('.tel');
-    if(c){c.contentEditable='false';c.blur();}
-    delete sel.dataset.editing;sel.style.cursor='';
-    save();drawThumbs();saveState();
+    if(typeof window._finishTextEdit==='function') window._finishTextEdit(sel);
+    else{
+      const c=sel.querySelector('.tel');
+      if(c) c.blur();
+    }
+    return;
   },true); // capture phase so it fires before other handlers
   window.addEventListener('resize',drawGrid);
   document.addEventListener('keydown',onKey);

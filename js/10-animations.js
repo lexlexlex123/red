@@ -220,6 +220,11 @@ window._animContentTarget = function(el) {
   return el.querySelector('.ec') || el.querySelector('.iel') || el.querySelector('.psel-txt') || el;
 };
 
+window._textAnimShell = function(el) {
+  if (!window._isTextBlock(el)) return null;
+  return window._ensureTextBodyWrap(el);
+};
+
 window._ensureDanceWrap = function(el) {
   let wrap = el.querySelector('._dance_wrap');
   if (wrap) return wrap;
@@ -242,6 +247,8 @@ function _restoreTextBodyLayout(body) {
   body.style.position = 'absolute';
   body.style.left = '0';
   body.style.top = '0';
+  body.style.right = '0';
+  body.style.bottom = '0';
   body.style.width = '100%';
   body.style.height = '100%';
   body.style.boxSizing = 'border-box';
@@ -250,6 +257,7 @@ function _restoreTextBodyLayout(body) {
   body.style.flexDirection = 'column';
   body.style.alignItems = 'stretch';
 }
+window._syncTextBodyLayout = _restoreTextBodyLayout;
 
 function _unwrapLiveWrap(el, className) {
   const wrap = el && el.querySelector(className);

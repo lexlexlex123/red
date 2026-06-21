@@ -334,11 +334,11 @@ function save(){
     };
     if(el.dataset.link)d.link=el.dataset.link;if(el.dataset.linkt)d.linkt=el.dataset.linkt;
     if(d.type==='text'){const c=el.querySelector('.ec');
-      // If blur just fired, use pre-normalization HTML stored in dataset
-      const vw=c.querySelector('.ec-valign-wrap');
+      const vw=c&&c.querySelector('.ec-valign-wrap');
+      const root=(typeof _rtContent==='function'&&c)?_rtContent(c):c;
       d.html = el.dataset._savedHtml != null
         ? el.dataset._savedHtml
-        : (vw ? vw.innerHTML : c.innerHTML);
+        : (vw ? vw.innerHTML : (root ? root.innerHTML : (c ? c.innerHTML : '')));
       // Strip layout/background props from cs (stored separately or computed dynamically)
       let cs=c.getAttribute('style')||'';
       cs=cs.replace(/\bbackground\s*:[^;]+;?/gi,'')

@@ -2052,7 +2052,12 @@
     <h3>🔗 Hyperlink</h3>
     <div class="pr"><label data-i18n="propLinkType">Type</label>
       <select id="lm-type" onchange="onLMTypeChange(this.value)">
-        <option value="url">External URL</option><option value="slide">Go to slide</option>
+        <option value="url" data-i18n="propLinkUrl2">External URL</option>
+        <option value="slide" data-i18n="linkSlideGo">Go to slide…</option>
+        <option value="slide-next" data-i18n="linkSlideNext">Next slide</option>
+        <option value="slide-prev" data-i18n="linkSlidePrev">Previous slide</option>
+        <option value="slide-first" data-i18n="linkSlideFirst">First slide</option>
+        <option value="slide-last" data-i18n="linkSlideLast">Last slide</option>
       </select>
     </div>
     <div id="lm-url-wrap" class="pr"><label data-i18n="propLinkUrl2">URL</label><input type="text" id="lm-url" placeholder="https://example.com"></div>
@@ -2060,7 +2065,7 @@
       <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Select slide</label>
       <div class="lsi-list" id="lm-slides"></div>
     </div>
-    <div class="pr" style="margin-top:8px"><label data-i18n="propLinkOpenIn">Open in</label>
+    <div class="pr" style="margin-top:8px" id="lm-target-wrap"><label data-i18n="propLinkOpenIn">Open in</label>
       <select id="lm-target"><option value="_blank">New tab</option><option value="_self">Same tab</option></select>
     </div>
     <div class="mfooter">

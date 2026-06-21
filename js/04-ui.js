@@ -1408,9 +1408,33 @@ function _getRotCorners(el) {
   ];
 }
 
+function _nearMidEdgeHandle(el, canvasX, canvasY) {
+  const R = 14;
+  const L = parseInt(el.style.left)||0, T = parseInt(el.style.top)||0;
+  const W = parseInt(el.style.width)||0, H = parseInt(el.style.height)||0;
+  if (W < 8 || H < 8) return false;
+  const deg = _getElRotationDeg(el) * Math.PI / 180;
+  const cosr = Math.cos(deg), sinr = Math.sin(deg);
+  const ecx = L + W/2, ecy = T + H/2;
+  const mids = [
+    [L + W/2, T],
+    [L + W, T + H/2],
+    [L + W/2, T + H],
+    [L, T + H/2],
+  ];
+  for (const [px, py] of mids) {
+    const dx = px - ecx, dy = py - ecy;
+    const hx = ecx + dx*cosr - dy*sinr;
+    const hy = ecy + dx*sinr + dy*cosr;
+    if (Math.hypot(canvasX - hx, canvasY - hy) <= R) return true;
+  }
+  return false;
+}
+
 function _nearCorner(el, canvasX, canvasY) {
   if (!el) return null;
-  const R = 34; // rotation zone radius around corner
+  if (_nearMidEdgeHandle(el, canvasX, canvasY)) return null;
+  const R = 22; // rotation zone radius around corner
   const HANDLE_R = 10; // skip zone covered by corner resize handles
   const corners = _getRotCorners(el);
   const deg = _getElRotationDeg(el) * Math.PI / 180;
@@ -1478,6 +1502,10 @@ function _addRotationZones(overlay, el) {
       _setRotCursor(''); return;
     }
     const p = _toCanvasCoords(ev.clientX, ev.clientY);
+    const under = document.elementFromPoint(ev.clientX, ev.clientY);
+    if (under && under.closest && under.closest('#handles-overlay [data-cls]')) {
+      _setRotCursor(''); return;
+    }
     const corner = _nearCorner(_rotEl, p.x, p.y);
     if (!corner) { _setRotCursor(''); return; }
     const pv = _getPivotCanvas(_rotEl);
@@ -1500,10 +1528,7 @@ function _addRotationZones(overlay, el) {
     if (window._pivotDragging) return; // pivot handle takes priority
     if (window._overPivotHandle) return; // mouse is over pivot handle
     const rhHit = ev.target.closest && ev.target.closest('#handles-overlay [data-cls]');
-    if (rhHit) {
-      const cls = rhHit.dataset.cls;
-      if (cls === 'tl' || cls === 'tr' || cls === 'bl' || cls === 'br') return;
-    }
+    if (rhHit) return; // resize handles always win over rotation
     const p = _toCanvasCoords(ev.clientX, ev.clientY);
     const corner = _nearCorner(_rotEl, p.x, p.y);
     if (!corner) return;
