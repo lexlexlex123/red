@@ -7,7 +7,14 @@ function setTextBorder(prop,val,schemeRef){
     if(d) d.borderScheme = (schemeRef !== undefined ? (schemeRef || null) : d.borderScheme);
   }
   if(prop==='width'){sel.dataset.textBorderW=val;}
-  if(prop==='style'){sel.dataset.textBorderStyle=val;}
+  if(prop==='style'){
+    sel.dataset.textBorderStyle=val;
+    try{
+      document.querySelectorAll('.txt-border-style-btn').forEach(b=>{
+        b.classList.toggle('active', b.dataset.style===val);
+      });
+    }catch(e){}
+  }
   applyTextBorderStyle(sel);
   save();drawThumbs();saveState();
 }
@@ -48,6 +55,24 @@ window._textShadowActive=function(d){
   if(+d.textShadowSize>0||+d.textShadowBlur>0) return true;
   return !!(d.textShadowW&&+d.textShadowW>0);
 };
+window._textBlockShadowParams=function(d){
+  if(!d) return {ss:0,sb:0,sc:'#000000',inset:false};
+  return {
+    ss:d.textBlockShadowSize!=null?+d.textBlockShadowSize:0,
+    sb:d.textBlockShadowBlur!=null?+d.textBlockShadowBlur:0,
+    sc:d.textBlockShadowColor||'#000000',
+    inset:d.textBlockShadowInset==='1'||d.textBlockShadowInset===true
+  };
+};
+window._textBlockShadowActive=function(d){
+  if(!d) return false;
+  return +d.textBlockShadowSize>0||+d.textBlockShadowBlur>0;
+};
+window._textBlockShadowCssFrom=function(ss,sb,c,inset){
+  ss=+ss||0; sb=+sb||0; c=c||'#000000';
+  if(ss<=0&&sb<=0) return '';
+  return (inset?'inset ':'')+'0 0 '+sb+'px '+ss+'px '+c;
+};
 window._ensureTextShadowInner=function(el){
   const tel=el&&el.querySelector('.tel')||el&&el.querySelector('.ec');
   if(!tel) return null;
@@ -78,6 +103,10 @@ window._textShadowContentNode=function(el){
   if(valign) return valign;
   return tel;
 };
+window._textBlockShadowInsetOn=function(el){
+  if(!el||!el.dataset) return false;
+  return el.dataset.textBlockShadowInset==='1'&&window._textBlockShadowActive(el.dataset);
+};
 window._syncTextShadowLayout=function(el,d){
   if(!el) return 0;
   const body=el.querySelector('._text_body');
@@ -86,8 +115,9 @@ window._syncTextShadowLayout=function(el,d){
   const on=d&&window._textShadowActive(d);
   if(!on){
     if(typeof window._unwrapTextShadowInner==='function') window._unwrapTextShadowInner(el);
+    const blockInset=window._textBlockShadowInsetOn(el);
     if(body){
-      body.style.overflow='';
+      body.style.overflow=blockInset?'hidden':'';
       body.style.top=body.style.left=body.style.right=body.style.bottom='';
       body.style.padding='';
     }
@@ -101,8 +131,9 @@ window._syncTextShadowLayout=function(el,d){
   const pad=typeof window._shadowPad==='function'?window._shadowPad(ss,sb,0):Math.ceil(ss+sb*3.5+20);
   el.style.overflow='visible';
   el.classList.add('has-text-shadow');
+  const blockInset=window._textBlockShadowInsetOn(el);
   if(body){
-    body.style.overflow='visible';
+    body.style.overflow=blockInset?'hidden':'visible';
     body.style.top=body.style.left=body.style.right=body.style.bottom='';
     body.style.padding='';
   }
@@ -112,15 +143,17 @@ window._syncTextShadowLayout=function(el,d){
 };
 window._applyTextShadowFilter=function(el,d){
   const tel=el&&(el.querySelector('.tel')||el.querySelector('.ec'));
+  const fid=el?'txtsh_'+String(el.dataset.id||'x').replace(/[^a-zA-Z0-9_-]/g,'_'):'';
   if(tel) tel.style.filter='';
   if(!el||!window._textShadowActive(d)){
     const content=window._textShadowContentNode(el);
-    if(content) content.style.filter='';
+    if(content){ content.style.removeProperty('filter'); content.style.textShadow=''; }
     window._syncTextShadowLayout(el,null);
-    if(el&&el.dataset.id&&typeof window._ensureShadowFilterHost==='function'){
-      const old=window._ensureShadowFilterHost().querySelector('#txtsh_'+el.dataset.id);
+    if(fid&&typeof window._ensureShadowFilterHost==='function'){
+      const old=window._ensureShadowFilterHost().querySelector('#'+fid);
       if(old) old.remove();
     }
+    if(typeof applyTextBlockShadowStyle==='function') applyTextBlockShadowStyle(el);
     return;
   }
   if(typeof window._ensureShadowFilterHost!=='function'||typeof window._shadowFilterInner!=='function') return;
@@ -128,7 +161,6 @@ window._applyTextShadowFilter=function(el,d){
   if(!content) return;
   content.style.textShadow='';
   const {ss,sb,sc}=window._textShadowParams(d);
-  const fid='txtsh_'+(el.dataset.id||'x');
   const defs=window._ensureShadowFilterHost();
   const old=defs.querySelector('#'+fid);
   if(old) old.remove();
@@ -152,8 +184,13 @@ window._applyTextShadowFilter=function(el,d){
   }
   filter.innerHTML=window._shadowFilterInner(ss,sb,sc);
   defs.appendChild(filter);
-  content.style.filter='url(#'+fid+')';
+  if(defs.querySelector('#'+fid)){
+    try{ content.style.setProperty('filter','url(#'+fid+')'); }catch(e){ content.style.filter=''; }
+  }else{
+    content.style.filter='';
+  }
   window._syncTextShadowLayout(el,d);
+  if(typeof applyTextBlockShadowStyle==='function') applyTextBlockShadowStyle(el);
 };
 function syncTextShadowUI(el){
   const src=el||(typeof sel!=='undefined'?sel:null);
@@ -180,6 +217,25 @@ function syncTextShadowUI(el){
     }
   }catch(e){}
 }
+window._textBlockShadowTarget=function(el){
+  if(!el) return null;
+  return typeof window._ensureTextBodyWrap==='function' ? window._ensureTextBodyWrap(el) : (el.querySelector('._text_body')||el);
+};
+function syncTextBlockShadowUI(el){
+  const src=el||(typeof sel!=='undefined'?sel:null);
+  if(!src||src.dataset.type!=='text') return;
+  try{
+    const p=window._textBlockShadowParams(src.dataset);
+    const sw=document.getElementById('p-bshadow-preview');
+    if(sw) sw.style.background=p.sc||'#000000';
+    const sbEl=document.getElementById('p-bshadow-sb');
+    const ssEl=document.getElementById('p-bshadow-ss');
+    const inEl=document.getElementById('p-bshadow-inset');
+    if(sbEl){ sbEl.value=p.sb||0; if(typeof refreshNumScrubber==='function') refreshNumScrubber(sbEl); }
+    if(ssEl){ ssEl.value=p.ss||0; if(typeof refreshNumScrubber==='function') refreshNumScrubber(ssEl); }
+    if(inEl) inEl.checked=!!p.inset;
+  }catch(e){}
+}
 function resetTextShadow(){
   if(!sel||sel.dataset.type!=='text') return;
   delete sel.dataset.textShadowBlur;
@@ -187,6 +243,16 @@ function resetTextShadow(){
   delete sel.dataset.textShadowW;
   applyTextShadowStyle(sel);
   syncTextShadowUI(sel);
+  save();drawThumbs();saveState();
+}
+function resetTextBlockShadow(){
+  if(!sel||sel.dataset.type!=='text') return;
+  delete sel.dataset.textBlockShadowBlur;
+  delete sel.dataset.textBlockShadowSize;
+  delete sel.dataset.textBlockShadowColor;
+  delete sel.dataset.textBlockShadowInset;
+  applyTextBlockShadowStyle(sel);
+  syncTextBlockShadowUI(sel);
   save();drawThumbs();saveState();
 }
 function setTextShadow(prop,val,schemeRef){
@@ -209,14 +275,145 @@ function setTextShadow(prop,val,schemeRef){
   syncTextShadowUI(sel);
   save();drawThumbs();saveState();
 }
-function applyTextShadowStyle(el){
-  const d={
+function setTextBlockShadow(prop,val){
+  if(!sel||sel.dataset.type!=='text') return;
+  if(prop==='color'){
+    sel.dataset.textBlockShadowColor=val;
+  }
+  if(prop==='blur'){
+    if(+val>0) sel.dataset.textBlockShadowBlur=val;
+    else delete sel.dataset.textBlockShadowBlur;
+  }
+  if(prop==='size'){
+    if(+val>0) sel.dataset.textBlockShadowSize=val;
+    else delete sel.dataset.textBlockShadowSize;
+  }
+  if(prop==='inset'){
+    if(val){
+      sel.dataset.textBlockShadowInset='1';
+      if(!(+sel.dataset.textBlockShadowBlur>0)&&!(+sel.dataset.textBlockShadowSize>0)){
+        sel.dataset.textBlockShadowBlur='8';
+        sel.dataset.textBlockShadowSize='2';
+      }
+    }else delete sel.dataset.textBlockShadowInset;
+  }
+  applyTextBlockShadowStyle(sel);
+  syncTextBlockShadowUI(sel);
+  save();drawThumbs();saveState();
+}
+function applyTextShadowStyle(el,override){
+  const d=override||{
     textShadowSize:el.dataset.textShadowSize,
     textShadowBlur:el.dataset.textShadowBlur,
     textShadowColor:el.dataset.textShadowColor,
     textShadowW:el.dataset.textShadowW
   };
   if(typeof window._applyTextShadowFilter==='function') window._applyTextShadowFilter(el,d);
+}
+window._stampTextDatasetFromModel=function(el,d){
+  if(!el||!d||d.type!=='text') return;
+  if(d.textBg) el.dataset.textBg=d.textBg; else delete el.dataset.textBg;
+  if(d.textBgOp!=null) el.dataset.textBgOp=d.textBgOp; else delete el.dataset.textBgOp;
+  if(d.textBgBlur>0) el.dataset.textBgBlur=d.textBgBlur; else delete el.dataset.textBgBlur;
+  if(d.textBgGrad) el.dataset.textBgGrad='1'; else delete el.dataset.textBgGrad;
+  if(d.textBgCol2) el.dataset.textBgCol2=d.textBgCol2; else delete el.dataset.textBgCol2;
+  if(d.textBgDir!=null) el.dataset.textBgDir=d.textBgDir; else delete el.dataset.textBgDir;
+  if(d.textBorderW!=null) el.dataset.textBorderW=d.textBorderW; else delete el.dataset.textBorderW;
+  if(d.textBorderColor) el.dataset.textBorderColor=d.textBorderColor; else delete el.dataset.textBorderColor;
+  if(d.textBorderStyle) el.dataset.textBorderStyle=d.textBorderStyle; else delete el.dataset.textBorderStyle;
+  if(d.textShadowBlur!=null&&+d.textShadowBlur>0) el.dataset.textShadowBlur=d.textShadowBlur; else delete el.dataset.textShadowBlur;
+  if(d.textShadowSize!=null&&+d.textShadowSize>0) el.dataset.textShadowSize=d.textShadowSize; else delete el.dataset.textShadowSize;
+  if(d.textShadowW&&+d.textShadowW>0&&!+(d.textShadowBlur||0)&&!+(d.textShadowSize||0)) el.dataset.textShadowW=d.textShadowW;
+  else delete el.dataset.textShadowW;
+  if(d.textShadowColor&&window._textShadowActive&&window._textShadowActive(d)) el.dataset.textShadowColor=d.textShadowColor;
+  else delete el.dataset.textShadowColor;
+  if(d.textBlockShadowBlur!=null&&+d.textBlockShadowBlur>0) el.dataset.textBlockShadowBlur=d.textBlockShadowBlur; else delete el.dataset.textBlockShadowBlur;
+  if(d.textBlockShadowSize!=null&&+d.textBlockShadowSize>0) el.dataset.textBlockShadowSize=d.textBlockShadowSize; else delete el.dataset.textBlockShadowSize;
+  if(d.textBlockShadowColor&&window._textBlockShadowActive&&window._textBlockShadowActive(d)) el.dataset.textBlockShadowColor=d.textBlockShadowColor;
+  else delete el.dataset.textBlockShadowColor;
+  if(d.textBlockShadowInset&&window._textBlockShadowActive&&window._textBlockShadowActive(d)) el.dataset.textBlockShadowInset='1'; else delete el.dataset.textBlockShadowInset;
+  if(d.rx_tl||d.rx_tr||d.rx_bl||d.rx_br){
+    el.dataset.rx_tl=d.rx_tl||0; el.dataset.rx_tr=d.rx_tr||0;
+    el.dataset.rx_bl=d.rx_bl||0; el.dataset.rx_br=d.rx_br||0;
+    el.dataset.rxUnit=d.rxUnit||'px';
+  } else {
+    delete el.dataset.rx_tl; delete el.dataset.rx_tr; delete el.dataset.rx_bl; delete el.dataset.rx_br;
+  }
+};
+window._shadowOverrideFromModel=function(d){
+  if(!d) return {};
+  const o={};
+  if(d.textShadowBlur!=null&&+d.textShadowBlur>0) o.textShadowBlur=d.textShadowBlur;
+  if(d.textShadowSize!=null&&+d.textShadowSize>0) o.textShadowSize=d.textShadowSize;
+  if(d.textShadowW&&+d.textShadowW>0&&!o.textShadowBlur&&!o.textShadowSize) o.textShadowW=d.textShadowW;
+  if(d.textShadowColor) o.textShadowColor=d.textShadowColor;
+  if(d.textBlockShadowBlur!=null&&+d.textBlockShadowBlur>0) o.textBlockShadowBlur=d.textBlockShadowBlur;
+  if(d.textBlockShadowSize!=null&&+d.textBlockShadowSize>0) o.textBlockShadowSize=d.textBlockShadowSize;
+  if(d.textBlockShadowColor) o.textBlockShadowColor=d.textBlockShadowColor;
+  if(d.textBlockShadowInset) o.textBlockShadowInset='1';
+  return o;
+};
+window._shadowOverrideFromState=function(state){
+  if(!state) return {};
+  const o={};
+  if(+state.textShadowBlur>0) o.textShadowBlur=state.textShadowBlur;
+  if(+state.textShadowSize>0) o.textShadowSize=state.textShadowSize;
+  if(state.textShadowColor) o.textShadowColor=state.textShadowColor;
+  if(+state.textBlockShadowBlur>0) o.textBlockShadowBlur=state.textBlockShadowBlur;
+  if(+state.textBlockShadowSize>0) o.textBlockShadowSize=state.textBlockShadowSize;
+  if(state.textBlockShadowColor) o.textBlockShadowColor=state.textBlockShadowColor;
+  if(state.textBlockShadowInset) o.textBlockShadowInset='1';
+  return o;
+};
+window._textBlockShadowInsetLayer=function(el){
+  if(!el) return null;
+  const body=window._textBlockShadowTarget(el);
+  if(!body) return null;
+  let layer=body.querySelector('.el-block-shadow-inset');
+  if(!layer){
+    layer=document.createElement('div');
+    layer.className='el-block-shadow-inset';
+    layer.style.cssText='position:absolute;inset:0;z-index:4;pointer-events:none;border-radius:inherit;';
+    body.appendChild(layer);
+  }
+  return layer;
+};
+function applyTextBlockShadowStyle(el,override){
+  if(!el) return;
+  const d=override||{
+    textBlockShadowSize:el.dataset.textBlockShadowSize,
+    textBlockShadowBlur:el.dataset.textBlockShadowBlur,
+    textBlockShadowColor:el.dataset.textBlockShadowColor,
+    textBlockShadowInset:el.dataset.textBlockShadowInset
+  };
+  const body=window._textBlockShadowTarget(el);
+  const insetLayer=body?body.querySelector('.el-block-shadow-inset'):null;
+  if(body) body.style.boxShadow='';
+  if(insetLayer) insetLayer.style.boxShadow='';
+  const bg=body?body.querySelector('.el-bg-layer'):el.querySelector('.el-bg-layer');
+  if(bg) bg.style.boxShadow='';
+  const active=window._textBlockShadowActive(d);
+  el.classList.toggle('has-block-shadow-inset',!!(active&&window._textBlockShadowParams(d).inset));
+  if(!active){
+    if(insetLayer) insetLayer.remove();
+    if(body&&body.style.overflow==='hidden'&&!window._textBlockShadowInsetOn(el)) body.style.overflow='';
+    return;
+  }
+  const p=window._textBlockShadowParams(d);
+  const shadow=window._textBlockShadowCssFrom(p.ss,p.sb,p.sc,p.inset);
+  if(p.inset){
+    if(body){
+      body.style.overflow='hidden';
+      const rx=body.style.borderRadius||el.style.borderRadius||'';
+      const overlay=window._textBlockShadowInsetLayer(el);
+      if(overlay){
+        overlay.style.borderRadius=rx;
+        overlay.style.boxShadow=shadow;
+      }
+    }
+  }else if(body){
+    body.style.boxShadow=shadow;
+  }
 }
 window._textBorderHost=function(el){
   if(!el||el.dataset.type!=='text') return el;
@@ -304,7 +501,8 @@ window._restoreTextBlockVisuals=function(el){
   else if(typeof applyTextVAlign==='function')applyTextVAlign(el,'top');
   if(typeof applyTextBg==='function')applyTextBg(el);
   if(typeof applyTextColorGrad==='function')applyTextColorGrad(el);
-  if(window._textShadowActive&&window._textShadowActive(el.dataset)&&typeof applyTextShadowStyle==='function')applyTextShadowStyle(el);
+  if(typeof applyTextShadowStyle==='function')applyTextShadowStyle(el);
+  if(typeof applyTextBlockShadowStyle==='function')applyTextBlockShadowStyle(el);
 };
 function _applyTextBorderSVG(el, w, c, style, host) {
   host=host||(typeof window._textBorderHost==='function'?window._textBorderHost(el):el);
@@ -447,24 +645,9 @@ function setShapeElBlur(v){
   _applyShapeBlur(sel);
   save();saveState();
 }
-// ══════════════ HOVER PRESETS ══════════════
+// Hover presets — см. setHoverFxPreset в 19-hover.js
 function applyHoverPreset(preset){
-  if(!sel)return;
-  if(preset==='none'){
-    sel.dataset.hoverFx='{}';applyHoverFxEditor(sel,{});syncHoverFxUI();save();saveState();return;
-  }
-  const d=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
-  let fx=normalizeHoverFx(sel,{},d);
-  fx.enabled=true;fx.preset=preset;fx._edited=true;
-  fx.hover=JSON.parse(JSON.stringify(fx.base));
-  if(preset==='lift'){fx.hover.scale=1.06;fx.hover.shadowBlur=16;fx.hover.shadowColor='rgba(0,0,0,0.4)';fx.hover.y=(fx.base.y||0)-4;fx.dur=0.3;}
-  else if(preset==='lighter'){fx.dur=0.3;}
-  else if(preset==='darker'){fx.dur=0.3;}
-  else if(preset==='glow'){fx.hover.scale=1.04;fx.hover.shadowBlur=24;fx.hover.shadowColor='rgba(99,102,241,0.7)';fx.hover.color='rgba(99,102,241,0.7)';fx.dur=0.3;}
-  sel.dataset.hoverFx=JSON.stringify(fx);
-  applyHoverFxEditor(sel,fx);syncHoverFxUI();
-  save();saveState();
-  toast('Hover preset: '+preset,'ok');
+  if(typeof setHoverFxPreset==='function') setHoverFxPreset(preset);
 }
 // ══════════════ PIPETTE (STYLE COPY) ══════════════
 let pipetteMode=false,pipetteSrc=null,pipetteSrcSlide=0;
@@ -768,7 +951,37 @@ function pipetteApply(srcEl){
 
 // ══════════════ TEXT CORNER RADIUS ══════════════
 let textRxUnit='px'; // 'px' or '%'
+function _textDimRef(el, kind){
+  const w=parseInt(el.style.width)||100;
+  const h=parseInt(el.style.height)||100;
+  return kind==='rx'?Math.min(w,h):w;
+}
+function _convertTextDimUnit(el, kind, fromU, toU){
+  if(!el||fromU===toU)return;
+  const ref=_textDimRef(el,kind);
+  if(!ref)return;
+  const sides=kind==='rx'?['tl','tr','bl','br']:['t','r','b','l'];
+  const max=toU==='%'?100:(kind==='rx'?999:500);
+  const pref=kind==='rx'?'rx_':'pad_';
+  sides.forEach(s=>{
+    let v=+(el.dataset[pref+s]||0);
+    if(fromU==='px'&&toU==='%')v=Math.round(v/ref*100);
+    else if(fromU==='%'&&toU==='px')v=Math.round(v/100*ref);
+    v=Math.max(0,Math.min(max,v));
+    el.dataset[pref+s]=v;
+  });
+}
+function _dimInputMax(unit,kind){return unit==='%'?100:(kind==='rx'?999:500);}
 function setTextRxUnit(u){
+  if(sel&&sel.dataset.type==='text'){
+    const oldU=sel.dataset.rxUnit||textRxUnit||'px';
+    if(oldU!==u){
+      _convertTextDimUnit(sel,'rx',oldU,u);
+      sel.dataset.rxUnit=u;
+      applyTextRadius(sel);
+      save();drawThumbs();saveState();
+    }else sel.dataset.rxUnit=u;
+  }
   textRxUnit=u;
   document.getElementById('rx-unit-px').classList.toggle('active',u==='px');
   document.getElementById('rx-unit-pct').classList.toggle('active',u==='%');
@@ -777,7 +990,9 @@ function setTextRxUnit(u){
 function setTextRadius(corner,val){
   if(!sel||sel.dataset.type!=='text')return;
   const linked=document.getElementById('rx-linked').checked;
-  const u=textRxUnit;
+  const u=sel.dataset.rxUnit||textRxUnit||'px';
+  const max=_dimInputMax(u,'rx');
+  val=Math.max(0,Math.min(max,+val||0));
   if(linked){
     ['tl','tr','bl','br'].forEach(c=>{
       sel.dataset['rx_'+c]=val;
@@ -786,6 +1001,7 @@ function setTextRadius(corner,val){
   } else {
     sel.dataset['rx_'+corner]=val;
   }
+  sel.dataset.rxUnit=u;
   applyTextRadius(sel);
   save();drawThumbs();saveState();
 }
@@ -802,23 +1018,39 @@ function applyTextRadius(el){
   el.style.borderRadius=rx;
   el.style.overflow='visible';
   if(window._textShadowActive&&window._textShadowActive(el.dataset)) applyTextShadowStyle(el);
+  if(typeof applyTextBlockShadowStyle==='function') applyTextBlockShadowStyle(el);
   if(+(el.dataset.textBorderW||0)>0&&typeof applyTextBorderStyle==='function') applyTextBorderStyle(el);
 }
 function syncTextRadiusUI(){
   if(!sel||sel.dataset.type!=='text')return;
-  const u=sel.dataset.rxUnit||textRxUnit;
+  const u=sel.dataset.rxUnit||textRxUnit||'px';
+  textRxUnit=u;
+  const max=_dimInputMax(u,'rx');
   ['tl','tr','bl','br'].forEach(c=>{
     const inp=document.getElementById('p-rx-'+c);
-    if(inp)inp.value=sel.dataset['rx_'+c]||0;
+    if(inp){inp.value=sel.dataset['rx_'+c]||0;inp.min=0;inp.max=max;}
   });
   document.getElementById('rx-unit-px').classList.toggle('active',u==='px');
   document.getElementById('rx-unit-pct').classList.toggle('active',u==='%');
+  ['tl','tr','bl','br'].forEach(c=>{
+    const inp=document.getElementById('p-rx-'+c);
+    if(inp&&typeof refreshNumScrubber==='function')refreshNumScrubber(inp);
+  });
 }
 
 // ══════════════ PADDING WITH UNIT + LOCK ══════════════
 let textPadUnit = 'px';
 function setTextPadUnit(u){
-  textPadUnit = u;
+  if(sel&&sel.dataset.type==='text'){
+    const oldU=sel.dataset.padUnit||textPadUnit||'px';
+    if(oldU!==u){
+      _convertTextDimUnit(sel,'pad',oldU,u);
+      sel.dataset.padUnit=u;
+      applyTextPad(sel);
+      save();drawThumbs();saveState();
+    }else sel.dataset.padUnit=u;
+  }
+  textPadUnit=u;
   document.getElementById('pad-unit-px').classList.toggle('active', u==='px');
   document.getElementById('pad-unit-pct').classList.toggle('active', u==='%');
   if(sel) syncTextPadUI();
@@ -826,6 +1058,9 @@ function setTextPadUnit(u){
 function setTextPad(side, val){
   if(!sel||sel.dataset.type!=='text')return;
   const linked = document.getElementById('pad-linked').checked;
+  const u=sel.dataset.padUnit||textPadUnit||'px';
+  const max=_dimInputMax(u,'pad');
+  val=Math.max(0,Math.min(max,+val||0));
   if(linked){
     ['t','r','b','l'].forEach(s=>{
       sel.dataset['pad_'+s] = val;
@@ -834,6 +1069,7 @@ function setTextPad(side, val){
   } else {
     sel.dataset['pad_'+side] = val;
   }
+  sel.dataset.padUnit=u;
   applyTextPad(sel);
   save(); drawThumbs(); saveState();
 }
@@ -853,11 +1089,14 @@ function applyTextPad(el){
 }
 function syncTextPadUI(){
   if(!sel||sel.dataset.type!=='text') return;
-  const u = sel.dataset.padUnit || textPadUnit;
+  const u = sel.dataset.padUnit || textPadUnit || 'px';
+  textPadUnit=u;
+  const max=_dimInputMax(u,'pad');
   document.getElementById('pad-unit-px')?.classList.toggle('active', u==='px');
   document.getElementById('pad-unit-pct')?.classList.toggle('active', u==='%');
   ['t','r','b','l'].forEach(s=>{
     const inp=document.getElementById('p-pad-'+s);
-    if(inp) inp.value = sel.dataset['pad_'+s]??({t:6,r:8,b:6,l:8}[s]);
+    if(inp){inp.value = sel.dataset['pad_'+s]??({t:6,r:8,b:6,l:8}[s]);inp.min=0;inp.max=max;}
+    if(inp&&typeof refreshNumScrubber==='function')refreshNumScrubber(inp);
   });
 }

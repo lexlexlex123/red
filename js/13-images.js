@@ -381,7 +381,7 @@ window._applyImgShadowFilter = function(el, d) {
   const ss = d.imgShadowSize != null ? +d.imgShadowSize : 4;
   const sb = d.imgShadowBlur != null ? +d.imgShadowBlur : 15;
   const sc = d.imgShadowColor || '#000000';
-  const fid = 'imgsh_' + (el.dataset.id || 'x');
+  const fid = 'imgsh_' + String(el.dataset.id || 'x').replace(/[^a-zA-Z0-9_-]/g, '_');
   const defs = window._ensureShadowFilterHost();
   const old = defs.querySelector('#' + fid);
   if (old) old.remove();
@@ -501,7 +501,7 @@ window._applyShadowValues = function(bel, d, ss, sb, sc) {
   }
 
   if (type === 'image') {
-    const fid = 'imgsh_' + id;
+    const fid = 'imgsh_' + String(id).replace(/[^a-zA-Z0-9_-]/g, '_');
     const defs = typeof window._ensureShadowFilterHost === 'function' ? window._ensureShadowFilterHost() : null;
     if (!active) {
       bel.style.filter = '';
@@ -834,14 +834,14 @@ function mkEl(d){
   if(d.type==='text'){
     c.classList.add('tel');c.contentEditable='false';
     c.setAttribute('style',d.cs||'font-size:48px;font-weight:700;color:#fff;');
-    // Set font size for bullet marker rebuild
-    const _fsM=(d.cs||'').match(/font-size:\s*([\d.]+)px/);
-    if(_fsM&&typeof _lastBulletFontSize!=='undefined') _lastBulletFontSize=parseFloat(_fsM[1]);
+    if (d.bulletGap != null) el.dataset.bulletGap = d.bulletGap;
+    const _fsM = _rtFontSizeFromCs(d.cs);
     const _defPlaceholder=(typeof getLang==='function'&&getLang()==='ru')?'Дважды кликните для редактирования':'Double-click to edit';
     const rawHtml=d.html||_defPlaceholder;
-    c.innerHTML=typeof rtMigrateHtml==='function'?rtMigrateHtml(rawHtml):rawHtml;
+    c.innerHTML=typeof rtMigrateHtml==='function'?rtMigrateHtml(rawHtml, _fsM):rawHtml;
+    if (typeof _rtNormalizeTextDisplay === 'function') _rtNormalizeTextDisplay(c, d.cs || '', d.bulletGap);
     // Re-attach bullet icon click handlers (onclick attr stripped by innerHTML assignment in some browsers)
-    if(typeof _attachBulletClickHandlers==='function') _attachBulletClickHandlers(c);
+    if (typeof _attachBulletClickHandlers==='function') _attachBulletClickHandlers(c);
     c.addEventListener('dblclick',e=>{
       e.stopPropagation();
       c.contentEditable='true';
@@ -885,6 +885,12 @@ function mkEl(d){
       if(d.textShadowW&&+d.textShadowW>0&&!d.textShadowBlur&&!d.textShadowSize)el.dataset.textShadowW=d.textShadowW;
       el.dataset.textShadowColor=d.textShadowColor||'#000000';
     }
+    if(window._textBlockShadowActive&&window._textBlockShadowActive(d)){
+      if(d.textBlockShadowBlur!=null)el.dataset.textBlockShadowBlur=d.textBlockShadowBlur;
+      if(d.textBlockShadowSize!=null)el.dataset.textBlockShadowSize=d.textBlockShadowSize;
+      el.dataset.textBlockShadowColor=d.textBlockShadowColor||'#000000';
+      if(d.textBlockShadowInset)el.dataset.textBlockShadowInset='1';
+    }
     // Restore opacity
     if(d.elOpacity!=null&&+d.elOpacity!==1){el.dataset.elOpacity=d.elOpacity;el.style.opacity=d.elOpacity;}
     // Restore corner radius
@@ -892,6 +898,11 @@ function mkEl(d){
       el.dataset.rx_tl=d.rx_tl||0;el.dataset.rx_tr=d.rx_tr||0;
       el.dataset.rx_bl=d.rx_bl||0;el.dataset.rx_br=d.rx_br||0;
       el.dataset.rxUnit=d.rxUnit||'px';
+    }
+    if(d.pad_t!==undefined){
+      el.dataset.pad_t=d.pad_t;el.dataset.pad_r=d.pad_r;
+      el.dataset.pad_b=d.pad_b;el.dataset.pad_l=d.pad_l;
+      el.dataset.padUnit=d.padUnit||'px';
     }
   }else if(d.type==='image'){
     c.classList.add('iel');const img=document.createElement('img');
@@ -1385,10 +1396,14 @@ function mkEl(d){
     if(d.rx_tl||d.rx_tr||d.rx_bl||d.rx_br){
       if(typeof applyTextRadius==='function')applyTextRadius(el);
     }
+    if(d.pad_t!==undefined&&typeof applyTextPad==='function')applyTextPad(el);
   }
   if(d.type==='text'&&window._textShadowActive&&window._textShadowActive(d)&&typeof applyTextShadowStyle==='function'){
     // Re-apply last so radius/valign/body-wrap setup cannot restore overflow:hidden.
     applyTextShadowStyle(el);
+  }
+  if(d.type==='text'&&typeof applyTextBlockShadowStyle==='function'){
+    applyTextBlockShadowStyle(el);
   }
   if(d.type==='table'&&d.tableBgBlur>0){
     el.style.backdropFilter=`blur(${d.tableBgBlur}px)`;el.style.webkitBackdropFilter=`blur(${d.tableBgBlur}px)`;}
@@ -1623,6 +1638,7 @@ function pick(el){
     if(_dd)_applyShapeClipPath(prevSel,_dd);
   }
   syncProps();
+  if(window._propsScrollMem) window._propsScrollMem.maybeRestoreAfterPick();
   if(typeof _updateHandlesOverlay==='function') _updateHandlesOverlay();
   // Refresh lego z-order so selected element appears on top
   if(typeof _refreshAllLegoZ==='function') _refreshAllLegoZ();

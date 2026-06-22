@@ -5,6 +5,88 @@ let _rtColorPickInProgress = false;
 let _rtElId      = null;
 let _savedSelIdx = null;
 
+const _RT_MARKER_BULLET_VA = '-0.2em';
+const _RT_MARKER_NUM_VA = '-0.14em';
+const _RT_MARKER_GAP_DEFAULT = 10;
+window._RT_MARKER_BULLET_VA = _RT_MARKER_BULLET_VA;
+window._RT_MARKER_NUM_VA = _RT_MARKER_NUM_VA;
+
+function _rtMarkerGapPx(explicit, rootEl) {
+  if (explicit != null && !isNaN(+explicit)) return Math.max(0, +explicit);
+  if (typeof sel !== 'undefined' && sel && sel.dataset.bulletGap != null) return Math.max(0, +sel.dataset.bulletGap);
+  const wrap = rootEl && rootEl.closest && rootEl.closest('.el');
+  if (wrap && wrap.dataset.bulletGap != null) return Math.max(0, +wrap.dataset.bulletGap);
+  return _RT_MARKER_GAP_DEFAULT;
+}
+
+function _rtMarkerBulletCss(gapPx, rootEl) {
+  const g = _rtMarkerGapPx(gapPx, rootEl);
+  return 'display:inline-flex;align-items:center;margin-right:' + g + 'px;cursor:pointer;user-select:none;vertical-align:' + _RT_MARKER_BULLET_VA;
+}
+
+function _rtMarkerNumCss(gapPx, rootEl, color) {
+  const g = _rtMarkerGapPx(gapPx, rootEl);
+  const numColorStyle = color ? ';color:' + color : '';
+  return 'display:inline-block;margin-right:' + g + 'px;min-width:1.2em;font-variant-numeric:tabular-nums;user-select:none;vertical-align:' + _RT_MARKER_NUM_VA + numColorStyle;
+}
+
+function _rtLineFontSizeForMarker(markerSpan, baseFs) {
+  baseFs = baseFs || 24;
+  let n = markerSpan.nextSibling;
+  while (n) {
+    if (n.nodeType === 3) {
+      if (n.textContent && n.textContent.trim()) return baseFs;
+      n = n.nextSibling;
+      continue;
+    }
+    if (n.nodeType !== 1) { n = n.nextSibling; continue; }
+    if (n.hasAttribute('data-list-bullet') || n.hasAttribute('data-list-num')) return baseFs;
+    if (n.tagName === 'BR') return baseFs;
+    const fs = parseFloat(n.style.fontSize);
+    if (fs && !isNaN(fs)) return fs;
+    if (n.hasAttribute('data-ch')) return baseFs;
+    const inner = n.querySelector && n.querySelector('span[data-ch]');
+    if (inner) {
+      const ifs = parseFloat(inner.style.fontSize);
+      if (ifs && !isNaN(ifs)) return ifs;
+    }
+    if ((n.textContent || '').trim()) return baseFs;
+    n = n.nextSibling;
+  }
+  return baseFs;
+}
+
+function _rtApplyMarkerVerticalAlign(root, baseFs, gapPx) {
+  if (!root) return;
+  baseFs = baseFs || _lastBulletFontSize || 24;
+  const gap = _rtMarkerGapPx(gapPx, root);
+  root.querySelectorAll('span[data-list-bullet]').forEach(sp => {
+    const lineFs = _rtLineFontSizeForMarker(sp, baseFs);
+    const sz = Math.round(lineFs);
+    sp.style.fontSize = sz + 'px';
+    sp.style.lineHeight = '1';
+    sp.style.verticalAlign = _RT_MARKER_BULLET_VA;
+    sp.style.marginRight = gap + 'px';
+    sp.style.transform = 'translateY(' + Math.max(1, Math.round(lineFs * 0.06)) + 'px)';
+    const iconId = sp.getAttribute('data-icon-id');
+    if (iconId && typeof _getBulletSvg === 'function') {
+      const iconStyle = sp.getAttribute('data-icon-style') || 'stroke';
+      const iconColor = sp.getAttribute('data-icon-color') || 'currentColor';
+      const iconSw = parseFloat(sp.getAttribute('data-icon-sw')) || 1.8;
+      sp.innerHTML = _getBulletSvg(iconId, sz, iconStyle, iconColor, iconSw);
+    }
+  });
+  root.querySelectorAll('span[data-list-num]').forEach(sp => {
+    const lineFs = _rtLineFontSizeForMarker(sp, baseFs);
+    sp.style.fontSize = Math.round(lineFs) + 'px';
+    sp.style.lineHeight = '1';
+    sp.style.verticalAlign = _RT_MARKER_NUM_VA;
+    sp.style.marginRight = gap + 'px';
+    sp.style.transform = 'translateY(' + Math.max(1, Math.round(lineFs * 0.04)) + 'px)';
+  });
+}
+window._rtApplyMarkerVerticalAlign = _rtApplyMarkerVerticalAlign;
+
 // ─── HTML ↔ char-objects ──────────────────────────────────────────
 // Rebuild a list marker span from saved data attributes
 // (avoids relying on outerHTML which Chrome corrupts when contenteditable=true)
@@ -12,13 +94,77 @@ function _rebuildMarkerHtml(m) {
   if (m.type === 'bullet') {
     const svg = _getBulletSvg(m.iconId, _lastBulletFontSize || 24, m.iconStyle, m.iconColor, parseFloat(m.iconSw) || 1.8);
     const schemeAttr = m.iconSchemeRef ? ` data-icon-schemeref="${JSON.stringify(m.iconSchemeRef).replace(/"/g,'&quot;')}"` : '';
-    return `<span data-list-bullet data-icon-id="${m.iconId}" data-icon-style="${m.iconStyle}" data-icon-color="${m.iconColor}" data-icon-sw="${m.iconSw}"${schemeAttr} contenteditable="false" style="display:inline-flex;align-items:center;margin-right:10px;cursor:pointer;user-select:none;vertical-align:-0.15em" onclick="rtChangeBulletIcon(this)">${svg}</span>`;
+    return `<span data-list-bullet data-icon-id="${m.iconId}" data-icon-style="${m.iconStyle}" data-icon-color="${m.iconColor}" data-icon-sw="${m.iconSw}"${schemeAttr} contenteditable="false" style="${_rtMarkerBulletCss(null, null)}" onclick="rtChangeBulletIcon(this)">${svg}</span>`;
   } else {
-    const numColorStyle = m.color ? `;color:${m.color}` : '';
-    return `<span data-list-num data-num-color="${m.color||''}" contenteditable="false" style="display:inline-block;margin-right:10px;min-width:1.2em;font-variant-numeric:tabular-nums;user-select:none;vertical-align:-0.1em${numColorStyle}">${m.text}</span>`;
+    return `<span data-list-num data-num-color="${m.color||''}" contenteditable="false" style="${_rtMarkerNumCss(null, null, m.color)}">${m.text}</span>`;
   }
 }
 let _lastBulletFontSize = 24;
+
+function _rtFontSizeFromCs(cs) {
+  const m = (cs || '').match(/font-size:\s*([\d.]+)px/);
+  return m ? parseFloat(m[1]) : null;
+}
+window._rtFontSizeFromCs = _rtFontSizeFromCs;
+
+function _rtApplyBulletFontSize(fontSizePx) {
+  const fs = parseFloat(fontSizePx);
+  if (!isNaN(fs) && fs > 0) _lastBulletFontSize = fs;
+}
+
+function _rtStyleSpansInTel(tel) {
+  if (!tel) return [];
+  return [...tel.querySelectorAll('span')].filter(sp =>
+    !sp.hasAttribute('data-list-bullet') &&
+    !sp.hasAttribute('data-list-num') &&
+    !sp.hasAttribute('data-br-anchor')
+  );
+}
+
+function _rtAppendInlineMetrics(css, style) {
+  let out = css || '';
+  const va = style && style.verticalAlign;
+  if (va !== 'super' && va !== 'sub' && !/vertical-align\s*:/i.test(out)) {
+    out += (out ? ';' : '') + 'vertical-align:baseline';
+  }
+  if (!/line-height\s*:/i.test(out)) {
+    out += (out ? ';' : '') + 'line-height:1.25';
+  }
+  return out;
+}
+
+/** Fix line box / valign when container font-size differs from per-span sizes (preview, editor view). */
+function _rtNormalizeTextDisplay(tel, cs, gapPx) {
+  if (!tel) return;
+  const baseFs = _rtFontSizeFromCs(cs) || _lastBulletFontSize || 24;
+  const spans = _rtStyleSpansInTel(tel);
+  const hasMarkers = tel.querySelector('span[data-list-bullet], span[data-list-num]');
+
+  if (spans.length) {
+    const usedSizes = new Set();
+    spans.forEach(sp => {
+      let fs = parseFloat(sp.style.fontSize);
+      if (!fs || isNaN(fs)) {
+        sp.style.fontSize = baseFs + 'px';
+        fs = baseFs;
+      }
+      usedSizes.add(Math.round(fs));
+      const va = sp.style.verticalAlign;
+      if (va !== 'super' && va !== 'sub' && !va) sp.style.verticalAlign = 'baseline';
+      if (!sp.style.lineHeight) sp.style.lineHeight = '1.25';
+    });
+
+    const needsZeroStrut = usedSizes.size > 1 ||
+      (usedSizes.size === 1 && Math.round(baseFs) !== [...usedSizes][0]);
+    if (needsZeroStrut) {
+      tel.style.fontSize = '0';
+      tel.style.lineHeight = '0';
+    }
+  }
+
+  if (hasMarkers) _rtApplyMarkerVerticalAlign(tel, baseFs, gapPx);
+}
+window._rtNormalizeTextDisplay = _rtNormalizeTextDisplay;
 
 function _toCharObjs(html) {
   const tmp = document.createElement('div');
@@ -108,10 +254,10 @@ function _charObjsToHtml(chars) {
     if (_listMarker) return _rebuildMarkerHtml(_listMarker);
     if (ch === '\n') return '<br>';
     const schemeRef = style._schemeRef;
-    const css = Object.entries(style)
+    const css = _rtAppendInlineMetrics(Object.entries(style)
       .filter(([k]) => k !== 'display' && k !== '_schemeRef')
       .map(([k, v]) => k.replace(/([A-Z])/g, '-$1').toLowerCase() + ':' + v)
-      .join(';');
+      .join(';'), style);
     const esc = ch.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const schemeAttr = schemeRef ? ` data-scheme='${JSON.stringify(schemeRef)}'` : '';
     return `<span data-ch${schemeAttr} style="display:inline${css?';'+css:''}">${esc}</span>`;
@@ -132,18 +278,19 @@ function _groupedHtml(chars) {
     if (g.markerData) return _rebuildMarkerHtml(g.markerData);
     if (g.br) return '<br>';
     const schemeRef = g.style._schemeRef;
-    const css = Object.entries(g.style)
+    const css = _rtAppendInlineMetrics(Object.entries(g.style)
       .filter(([k]) => k !== 'display' && k !== '_schemeRef')
       .map(([k, v]) => k.replace(/([A-Z])/g, '-$1').toLowerCase() + ':' + v)
-      .join(';');
+      .join(';'), g.style);
     const esc = g.text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const schemeAttr = schemeRef ? ` data-scheme='${JSON.stringify(schemeRef)}'` : '';
     return css ? `<span${schemeAttr} style="display:inline;${css}">${esc}</span>` : esc;
   }).join('');
 }
 
-function rtMigrateHtml(html) {
+function rtMigrateHtml(html, fontSizePx) {
   if (!html) return '';
+  if (fontSizePx != null) _rtApplyBulletFontSize(fontSizePx);
   // Always run through _toCharObjs/_charObjsToHtml to rebuild list marker SVGs
   // (they may have been stripped during saveState to reduce localStorage size)
   if (html.includes('data-ch')) {
@@ -181,6 +328,7 @@ function _rtReapplyTextShadow(el) {
       && typeof applyTextShadowStyle === 'function') {
     applyTextShadowStyle(wrap);
   }
+  if (typeof applyTextBlockShadowStyle === 'function') applyTextBlockShadowStyle(wrap);
 }
 
 function _stripBrAnchors(root) {
@@ -1093,9 +1241,9 @@ function _applyListToElement(listType) {
     let marker;
     if (listType === 'bullet') {
       const svg = _getBulletSvg(iconId, fontSize, iconStyle, iconColor, iconSw);
-      marker = `<span data-list-bullet data-icon-id="${iconId}" data-icon-style="${iconStyle}" data-icon-color="${iconColor}" data-icon-sw="${iconSw}" contenteditable="false" style="display:inline-flex;align-items:center;margin-right:10px;cursor:pointer;user-select:none;vertical-align:-0.15em" onclick="rtChangeBulletIcon(this)">${svg}</span>`;
+      marker = `<span data-list-bullet data-icon-id="${iconId}" data-icon-style="${iconStyle}" data-icon-color="${iconColor}" data-icon-sw="${iconSw}" contenteditable="false" style="${_rtMarkerBulletCss(null, root)}" onclick="rtChangeBulletIcon(this)">${svg}</span>`;
     } else {
-      marker = `<span data-list-num contenteditable="false" style="display:inline-block;margin-right:10px;min-width:1.2em;font-variant-numeric:tabular-nums;user-select:none;vertical-align:-0.1em">${numIdx}.</span>`;
+      marker = `<span data-list-num contenteditable="false" style="${_rtMarkerNumCss(null, root)}">${numIdx}.</span>`;
     }
     return marker + stripped;
   });
@@ -1105,6 +1253,7 @@ function _applyListToElement(listType) {
   d.html = newHtml;
   if (listType === 'bullet') d.bulletIconId = iconId;
   _attachBulletClickHandlers(root);
+  _rtApplyMarkerVerticalAlign(root, parseFloat(fontSize));
   _rtReapplyTextShadow(sel);
   commitAll();
   _updateListButtonState();
@@ -1142,16 +1291,8 @@ function rtUpdateListIconSize() {
   const root = _rtContent(c);
   const cs = c.getAttribute('style') || '';
   const fsMatch = cs.match(/font-size:\s*([\d.]+)px/);
-  const fontSize = fsMatch ? fsMatch[1] : '24';
-  const sz = Math.round(parseFloat(fontSize));
-  root.querySelectorAll('span[data-list-bullet]').forEach(span => {
-    const iconId = span.getAttribute('data-icon-id');
-    const style  = span.getAttribute('data-icon-style') || 'stroke';
-    const color  = span.getAttribute('data-icon-color') || 'currentColor';
-    const sw     = parseFloat(span.getAttribute('data-icon-sw')) || 1.8;
-    const svg = _getBulletSvg(iconId, sz, style, color, sw);
-    span.innerHTML = svg;
-  });
+  const sz = Math.round(parseFloat(fsMatch ? fsMatch[1] : '24'));
+  _rtApplyMarkerVerticalAlign(root, sz);
 }
 window.rtUpdateListIconSize = rtUpdateListIconSize;
 
@@ -1197,9 +1338,11 @@ function _updateListButtonState() {
 
   const preview = document.getElementById('bullet-color-preview');
   const hex = document.getElementById('bullet-color-hex');
+  const gapEl = document.getElementById('bullet-marker-gap');
   const displayColor = (!col || col === 'currentColor') ? _getCurrentTextColor(c) : col;
   if (preview) preview.style.background = displayColor || '#ffffff';
   if (hex) hex.value = (!col || col === 'currentColor') ? '' : col;
+  if (gapEl) gapEl.value = _rtMarkerGapPx(null, sel);
 }
 window.rtUpdateListButtonState = _updateListButtonState;
 let _lastBulletColor = null;
@@ -1277,11 +1420,6 @@ function rtBulletColorPick(color, schemeRef) {
     sp.setAttribute('data-icon-color', color);
     if (schemeRef) sp.setAttribute('data-icon-schemeref', JSON.stringify(schemeRef));
     else sp.removeAttribute('data-icon-schemeref');
-    const iconId    = sp.getAttribute('data-icon-id') || '';
-    const iconStyle = sp.getAttribute('data-icon-style') || 'stroke';
-    const iconSw    = parseFloat(sp.getAttribute('data-icon-sw')) || 1.8;
-    const svg = _getBulletSvg(iconId, sz, iconStyle, color, iconSw);
-    sp.innerHTML = svg;
   });
   nums.forEach(sp => {
     if (color !== 'currentColor') {
@@ -1292,6 +1430,7 @@ function rtBulletColorPick(color, schemeRef) {
       sp.removeAttribute('data-num-color');
     }
   });
+  _rtApplyMarkerVerticalAlign(root, sz);
 
   d.html = root.innerHTML;
   commitAll();
@@ -1305,6 +1444,41 @@ function rtBulletColorPick(color, schemeRef) {
   // Cache the last picked bullet color so _updateListButtonState always shows it
   _lastBulletColor = color;
 }
+
+function rtBulletColorHex(val) {
+  if (!val || !String(val).trim()) {
+    rtBulletColorPick('currentColor', null);
+    return;
+  }
+  const v = String(val).trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(v)) {
+    const preview = document.getElementById('bullet-color-preview');
+    if (preview) preview.style.background = v;
+    rtBulletColorPick(v, null);
+  }
+}
+window.rtBulletColorHex = rtBulletColorHex;
+
+function rtSetBulletGap(val) {
+  if (!sel || sel.dataset.type !== 'text') return;
+  const d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (!d) return;
+  debouncedPushUndo();
+  const g = Math.max(0, Math.min(80, isNaN(+val) ? _RT_MARKER_GAP_DEFAULT : +val));
+  if (g === _RT_MARKER_GAP_DEFAULT) delete sel.dataset.bulletGap;
+  else sel.dataset.bulletGap = g;
+  const c = sel.querySelector('.ec'); if (!c) return;
+  const root = _rtContent(c);
+  const cs = c.getAttribute('style') || '';
+  const fsMatch = cs.match(/font-size:\s*([\d.]+)px/);
+  const sz = parseFloat(fsMatch ? fsMatch[1] : '24');
+  _rtApplyMarkerVerticalAlign(root, sz, g);
+  d.html = root.innerHTML;
+  if (g === _RT_MARKER_GAP_DEFAULT) delete d.bulletGap;
+  else d.bulletGap = g;
+  save(); drawThumbs(); saveState();
+}
+window.rtSetBulletGap = rtSetBulletGap;
 
 // Attach panel mousedown to save selection before toolbar button click steals focus
 document.addEventListener('DOMContentLoaded', function(){

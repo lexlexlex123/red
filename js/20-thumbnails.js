@@ -678,7 +678,7 @@ function drawThumbText(ctx,d,sx,sy){
   }
 
   // Extract lines from html, preserving list markers as text prefixes
-  const tmp=document.createElement('div');tmp.innerHTML=(typeof rtMigrateHtml==='function'?rtMigrateHtml(d.html||''):d.html||'');
+  const tmp=document.createElement('div');tmp.innerHTML=(typeof rtMigrateHtml==='function'?rtMigrateHtml(d.html||'', typeof _rtFontSizeFromCs==='function'?_rtFontSizeFromCs(cs):null):d.html||'');
   // Replace list markers with text equivalents before extracting text
   tmp.querySelectorAll('span[data-list-num]').forEach((sp,i)=>{sp.textContent=sp.textContent||((i+1)+'.');});
   tmp.querySelectorAll('span[data-list-bullet]').forEach(sp=>{sp.textContent='•';});

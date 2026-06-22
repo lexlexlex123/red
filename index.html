@@ -393,7 +393,7 @@
             <div class="pr" style="margin:0"><label data-i18n="propDimW">Ш</label><input type="number" id="p-w" oninput="setES('width',Math.max(20,snapV(+this.value)),'px')"></div>
             <div class="pr" style="margin:0"><label data-i18n="propDimH">В</label><input type="number" id="p-h" oninput="setES('height',Math.max(10,snapV(+this.value)),'px')"></div>
           </div>
-          <div class="pr"><label data-i18n="propRotation">Rotation (deg)</label><div style="display:flex;gap:4px;align-items:center"><input type="number" id="p-rot" value="0" oninput="setElRotation(+this.value)" style="flex:1"><button onclick="setElRotation(0)" title="Сбросить вращение" style="flex-shrink:0;width:24px;height:24px;padding:0;background:var(--surface2);border:1px solid var(--border);border-radius:4px;cursor:pointer;color:var(--text);font-size:14px;line-height:1;display:flex;align-items:center;justify-content:center">&#x2715;</button></div></div>
+          <div class="pr"><label data-i18n="propRotation">Rotation (deg)</label><div class="tprops-inline-row"><input type="number" id="p-rot" value="0" oninput="setElRotation(+this.value)" style="flex:1"><button type="button" class="tprops-icon-btn" onclick="setElRotation(0)" data-i18n-title="propRotReset" title="Сбросить вращение">&#x2715;</button></div></div>
         </div>
         <!-- TEXT PROPS -->
         <div id="tprops" style="display:none" onmousedown="_rtOnPanelMousedown(event)">
@@ -460,8 +460,8 @@
           <div style="margin-bottom:7px">
             <div class="pr" style="margin:0"><label data-i18n="propTextColor">Цвет <span id="sel-hint" style="font-size:9px;color:var(--accent4);display:none">· выделение</span></label>
               <div style="display:flex;gap:4px;align-items:center">
-                <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;" onmousedown="event.preventDefault();_rtOnPanelMousedown(event);openColorPanel('cp-text-slot','text',function(c,sr){onColorPick(c,'text',sr);})" title="Цвет текста"><div id="p-col-preview" style="width:100%;height:100%;background:#ffffff;pointer-events:none;"></div></div>
-                <input type="text" id="p-hex" maxlength="7" placeholder="#ffffff" style="flex:1;min-width:0;height:28px;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:0 6px;font-size:11px;font-family:monospace" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){onColorHex(this.value,'text');document.getElementById('p-col-preview').style.background=this.value;}">
+                <div class="tprops-swatch" onmousedown="event.preventDefault();_rtOnPanelMousedown(event);openColorPanel('cp-text-slot','text',function(c,sr){onColorPick(c,'text',sr);})" data-i18n-title="propTextColor" title="Цвет текста"><div id="p-col-preview" class="tprops-swatch-inner" style="background:#ffffff"></div></div>
+                <div class="hex-field" style="flex:1"><input type="text" id="p-hex" class="tprops-hex hex-field-input" maxlength="7" placeholder="#ffffff" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){onColorHex(this.value,'text');document.getElementById('p-col-preview').style.background=this.value;}"></div>
                 <button onclick="togglePipetteMode()" id="eye-text" class="pipette-btn" title="Пипетка" style="background:var(--surface2);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:3px 6px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;width:26px;height:26px"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M20.71 5.63l-2.34-2.34a1 1 0 0 0-1.41 0l-3.12 3.12-1.41-1.42-1.42 1.42 1.41 1.41-6.6 6.6A2 2 0 0 0 5 16v3h3a2 2 0 0 0 1.42-.59l6.6-6.6 1.41 1.42 1.42-1.42-1.42-1.41 3.12-3.12a1 1 0 0 0 0-1.65z"/></svg></button>
               </div>
             </div>
@@ -474,35 +474,41 @@
               Градиент цвета
             </label>
             <div id="p-tc-grad-row" style="display:none;flex-direction:column;gap:4px;margin-top:4px">
-              <div style="display:flex;gap:4px;align-items:center">
-                <span style="font-size:10px;color:var(--text2);white-space:nowrap;min-width:38px">Цвет 2:</span>
-                <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;background:repeating-conic-gradient(#aaa 0% 25%,#fff 0% 50%) 0 0/8px 8px;" onmousedown="event.preventDefault();openColorPanel('cp-tc2-slot','tc2',function(c){document.getElementById('p-tc-grad2-inner').style.background=c;try{document.getElementById('p-tc-grad2-hex').value=c;}catch(e){}setTextColorGrad2(c);})" title="Второй цвет градиента текста"><div id="p-tc-grad2-inner" style="width:100%;height:100%;background:#000000;"></div></div>
-                <input type="text" id="p-tc-grad2-hex" maxlength="7" placeholder="#000000" style="flex:1;min-width:0;height:28px;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:0 6px;font-size:11px;font-family:monospace" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('p-tc-grad2-inner').style.background=this.value;setTextColorGrad2(this.value);}">
-                <button onclick="setTextColorGrad2('');document.getElementById('p-tc-grad2-inner').style.background='';try{document.getElementById('p-tc-grad2-hex').value='';}catch(e){}" title="Убрать цвет 2" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:2px 6px;cursor:pointer;font-size:10px;white-space:nowrap">✕</button>
-              </div>
+                <div class="tprops-color-row">
+                  <div class="tprops-swatch" onmousedown="event.preventDefault();openColorPanel('cp-tc2-slot','tc2',function(c){document.getElementById('p-tc-grad2-inner').style.background=c;try{document.getElementById('p-tc-grad2-hex').value=c;}catch(e){}setTextColorGrad2(c);})" title="Второй цвет градиента текста"><div id="p-tc-grad2-inner" class="tprops-swatch-inner" style="background:#000000"></div></div>
+                  <div class="hex-field"><input type="text" id="p-tc-grad2-hex" class="tprops-hex hex-field-input" maxlength="7" placeholder="#000000" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('p-tc-grad2-inner').style.background=this.value;setTextColorGrad2(this.value);}"></div>
+                  <button type="button" class="tprops-icon-btn" onclick="setTextColorGrad2('');document.getElementById('p-tc-grad2-inner').style.background='';try{document.getElementById('p-tc-grad2-hex').value='';}catch(e){}" data-i18n-title="propClearColor" title="Убрать">&#x2715;</button>
+                </div>
               <div id="cp-tc2-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
-              <div style="display:flex;gap:4px;align-items:center">
-                <span style="font-size:10px;color:var(--text2);white-space:nowrap">Направление:</span>
-                <input type="number" id="p-tc-grad-dir" min="0" max="360" value="90" style="width:72px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:2px 4px;font-size:10px" oninput="setTextColorGradDir(+this.value)" title="Угол градиента текста">
-                <span style="font-size:10px;color:var(--text3)">°</span>
+              <div class="pr tprops-grad-dir">
+                <label data-i18n="propGradDir">Направление</label>
+                <div class="tprops-grad-dir-row">
+                  <input type="number" id="p-tc-grad-dir" min="0" max="360" value="90" oninput="setTextColorGradDir(+this.value)" data-i18n-title="propGradDirHint" title="Угол градиента">
+                </div>
               </div>
             </div>
           </div>
-          <!-- Bullet/list marker color — shown when element has list markers -->
+          <!-- Bullet/list marker color + gap — shown when element has list markers -->
           <div id="bullet-color-row" style="display:none;margin-bottom:7px">
-            <div class="pr" style="margin:0"><label>Цвет маркеров</label>
-              <div style="display:flex;gap:4px;align-items:center">
-                <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;" onmousedown="event.preventDefault();openColorPanel('cp-bullet-color-slot','bullet-color',function(c,sr){rtBulletColorPick(c,sr);})" title="Цвет маркеров"><div id="bullet-color-preview" style="width:100%;height:100%;background:#ffffff;pointer-events:none;"></div></div>
-                
-                <button onmousedown="event.preventDefault()" onclick="rtBulletColorPick('currentColor',null)" title="Авто (цвет текста)" style="background:var(--surface2);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:2px 6px;cursor:pointer;font-size:10px;white-space:nowrap">Авто</button>
+            <div class="tprops-2col">
+              <div class="pr">
+                <label data-i18n="propBulletColor">Цвет маркеров</label>
+                <div class="tprops-color-row">
+                  <div class="tprops-swatch" onmousedown="event.preventDefault();_rtOnPanelMousedown(event);openColorPanel('cp-bullet-color-slot','bullet-color',function(c,sr){rtBulletColorPick(c,sr);})" data-i18n-title="propBulletColor" title="Цвет маркеров"><div id="bullet-color-preview" class="tprops-swatch-inner" style="background:#ffffff"></div></div>
+                  <div class="hex-field"><input type="text" id="bullet-color-hex" class="tprops-hex hex-field-input" maxlength="7" placeholder="авто" data-i18n-placeholder="propBulletColorAuto" onmousedown="_rtOnPanelMousedown(event)" oninput="rtBulletColorHex(this.value)"></div>
+                </div>
+              </div>
+              <div class="pr">
+                <label data-i18n="propBulletGap">Отступ</label>
+                <input type="number" id="bullet-marker-gap" min="0" max="80" step="1" value="10" data-i18n-title="propBulletGapHint" title="Расстояние от маркера до текста" onmousedown="_rtOnPanelMousedown(event)" oninput="rtSetBulletGap(+this.value)">
               </div>
             </div>
           </div>
           <div id="cp-bullet-color-slot" class="cp-slot" style="display:none;margin-bottom:6px" onmousedown="event.preventDefault()"></div>
           <!-- Line Height + Spacing -->
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:4px">
-            <div class="pr" style="margin:0"><label data-i18n="propLineH">Line H</label><input type="number" id="p-lh" min="0.5" max="5" step="0.1" value="1.2" onmousedown="_rtOnPanelMousedown(event)" oninput="setTS('line-height',this.value)"></div>
-            <div class="pr" style="margin:0"><label data-i18n="propSpacing">Spacing</label><input type="number" id="p-ls" min="-10" max="50" step="0.1" value="0" onmousedown="_rtOnPanelMousedown(event)" oninput="setTS('letter-spacing',this.value+'px')"></div>
+          <div class="tprops-2col">
+            <div class="pr"><label data-i18n="propLineH">Line H</label><input type="number" id="p-lh" min="0.5" max="5" step="0.1" value="1.2" onmousedown="_rtOnPanelMousedown(event)" oninput="setTS('line-height',this.value)"></div>
+            <div class="pr"><label data-i18n="propSpacing">Spacing</label><input type="number" id="p-ls" min="-10" max="50" step="0.1" value="0" onmousedown="_rtOnPanelMousedown(event)" oninput="setTS('letter-spacing',this.value+'px')"></div>
           </div>
           <!-- Opacity -->
           <div style="display:grid;grid-template-columns:1fr;gap:6px;margin-bottom:7px">
@@ -512,39 +518,38 @@
           <div class="pr"><label data-i18n="propBgColor">Фон блока</label>
             <div style="display:flex;flex-direction:column;gap:4px">
               <!-- Gradient toggle -->
-              <div style="display:flex;align-items:center;justify-content:space-between">
+              <div style="display:flex;align-items:center;margin-bottom:2px">
                 <label style="display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text2);cursor:pointer">
                   <label class="tog"><input type="checkbox" id="p-bg-grad-check" onchange="setTextBgGrad(this.checked)"><span class="tog-track"></span><span class="tog-thumb"></span></label>
                   Градиент
                 </label>
-                <button onclick="clearTextBg()" title="Убрать фон полностью" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:1px 6px;cursor:pointer;font-size:9px;white-space:nowrap;opacity:.7">✕ всё</button>
               </div>
               <!-- Color 1 row -->
-              <div style="display:flex;gap:4px;align-items:center">
-                <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;background:repeating-conic-gradient(#aaa 0% 25%,#fff 0% 50%) 0 0/8px 8px;" onmousedown="openColorPanel('cp-bg-slot','bg',function(c,sr){document.getElementById('p-bg-hex').value=c;document.getElementById('p-bg-swatch-inner').style.background=c;setTextBg(c,sr);})" title="Цвет фона"><div id="p-bg-swatch-inner" style="width:100%;height:100%;"></div></div>
-                <input type="text" id="p-bg-hex" maxlength="7" placeholder="" style="flex:1;min-width:0;height:28px;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:0 6px;font-size:11px;font-family:monospace" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('p-bg-swatch-inner').style.background=this.value;setTextBg(this.value,null);}">
-                <button onclick="clearTextBgCol1()" title="Убрать цвет 1" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:2px 6px;cursor:pointer;font-size:10px;white-space:nowrap">✕</button>
+              <div class="tprops-color-row">
+                <div class="tprops-swatch" style="background:repeating-conic-gradient(#aaa 0% 25%,#fff 0% 50%) 0 0/8px 8px" onmousedown="openColorPanel('cp-bg-slot','bg',function(c,sr){document.getElementById('p-bg-hex').value=c;document.getElementById('p-bg-swatch-inner').style.background=c;setTextBg(c,sr);})" data-i18n-title="propBgColor" title="Цвет фона"><div id="p-bg-swatch-inner" class="tprops-swatch-inner"></div></div>
+                <div class="hex-field"><input type="text" id="p-bg-hex" class="tprops-hex hex-field-input" maxlength="7" placeholder="" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('p-bg-swatch-inner').style.background=this.value;setTextBg(this.value,null);}"></div>
+                <button type="button" class="tprops-icon-btn" onclick="clearTextBgCol1()" data-i18n-title="propClearColor" title="Убрать">&#x2715;</button>
               </div>
               <div id="cp-bg-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
               <!-- Gradient row: color2 + direction -->
               <div id="p-bg-grad-row" style="display:none;flex-direction:column;gap:4px;margin-top:2px;margin-bottom:2px">
                 <!-- Color 2 row -->
-                <div style="display:flex;gap:4px;align-items:center">
-                  <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;background:repeating-conic-gradient(#aaa 0% 25%,#fff 0% 50%) 0 0/8px 8px;" onmousedown="openColorPanel('cp-bg2-slot','bg2',function(c){document.getElementById('p-bg-hex2').value=c;document.getElementById('p-bg-swatch2-inner').style.background=c;setTextBgCol2(c);})" title="Цвет 2"><div id="p-bg-swatch2-inner" style="width:100%;height:100%;"></div></div>
-                  <input type="text" id="p-bg-hex2" maxlength="7" placeholder="" style="flex:1;min-width:0;height:28px;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:0 6px;font-size:11px;font-family:monospace" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('p-bg-swatch2-inner').style.background=this.value;setTextBgCol2(this.value);}">
-                  <button onclick="setTextBgCol2('');document.getElementById('p-bg-hex2').value='';document.getElementById('p-bg-swatch2-inner').style.background='';" title="Убрать цвет 2" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:2px 6px;cursor:pointer;font-size:10px;white-space:nowrap">✕</button>
+                <div class="tprops-color-row">
+                  <div class="tprops-swatch" style="background:repeating-conic-gradient(#aaa 0% 25%,#fff 0% 50%) 0 0/8px 8px" onmousedown="openColorPanel('cp-bg2-slot','bg2',function(c){document.getElementById('p-bg-hex2').value=c;document.getElementById('p-bg-swatch2-inner').style.background=c;setTextBgCol2(c);})" title="Цвет 2"><div id="p-bg-swatch2-inner" class="tprops-swatch-inner"></div></div>
+                  <div class="hex-field"><input type="text" id="p-bg-hex2" class="tprops-hex hex-field-input" maxlength="7" placeholder="" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('p-bg-swatch2-inner').style.background=this.value;setTextBgCol2(this.value);}"></div>
+                  <button type="button" class="tprops-icon-btn" onclick="setTextBgCol2('');document.getElementById('p-bg-hex2').value='';document.getElementById('p-bg-swatch2-inner').style.background='';" data-i18n-title="propClearColor" title="Убрать">&#x2715;</button>
                 </div>
                 <div id="cp-bg2-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
-                <!-- Direction input -->
-                <div style="display:flex;gap:4px;align-items:center;margin-top:2px;margin-bottom:2px">
-                  <span style="font-size:10px;color:var(--text2);white-space:nowrap">Направление:</span>
-                  <input type="number" id="p-bg-grad-dir" min="0" max="360" value="90" style="width:72px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:2px 4px;font-size:10px" oninput="setTextBgDir(+this.value)" title="Угол градиента">
-                  <span style="font-size:10px;color:var(--text3)">°</span>
+                <div class="pr tprops-grad-dir">
+                  <label data-i18n="propGradDir">Направление</label>
+                  <div class="tprops-grad-dir-row">
+                    <input type="number" id="p-bg-grad-dir" min="0" max="360" value="90" oninput="setTextBgDir(+this.value)" data-i18n-title="propGradDirHint" title="Угол градиента">
+                  </div>
                 </div>
               </div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
-                <div style="display:flex;align-items:center;gap:5px"><label style="font-size:10px;color:var(--text2);white-space:nowrap;min-width:60px"><span data-i18n="propOpacityShort">Прозрачность</span></label><input type="number" id="p-bg-op" min="0" max="1" step="0.05" value="1" oninput="setTextBgOp(+this.value)" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;box-sizing:border-box"></div>
-                <div style="display:flex;align-items:center;gap:5px"><label style="font-size:10px;color:var(--text2);white-space:nowrap;min-width:40px"><span data-i18n="propBlurShort">Размытие</span></label><input type="number" id="p-bg-blur" min="0" max="40" step="1" value="0" oninput="setTextBgBlur(+this.value)" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;box-sizing:border-box"></div>
+              <div class="tprops-2col">
+                <div class="pr"><label data-i18n="propOpacityShort">Прозрачность</label><input type="number" id="p-bg-op" min="0" max="1" step="0.05" value="1" oninput="setTextBgOp(+this.value)"></div>
+                <div class="pr"><label data-i18n="propBlurShort">Размытие</label><input type="number" id="p-bg-blur" min="0" max="40" step="1" value="0" oninput="setTextBgBlur(+this.value)"></div>
               </div>
             </div>
           </div>
@@ -578,32 +583,48 @@
           </div>
           <!-- Border -->
           <div class="pr"><label data-i18n="propBorder">Border</label>
-            <div style="display:flex;gap:4px;align-items:center">
-              <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;overflow:hidden;flex-shrink:0" onmousedown="openColorPanel('cp-border-slot','border',function(c,sr){document.getElementById('p-border-preview').style.background=c;setTextBorder('color',c,sr);})"><div id="p-border-preview" style="width:100%;height:100%;background:#ffffff;"></div></div>
-              
-              <input type="number" id="p-border-w" min="0" max="20" step="0.5" value="0" placeholder="px" style="width:72px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;box-sizing:border-box" oninput="setTextBorder('width',+this.value)">
-              <button title="Сбросить" onmousedown="event.preventDefault()" onclick="document.getElementById('p-border-w').value=0;setTextBorder('width',0);" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;line-height:1" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">✕</button>
+            <div class="tprops-inline-row">
+              <div class="tprops-swatch" onmousedown="openColorPanel('cp-border-slot','border',function(c,sr){document.getElementById('p-border-preview').style.background=c;setTextBorder('color',c,sr);})"><div id="p-border-preview" class="tprops-swatch-inner" style="background:#ffffff"></div></div>
+              <input type="number" id="p-border-w" min="0" max="20" step="0.5" value="0" placeholder="px" style="flex:1;min-width:0" oninput="setTextBorder('width',+this.value)">
+              <button type="button" class="tprops-icon-btn" data-i18n-title="propClearColor" title="Сбросить" onmousedown="event.preventDefault()" onclick="document.getElementById('p-border-w').value=0;setTextBorder('width',0);">&#x2715;</button>
             </div>
             <div id="cp-border-slot" class="cp-slot" style="display:none;margin-top:4px" onmousedown="event.preventDefault()"></div>
             <!-- Border style -->
             <div style="display:flex;gap:3px;margin-top:4px;flex-wrap:wrap">
-              <button class="txt-border-style-btn active" data-style="solid"    onmousedown="event.preventDefault()" onclick="setTextBorder('style','solid')"   title="Сплошная"  style="flex:1;min-width:36px;padding:3px 2px;background:var(--surface2);border:1px solid var(--border2);border-radius:3px;cursor:pointer;color:var(--text2);font-size:9px;display:flex;align-items:center;justify-content:center"><svg viewBox="0 0 28 10" width="28" height="10"><line x1="1" y1="5" x2="27" y2="5" stroke="currentColor" stroke-width="2"/></svg></button>
-              <button class="txt-border-style-btn"        data-style="dashed"   onmousedown="event.preventDefault()" onclick="setTextBorder('style','dashed')"  title="Пунктирная" style="flex:1;min-width:36px;padding:3px 2px;background:var(--surface2);border:1px solid var(--border2);border-radius:3px;cursor:pointer;color:var(--text2);font-size:9px;display:flex;align-items:center;justify-content:center"><svg viewBox="0 0 28 10" width="28" height="10"><line x1="1" y1="5" x2="27" y2="5" stroke="currentColor" stroke-width="2" stroke-dasharray="5 3"/></svg></button>
-              <button class="txt-border-style-btn"        data-style="dotted"   onmousedown="event.preventDefault()" onclick="setTextBorder('style','dotted')"  title="Точками"   style="flex:1;min-width:36px;padding:3px 2px;background:var(--surface2);border:1px solid var(--border2);border-radius:3px;cursor:pointer;color:var(--text2);font-size:9px;display:flex;align-items:center;justify-content:center"><svg viewBox="0 0 28 10" width="28" height="10"><line x1="1" y1="5" x2="27" y2="5" stroke="currentColor" stroke-width="2.5" stroke-dasharray="0.1 4" stroke-linecap="round"/></svg></button>
-              <button class="txt-border-style-btn"        data-style="double"   onmousedown="event.preventDefault()" onclick="setTextBorder('style','double')"  title="Двойная"   style="flex:1;min-width:36px;padding:3px 2px;background:var(--surface2);border:1px solid var(--border2);border-radius:3px;cursor:pointer;color:var(--text2);font-size:9px;display:flex;align-items:center;justify-content:center"><svg viewBox="0 0 28 10" width="28" height="10"><line x1="1" y1="3" x2="27" y2="3" stroke="currentColor" stroke-width="1.5"/><line x1="1" y1="7" x2="27" y2="7" stroke="currentColor" stroke-width="1.5"/></svg></button>
-              <button class="txt-border-style-btn"        data-style="wave"     onmousedown="event.preventDefault()" onclick="setTextBorder('style','wave')"    title="Волнистая" style="flex:1;min-width:36px;padding:3px 2px;background:var(--surface2);border:1px solid var(--border2);border-radius:3px;cursor:pointer;color:var(--text2);font-size:9px;display:flex;align-items:center;justify-content:center"><svg viewBox="0 0 28 10" width="28" height="10"><path d="M1 5 Q4 1 7 5 Q10 9 13 5 Q16 1 19 5 Q22 9 25 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
-              <button class="txt-border-style-btn"        data-style="zigzag"   onmousedown="event.preventDefault()" onclick="setTextBorder('style','zigzag')"  title="Зигзаг"    style="flex:1;min-width:36px;padding:3px 2px;background:var(--surface2);border:1px solid var(--border2);border-radius:3px;cursor:pointer;color:var(--text2);font-size:9px;display:flex;align-items:center;justify-content:center"><svg viewBox="0 0 28 10" width="28" height="10"><polyline points="1,8 5,2 9,8 13,2 17,8 21,2 25,8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+              <button class="txt-border-style-btn active" data-style="solid"    onmousedown="event.preventDefault();setTextBorder('style','solid')"   title="Сплошная"  style="flex:1;min-width:36px;padding:3px 2px;background:var(--surface2);border:1px solid var(--border2);border-radius:3px;cursor:pointer;color:var(--text2);font-size:9px;display:flex;align-items:center;justify-content:center"><svg viewBox="0 0 28 10" width="28" height="10"><line x1="1" y1="5" x2="27" y2="5" stroke="currentColor" stroke-width="2"/></svg></button>
+              <button class="txt-border-style-btn"        data-style="dashed"   onmousedown="event.preventDefault();setTextBorder('style','dashed')"  title="Пунктирная" style="flex:1;min-width:36px;padding:3px 2px;background:var(--surface2);border:1px solid var(--border2);border-radius:3px;cursor:pointer;color:var(--text2);font-size:9px;display:flex;align-items:center;justify-content:center"><svg viewBox="0 0 28 10" width="28" height="10"><line x1="1" y1="5" x2="27" y2="5" stroke="currentColor" stroke-width="2" stroke-dasharray="5 3"/></svg></button>
+              <button class="txt-border-style-btn"        data-style="dotted"   onmousedown="event.preventDefault();setTextBorder('style','dotted')"  title="Точками"   style="flex:1;min-width:36px;padding:3px 2px;background:var(--surface2);border:1px solid var(--border2);border-radius:3px;cursor:pointer;color:var(--text2);font-size:9px;display:flex;align-items:center;justify-content:center"><svg viewBox="0 0 28 10" width="28" height="10"><line x1="1" y1="5" x2="27" y2="5" stroke="currentColor" stroke-width="2.5" stroke-dasharray="0.1 4" stroke-linecap="round"/></svg></button>
+              <button class="txt-border-style-btn"        data-style="double"   onmousedown="event.preventDefault();setTextBorder('style','double')"  title="Двойная"   style="flex:1;min-width:36px;padding:3px 2px;background:var(--surface2);border:1px solid var(--border2);border-radius:3px;cursor:pointer;color:var(--text2);font-size:9px;display:flex;align-items:center;justify-content:center"><svg viewBox="0 0 28 10" width="28" height="10"><line x1="1" y1="3" x2="27" y2="3" stroke="currentColor" stroke-width="1.5"/><line x1="1" y1="7" x2="27" y2="7" stroke="currentColor" stroke-width="1.5"/></svg></button>
+              <button class="txt-border-style-btn"        data-style="wave"     onmousedown="event.preventDefault();setTextBorder('style','wave')"    title="Волнистая" style="flex:1;min-width:36px;padding:3px 2px;background:var(--surface2);border:1px solid var(--border2);border-radius:3px;cursor:pointer;color:var(--text2);font-size:9px;display:flex;align-items:center;justify-content:center"><svg viewBox="0 0 28 10" width="28" height="10"><path d="M1 5 Q4 1 7 5 Q10 9 13 5 Q16 1 19 5 Q22 9 25 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+              <button class="txt-border-style-btn"        data-style="zigzag"   onmousedown="event.preventDefault();setTextBorder('style','zigzag')"  title="Зигзаг"    style="flex:1;min-width:36px;padding:3px 2px;background:var(--surface2);border:1px solid var(--border2);border-radius:3px;cursor:pointer;color:var(--text2);font-size:9px;display:flex;align-items:center;justify-content:center"><svg viewBox="0 0 28 10" width="28" height="10"><polyline points="1,8 5,2 9,8 13,2 17,8 21,2 25,8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
             </div>
           </div>
           <!-- Text shadow -->
           <div class="pr"><label data-i18n="propTextShadow">Тень текста</label>
-            <div style="display:flex;gap:4px;align-items:center">
-              <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;overflow:hidden;flex-shrink:0" onmousedown="openColorPanel('cp-tshadow-slot','border',function(c,sr){document.getElementById('p-tshadow-preview').style.background=c;setTextShadow('color',c,sr);})"><div id="p-tshadow-preview" style="width:100%;height:100%;background:#000000;"></div></div>
-              <input type="number" id="p-tshadow-sb" value="0" min="0" max="40" title="Размытие (0 = резкая обводка)" placeholder="blur" style="flex:1;min-width:0;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;box-sizing:border-box" oninput="setTextShadow('blur',+this.value)">
-              <input type="number" id="p-tshadow-ss" value="0" min="0" max="40" title="Толщина" placeholder="size" style="flex:1;min-width:0;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;box-sizing:border-box" oninput="setTextShadow('size',+this.value)">
-              <button title="Сбросить" onmousedown="event.preventDefault()" onclick="resetTextShadow()" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;line-height:1" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">✕</button>
+            <div class="tprops-shadow-row">
+              <div class="tprops-swatch" onmousedown="event.preventDefault();openColorPanel('cp-tshadow-slot','border',function(c,sr){document.getElementById('p-tshadow-preview').style.background=c;setTextShadow('color',c,sr);})" data-i18n-title="propTshadowColor" title="Цвет тени"><div id="p-tshadow-preview" class="tprops-swatch-inner" style="background:#000000"></div></div>
+              <div class="tprops-shadow-fields">
+                <div class="pr"><label data-i18n="propTshadowBlur">Размытие</label><input type="number" id="p-tshadow-sb" value="0" min="0" max="40" step="1" oninput="setTextShadow('blur',+this.value)"></div>
+                <div class="pr"><label data-i18n="propTshadowSize">Толщина</label><input type="number" id="p-tshadow-ss" value="0" min="0" max="40" step="1" oninput="setTextShadow('size',+this.value)"></div>
+              </div>
+              <button type="button" class="tprops-icon-btn" data-i18n-title="propTshadowReset" title="Сбросить тень" onmousedown="event.preventDefault()" onclick="resetTextShadow()">&#x2715;</button>
             </div>
             <div id="cp-tshadow-slot" class="cp-slot" style="display:none;margin-top:4px" onmousedown="event.preventDefault()"></div>
+          </div>
+          <div class="pr"><label>Тень блока</label>
+            <div class="tprops-shadow-row">
+              <div class="tprops-swatch" onmousedown="event.preventDefault();openColorPanel('cp-bshadow-slot','border',function(c){document.getElementById('p-bshadow-preview').style.background=c;setTextBlockShadow('color',c);})" title="Цвет тени блока"><div id="p-bshadow-preview" class="tprops-swatch-inner" style="background:#000000"></div></div>
+              <div class="tprops-shadow-fields">
+                <div class="pr"><label>Размытие</label><input type="number" id="p-bshadow-sb" value="0" min="0" max="40" step="1" oninput="setTextBlockShadow('blur',+this.value)"></div>
+                <div class="pr"><label>Толщина</label><input type="number" id="p-bshadow-ss" value="0" min="0" max="40" step="1" oninput="setTextBlockShadow('size',+this.value)"></div>
+              </div>
+              <button type="button" class="tprops-icon-btn" title="Сбросить тень блока" onmousedown="event.preventDefault()" onclick="resetTextBlockShadow()">&#x2715;</button>
+            </div>
+            <label style="display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text2);cursor:pointer;margin-top:4px">
+              <label class="tog"><input type="checkbox" id="p-bshadow-inset" onchange="setTextBlockShadow('inset',this.checked)"><span class="tog-track"></span><span class="tog-thumb"></span></label>
+              <label for="p-bshadow-inset" style="cursor:pointer;user-select:none;margin:0">Внутренняя тень</label>
+            </label>
+            <div id="cp-bshadow-slot" class="cp-slot" style="display:none;margin-top:4px" onmousedown="event.preventDefault()"></div>
           </div>
         </div><!-- end tprops -->
         <!-- GENERATOR PROPS -->
@@ -1619,60 +1640,90 @@
           <div class="anim-list" id="el-anim-list"></div>
           <button class="mbtn-sm" onclick="clearObjectAnims()" data-i18n="propClearAllAnims">Очистить всё</button>
         </div>
-        <!-- HOVER EFFECTS (separate panel, always shown for elements) -->
+        <!-- HOVER EFFECTS -->
         <div id="hoverprops" style="display:none">
           <div class="ph" style="margin-top:4px">
-            <label class="tog" style="flex-shrink:0" title="Enable on hover">
-              <input type="checkbox" id="hfx-on" onchange="var _hp=document.getElementById('hfx-panel');if(_hp)_hp.style.display=this.checked?'flex':'none';setHoverFx('enabled',this.checked)">
+            <label class="tog" style="flex-shrink:0">
+              <input type="checkbox" id="hfx-on" onchange="setHoverFxEnabled(this.checked)">
               <span class="tog-track"></span><span class="tog-thumb"></span>
             </label>
-            <span data-i18n="phHoverEffect">🖱 Hover Effect</span>
+            <label for="hfx-on" style="cursor:pointer;user-select:none;margin:0" data-i18n="phHoverEffect">Эффект при наведении</label>
           </div>
-          <div id="hfx-panel" style="display:none;flex-direction:column;gap:5px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:6px">
-            <div id="hfx-dur-row" class="pr" style="margin:0"><label data-i18n="propHfxDuration">Duration</label>
-              <div style="display:flex;align-items:center;gap:3px">
-                <input type="number" id="hfx-dur" min="0.05" max="2" step="0.05" value="0.3" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="setHoverFx('dur',+this.value)">
-                <span style="font-size:9px;color:var(--text3)">s</span>
+          <div id="hfx-body" style="display:none;flex-direction:column;gap:0">
+          <div class="pr">
+            <label data-i18n="propHfxEffects">Эффекты</label>
+            <select id="hfx-preset" onchange="setHoverFxPreset(this.value)">
+              <option value="none" data-i18n="propHfxNone">Без эффекта</option>
+              <option value="lighter" data-i18n="propHfxLighter">Светлее</option>
+              <option value="darker" data-i18n="propHfxDarker">Темнее</option>
+              <option value="hue" data-i18n="propHfxHue">Сместить цвет</option>
+              <option value="right" data-i18n="propHfxRight">Вправо</option>
+              <option value="up" data-i18n="propHfxUp">Вверх</option>
+            </select>
+          </div>
+          <div id="hfx-settings" style="display:none;flex-direction:column;gap:4px;margin-bottom:6px">
+            <div id="hfx-text-row" class="pr" style="margin:0">
+              <label data-i18n="propTextColor">Цвет текста</label>
+              <div class="tprops-color-row">
+                <div class="tprops-swatch" onmousedown="openColorPanel('cp-hfx-text-slot','hfx-text',function(c){document.getElementById('hfx-text-preview').style.background=c;document.getElementById('hfx-text-hex').value=c;setHoverFx('textColor',c);})"><div id="hfx-text-preview" class="tprops-swatch-inner" style="background:transparent"></div></div>
+                <div class="hex-field"><input type="text" id="hfx-text-hex" class="tprops-hex hex-field-input" maxlength="7" placeholder="авто" data-i18n-placeholder="propHfxAuto" oninput="if(!this.value){setHoverFx('textColor','');document.getElementById('hfx-text-preview').style.background='transparent';}else if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('hfx-text-preview').style.background=this.value;setHoverFx('textColor',this.value);}"></div>
+                <button type="button" class="tprops-icon-btn" data-i18n-title="propClearColor" title="Убрать" onmousedown="event.preventDefault()" onclick="setHoverFx('textColor','');document.getElementById('hfx-text-hex').value='';document.getElementById('hfx-text-preview').style.background='transparent';">&#x2715;</button>
+              </div>
+              <div id="cp-hfx-text-slot" class="cp-slot" style="display:none;margin-top:4px" onmousedown="event.preventDefault()"></div>
+            </div>
+            <div id="hfx-bg-row" class="pr" style="margin:0">
+              <label data-i18n="propBgColor">Цвет фона</label>
+              <div class="tprops-color-row">
+                <div class="tprops-swatch" style="background:repeating-conic-gradient(#aaa 0% 25%,#fff 0% 50%) 0 0/8px 8px" onmousedown="openColorPanel('cp-hfx-bg-slot','hfx-bg',function(c){document.getElementById('hfx-bg-preview').style.background=c;document.getElementById('hfx-bg-hex').value=c;setHoverFx('textBg',c);})"><div id="hfx-bg-preview" class="tprops-swatch-inner"></div></div>
+                <div class="hex-field"><input type="text" id="hfx-bg-hex" class="tprops-hex hex-field-input" maxlength="7" placeholder="авто" data-i18n-placeholder="propHfxAuto" oninput="if(!this.value){setHoverFx('textBg','');document.getElementById('hfx-bg-preview').style.background='';}else if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('hfx-bg-preview').style.background=this.value;setHoverFx('textBg',this.value);}"></div>
+                <button type="button" class="tprops-icon-btn" data-i18n-title="propClearColor" title="Убрать" onmousedown="event.preventDefault()" onclick="setHoverFx('textBg','');document.getElementById('hfx-bg-hex').value='';document.getElementById('hfx-bg-preview').style.background='';">&#x2715;</button>
+              </div>
+              <div id="cp-hfx-bg-slot" class="cp-slot" style="display:none;margin-top:4px" onmousedown="event.preventDefault()"></div>
+            </div>
+            <div id="hfx-border-row" class="pr" style="margin:0">
+              <label data-i18n="propBorder">Граница</label>
+              <div class="tprops-inline-row">
+                <div class="tprops-swatch" onmousedown="openColorPanel('cp-hfx-border-slot','hfx-border',function(c){document.getElementById('hfx-border-preview').style.background=c;setHoverFx('textBorderColor',c);})"><div id="hfx-border-preview" class="tprops-swatch-inner" style="background:#ffffff"></div></div>
+                <input type="number" id="hfx-border-w" min="0" max="20" step="0.5" value="0" placeholder="px" style="flex:1;min-width:0" oninput="setHoverFx('textBorderW',+this.value)">
+                <button type="button" class="tprops-icon-btn" data-i18n-title="propClearColor" title="Сбросить" onmousedown="event.preventDefault()" onclick="document.getElementById('hfx-border-w').value=0;setHoverFx('textBorderW',0);setHoverFx('textBorderColor','');document.getElementById('hfx-border-preview').style.background='#ffffff';">&#x2715;</button>
+              </div>
+              <div id="cp-hfx-border-slot" class="cp-slot" style="display:none;margin-top:4px" onmousedown="event.preventDefault()"></div>
+            </div>
+            <div id="hfx-text-shadow-row" class="pr" style="margin:0">
+              <label>Тень текста</label>
+              <div class="tprops-shadow-row">
+                <div class="tprops-swatch" onmousedown="openColorPanel('cp-hfx-tshadow-slot','hfx-tshadow',function(c){document.getElementById('hfx-tshadow-preview').style.background=c;setHoverFx('textShadowColor',c);})"><div id="hfx-tshadow-preview" class="tprops-swatch-inner" style="background:#000000"></div></div>
+                <div class="tprops-shadow-fields">
+                  <div class="pr"><label>Размытие</label><input type="number" id="hfx-tshadow-sb" min="0" max="40" step="1" value="0" oninput="setHoverFx('textShadowBlur',+this.value)"></div>
+                  <div class="pr"><label>Толщина</label><input type="number" id="hfx-tshadow-ss" min="0" max="40" step="1" value="0" oninput="setHoverFx('textShadowSize',+this.value)"></div>
+                </div>
+                <button type="button" class="tprops-icon-btn" title="Сбросить тень текста" onmousedown="event.preventDefault()" onclick="document.getElementById('hfx-tshadow-sb').value=0;document.getElementById('hfx-tshadow-ss').value=0;setHoverFx('textShadowBlur',0);setHoverFx('textShadowSize',0);setHoverFx('textShadowColor','');document.getElementById('hfx-tshadow-preview').style.background='#000000';">&#x2715;</button>
+              </div>
+              <div id="cp-hfx-tshadow-slot" class="cp-slot" style="display:none;margin-top:4px" onmousedown="event.preventDefault()"></div>
+            </div>
+            <div id="hfx-block-shadow-row" class="pr" style="margin:0">
+              <label>Тень блока</label>
+              <div class="tprops-shadow-row">
+                <div class="tprops-swatch" onmousedown="openColorPanel('cp-hfx-bshadow-slot','hfx-bshadow',function(c){document.getElementById('hfx-bshadow-preview').style.background=c;setHoverFx('textBlockShadowColor',c);})"><div id="hfx-bshadow-preview" class="tprops-swatch-inner" style="background:#000000"></div></div>
+                <div class="tprops-shadow-fields">
+                  <div class="pr"><label>Размытие</label><input type="number" id="hfx-bshadow-sb" min="0" max="40" step="1" value="0" oninput="setHoverFx('textBlockShadowBlur',+this.value)"></div>
+                  <div class="pr"><label>Толщина</label><input type="number" id="hfx-bshadow-ss" min="0" max="40" step="1" value="0" oninput="setHoverFx('textBlockShadowSize',+this.value)"></div>
+                </div>
+                <button type="button" class="tprops-icon-btn" title="Сбросить тень блока" onmousedown="event.preventDefault()" onclick="document.getElementById('hfx-bshadow-sb').value=0;document.getElementById('hfx-bshadow-ss').value=0;setHoverFx('textBlockShadowBlur',0);setHoverFx('textBlockShadowSize',0);setHoverFx('textBlockShadowColor','');setHoverFx('textBlockShadowInset',false);document.getElementById('hfx-bshadow-preview').style.background='#000000';">&#x2715;</button>
+              </div>
+              <label style="display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text2);cursor:pointer;margin-top:4px">
+                <label class="tog"><input type="checkbox" id="hfx-bshadow-inset" onchange="setHoverFx('textBlockShadowInset',this.checked)"><span class="tog-track"></span><span class="tog-thumb"></span></label>
+                <label for="hfx-bshadow-inset" style="cursor:pointer;user-select:none;margin:0">Внутренняя тень</label>
+              </label>
+              <div id="cp-hfx-bshadow-slot" class="cp-slot" style="display:none;margin-top:4px" onmousedown="event.preventDefault()"></div>
+            </div>
+            <div class="pr" style="margin:0">
+              <label data-i18n="propHfxDuration">Длительность</label>
+              <div class="tprops-inline-row">
+                <input type="number" id="hfx-dur" min="0.05" max="2" step="0.05" value="0.3" style="flex:1" oninput="setHoverFx('dur',+this.value)">
               </div>
             </div>
-            <div class="ph" style="margin:0 0 2px;font-size:9px" data-i18n="propHfxOnHover">On hover</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4px;margin-bottom:4px">
-              <div class="pr" style="margin:0"><label>X</label><input type="number" id="hfx-x" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="setHoverFx('x',+this.value)"></div>
-              <div class="pr" style="margin:0"><label>Y</label><input type="number" id="hfx-y" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="setHoverFx('y',+this.value)"></div>
-              <div class="pr" style="margin:0"><label data-i18n="propDimW">Ш</label><input type="number" id="hfx-w" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="setHoverFx('w',Math.max(20,+this.value))"></div>
-              <div class="pr" style="margin:0"><label data-i18n="propDimH">В</label><input type="number" id="hfx-h" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="setHoverFx('h',Math.max(10,+this.value))"></div>
-            </div>
-            <div id="hfx-settings" style="display:flex;flex-direction:column;gap:5px">
-              <div class="pr" style="margin:0"><label data-i18n="propRotation">Rotation (deg)</label><input type="number" id="hfx-rot" step="1" value="0" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="setHoverFx('rot',+this.value)"></div>
-              <div style="display:flex;gap:4px;flex-wrap:wrap">
-                <button type="button" onclick="applyHoverPreset('lift')" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:3px 7px;cursor:pointer;font-size:10px">↑ Lift</button>
-                <button type="button" onclick="applyHoverPreset('lighter')" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:3px 7px;cursor:pointer;font-size:10px">☀ Lighter</button>
-                <button type="button" onclick="applyHoverPreset('darker')" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:3px 7px;cursor:pointer;font-size:10px">🌑 Darker</button>
-                <button type="button" onclick="applyHoverPreset('glow')" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:3px 7px;cursor:pointer;font-size:10px">✨ Glow</button>
-                <button type="button" onclick="applyHoverPreset('none')" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text3);border-radius:3px;padding:3px 7px;cursor:pointer;font-size:10px">✕ Clear</button>
-              </div>
-              <div class="grid2">
-                <div class="pr" style="margin:0"><label data-i18n="propHfxScale">Scale</label>
-                  <div style="display:flex;align-items:center;gap:3px">
-                    <input type="number" id="hfx-scale" min="0.5" max="3" step="0.05" value="1" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="setHoverFx('scale',+this.value)">
-                    <span style="font-size:9px;color:var(--text3)">×</span>
-                  </div>
-                </div>
-                <div class="pr" style="margin:0"><label data-i18n="propHfxOpacity">Opacity</label><input type="number" id="hfx-op" min="0" max="1" step="0.05" value="1" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="setHoverFx('opacity',+this.value)"></div>
-              </div>
-              <div class="pr" style="margin:0"><label data-i18n="propHfxGlowColor">Glow / Shadow Color</label>
-                <div style="display:flex;gap:5px;align-items:center">
-                  <div class="cp-hex" style="flex:1"><input type="color" id="hfx-col" oninput="setHoverFx('color',this.value)"><input type="text" id="hfx-col-hex" placeholder="unchanged" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 6px;font-size:11px;width:100%" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('hfx-col').value=this.value;setHoverFx('color',this.value);}"></div>
-                  <button type="button" onclick="setHoverFx('color','')" style="background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:2px 5px;cursor:pointer;font-size:10px;white-space:nowrap">✕</button>
-                </div>
-              </div>
-              <div class="grid2">
-                <div class="pr" style="margin:0"><label data-i18n="propHfxShadowBlur">Shadow blur</label><input type="number" id="hfx-shadow" min="0" max="60" value="0" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="setHoverFx('shadow',+this.value)"></div>
-                <div class="pr" style="margin:0"><label data-i18n="propHfxShadowColor">Shadow color</label>
-                  <div class="cp-hex"><input type="color" id="hfx-scol" oninput="setHoverFx('shadowColor',this.value)"><input type="text" id="hfx-scol-hex" placeholder="#000000" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 6px;font-size:11px;width:100%" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('hfx-scol').value=this.value;setHoverFx('shadowColor',this.value);}"></div>
-                </div>
-              </div>
-            </div>
+          </div>
           </div>
         </div>
         <!-- LINK PROPS -->

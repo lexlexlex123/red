@@ -179,6 +179,7 @@ function syncProps(){
     try{const _brd=document.getElementById('p-border-preview');if(_brd)_brd.style.background=sel.dataset.textBorderColor||'#ffffff';document.getElementById('p-border-w').value=sel.dataset.textBorderW||0;}catch(e){}
     try{const _tbs=sel.dataset.textBorderStyle||'solid';document.querySelectorAll('.txt-border-style-btn').forEach(b=>b.classList.toggle('active',b.dataset.style===_tbs));}catch(e){}
     try{if(typeof syncTextShadowUI==='function') syncTextShadowUI(sel);}catch(e){}
+    try{if(typeof syncTextBlockShadowUI==='function') syncTextBlockShadowUI(sel);}catch(e){}
     // Opacity
     try{const op=parseFloat(sel.dataset.elOpacity!=null?sel.dataset.elOpacity:1);document.getElementById('p-el-op').value=op;}catch(e){}
     // Padding - use new pad_t/r/b/l dataset or parse from style
@@ -560,6 +561,7 @@ function applyTextBg(el){
     el.style.backdropFilter='';
     el.style.webkitBackdropFilter='';
   }
+  if(typeof applyTextBlockShadowStyle==='function') applyTextBlockShadowStyle(el);
 }
 // ══════════════ TEXT COLOR GRADIENT ══════════════
 function applyTextColorGrad(el){
@@ -1820,3 +1822,82 @@ function updateShapeFillGradDir(deg) {
   renderShapeEl(sel, d);
   save(); drawThumbs(); saveState();
 }
+
+// ══════════════ HEX COLOR FIELDS — copy / paste ══════════════
+const _HEX_COPY_SVG='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5" y="5" width="8" height="9" rx="1"/><path d="M5 5V4a1 1 0 011-1h6a1 1 0 011 1v1"/></svg>';
+let _hexCtxMenu=null;
+
+function _hideHexCtxMenu(){
+  if(_hexCtxMenu)_hexCtxMenu.style.display='none';
+}
+
+function hexFieldCopy(btn){
+  const wrap=btn&&btn.closest('.hex-field');
+  const inp=wrap&&wrap.querySelector('input');
+  if(!inp||!inp.value)return;
+  const v=inp.value.trim();
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(v).then(()=>{
+      if(typeof toast==='function')toast(typeof t==='function'?t('hexCopied'):'✓','ok');
+    }).catch(()=>{});
+  }
+}
+
+function _hexPasteInto(input){
+  if(!input)return;
+  const apply=(text)=>{
+    const v=(text||'').trim();
+    input.value=v;
+    input.dispatchEvent(new Event('input',{bubbles:true}));
+    _hideHexCtxMenu();
+  };
+  if(navigator.clipboard&&navigator.clipboard.readText){
+    navigator.clipboard.readText().then(apply).catch(()=>{});
+  }
+}
+
+function _showHexPasteMenu(e,input){
+  e.preventDefault();
+  e.stopPropagation();
+  if(!_hexCtxMenu){
+    _hexCtxMenu=document.createElement('div');
+    _hexCtxMenu.className='hex-ctx-menu';
+    document.body.appendChild(_hexCtxMenu);
+    document.addEventListener('click',_hideHexCtxMenu);
+    document.addEventListener('scroll',_hideHexCtxMenu,true);
+  }
+  const label=typeof t==='function'?t('hexPaste'):'Вставить';
+  _hexCtxMenu.innerHTML='<button type="button">'+label+'</button>';
+  _hexCtxMenu.style.display='block';
+  _hexCtxMenu.style.left=e.clientX+'px';
+  _hexCtxMenu.style.top=e.clientY+'px';
+  _hexCtxMenu.querySelector('button').onclick=ev=>{
+    ev.stopPropagation();
+    _hexPasteInto(input);
+  };
+}
+
+function initHexFields(root){
+  root=root||document.getElementById('tprops')||document;
+  root.querySelectorAll('.hex-field').forEach(wrap=>{
+    const inp=wrap.querySelector('input');
+    if(!inp||wrap.dataset.hexInit==='1')return;
+    wrap.dataset.hexInit='1';
+    if(!wrap.querySelector('.hex-field-copy')){
+      const btn=document.createElement('button');
+      btn.type='button';
+      btn.className='hex-field-copy';
+      btn.innerHTML=_HEX_COPY_SVG;
+      btn.title=typeof t==='function'?t('hexCopy'):'Копировать';
+      btn.setAttribute('aria-label',btn.title);
+      btn.onmousedown=ev=>ev.preventDefault();
+      btn.onclick=ev=>{ev.stopPropagation();hexFieldCopy(btn);};
+      wrap.appendChild(btn);
+    }
+    inp.addEventListener('contextmenu',ev=>_showHexPasteMenu(ev,inp));
+  });
+}
+window.initHexFields=initHexFields;
+window.hexFieldCopy=hexFieldCopy;
+
+document.addEventListener('DOMContentLoaded',()=>initHexFields());

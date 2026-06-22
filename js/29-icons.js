@@ -345,6 +345,9 @@ function openIconPickerForList(bulletSpan, textData) {
       sp.setAttribute('data-icon-sw', sw);
       sp.innerHTML = _buildBulletIconSVG(ic, sz, style, color, sw);
     });
+    if (typeof window._rtApplyMarkerVerticalAlign === 'function') {
+      window._rtApplyMarkerVerticalAlign(c, sz);
+    }
     var root = c.querySelector('.ec-valign-wrap') || c;
     if (textData) textData.html = root.innerHTML;
     if (typeof commitAll === 'function') commitAll();

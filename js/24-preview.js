@@ -243,6 +243,7 @@ function startPreview(startIdx){
   });
   window._previewSelRestoreId=(typeof sel!=='undefined'&&sel&&sel.dataset.id)?sel.dataset.id:null;
   if(typeof desel==='function') desel();
+  if(window._propsScrollMem) window._propsScrollMem.save();
   document.body.classList.add('preview-mode');
   if(typeof window._pvCancelEditorPointer==='function') window._pvCancelEditorPointer();
   playedAnimSlides.clear();Object.keys(hiddenElsPerSlide).forEach(k=>delete hiddenElsPerSlide[k]);
@@ -413,30 +414,10 @@ function stopPreview(){
         }
       }
       if(el.dataset.type==='text'){
-        // Re-stamp dataset from model to guarantee it's current
         const d=slides[cur]&&slides[cur].els.find(x=>x.id===el.dataset.id);
-        if(d){
-          if(d.textBg)el.dataset.textBg=d.textBg; else delete el.dataset.textBg;
-          if(d.textBgOp!=null)el.dataset.textBgOp=d.textBgOp; else delete el.dataset.textBgOp;
-          if(d.textBgBlur>0)el.dataset.textBgBlur=d.textBgBlur; else delete el.dataset.textBgBlur;
-          if(d.textBgGrad)el.dataset.textBgGrad='1'; else delete el.dataset.textBgGrad;
-          if(d.textBgCol2)el.dataset.textBgCol2=d.textBgCol2; else delete el.dataset.textBgCol2;
-          if(d.textBgDir!=null)el.dataset.textBgDir=d.textBgDir; else delete el.dataset.textBgDir;
-          if(d.textColorGrad){el.dataset.textColorGrad='1';if(d.textColorGrad1)el.dataset.textColorGrad1=d.textColorGrad1;if(d.textColorGrad2)el.dataset.textColorGrad2=d.textColorGrad2;if(d.textColorGradDir!=null)el.dataset.textColorGradDir=d.textColorGradDir;}else{delete el.dataset.textColorGrad;}
-          if(d.textBorderW!=null)el.dataset.textBorderW=d.textBorderW; else delete el.dataset.textBorderW;
-          if(d.textBorderColor)el.dataset.textBorderColor=d.textBorderColor; else delete el.dataset.textBorderColor;
-          if(d.textBorderStyle)el.dataset.textBorderStyle=d.textBorderStyle; else delete el.dataset.textBorderStyle;
-          if(d.rx_tl||d.rx_tr||d.rx_bl||d.rx_br){
-            el.dataset.rx_tl=d.rx_tl||0;el.dataset.rx_tr=d.rx_tr||0;
-            el.dataset.rx_bl=d.rx_bl||0;el.dataset.rx_br=d.rx_br||0;
-            el.dataset.rxUnit=d.rxUnit||'px';
-          }
-        }
+        if(d&&typeof window._stampTextDatasetFromModel==='function') window._stampTextDatasetFromModel(el,d);
         if(typeof window._restoreTextBlockVisuals==='function') window._restoreTextBlockVisuals(el);
-        else{
-        if(typeof applyTextBg==='function') applyTextBg(el);
-        if(typeof applyTextColorGrad==='function') applyTextColorGrad(el);
-        }
+        else if(typeof applyTextBg==='function') applyTextBg(el);
       }
       // Force-rebuild icon SVG from data so shadow is always correct after preview
       if(el.dataset.type==='icon'){
@@ -457,7 +438,11 @@ function stopPreview(){
   // Restore page numbering UI state (pnUnlock also calls pnSyncUI)
   if(typeof pnUnlock==='function') pnUnlock();
   // Re-apply page numbers after rAF finishes rebuilding DOM
-  requestAnimationFrame(()=>{ if(typeof pnApplyAll==='function') pnApplyAll(); requestAnimationFrame(()=>{ if(_prevSelId){const _resel=document.querySelector(`.el[data-id="${_prevSelId}"]`);if(_resel&&typeof pick==='function')pick(_resel);} }); });
+  requestAnimationFrame(()=>{ if(typeof pnApplyAll==='function') pnApplyAll(); requestAnimationFrame(()=>{
+    if(window._propsScrollMem) window._propsScrollMem.markRestoreAfterPick();
+    if(_prevSelId){const _resel=document.querySelector(`.el[data-id="${_prevSelId}"]`);if(_resel&&typeof pick==='function')pick(_resel);}
+    else if(window._propsScrollMem) window._propsScrollMem.restoreSoon();
+  }); });
 }
 function _pResetStageZoom(){
   const stage=document.getElementById('preview-stage');
@@ -1501,7 +1486,7 @@ function buildPSlide(container,idx,transOffset,noScale){
     const rot=d.rot||0;
     // Build border-radius string (text boxes use rx_tl etc, shapes use d.rx)
     let rxStr='';
-    if(d.type==='text'&&(d.rx_tl!=null||d.rx_tr!=null||d.rx_bl!=null||d.rx_br!=null)){
+    if(d.type==='text'&&(d.rx_tl||d.rx_tr||d.rx_bl||d.rx_br)){
       const u=d.rxUnit||'px';
       rxStr='border-radius:'+(d.rx_tl||0)+u+' '+(d.rx_tr||0)+u+' '+(d.rx_br||0)+u+' '+(d.rx_bl||0)+u+';';
     }
@@ -1524,6 +1509,9 @@ function buildPSlide(container,idx,transOffset,noScale){
     // Build content
     if(d.type==='text'){
       if(d.valign) el.dataset.valign=d.valign;
+      if(d.bulletGap!=null) el.dataset.bulletGap=d.bulletGap;
+      el.dataset.id=d.id;
+      if(typeof window._stampTextDatasetFromModel==='function') window._stampTextDatasetFromModel(el,d);
       const body=document.createElement('div');
       body.className='_text_body';
       body.style.cssText='position:absolute;inset:0;overflow:hidden;'+rxStr+'pointer-events:none;z-index:0;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;';
@@ -1550,8 +1538,11 @@ function buildPSlide(container,idx,transOffset,noScale){
         }
         body.appendChild(_pvBgLayer);
       }
-      const _pvHtml = (typeof rtMigrateHtml==='function') ? rtMigrateHtml(d.html||'') : (d.html||'');
+      const _pvHtml = (typeof rtMigrateHtml==='function')
+        ? rtMigrateHtml(d.html||'', typeof _rtFontSizeFromCs==='function' ? _rtFontSizeFromCs(d.cs) : null)
+        : (d.html||'');
       c.innerHTML=_pvHtml;
+      if (typeof _rtNormalizeTextDisplay === 'function') _rtNormalizeTextDisplay(c, csStr, d.bulletGap);
       body.appendChild(c);
       el.appendChild(body);
       if(typeof applyTextPad==='function') applyTextPad(el);
@@ -1565,6 +1556,13 @@ function buildPSlide(container,idx,transOffset,noScale){
         if(typeof applyTextShadowStyle==='function') applyTextShadowStyle(el);
         else if(typeof window._applyTextShadowFilter==='function') window._applyTextShadowFilter(el,d);
       }
+      if(typeof applyTextBlockShadowStyle==='function'){
+        if(d.textBlockShadowBlur!=null)el.dataset.textBlockShadowBlur=d.textBlockShadowBlur; else delete el.dataset.textBlockShadowBlur;
+        if(d.textBlockShadowSize!=null)el.dataset.textBlockShadowSize=d.textBlockShadowSize; else delete el.dataset.textBlockShadowSize;
+        if(d.textBlockShadowColor)el.dataset.textBlockShadowColor=d.textBlockShadowColor; else delete el.dataset.textBlockShadowColor;
+        if(d.textBlockShadowInset)el.dataset.textBlockShadowInset='1'; else delete el.dataset.textBlockShadowInset;
+        applyTextBlockShadowStyle(el);
+      }
       // Border for text boxes
       if(d.textBorderW&&+d.textBorderW>0){
         el.dataset.textBorderW=d.textBorderW;
@@ -1572,6 +1570,7 @@ function buildPSlide(container,idx,transOffset,noScale){
         if(d.textBorderStyle) el.dataset.textBorderStyle=d.textBorderStyle;
         if(typeof applyTextBorderStyle==='function') applyTextBorderStyle(el);
       }
+      if((d.rx_tl||d.rx_tr||d.rx_bl||d.rx_br)&&typeof applyTextRadius==='function') applyTextRadius(el);
     }else if(d.type==='image'){
       const img=document.createElement('img');img.src=typeof assetUrl==='function'?assetUrl(d.src):d.src;
       img.onload=function(){if(typeof _preloadAlphaCanvas==='function')_preloadAlphaCanvas(img);};

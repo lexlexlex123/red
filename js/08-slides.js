@@ -114,12 +114,9 @@ function _buildSlideObject(tmpl){
   if(inheritBgImg) s.bgImg = inheritBgImg;
   if(tmpl){
     const t = JSON.parse(JSON.stringify(tmpl));
-    s.bg = t.bg; s.bgc = t.bgc; s.els = t.els; s.trans = t.trans || '';
-    if(t.title) s.title = t.title;
-    if(t.auto != null) s.auto = t.auto;
-    if(t.transDur != null) s.transDur = t.transDur;
-    if(t.bgImg) s.bgImg = JSON.parse(JSON.stringify(t.bgImg));
-    if(t.connectors) s.connectors = JSON.parse(JSON.stringify(t.connectors));
+    Object.assign(s, t);
+    s.els = t.els || [];
+    s.trans = t.trans != null ? t.trans : '';
   }
   return s;
 }
@@ -376,6 +373,7 @@ function save(){
         if(_od.tableBgBlur!=null)d.tableBgBlur=_od.tableBgBlur;
       }
       if(el.dataset.textRole)d.textRole=el.dataset.textRole;
+      if(el.dataset.bulletGap!=null)d.bulletGap=+el.dataset.bulletGap;
       if(el.dataset.textBorderW&&+el.dataset.textBorderW>0){d.textBorderW=+el.dataset.textBorderW;d.textBorderColor=el.dataset.textBorderColor||'#ffffff';d.textBorderStyle=el.dataset.textBorderStyle||'solid';}
       const _tss=+(el.dataset.textShadowSize||0), _tsb=+(el.dataset.textShadowBlur||0), _tsw=+(el.dataset.textShadowW||0);
       if(_tss>0||_tsb>0||_tsw>0){
@@ -386,10 +384,24 @@ function save(){
       }else{
         delete d.textShadowBlur; delete d.textShadowSize; delete d.textShadowW; delete d.textShadowColor;
       }
-      if(el.dataset.rx_tl||el.dataset.rx_tr||el.dataset.rx_bl||el.dataset.rx_br){
+      const _tbss=+(el.dataset.textBlockShadowSize||0), _tbsb=+(el.dataset.textBlockShadowBlur||0);
+      if(_tbss>0||_tbsb>0){
+        if(_tbsb>0)d.textBlockShadowBlur=_tbsb; else delete d.textBlockShadowBlur;
+        if(_tbss>0)d.textBlockShadowSize=_tbss; else delete d.textBlockShadowSize;
+        d.textBlockShadowColor=el.dataset.textBlockShadowColor||'#000000';
+        d.textBlockShadowInset=el.dataset.textBlockShadowInset==='1';
+      }else{
+        delete d.textBlockShadowBlur; delete d.textBlockShadowSize; delete d.textBlockShadowColor; delete d.textBlockShadowInset;
+      }
+      if(+(el.dataset.rx_tl||0)||+(el.dataset.rx_tr||0)||+(el.dataset.rx_bl||0)||+(el.dataset.rx_br||0)){
         d.rx_tl=+(el.dataset.rx_tl||0);d.rx_tr=+(el.dataset.rx_tr||0);
         d.rx_bl=+(el.dataset.rx_bl||0);d.rx_br=+(el.dataset.rx_br||0);
         d.rxUnit=el.dataset.rxUnit||'px';
+      }
+      if(el.dataset.pad_t!==undefined){
+        d.pad_t=+el.dataset.pad_t;d.pad_r=+el.dataset.pad_r;
+        d.pad_b=+el.dataset.pad_b;d.pad_l=+el.dataset.pad_l;
+        d.padUnit=el.dataset.padUnit||'px';
       }
     }
     if(d.type==='table'){
@@ -594,7 +606,16 @@ function save(){
       }else{
         delete d.textShadowBlur; delete d.textShadowSize; delete d.textShadowW; delete d.textShadowColor;
       }
-      if(el.dataset.rx_tl||el.dataset.rx_tr||el.dataset.rx_bl||el.dataset.rx_br){d.rx_tl=+(el.dataset.rx_tl||0);d.rx_tr=+(el.dataset.rx_tr||0);d.rx_bl=+(el.dataset.rx_bl||0);d.rx_br=+(el.dataset.rx_br||0);}
+      const _tbss=+(el.dataset.textBlockShadowSize||0), _tbsb=+(el.dataset.textBlockShadowBlur||0);
+      if(_tbss>0||_tbsb>0){
+        if(_tbsb>0)d.textBlockShadowBlur=_tbsb; else delete d.textBlockShadowBlur;
+        if(_tbss>0)d.textBlockShadowSize=_tbss; else delete d.textBlockShadowSize;
+        d.textBlockShadowColor=el.dataset.textBlockShadowColor||'#000000';
+        d.textBlockShadowInset=el.dataset.textBlockShadowInset==='1';
+      }else{
+        delete d.textBlockShadowBlur; delete d.textBlockShadowSize; delete d.textBlockShadowColor; delete d.textBlockShadowInset;
+      }
+      if(+(el.dataset.rx_tl||0)||+(el.dataset.rx_tr||0)||+(el.dataset.rx_bl||0)||+(el.dataset.rx_br||0)){d.rx_tl=+(el.dataset.rx_tl||0);d.rx_tr=+(el.dataset.rx_tr||0);d.rx_bl=+(el.dataset.rx_bl||0);d.rx_br=+(el.dataset.rx_br||0);d.rxUnit=el.dataset.rxUnit||'px';}
       const _odmd=oldElsById[d.id];if(_odmd){if(_odmd.textBgScheme!==undefined)d.textBgScheme=_odmd.textBgScheme;if(_odmd.borderScheme!==undefined)d.borderScheme=_odmd.borderScheme;}
     }
     else if(d.type==='icon'){

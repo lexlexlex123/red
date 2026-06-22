@@ -1,4 +1,44 @@
 // ══════════════ BOOT ══════════════
+window._propsScrollMem=(function(){
+  const KEY='red_props_scroll';
+  let _restoreAfterPick=false;
+  function el(){return document.getElementById('props-scroll');}
+  function save(){
+    const node=el(); if(!node) return;
+    try{sessionStorage.setItem(KEY,String(node.scrollTop));}catch(e){}
+  }
+  function restore(){
+    const node=el(); if(!node) return;
+    try{
+      const v=sessionStorage.getItem(KEY);
+      if(v!=null) node.scrollTop=+v||0;
+    }catch(e){}
+  }
+  function restoreSoon(){
+    restore();
+    requestAnimationFrame(restore);
+    requestAnimationFrame(()=>requestAnimationFrame(restore));
+    setTimeout(restore,0);
+    setTimeout(restore,50);
+  }
+  function wire(){
+    const node=el(); if(!node||node._scrollMemWired) return;
+    node._scrollMemWired=true;
+    node.addEventListener('scroll',save,{passive:true});
+    try{
+      const v=sessionStorage.getItem(KEY);
+      if(v!=null) node.scrollTop=+v||0;
+    }catch(e){}
+  }
+  function markRestoreAfterPick(){_restoreAfterPick=true;}
+  function maybeRestoreAfterPick(){
+    if(!_restoreAfterPick) return;
+    _restoreAfterPick=false;
+    restoreSoon();
+  }
+  return {save,restore,restoreSoon,wire,markRestoreAfterPick,maybeRestoreAfterPick};
+})();
+
 function _bootDeferredUI(){
   // Тяжёлая инициализация панелей — после первого кадра со слайдом
   (function _populateFontSel() {
@@ -45,6 +85,7 @@ function _bootDeferredUI(){
 function boot(){
   // Init i18n first
   applyI18n();
+  if(typeof initHexFields==='function')initHexFields();
   syncLangButtons();
   const vEl=document.getElementById('settings-version');
   const aEl=document.getElementById('settings-author');
@@ -173,6 +214,7 @@ function boot(){
   // Restore page numbering UI after everything is rendered
   if(typeof pnSyncUI==='function') pnSyncUI();
   if(typeof pnApplyAll==='function') pnApplyAll();
+  window._propsScrollMem && window._propsScrollMem.wire();
   toast(APP_NAME+' v'+APP_VERSION+' · Ctrl+Z · F5','ok');
 }
 

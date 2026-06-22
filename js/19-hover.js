@@ -1,5 +1,7 @@
 // ══════════════ HOVER EFFECTS ══════════════
 (function(){
+  const HFX_OFFSET = 8;
+
   function _sel(){
     try { return (typeof sel !== 'undefined' && sel) ? sel : null; } catch(e) { return null; }
   }
@@ -18,6 +20,16 @@
     return 0;
   }
 
+  function _readTextColor(el, d){
+    const ec = el && (el.querySelector('.tel') || el.querySelector('.ec'));
+    const cs = ec ? ec.getAttribute('style') || '' : (d && d.cs) || '';
+    const m = cs.match(/(?:^|;|\s)color:\s*([^;]+)/i);
+    return m ? m[1].trim().replace(/['"]/g, '') : '';
+  }
+  function _uiHex(v){
+    return /^#[0-9a-fA-F]{6}$/.test(v||'') ? v : '';
+  }
+
   function _hoverVisualSnapshot(el, d){
     d = d || (el ? _getElData(el) : null);
     const st = {
@@ -31,7 +43,20 @@
       filter: '',
       shadowBlur: 0,
       shadowColor: '#000000',
-      color: ''
+      color: '',
+      textColor: '',
+      textBg: '',
+      textBgOp: 1,
+      textBorderW: 0,
+      textBorderColor: '#ffffff',
+      textBorderStyle: 'solid',
+      textShadowBlur: 0,
+      textShadowSize: 0,
+      textShadowColor: '#000000',
+      textBlockShadowBlur: 0,
+      textBlockShadowSize: 0,
+      textBlockShadowColor: '#000000',
+      textBlockShadowInset: false
     };
     if(!d) return st;
     if(d.type === 'shape'){
@@ -44,9 +69,38 @@
         st.shadowColor = d.shadowColor || '#000000';
       }
     } else if(d.type === 'text'){
-      st.textColor = d.textColor || '';
-      st.textBg = d.textBg || '';
-      st.textBgOp = d.textBgOp != null ? +d.textBgOp : 1;
+      if(el){
+        st.textColor = _readTextColor(el, d);
+        st.textBg = el.dataset.textBg || d.textBg || '';
+        st.textBgOp = el.dataset.textBgOp != null ? +el.dataset.textBgOp : (d.textBgOp != null ? +d.textBgOp : 1);
+        st.textBorderW = +(el.dataset.textBorderW || d.textBorderW || 0);
+        st.textBorderColor = el.dataset.textBorderColor || d.textBorderColor || '#ffffff';
+        st.textBorderStyle = el.dataset.textBorderStyle || d.textBorderStyle || 'solid';
+        st.textShadowBlur = +(el.dataset.textShadowBlur || d.textShadowBlur || 0);
+        st.textShadowSize = +(el.dataset.textShadowSize || d.textShadowSize || 0);
+        st.textShadowColor = el.dataset.textShadowColor || d.textShadowColor || '#000000';
+        st.textBlockShadowBlur = +(el.dataset.textBlockShadowBlur || d.textBlockShadowBlur || 0);
+        st.textBlockShadowSize = +(el.dataset.textBlockShadowSize || d.textBlockShadowSize || 0);
+        st.textBlockShadowColor = el.dataset.textBlockShadowColor || d.textBlockShadowColor || '#000000';
+        st.textBlockShadowInset = el.dataset.textBlockShadowInset === '1' || d.textBlockShadowInset === true;
+      } else {
+        if(d.cs){
+          const m = d.cs.match(/(?:^|;|\s)color:\s*([^;]+)/i);
+          if(m) st.textColor = m[1].trim().replace(/['"]/g, '');
+        }
+        st.textBg = d.textBg || '';
+        st.textBgOp = d.textBgOp != null ? +d.textBgOp : 1;
+        st.textBorderW = +(d.textBorderW || 0);
+        st.textBorderColor = d.textBorderColor || '#ffffff';
+        st.textBorderStyle = d.textBorderStyle || 'solid';
+        st.textShadowBlur = +(d.textShadowBlur || 0);
+        st.textShadowSize = +(d.textShadowSize || 0);
+        st.textShadowColor = d.textShadowColor || '#000000';
+        st.textBlockShadowBlur = +(d.textBlockShadowBlur || 0);
+        st.textBlockShadowSize = +(d.textBlockShadowSize || 0);
+        st.textBlockShadowColor = d.textBlockShadowColor || '#000000';
+        st.textBlockShadowInset = d.textBlockShadowInset === true;
+      }
     } else if(d.type === 'image'){
       st.imgOpacity = d.imgOpacity != null ? +d.imgOpacity : 1;
     }
@@ -91,10 +145,114 @@
   }
 
   function _hoverTransition(dur){
-    return 'left '+dur+' ease,top '+dur+' ease,width '+dur+' ease,height '+dur+' ease,transform '+dur+' ease,opacity '+dur+' ease,filter '+dur+' ease,box-shadow '+dur+' ease';
+    return 'left '+dur+' ease,top '+dur+' ease,width '+dur+' ease,height '+dur+' ease,transform '+dur+' ease,opacity '+dur+' ease,filter '+dur+' ease,box-shadow '+dur+' ease,color '+dur+' ease';
   }
 
-  function _applyHoverVisualState(el, state, d, fx){
+  function _presetFilter(fx){
+    if(!fx || !fx.preset) return '';
+    if(fx.preset === 'lighter') return 'brightness(1.25)';
+    if(fx.preset === 'darker') return 'brightness(0.75)';
+    if(fx.preset === 'hue') return 'hue-rotate(28deg)';
+    return '';
+  }
+
+  function _toRgba(hex, a){
+    if(!hex) return 'rgba(0,0,0,0)';
+    const rv = parseInt(hex.slice(1, 3), 16), gv = parseInt(hex.slice(3, 5), 16), bv = parseInt(hex.slice(5, 7), 16);
+    return 'rgba('+rv+','+gv+','+bv+','+a+')';
+  }
+
+  function _restoreEditorHoverVisuals(el){
+    if(!el) return;
+    el.style.cursor = '';
+    el.style.transition = '';
+    el.style.filter = '';
+    el.style.boxShadow = '';
+    const d = _getElData(el);
+    if(d){
+      el.style.left = (d.x || 0) + 'px';
+      el.style.top = (d.y || 0) + 'px';
+      el.style.width = (d.w || 100) + 'px';
+      el.style.height = (d.h || 100) + 'px';
+      const op = d.elOpacity != null ? +d.elOpacity : 1;
+      el.style.opacity = op === 1 ? '' : String(op);
+      const rot = d.rot != null ? d.rot : (el.dataset.rot || 0);
+      el.style.transform = 'rotate('+rot+'deg)';
+    }
+    if(el.dataset.type === 'text' && typeof window._restoreTextBlockVisuals === 'function'){
+      window._restoreTextBlockVisuals(el);
+    }
+  }
+
+  function _applyTextHoverVisuals(el, state, d, isHover){
+    if(!el || !d || d.type !== 'text') return;
+    if(!isHover){
+      el.style.outline = '';
+      el.style.outlineOffset = '';
+      if(typeof window._stampTextDatasetFromModel === 'function') window._stampTextDatasetFromModel(el, d);
+      if(typeof window._restoreTextBlockVisuals === 'function') window._restoreTextBlockVisuals(el);
+      return;
+    }
+    const ec = el.querySelector('.tel') || el.querySelector('.ec');
+    if(ec && state.textColor){
+      ec.style.color = state.textColor;
+      ec.style.webkitTextFillColor = state.textColor;
+      if(!d.textColorGrad){
+        ec.style.background = '';
+        ec.style.webkitBackgroundClip = '';
+        ec.style.backgroundClip = '';
+      }
+    }
+    if(state.textBg){
+      el.dataset.textBg = state.textBg;
+      el.dataset.textBgOp = state.textBgOp != null ? state.textBgOp : 1;
+      if(typeof applyTextBg === 'function') applyTextBg(el);
+    }
+    const bw = +(state.textBorderW || 0);
+    if(bw > 0){
+      el.style.outline = bw + 'px solid ' + (state.textBorderColor || '#ffffff');
+      el.style.outlineOffset = '0px';
+    } else {
+      el.style.outline = '';
+      el.style.outlineOffset = '';
+    }
+    const shOv = typeof window._shadowOverrideFromState === 'function' ? window._shadowOverrideFromState(state) : {};
+    if(typeof applyTextShadowStyle === 'function') applyTextShadowStyle(el, shOv);
+    if(typeof applyTextBlockShadowStyle === 'function') applyTextBlockShadowStyle(el, shOv);
+  }
+
+  function _mergeHoverState(base, hover, d, fx){
+    const out = Object.assign({}, base, hover || {});
+    if(d && d.type === 'text'){
+      const preset = fx && fx.preset;
+      const filterOnly = preset === 'lighter' || preset === 'darker';
+      out._baseTextColor = base.textColor || '';
+      if(filterOnly || !hover || hover.textColor == null || hover.textColor === '') out.textColor = '';
+      if(filterOnly || !hover || hover.textBg == null || hover.textBg === ''){
+        out.textBg = base.textBg || '';
+        out.textBgOp = base.textBgOp != null ? base.textBgOp : 1;
+      }
+      if(filterOnly || !hover || hover.textBorderW == null || +hover.textBorderW <= 0){
+        out.textBorderW = base.textBorderW || 0;
+        out.textBorderColor = base.textBorderColor || '#ffffff';
+        out.textBorderStyle = base.textBorderStyle || 'solid';
+      }
+      if(filterOnly || !hover || hover.textShadowBlur == null || hover.textShadowSize == null || (+hover.textShadowBlur <= 0 && +hover.textShadowSize <= 0)){
+        out.textShadowBlur = base.textShadowBlur || 0;
+        out.textShadowSize = base.textShadowSize || 0;
+        out.textShadowColor = base.textShadowColor || '#000000';
+      }
+      if(filterOnly || !hover || hover.textBlockShadowBlur == null || hover.textBlockShadowSize == null || (+hover.textBlockShadowBlur <= 0 && +hover.textBlockShadowSize <= 0)){
+        out.textBlockShadowBlur = base.textBlockShadowBlur || 0;
+        out.textBlockShadowSize = base.textBlockShadowSize || 0;
+        out.textBlockShadowColor = base.textBlockShadowColor || '#000000';
+        out.textBlockShadowInset = !!base.textBlockShadowInset;
+      }
+    }
+    return out;
+  }
+
+  function _applyHoverVisualState(el, state, d, fx, isHover){
     if(!state) return;
     el.style.left = state.x + 'px';
     el.style.top = state.y + 'px';
@@ -104,19 +262,11 @@
     const op = state.elOpacity != null ? +state.elOpacity : 1;
     el.style.opacity = op === 1 ? '' : String(op);
 
-    let filter = state.filter || '';
-    if(fx && fx.preset === 'lighter') filter = 'brightness(1.3)';
-    else if(fx && fx.preset === 'darker') filter = 'brightness(0.7)';
-    el.style.filter = filter;
+    el.style.filter = isHover ? _presetFilter(fx) : '';
+    el.style.boxShadow = '';
 
-    const blur = state.shadowBlur != null ? +state.shadowBlur : 0;
-    const scol = state.shadowColor || state.color || (fx && fx.color) || 'rgba(0,0,0,0.4)';
-    if(fx && fx.preset === 'glow'){
-      el.style.boxShadow = '0 0 20px 6px '+(state.color || scol);
-    } else if(blur > 0){
-      el.style.boxShadow = '0 0 '+blur+'px '+scol;
-    } else {
-      el.style.boxShadow = '';
+    if(d && d.type === 'text'){
+      _applyTextHoverVisuals(el, state, d, isHover);
     }
 
     if(d && d.type === 'image'){
@@ -132,46 +282,109 @@
       if(svg){
         svg.style.transition = el.style.transition;
         svg.style.transform = '';
-        svg.style.filter = blur > 0 ? 'drop-shadow(0 0 '+blur+'px '+scol+')' : '';
+        svg.style.filter = '';
         svg.style.opacity = op === 1 ? '' : String(op);
       }
     }
   }
 
-  function _syncHfxPanelVisibility(enabled){
-    const panel = document.getElementById('hfx-panel');
-    const chk = document.getElementById('hfx-on');
-    const on = enabled != null ? !!enabled : !!(chk && chk.checked);
-    if(panel) panel.style.display = on ? 'flex' : 'none';
+  function _syncHfxBodyVisibility(enabled){
+    const body = document.getElementById('hfx-body');
+    if(body) body.style.display = enabled ? 'flex' : 'none';
   }
+
+  function _syncHfxSettingsVisibility(enabled){
+    const panel = document.getElementById('hfx-settings');
+    if(panel) panel.style.display = enabled ? 'flex' : 'none';
+  }
+
+  function _applyPresetToHover(fx, preset){
+    const base = fx.base || {};
+    const prev = fx.hover || {};
+    const hover = JSON.parse(JSON.stringify(base));
+    if(preset === 'right') hover.x = (base.x || 0) + HFX_OFFSET;
+    else if(preset === 'up') hover.y = (base.y || 0) - HFX_OFFSET;
+    ['textColor','textBg','textBgOp','textBorderW','textBorderColor','textBorderStyle','textShadowBlur','textShadowSize','textShadowColor','textBlockShadowBlur','textBlockShadowSize','textBlockShadowColor','textBlockShadowInset'].forEach(k=>{
+      if(prev[k] != null && prev[k] !== '') hover[k] = prev[k];
+    });
+    fx.hover = hover;
+  }
+
+  window.setHoverFxEnabled = function(on){
+    const el = _sel(); if(!el) return;
+    try{
+      const d = _getElData(el);
+      let fx = normalizeHoverFx(el, JSON.parse(el.dataset.hoverFx || '{}'), d);
+      fx.enabled = !!on;
+      if(fx.enabled){
+        fx.base = _hoverVisualSnapshot(el, d);
+        if(!fx.preset || fx.preset === 'none') fx.preset = 'lighter';
+        if(!fx.hover) _applyPresetToHover(fx, fx.preset);
+        if(fx.dur == null) fx.dur = 0.3;
+      }
+      _persistHover(el, fx);
+      applyHoverFxEditor(el, fx);
+      syncHoverFxUI();
+      _save(); _saveState();
+    }catch(e){ console.warn('[19-hover] setHoverFxEnabled:', e.message); }
+  };
+
+  window.setHoverFxPreset = function(preset){
+    const el = _sel(); if(!el) return;
+    try{
+      const d = _getElData(el);
+      let fx = normalizeHoverFx(el, JSON.parse(el.dataset.hoverFx || '{}'), d);
+      fx.preset = preset || 'none';
+      if(!fx.base) fx.base = _hoverVisualSnapshot(el, d);
+      _applyPresetToHover(fx, fx.preset);
+      if(fx.enabled){
+        _persistHover(el, fx);
+        applyHoverFxEditor(el, fx);
+      } else {
+        _persistHover(el, fx);
+      }
+      syncHoverFxUI();
+      _save(); _saveState();
+    }catch(e){ console.warn('[19-hover] setHoverFxPreset:', e.message); }
+  };
+
+  window.applyHoverPreset = window.setHoverFxPreset;
 
   window.setHoverFx = function(prop, val){
     const el = _sel(); if(!el) return;
     try{
+      if(prop === 'enabled'){
+        setHoverFxEnabled(!!val);
+        return;
+      }
       if(!el.dataset.hoverFx) el.dataset.hoverFx = '{}';
       let fx = normalizeHoverFx(el, JSON.parse(el.dataset.hoverFx || '{}'));
-      if(prop === 'enabled'){
-        fx.enabled = !!val;
-        if(fx.enabled){
-          fx.base = _hoverVisualSnapshot(el, _getElData(el));
-          if(!fx._edited) fx.hover = JSON.parse(JSON.stringify(fx.base));
-        }
-      } else if(prop === 'dur'){
+      if(prop === 'dur'){
         fx.dur = +val || 0.3;
       } else {
-        if(!fx.hover) fx.hover = _hoverVisualSnapshot(el, _getElData(el));
+        if(!fx.enabled){
+          fx.enabled = true;
+          fx.base = _hoverVisualSnapshot(el, _getElData(el));
+          if(!fx.preset || fx.preset === 'none') fx.preset = 'lighter';
+          _applyPresetToHover(fx, fx.preset);
+        }
+        if(!fx.hover) fx.hover = JSON.parse(JSON.stringify(fx.base || _hoverVisualSnapshot(el, _getElData(el))));
         const map = {
-          scale:'scale', opacity:'elOpacity', shadow:'shadowBlur',
-          shadowColor:'shadowColor', color:'color',
-          x:'x', y:'y', w:'w', h:'h', rot:'rot'
+          textColor:'textColor', textBg:'textBg', textBorderW:'textBorderW',
+          textBorderColor:'textBorderColor', textBorderStyle:'textBorderStyle',
+          textShadowBlur:'textShadowBlur', textShadowSize:'textShadowSize', textShadowColor:'textShadowColor',
+          textBlockShadowBlur:'textBlockShadowBlur', textBlockShadowSize:'textBlockShadowSize', textBlockShadowColor:'textBlockShadowColor', textBlockShadowInset:'textBlockShadowInset'
         };
         const key = map[prop] || prop;
-        fx.hover[key] = val;
+        if(val === '' || val == null || val === false){
+          delete fx.hover[key];
+        } else {
+          fx.hover[key] = val;
+        }
         fx._edited = true;
       }
       _persistHover(el, fx);
       applyHoverFxEditor(el, fx);
-      _syncHfxPanelVisibility(!!fx.enabled);
       syncHoverFxUI();
       _save(); _saveState();
     }catch(e){ console.warn('[19-hover] setHoverFx:', e.message); }
@@ -179,24 +392,29 @@
 
   window.applyHoverFxEditor = function(el, fx){
     try{
+      if(el._hfxEnter){ el.removeEventListener('mouseenter', el._hfxEnter); el._hfxEnter = null; }
+      if(el._hfxLeave){ el.removeEventListener('mouseleave', el._hfxLeave); el._hfxLeave = null; }
       el.classList.toggle('has-hover-fx', !!(fx && fx.enabled));
-      el.style.cursor = '';
+      _restoreEditorHoverVisuals(el);
     }catch(e){}
   };
 
   window.applyHoverFxPreview = function(el, fx, d){
     if(!fx || !fx.enabled) return;
     try{
+      if(el._hfxEnter){ el.removeEventListener('mouseenter', el._hfxEnter); el._hfxEnter = null; }
+      if(el._hfxLeave){ el.removeEventListener('mouseleave', el._hfxLeave); el._hfxLeave = null; }
       fx = normalizeHoverFx(null, fx, d);
-      const base = Object.assign(_hoverVisualSnapshot(null, d), fx.base || {});
-      const hover = Object.assign({}, base, fx.hover || {});
+      const base = _hoverVisualSnapshot(null, d);
+      const hover = _mergeHoverState(base, fx.hover, d, fx);
       const dur = (fx.dur != null ? fx.dur : 0.3) + 's';
       el.style.transition = _hoverTransition(dur);
       el.style.cursor = 'pointer';
-      _applyHoverVisualState(el, base, d, fx);
-
-      el.addEventListener('mouseenter', ()=> _applyHoverVisualState(el, hover, d, fx));
-      el.addEventListener('mouseleave', ()=> _applyHoverVisualState(el, base, d, fx));
+      _applyHoverVisualState(el, base, d, fx, false);
+      el._hfxEnter = ()=> _applyHoverVisualState(el, hover, d, fx, true);
+      el._hfxLeave = ()=> _applyHoverVisualState(el, base, d, fx, false);
+      el.addEventListener('mouseenter', el._hfxEnter);
+      el.addEventListener('mouseleave', el._hfxLeave);
     }catch(e){ console.warn('[19-hover] applyHoverFxPreview:', e.message); }
   };
 
@@ -205,30 +423,65 @@
     try{
       let fx = JSON.parse(el.dataset.hoverFx || '{}');
       const d = _getElData(el);
-      if(!fx.enabled && d){
-        fx.base = _hoverVisualSnapshot(el, d);
-      }
+      if(!fx.enabled && d) fx.base = _hoverVisualSnapshot(el, d);
       fx = normalizeHoverFx(el, fx, d);
-      const base = fx.base || _hoverVisualSnapshot(el, d);
-      const hover = fx.hover || base;
+      const hover = fx.hover || {};
+      const filterOnly = fx.preset === 'lighter' || fx.preset === 'darker';
       const enabled = !!fx.enabled;
-      _syncHfxPanelVisibility(enabled);
+      _syncHfxBodyVisibility(enabled);
+      _syncHfxSettingsVisibility(enabled);
+      const isText = d && d.type === 'text';
+      ['hfx-text-row','hfx-bg-row','hfx-border-row','hfx-text-shadow-row','hfx-block-shadow-row'].forEach(id=>{
+        const row = document.getElementById(id);
+        if(row) row.style.display = isText ? '' : 'none';
+      });
 
       const set = (id, fn)=>{ try{ const n = document.getElementById(id); if(n) fn(n); }catch(e){} };
       set('hfx-on', v=>{ v.checked = enabled; });
-      set('hfx-dur', v=>{ v.value = fx.dur != null ? fx.dur : 0.3; });
-      set('hfx-x', v=>{ v.value = hover.x != null ? hover.x : base.x; });
-      set('hfx-y', v=>{ v.value = hover.y != null ? hover.y : base.y; });
-      set('hfx-w', v=>{ v.value = hover.w != null ? hover.w : base.w; });
-      set('hfx-h', v=>{ v.value = hover.h != null ? hover.h : base.h; });
-      set('hfx-scale', v=>{ v.value = hover.scale != null ? hover.scale : 1; });
-      set('hfx-rot', v=>{ v.value = hover.rot != null ? hover.rot : base.rot; });
-      set('hfx-op', v=>{ v.value = hover.elOpacity != null ? hover.elOpacity : 1; });
-      set('hfx-shadow', v=>{ v.value = hover.shadowBlur != null ? hover.shadowBlur : 0; });
-      set('hfx-scol', v=>{ v.value = hover.shadowColor || '#000000'; });
-      set('hfx-scol-hex', v=>{ v.value = hover.shadowColor || ''; });
-      set('hfx-col', v=>{ v.value = hover.color || '#ffffff'; });
-      set('hfx-col-hex', v=>{ v.value = hover.color || ''; });
+      set('hfx-preset', v=>{ v.value = fx.preset || 'none'; });
+      set('hfx-dur', v=>{
+        v.value = fx.dur != null ? fx.dur : 0.3;
+        if(typeof refreshNumScrubber === 'function') refreshNumScrubber(v);
+      });
+      set('hfx-text-hex', v=>{ v.value = filterOnly ? '' : _uiHex(hover.textColor); });
+      set('hfx-text-preview', v=>{
+        v.style.background = filterOnly ? 'transparent' : (_uiHex(hover.textColor) || 'transparent');
+      });
+      set('hfx-bg-hex', v=>{ v.value = filterOnly ? '' : _uiHex(hover.textBg); });
+      set('hfx-bg-preview', v=>{
+        v.style.background = filterOnly ? '' : (_uiHex(hover.textBg) || '');
+      });
+      set('hfx-border-w', v=>{
+        v.value = filterOnly ? 0 : (hover.textBorderW != null ? hover.textBorderW : 0);
+        if(typeof refreshNumScrubber === 'function') refreshNumScrubber(v);
+      });
+      set('hfx-border-preview', v=>{
+        v.style.background = filterOnly ? '#ffffff' : (_uiHex(hover.textBorderColor) || '#ffffff');
+      });
+      set('hfx-tshadow-sb', v=>{
+        v.value = filterOnly ? 0 : (hover.textShadowBlur != null ? hover.textShadowBlur : 0);
+        if(typeof refreshNumScrubber === 'function') refreshNumScrubber(v);
+      });
+      set('hfx-tshadow-ss', v=>{
+        v.value = filterOnly ? 0 : (hover.textShadowSize != null ? hover.textShadowSize : 0);
+        if(typeof refreshNumScrubber === 'function') refreshNumScrubber(v);
+      });
+      set('hfx-tshadow-preview', v=>{
+        v.style.background = filterOnly ? '#000000' : (_uiHex(hover.textShadowColor) || '#000000');
+      });
+      set('hfx-bshadow-sb', v=>{
+        v.value = filterOnly ? 0 : (hover.textBlockShadowBlur != null ? hover.textBlockShadowBlur : 0);
+        if(typeof refreshNumScrubber === 'function') refreshNumScrubber(v);
+      });
+      set('hfx-bshadow-ss', v=>{
+        v.value = filterOnly ? 0 : (hover.textBlockShadowSize != null ? hover.textBlockShadowSize : 0);
+        if(typeof refreshNumScrubber === 'function') refreshNumScrubber(v);
+      });
+      set('hfx-bshadow-preview', v=>{
+        v.style.background = filterOnly ? '#000000' : (_uiHex(hover.textBlockShadowColor) || '#000000');
+      });
+      set('hfx-bshadow-inset', v=>{ v.checked = !filterOnly && !!hover.textBlockShadowInset; });
+      if(typeof initHexFields === 'function') initHexFields(document.getElementById('hoverprops'));
     }catch(e){ console.warn('[19-hover] syncHoverFxUI:', e.message); }
   };
 

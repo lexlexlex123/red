@@ -1,19 +1,17 @@
 // ══════════════ DRAG SCRUBBER for input[type=number] ══════════════
 (function () {
-  const THRESH = 5;
+  const THRESH = 4;
 
   function getStep(inp) { const s = parseFloat(inp.step); return (s > 0) ? s : 1; }
   function getMn(inp)   { const v = parseFloat(inp.min);  return isNaN(v) ? -Infinity : v; }
   function getMx(inp)   { const v = parseFloat(inp.max);  return isNaN(v) ?  Infinity : v; }
 
-  // Decimal places needed for a given step
   function stepDec(inp) {
     const s = getStep(inp);
     if (s >= 1) return 0;
     return String(s).split('.')[1]?.length || 1;
   }
 
-  // Near-zero fine steps for positive-only inputs (e.g. font-size)
   function effectiveStep(inp, currentVal) {
     const base = getStep(inp);
     if (getMn(inp) >= 0 && base >= 1) {
@@ -26,8 +24,10 @@
 
   function frac(inp) {
     const lo = getMn(inp), hi = getMx(inp);
+    const v = parseFloat(inp.value);
+    if (inp.value === '' || isNaN(v)) return 0;
     if (!isFinite(lo) || !isFinite(hi) || hi === lo) return 0;
-    return Math.max(0, Math.min(1, (parseFloat(inp.value) - lo) / (hi - lo)));
+    return Math.max(0, Math.min(1, (v - lo) / (hi - lo)));
   }
 
   function fill(inp) {
@@ -69,13 +69,21 @@
     inp.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
+  function shouldFill(inp) {
+    if (!isFinite(getMn(inp)) || !isFinite(getMx(inp))) return false;
+    if (inp.value === '') return false;
+    const v = parseFloat(inp.value);
+    if (isNaN(v)) return false;
+    return true;
+  }
+
   document.addEventListener('mousedown', function (e) {
     const inp = e.target;
     if (!inp || inp.tagName !== 'INPUT' || inp.type !== 'number') return;
+    if (e.button !== 0) return;
 
     e.preventDefault();
     e.stopPropagation();
-    e.stopImmediatePropagation();
 
     const lo = getMn(inp), hi = getMx(inp);
     const hasRange = isFinite(lo) && isFinite(hi);
@@ -83,37 +91,29 @@
     let scrubbing = false;
     let lastV = parseFloat(inp.value) || 0;
     const x0 = e.clientX;
+    const y0 = e.clientY;
     const v0 = lastV;
     const spd = hasRange ? 0 : getStep(inp);
 
-    if (hasRange) {
-      lastV = valueFromClientX(inp, e.clientX);
-      applyValue(inp, lastV, lo, hi);
-      scrubbing = true;
-      inp.blur();
-      document.body.style.cursor = 'ew-resize';
-    }
-
     function onMove(e2) {
-      if (hasRange) {
-        e2.preventDefault();
-        e2.stopPropagation();
-        const v = valueFromClientX(inp, e2.clientX);
-        if (v === lastV) return;
-        lastV = v;
-        applyValue(inp, v, lo, hi);
-        return;
-      }
-
       const dx = e2.clientX - x0;
+      const dy = e2.clientY - y0;
       if (!scrubbing) {
-        if (Math.abs(dx) < THRESH) return;
+        if (Math.abs(dx) < THRESH && Math.abs(dy) < THRESH) return;
         scrubbing = true;
         inp.blur();
         document.body.style.cursor = 'ew-resize';
       }
       e2.preventDefault();
       e2.stopPropagation();
+
+      if (hasRange) {
+        const v = valueFromClientX(inp, e2.clientX);
+        if (v === lastV) return;
+        lastV = v;
+        applyValue(inp, v, lo, hi);
+        return;
+      }
 
       const s = effectiveStep(inp, lastV);
       let v = v0 + dx * spd;
@@ -123,26 +123,30 @@
       const thisDec = (getMn(inp) >= 0 && getStep(inp) >= 1 && Math.abs(v) < 1) ?
         (Math.abs(v) < 0.1 ? 3 : 2) : dec;
       v = parseFloat(v.toFixed(thisDec));
+      if (v === lastV) return;
       lastV = v;
       applyValue(inp, v, lo, hi);
     }
 
-    function onUp() {
+    function onUp(e2) {
       document.removeEventListener('mousemove', onMove, true);
       document.removeEventListener('mouseup',   onUp,   true);
       document.body.style.cursor = '';
+
       if (!scrubbing) {
         inp.focus();
         inp.select();
-        unfill(inp);
+        if (shouldFill(inp)) fill(inp);
+        else unfill(inp);
+        return;
       }
+      if (hasRange && shouldFill(inp)) fill(inp);
     }
 
     document.addEventListener('mousemove', onMove, true);
     document.addEventListener('mouseup',   onUp,   true);
   }, true);
 
-  // Prevent browser from treating scrub as element drag
   document.addEventListener('dragstart', function (e) {
     if (e.target && e.target.tagName === 'INPUT' && e.target.type === 'number') {
       e.preventDefault();
@@ -152,35 +156,34 @@
   document.addEventListener('input', function (e) {
     const inp = e.target;
     if (!inp || inp.tagName !== 'INPUT' || inp.type !== 'number') return;
-    if (document.activeElement === inp) return;
-    if (isFinite(getMn(inp)) && isFinite(getMx(inp))) fill(inp);
+    if (shouldFill(inp)) fill(inp);
+    else unfill(inp);
   }, true);
 
   document.addEventListener('focus', function (e) {
     const inp = e.target;
     if (!inp || inp.tagName !== 'INPUT' || inp.type !== 'number') return;
-    unfill(inp);
+    if (shouldFill(inp)) fill(inp);
     setTimeout(() => inp.select(), 0);
   }, true);
 
   document.addEventListener('blur', function (e) {
     const inp = e.target;
     if (!inp || inp.tagName !== 'INPUT' || inp.type !== 'number') return;
-    if (isFinite(getMn(inp)) && isFinite(getMx(inp)) && inp.value !== '') fill(inp);
+    if (shouldFill(inp)) fill(inp);
+    else unfill(inp);
   }, true);
 
   function initAll() {
     document.querySelectorAll('input[type=number]').forEach(inp => {
-      if (isFinite(getMn(inp)) && isFinite(getMx(inp)) && inp.value !== '') fill(inp);
+      if (shouldFill(inp)) fill(inp);
     });
   }
 
   window.refreshNumScrubber = function (inp) {
     if (!inp || inp.tagName !== 'INPUT' || inp.type !== 'number') return;
-    if (!isFinite(getMn(inp)) || !isFinite(getMx(inp))) return;
-    const v = parseFloat(inp.value);
-    if (inp.value === '' || (getMn(inp) >= 0 && isFinite(v) && v <= 0)) unfill(inp);
-    else fill(inp);
+    if (shouldFill(inp)) fill(inp);
+    else unfill(inp);
   };
 
   window.addEventListener('load', function () {
