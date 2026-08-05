@@ -402,6 +402,7 @@ function getCounterHTML(cfg){
   cfg = cfg || {};
   const start  = cfg.cntStart !== undefined ? +cfg.cntStart : 0;
   const step   = cfg.genStep  !== undefined ? +cfg.genStep  : 1;
+  const groupId = cfg.cntGroupId || '';
   const goalRaw = cfg.cntGoal;
   const hasGoal = goalRaw !== undefined && goalRaw !== null && goalRaw !== '';
   const goal   = hasGoal ? +goalRaw : null;
@@ -442,6 +443,7 @@ html,body{width:100%;height:100%;background:transparent;overflow:hidden;cursor:p
 <script>
 var _val=${start}, _step=${step}, _start=${start};
 var _goal=${goal === null ? 'null' : goal}, _onEnd=${JSON.stringify(cntOnEnd)}, _onEndSlide=${cntOnEndSlide}, _onEndAnim=${JSON.stringify(cntOnEndAnim)};
+var _gid=${JSON.stringify(groupId)};
 function showVal(){
   var el=document.getElementById('num');
   if(!el) return;
@@ -472,12 +474,31 @@ function stepUp(){
   _val=Math.round((_val+_step)*1e9)/1e9;
   showVal();
   _checkGoal(prev);
+  if(_gid) _postAppletMsg({type:'counterSync', gid:_gid, val:_val});
 }
 showVal();
 document.getElementById('wrap').addEventListener('click', function(e){ e.preventDefault(); stepUp(); });
 window.addEventListener('message', function(e){
   var d=e.data; if(!d) return;
   if(d.type==='counterStep'){ stepUp(); return; }
+  if(d.type==='counterSync'){
+    if(d.val!==undefined){ _val=+d.val; showVal(); }
+    return;
+  }
+  if(d.type==='counterMorphStyle'){
+    var mNum=document.getElementById('num');
+    var mWb=document.getElementById('wrapbg');
+    if(mNum){
+      mNum.style.transition='none';
+      if(d.color!==undefined) mNum.style.color=d.color;
+      if(d.fs!==undefined) mNum.style.fontSize=d.fs+'px';
+    }
+    if(mWb){
+      mWb.style.transition='none';
+      if(d.bg!==undefined) mWb.style.background=d.bg;
+    }
+    return;
+  }
   if(d.type==='counterUpdate'){
     var wrap=document.getElementById('wrap');
     var num=document.getElementById('num');
@@ -497,6 +518,7 @@ window.addEventListener('message', function(e){
     if(d.onEnd!==undefined) _onEnd=d.onEnd;
     if(d.onEndSlide!==undefined) _onEndSlide=+d.onEndSlide;
     if(d.onEndAnim!==undefined) _onEndAnim=d.onEndAnim||'';
+    if(d.gid!==undefined) _gid=d.gid||'';
   }
 });
 <\/script></body></html>`;
@@ -604,11 +626,11 @@ function renderQRDataURL(text, bgColor, qrColor, size){
 // ── APPLETS REGISTRY ──
 // Each applet can optionally have a htmlFn(palette) for theme-aware rendering
 const APPLETS=[
-  {id:'calculator', name:'Calculator', desc:'Basic calculator',   icon:'⌨', htmlFn:getCalcHTML,  aspectRatio:3/4},
-  {id:'clock', name:'Clock', desc:'Live digital clock', icon:'🕐', htmlFn:(p,cfg)=>getClockHTML(cfg), aspectRatio:null, hasProps:true},
-  {id:'timer',      name:'Timer',      desc:'Countdown timer',    icon:'⏱', htmlFn:(p,cfg)=>getTimerHTML(cfg), aspectRatio:null, hasProps:true},
-  {id:'notes',      name:'Notes',      desc:'Sticky note',        icon:'📝', htmlFn:(p,cfg)=>getNotesHTML(p,cfg), aspectRatio:null},
-  {id:'qr',         name:'QR Code',    desc:'Generate QR code',   icon:'▦', hasProps:true,        aspectRatio:1},
+  {id:'calculator', name:'Calculator', nameRu:'Калькулятор', desc:'Basic calculator',   descRu:'Обычный калькулятор', icon:'⌨', htmlFn:getCalcHTML,  aspectRatio:3/4},
+  {id:'clock',      name:'Clock',      nameRu:'Часы',         desc:'Live digital clock', descRu:'Электронные часы',    icon:'🕐', htmlFn:(p,cfg)=>getClockHTML(cfg), aspectRatio:null, hasProps:true},
+  {id:'timer',      name:'Timer',      nameRu:'Таймер',       desc:'Countdown timer',    descRu:'Обратный отсчёт',    icon:'⏱', htmlFn:(p,cfg)=>getTimerHTML(cfg), aspectRatio:null, hasProps:true},
+  {id:'notes',      name:'Notes',      nameRu:'Заметки',      desc:'Sticky note',        descRu:'Заметка на слайде',  icon:'📝', htmlFn:(p,cfg)=>getNotesHTML(p,cfg), aspectRatio:null},
+  {id:'qr',         name:'QR Code',    nameRu:'QR-код',       desc:'Generate QR code',   descRu:'Сгенерировать QR-код', icon:'▦', hasProps:true,        aspectRatio:1},
   {id:'generator',  name:'Generator',  nameRu:'Генератор', desc:'Random number',      descRu:'Случайное число', icon:'🎲', htmlFn:(p,cfg)=>getGeneratorHTML(cfg), aspectRatio:null, hasProps:true},
   {id:'counter',    name:'Counter',    nameRu:'Счётчик',   desc:'Click counter',      descRu:'Счётчик по клику', icon:'🔢', htmlFn:(p,cfg)=>getCounterHTML(cfg), aspectRatio:null, hasProps:true},
 ];
@@ -717,7 +739,7 @@ function insertApplet(a, opts){
     _appletAspect:aspect,
     // Generator-specific data
     ...(a.id==='generator' ? {genMode:'number',genLines:'',genMin:1,genMax:100,genStep:1, genFontSize:64, genColor:'', genBg:'', genBgOp:0.2, genBgBlur:0, genBorderColor:'', genBorderWidth:0, genAlign:'center', genVAlign:'middle', genBold:false, genShadowBlur:8, genShadowY:2, genShadowColor:'#000000'} : {}),
-    ...(a.id==='counter'   ? {cntStart:0, genStep:1, genFontSize:64, genColor:'', genBg:'', genBgOp:0.2, genBgBlur:0, genBorderColor:'', genBorderWidth:0, genAlign:'center', genVAlign:'middle', genBold:false, genShadowBlur:8, genShadowColor:'#000000'} : {}),
+    ...(a.id==='counter'   ? {cntStart:0, genStep:1, genFontSize:64, genColor:'', genBg:'', genBgOp:0.2, genBgBlur:0, genBorderColor:'', genBorderWidth:0, genAlign:'center', genVAlign:'middle', genBold:false, genShadowBlur:8, genShadowColor:'#000000', cntGroupId:''} : {}),
     ...(a.id==='timer'     ? {tmMin:5, tmSec:0, genFontSize:72, genColor:'', genBg:'', genBgOp:0.2, genBgBlur:0, genBorderColor:'', genBorderWidth:0, genAlign:'center', genVAlign:'middle', genBold:false, genShadowBlur:8, genShadowColor:'#000000', genShadowOn:true} : {}),
     ...(a.id==='clock'     ? {genFontSize:48, genColor:'', genBg:'', genBgOp:0.2, genBgBlur:0, genBorderColor:'', genBorderWidth:0, genAlign:'center', genVAlign:'middle', genBold:false, genShadowBlur:8, genShadowColor:'#000000', genShadowOn:true} : {}),
     ...(a.id==='qr'        ? {qrText:'https://example.com', qrBg:'#ffffff', qrColor:'#000000', qrRx:16} : {}),
@@ -914,6 +936,7 @@ window.refreshCounterEl = function(elId, opts){
   domEl.dataset.cntOnEnd       = d.cntOnEnd || 'none';
   domEl.dataset.cntOnEndSlide  = d.cntOnEndSlide !== undefined ? d.cntOnEndSlide : 0;
   domEl.dataset.cntOnEndAnim   = d.cntOnEndAnim || '';
+  domEl.dataset.cntGroupId     = d.cntGroupId || '';
   domEl.dataset.genStep        = d.genStep !== undefined ? d.genStep : 1;
   domEl.dataset.genFontSize    = fs;
   domEl.dataset.genColor       = d.genColor || '';
@@ -950,6 +973,7 @@ window.refreshCounterEl = function(elId, opts){
       onEnd: d.cntOnEnd || 'none',
       onEndSlide: d.cntOnEndSlide !== undefined ? +d.cntOnEndSlide : 0,
       onEndAnim: d.cntOnEndAnim || '',
+      gid: d.cntGroupId || '',
     });
   }
 
@@ -1174,6 +1198,7 @@ function _counterAppletCfg(d, p){
     cntOnEnd: d.cntOnEnd,
     cntOnEndSlide: d.cntOnEndSlide,
     cntOnEndAnim: d.cntOnEndAnim,
+    cntGroupId: d.cntGroupId || '',
     genStep: d.genStep !== undefined ? d.genStep : 1,
     genFontSize: d.genFontSize, genColor: d.genColor, genBg: d.genBg, genBgBlur: d.genBgBlur,
     genBorderColor: d.genBorderColor, genBorderWidth: d.genBorderWidth,
@@ -1221,30 +1246,10 @@ function _rebuildThemedAppletHtml(d, p){
 function _remapSchemeColors(d, p){
   const ti=(typeof appliedThemeIdx!=='undefined'&&appliedThemeIdx>=0)?appliedThemeIdx:-1;
   const t=ti>=0&&typeof THEMES!=='undefined'?THEMES[ti]:null;
-  if(!t) return;
-  const isLight=!t.dark;
-  const base=typeof _themeColors==='function'?_themeColors(t):[p.ac1,p.ac2,p.ac3,p.ac1,p.ac1,p.head,p.text,'#000000'];
-  const tintLevels=[0,0.22,0.44,0.66,0.88];
-  function tintHex(hex,tint){
-    if(!tint) return hex;
-    const h=(hex||'#6366f1').replace('#','');
-    const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);
-    return '#'+[r,g,b].map(x=>Math.round(x+(255-x)*tint).toString(16).padStart(2,'0')).join('');
-  }
-  function schemeColor(scheme){
-    if(!scheme||scheme.col===undefined||scheme.row===undefined) return null;
-    const col=scheme.col, row=scheme.row, tint=tintLevels[row]||0;
-    const isLastCol=(col===base.length-1);
-    if(isLastCol){
-      return isLight
-        ?(tint===0?'#000000':tintHex('#000000',tint))
-        :(tint===0?'#ffffff':tintHex('#ffffff',tint));
-    }
-    return tintHex(base[col]||base[0], tint);
-  }
-  if(d.genBgScheme){const c=schemeColor(d.genBgScheme);if(c) d.genBg=c;}
-  if(d.genColorScheme){const c=schemeColor(d.genColorScheme);if(c) d.genColor=c;}
-  if(d.genBorderScheme){const c=schemeColor(d.genBorderScheme);if(c) d.genBorderColor=c;}
+  if(!t||typeof _resolveSchemeColor!=='function') return;
+  if(d.genBgScheme){const c=_resolveSchemeColor(d.genBgScheme,t);if(c) d.genBg=c;}
+  if(d.genColorScheme){const c=_resolveSchemeColor(d.genColorScheme,t);if(c) d.genColor=c;}
+  if(d.genBorderScheme){const c=_resolveSchemeColor(d.genBorderScheme,t);if(c) d.genBorderColor=c;}
 }
 
 function _whenIframeReady(iframe, fn){
@@ -1414,6 +1419,53 @@ window._onAppletAnimMessage = function(e){
   window.fireAppletAnimRef(ref, slideIdx, appletVal);
 };
 window.addEventListener('message', window._onAppletAnimMessage);
+
+// ── COUNTER GROUP SYNC ──
+// Shared in-memory registry: groupId -> current value. Lets counters with the
+// same "ID" (cntGroupId) on different slides continue counting from where
+// the previous one left off, instead of resetting to their own start value.
+// IMPORTANT: this only applies during PRESENTATION (preview / exported player).
+// The editor canvas (#canvas) is intentionally excluded — a counter being edited
+// must always show its own default start value, never a value picked up mid-click.
+window._counterGroupVal = window._counterGroupVal || {};
+
+// Patches the baked "var _val=START, _step=..." line of a counter's cached
+// appletHtml so the iframe renders the correct (synced) value on its very
+// first paint — no flash of the default value followed by a jump.
+window._counterBakeStartVal = function(html, val){
+  if(typeof html !== 'string' || !html) return html;
+  return html.replace(/var _val=(-?[\d.]+), _step=/, 'var _val=' + val + ', _step=');
+};
+
+// Returns the HTML to use for mounting a counter iframe in presentation
+// contexts (preview / export), with the group's live value baked in if known.
+window._counterMountHTML = function(d){
+  if(!d || d.appletId !== 'counter') return d && d.appletHtml || '';
+  const gid = d.cntGroupId || '';
+  if(gid && Object.prototype.hasOwnProperty.call(window._counterGroupVal, gid)){
+    return window._counterBakeStartVal(d.appletHtml || '', window._counterGroupVal[gid]);
+  }
+  return d.appletHtml || '';
+};
+
+window._onCounterGroupSyncMessage = function(e){
+  const dt = e.data;
+  if(!dt || dt.type !== 'counterSync' || !dt.gid) return;
+  window._counterGroupVal[dt.gid] = dt.val;
+  // Relay only within presentation roots (preview / export) — never to #canvas.
+  const roots = [document.getElementById('psa'), document.getElementById('psb'), document.getElementById('sa'), document.getElementById('sb')];
+  roots.forEach(root=>{
+    if(!root) return;
+    root.querySelectorAll('[data-applet-id="counter"]').forEach(wrap=>{
+      if((wrap.dataset.cntGroupId || '') !== dt.gid) return;
+      const ifr = wrap.querySelector('iframe');
+      if(!ifr) return;
+      try{ if(ifr.contentWindow === e.source) return; }catch(err){}
+      if(typeof _appletPostMessage === 'function') _appletPostMessage(ifr, {type:'counterSync', val: dt.val});
+    });
+  });
+};
+window.addEventListener('message', window._onCounterGroupSyncMessage);
 
 window._isValidAppletAnimRef = function(slide, appletElId, ref, triggerType){
   if(!ref || !slide || !appletElId || !triggerType) return false;

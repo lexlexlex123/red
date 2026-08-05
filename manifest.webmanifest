@@ -35,5 +35,28 @@
       "type": "image/png",
       "purpose": "maskable"
     }
+  ],
+  "file_handlers": [
+    {
+      "action": "./",
+      "accept": {
+        "text/html": [".html", ".htm"]
+      },
+      "launch_type": "single-client",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "action": "./",
+      "accept": {
+        "application/json": [".json"]
+      },
+      "launch_type": "single-client"
+    }
   ]
 }

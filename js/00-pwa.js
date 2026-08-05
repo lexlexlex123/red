@@ -54,7 +54,7 @@
 
   function registerSw() {
     navigator.serviceWorker
-      .register('sw.js?v=5', { scope: './' })
+      .register('sw.js?v=7', { scope: './' })
       .then((reg) => {
         reg.update();
         reg.addEventListener('updatefound', () => {
@@ -106,6 +106,80 @@
   }
 
   window.warmPwaImageCache = warmPwaImageCache;
+
+  // ── «Открыть с помощью Слайды» (File Handling API / launchQueue) ──
+  const _pwaLaunchFiles = [];
+  let _pwaLaunchReady = false;
+
+  function _pwaImportJsonFile(file) {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const raw = ev.target.result;
+        const parsed = JSON.parse(raw);
+        if (!parsed.slides) throw new Error('Нет поля slides');
+        localStorage.setItem('sf_v4', raw);
+        if (typeof loadState === 'function') loadState();
+        if (typeof renderAll === 'function') renderAll();
+        if (typeof syncProps === 'function') syncProps();
+        if (typeof toast === 'function') toast('JSON состояния загружен', 'ok');
+      } catch (err) {
+        if (typeof toast === 'function') toast('Ошибка импорта JSON: ' + err.message, 'err');
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  function _pwaOpenLaunchFile(file) {
+    if (!file) return;
+    const name = (file.name || '').toLowerCase();
+    const ext = name.includes('.') ? name.split('.').pop() : '';
+    if (ext === 'html' || ext === 'htm' || file.type === 'text/html') {
+      if (typeof importHTMLFile === 'function') {
+        importHTMLFile(file);
+      } else if (typeof toast === 'function') {
+        toast('Импорт HTML ещё не готов', 'err');
+      }
+      return;
+    }
+    if (ext === 'json' || file.type === 'application/json') {
+      _pwaImportJsonFile(file);
+      return;
+    }
+    if (typeof toast === 'function') toast('Формат не поддерживается: ' + (file.name || ''), 'err');
+  }
+
+  function _pwaFlushLaunchFiles() {
+    if (!_pwaLaunchReady) return;
+    while (_pwaLaunchFiles.length) {
+      _pwaOpenLaunchFile(_pwaLaunchFiles.shift());
+    }
+  }
+
+  /** Вызвать после boot(), когда importHTMLFile уже доступен. */
+  window.pwaReadyForFileLaunch = function () {
+    _pwaLaunchReady = true;
+    _pwaFlushLaunchFiles();
+  };
+
+  if ('launchQueue' in window) {
+    try {
+      window.launchQueue.setConsumer(async (launchParams) => {
+        if (!launchParams || !launchParams.files || !launchParams.files.length) return;
+        for (const handle of launchParams.files) {
+          try {
+            const file = await handle.getFile();
+            if (_pwaLaunchReady) _pwaOpenLaunchFile(file);
+            else _pwaLaunchFiles.push(file);
+          } catch (e) {
+            console.warn('[PWA] file launch failed', e);
+          }
+        }
+      });
+    } catch (e) {
+      console.warn('[PWA] launchQueue unavailable', e);
+    }
+  }
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', registerSw);

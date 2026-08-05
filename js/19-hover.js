@@ -103,6 +103,8 @@
       }
     } else if(d.type === 'image'){
       st.imgOpacity = d.imgOpacity != null ? +d.imgOpacity : 1;
+    } else if(d.type === 'svg'){
+      st.svgOpacity = d.svgOpacity != null ? +d.svgOpacity : 1;
     }
     return st;
   }
@@ -156,6 +158,19 @@
     return '';
   }
 
+  // The element's OWN persistent shadow (image/svg), independent of hover.
+  // Both live on el.style.filter in preview/export (svg's ".ec" wrapper
+  // doesn't exist there — the parsed <svg> is appended straight into el),
+  // while the editor canvas gives svg its own ".ec" wrapper instead. Hover
+  // code must never blindly overwrite el.style.filter without folding this
+  // back in, or enabling hover effect silently erases the shadow.
+  function _ownShadowFilterForEl(el, d){
+    if(!d) return '';
+    if(d.type === 'image' && d.imgShadow) return 'url(#imgsh_' + (d.id || 'x') + ')';
+    if(d.type === 'svg' && d.svgShadow && el && !el.querySelector('.ec')) return 'url(#svgsh_' + (d.id || 'x') + ')';
+    return '';
+  }
+
   function _toRgba(hex, a){
     if(!hex) return 'rgba(0,0,0,0)';
     const rv = parseInt(hex.slice(1, 3), 16), gv = parseInt(hex.slice(3, 5), 16), bv = parseInt(hex.slice(5, 7), 16);
@@ -166,9 +181,9 @@
     if(!el) return;
     el.style.cursor = '';
     el.style.transition = '';
-    el.style.filter = '';
-    el.style.boxShadow = '';
     const d = _getElData(el);
+    el.style.filter = _ownShadowFilterForEl(el, d);
+    el.style.boxShadow = '';
     if(d){
       el.style.left = (d.x || 0) + 'px';
       el.style.top = (d.y || 0) + 'px';
@@ -262,7 +277,9 @@
     const op = state.elOpacity != null ? +state.elOpacity : 1;
     el.style.opacity = op === 1 ? '' : String(op);
 
-    el.style.filter = isHover ? _presetFilter(fx) : '';
+    const presetF = isHover ? _presetFilter(fx) : '';
+    const ownShadowF = _ownShadowFilterForEl(el, d);
+    el.style.filter = [presetF, ownShadowF].filter(Boolean).join(' ');
     el.style.boxShadow = '';
 
     if(d && d.type === 'text'){
@@ -274,6 +291,22 @@
       if(img){
         const iop = state.imgOpacity != null ? +state.imgOpacity : 1;
         img.style.opacity = iop === 1 ? '' : String(iop);
+      }
+    }
+
+    if(d && d.type === 'svg'){
+      // Editor canvas: opacity/shadow live on the inner ".ec" wrapper, left
+      // untouched by the el-level filter/opacity above — just reassert its
+      // own opacity here (mirrors the "shape" branch below).
+      // Preview/export: no ".ec" wrapper exists, so both were already folded
+      // into el.style.opacity/filter above via ownShadowF; nothing more to do.
+      const ec = el.querySelector('.ec');
+      if(ec){
+        const so = state.svgOpacity != null ? +state.svgOpacity : (d.svgOpacity != null ? +d.svgOpacity : 1);
+        ec.style.opacity = so === 1 ? '' : String(so);
+      } else {
+        const so2 = state.svgOpacity != null ? +state.svgOpacity : (d.svgOpacity != null ? +d.svgOpacity : 1);
+        el.style.opacity = (op === 1 && so2 === 1) ? '' : String(op * so2);
       }
     }
 

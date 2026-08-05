@@ -245,6 +245,17 @@ function openFormulaEditor(existingEl){
       { label:'Система ур-й',  latex:'\\begin{cases} #0 \\\\ #1 \\end{cases}' },
       { label:'Столбец',       latex:'\\begin{pmatrix} #0 \\\\ #1 \\end{pmatrix}' },
     ]},
+    { title:'Химия', icon:'H_{2}O', variants:(
+      (typeof window._chemPresets === 'object' && Array.isArray(window._chemPresets) && window._chemPresets.length)
+        ? window._chemPresets.map(p => ({ label:p.label, latex:p.latex }))
+        : [
+            { label:'Вода', latex:'H_{2}O' },
+            { label:'Серная к-та', latex:'H_{2}SO_{4}' },
+            { label:'CO₂', latex:'CO_{2}' },
+            { label:'Метан', latex:'CH_{4}' },
+            { label:'Аммиак', latex:'NH_{3}' },
+          ]
+    )},
   ];
 
   // ── Символы (плоский список, одна строка с прокруткой) ───────────
@@ -931,7 +942,7 @@ function syncFormulaProps(){
 
   // Update props panel UI only
   const previewEl = document.getElementById('fp-preview');
-  const colorSw   = document.getElementById('fp-color-swatch');
+  const colorSw   = document.getElementById('fp-color-swatch-inner') || document.getElementById('fp-color-swatch');
   const colorHex  = document.getElementById('fp-color-hex');
 
   if(previewEl && d.formulaSvg){
@@ -942,7 +953,15 @@ function syncFormulaProps(){
     if(svgEl){ svgEl.style.maxHeight='80px'; svgEl.style.width='auto'; svgEl.style.height='auto'; }
   }
   if(colorSw) colorSw.style.background = color;
-  if(colorHex) colorHex.value = color;
+  if(colorHex) colorHex.value = (typeof _colorFieldDisplay==='function')
+    ? _colorFieldDisplay(color, d.formulaColorScheme)
+    : color;
+
+  const graphBtn = document.getElementById('fp-graph-btn');
+  if(graphBtn){
+    const isChem = typeof window._chemIsFormula === 'function' && window._chemIsFormula(d.formulaRaw || '');
+    graphBtn.textContent = isChem ? '🧪 Построить структуру' : '📈 Построить график';
+  }
 }
 
 // Update formula color (from props panel color picker)
@@ -971,5 +990,83 @@ window.addFormula = addFormula;
 window.openFormulaEditor = openFormulaEditor;
 window.syncFormulaProps = syncFormulaProps;
 window.setFormulaColor = setFormulaColor;
+
+/**
+ * Создать формулу на слайде из голосового/текстового ввода (без модалки).
+ * Принимает: «y = x», «h2so4», «азотистой кислоты», LaTeX.
+ * opts.withStructure — сразу построить хим. структуру рядом.
+ */
+window.createFormulaFromText = function(raw, opts) {
+  opts = opts || {};
+  if (!raw || !String(raw).trim()) {
+    if (typeof toast === 'function') toast('Пустая формула', 'err');
+    return;
+  }
+  let input = String(raw).trim();
+  input = input.replace(/^(формулу?|формула|formula)\s+/i, '').trim();
+  // «серной кислоты и её структуру» → только название
+  const wantStruct = !!opts.withStructure || /\s+и\s+(е[её]?\s+)?(структуру|строение)\s*$/i.test(input);
+  input = input.replace(/\s+и\s+(е[её]?\s+)?(структуру|строение)\s*$/i, '').trim();
+
+  let latex = input;
+
+  // 1) Русское название вещества
+  if (typeof window._chemFindBySpokenName === 'function') {
+    const byName = window._chemFindBySpokenName(input);
+    if (byName && typeof window._chemKeyToLatex === 'function') {
+      latex = window._chemKeyToLatex(byName);
+    }
+  }
+
+  // 2) Хим. формула латиницей (h2so4 / H2SO4)
+  if (latex === input && typeof window._chemNormalize === 'function' && typeof window._chemIsFormula === 'function') {
+    const norm = window._chemNormalize(input);
+    if (norm && window._chemIsFormula(norm) && typeof window._chemKeyToLatex === 'function') {
+      let key = norm;
+      try {
+        const info = window._chemLookup && window._chemLookup(norm);
+        if (info && info.key) key = info.key;
+      } catch (e) {}
+      latex = window._chemKeyToLatex(key);
+    }
+  }
+
+  if (typeof toast === 'function') toast('Формула: ' + latex, 'ok');
+
+  _renderFormula(latex, (svg, err) => {
+    if (err || !svg) {
+      if (typeof toast === 'function') toast('Не удалось отрисовать формулу: ' + (err || ''), 'err');
+      return;
+    }
+    const color = (typeof _resolveFormulaDefault === 'function') ? _resolveFormulaDefault() : '#ffffff';
+    _commitFormula(null, latex, [latex], svg, color, { col: 7, row: 0 });
+    if (wantStruct && typeof window.buildFormulaGraph === 'function') {
+      setTimeout(() => {
+        const el = (typeof sel !== 'undefined' && sel && sel.dataset.type === 'formula')
+          ? sel
+          : document.querySelector('#canvas .el[data-type="formula"]:last-of-type');
+        if (el) window.buildFormulaGraph(el);
+      }, 50);
+    }
+  });
+};
+
+/** Структура вещества: по имени / формуле / выделенной формуле. */
+window.createChemStructureFromText = function(raw) {
+  const spoken = String(raw || '').trim();
+  // Уже выделена формула и имя не сказано — построить по ней
+  if (!spoken && typeof sel !== 'undefined' && sel && sel.dataset.type === 'formula') {
+    if (typeof window.buildFormulaGraph === 'function') window.buildFormulaGraph(sel);
+    return;
+  }
+  if (!spoken) {
+    if (typeof toast === 'function') toast('Скажите вещество, например: структура серной кислоты', 'err');
+    return;
+  }
+  // Создать формулу + структуру
+  if (typeof window.createFormulaFromText === 'function') {
+    window.createFormulaFromText(spoken, { withStructure: true });
+  }
+};
 
 })();

@@ -185,6 +185,9 @@
       var ms = (typeof multiSel !== 'undefined') ? multiSel : new Set();
       var gid = curSel ? getGroupId(curSel) : null;
 
+      // Always keep selection frames in sync (e.g. while dragging a group)
+      if (typeof _updateSelFrames === 'function') _updateSelFrames();
+
       // Check if multiSel contains elements from multiple groups or mixed (group + non-group)
       var _groupIds = new Set();
       ms.forEach(function(e) { var g = getGroupId(e); if(g) _groupIds.add(g); });
@@ -512,6 +515,12 @@
         var newY = Math.round(originY + relY * scaleY);
         var newElW = Math.max(20, Math.round(st.w * scaleX));
         var newElH = Math.max(10, Math.round(st.h * scaleY));
+        // Chem structures keep aspect ratio so formula/text don't stretch
+        if (ge.dataset.graphKind === 'chem') {
+          var uni = (Math.abs(scaleX - 1) >= Math.abs(scaleY - 1)) ? scaleX : scaleY;
+          newElW = Math.max(80, Math.round(st.w * uni));
+          newElH = Math.max(80, Math.round(st.h * uni));
+        }
         ge.style.left   = newX + 'px';
         ge.style.top    = newY + 'px';
         ge.style.width  = newElW + 'px';
@@ -835,7 +844,9 @@
             ge.style.left = (pos.x0 + dx) + 'px';
             ge.style.top  = (pos.y0 + dy) + 'px';
           });
-          // No group outline during single-element drag
+          if (typeof _updateSelFrames === 'function') _updateSelFrames();
+          if (typeof _scheduleHandlesOverlayUpdate === 'function') _scheduleHandlesOverlayUpdate();
+          else if (typeof _updateHandlesOverlay === 'function') _updateHandlesOverlay();
         }
         function onUp() {
           document.removeEventListener('mousemove', onMove, true);
@@ -915,6 +926,7 @@
     var m = document.getElementById('el-ctx-menu');
     if (m) m.style.display = 'none';
   }
+  window._hideElCtxMenu = _hideElCtxMenu;
 
   function _showElCtxMenu(x, y, items) {
     var m = document.getElementById('el-ctx-menu');
@@ -923,7 +935,14 @@
       m.id = 'el-ctx-menu';
       m.className = 'slide-ctx-menu';
       document.body.appendChild(m);
-      document.addEventListener('mousedown', function (e) { if (!m.contains(e.target)) _hideElCtxMenu(); });
+      // capture: закрываем до stopPropagation на .el (ЛКМ по другому объекту и т.п.)
+      document.addEventListener('mousedown', function (e) {
+        if (m.style.display === 'none') return;
+        if (m.contains(e.target)) return;
+        // ПКМ: меню сразу переоткроет contextmenu — не мигаем закрытием здесь
+        if (e.button === 2) return;
+        _hideElCtxMenu();
+      }, true);
       document.addEventListener('keydown', function (e) { if (e.key === 'Escape') _hideElCtxMenu(); });
       window.addEventListener('scroll', function () { _hideElCtxMenu(); }, true);
     }

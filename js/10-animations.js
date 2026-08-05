@@ -1069,7 +1069,29 @@ window._selectedAnimCat  = null;
       targets.forEach(({ d }) => {
         if (!d.anims || !d.anims[animIdx]) return;
         if (val === undefined) delete d.anims[animIdx][prop];
-        else if (prop === 'duration' || prop === 'delay' || prop === 'navTarget' || prop === 'charDelay' || prop === 'holdDuration' || prop === 'tx' || prop === 'ty' || prop === 'orbitR' || prop === 'orbitDeg' || prop === 'rotateDeg') d.anims[animIdx][prop] = +val;
+        else if (prop === 'orbitR') {
+          const a = d.anims[animIdx];
+          const ocx = a.orbitCx || 0, ocy = a.orbitCy || 0;
+          const oldR = Math.sqrt(ocx * ocx + ocy * ocy) || (a.orbitR || 120);
+          const newR = Math.max(10, +val);
+          const s = oldR > 0.5 ? (newR / oldR) : 1;
+          a.orbitR = newR;
+          a.orbitCx = Math.round(ocx * s);
+          a.orbitCy = Math.round(ocy * s);
+        }
+        else if (prop === 'orbitDir') {
+          const a = d.anims[animIdx];
+          const prev = a.orbitDir || 'cw';
+          // Смена направления: дополняем дугу, чтобы конечная точка призрака осталась на месте
+          if (val && prev !== val) {
+            const deg = Math.abs(a.orbitDeg != null ? a.orbitDeg : 360);
+            const turns = Math.floor(deg / 360);
+            const rem = deg % 360;
+            if (rem !== 0) a.orbitDeg = turns * 360 + (360 - rem);
+          }
+          a.orbitDir = val;
+        }
+        else if (prop === 'duration' || prop === 'delay' || prop === 'navTarget' || prop === 'charDelay' || prop === 'holdDuration' || prop === 'tx' || prop === 'ty' || prop === 'orbitDeg' || prop === 'rotateDeg') d.anims[animIdx][prop] = +val;
         else d.anims[animIdx][prop] = val;
       });
       _syncDomAnims(targets);
@@ -1217,14 +1239,20 @@ window._selectedAnimCat  = null;
       clearTimeout(_animPreviewTimer);
       const _pcnt = pa.swingCount != null ? pa.swingCount : 1;
       const _pInf = !isFinite(+_pcnt) || +_pcnt >= 10;
-      if (!_pInf) {
-        const previewDur = (pa.duration || _ptd.duration) + (pa.ptLife || _ptd.ptLife) * 1.5 + 800;
-        _animPreviewTimer = setTimeout(() => {
-          targets.forEach(t => {
-            if (typeof window._resetParticles === 'function') window._resetParticles(t);
-          });
-        }, previewDur * Math.max(1, +_pcnt || 1));
-      }
+      const previewDur = (pa.duration || _ptd.duration) + (pa.ptLife || _ptd.ptLife) * 1.5 + 800;
+      // Even when the animation is configured to repeat "infinitely" (or a
+      // very high count) for actual playback during the presentation, a
+      // hover PREVIEW must still always clean up after a bounded time —
+      // otherwise the original element is left hidden (visibility:hidden,
+      // pointer-events:none) forever, making it impossible to click/drag on
+      // the canvas afterward. Cap the preview to a few cycles instead of
+      // skipping cleanup entirely.
+      const _previewCycles = _pInf ? 3 : Math.max(1, +_pcnt || 1);
+      _animPreviewTimer = setTimeout(() => {
+        targets.forEach(t => {
+          if (typeof window._resetParticles === 'function') window._resetParticles(t);
+        });
+      }, previewDur * _previewCycles);
       return;
     }
     if (animName === 'splitHalf') {
@@ -1852,6 +1880,11 @@ window._selectedAnimCat  = null;
               bb.style.background = isActive ? 'var(--accent)' : 'var(--surface3)';
               bb.style.color = isActive ? '#fff' : 'var(--text2)';
             });
+            // Синхронизировать поле «Градусов» (после смены направления дуга дополняется)
+            const degInp = orbitGrid.querySelector('input[type="number"]:nth-of-type(2)') ||
+              [...orbitGrid.querySelectorAll('input[type="number"]')][1];
+            const aNow = (typeof slides!=='undefined' && slides[cur]?.els?.find(x=>x.id===d.id)?.anims?.[ai]) || a;
+            if (degInp && aNow) degInp.value = aNow.orbitDeg != null ? Math.abs(aNow.orbitDeg) : 360;
             if(typeof renderMotionOverlay==='function') renderMotionOverlay();
           });
           dirWrap.appendChild(b);
@@ -1984,7 +2017,7 @@ window._selectedAnimCat  = null;
       _slides().forEach((ss, si) => {
         const o = document.createElement('option');
         o.value = si;
-        o.textContent = (si+1) + '. ' + (ss.title||('Слайд '+(si+1)));
+        o.textContent = (si+1) + '. ' + (ss.title||(typeof defaultSlideTitle==='function'?defaultSlideTitle(si+1):('Слайд '+(si+1))));
         if(si === (typeof aLive.navTarget==='number' ? aLive.navTarget : _cur()+1)) o.selected = true;
         navSel.appendChild(o);
       });

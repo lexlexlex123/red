@@ -22,7 +22,7 @@
       '<div style="font-size:15px;font-weight:700;color:#a5b4fc;text-shadow:0 2px 8px rgba(0,0,0,.6)">' +
         'Перетащите файл для импорта' +
       '</div>' +
-      '<div id="filedrop-hint" style="font-size:11px;color:rgba(165,180,252,.7)">PPTX · PPT · ODP · HTML · JSON · Изображения</div>';
+      '<div id="filedrop-hint" style="font-size:11px;color:rgba(165,180,252,.7)">PPTX · PPT · HTML · JSON · Изображения</div>';
     document.body.appendChild(_overlay);
     return _overlay;
   }
@@ -48,7 +48,7 @@
       const t = item.type || '';
       const name = (item.name||'').toLowerCase();
       if(t.includes('presentationml') || name.endsWith('.pptx') || name.endsWith('.ppt') || name.endsWith('.odp'))
-        return 'PPTX / PPT / ODP — импорт презентации';
+        return 'PPTX / PPT — импорт презентации';
       if(t === 'text/html' || name.endsWith('.html') || name.endsWith('.htm'))
         return 'HTML — импорт экспортированной презентации';
       if(t === 'application/json' || name.endsWith('.json'))

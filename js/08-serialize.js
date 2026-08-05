@@ -7,7 +7,7 @@ window._serializeAppletFromDom = function(el, d){
   if(el.dataset.appletAspect) d._appletAspect = +el.dataset.appletAspect;
 
   const _gk = [
-    'tmMin','tmSec','tmOnEnd','tmOnEndSlide','tmOnEndAnim','genMode','genLines','cntStart','cntGoal','cntOnEnd','cntOnEndSlide','cntOnEndAnim','genMin','genMax','genStep',
+    'tmMin','tmSec','tmOnEnd','tmOnEndSlide','tmOnEndAnim','genMode','genLines','cntStart','cntGoal','cntOnEnd','cntOnEndSlide','cntOnEndAnim','cntGroupId','genMin','genMax','genStep',
     'genFontSize','genColor','genBg','genBgBlur','genBgOp','genBorderColor','genBorderWidth',
     'genBold','genAlign','genVAlign','genShadowOn','genShadowBlur','genShadowColor',
     'genColorScheme','genBgScheme','genBorderScheme'

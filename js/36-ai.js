@@ -816,7 +816,7 @@ function _execCommands(cmds){
           if(typeof slides!=='undefined'){
             slides.splice(0, slides.length);
             // Добавляем один пустой слайд чтобы приложение не сломалось
-            slides.push({title:'Slide 1', bg:'b1', bgc:null,
+            slides.push({title:(typeof defaultSlideTitle==='function'?defaultSlideTitle(1):'Слайд 1'), bg:'b1', bgc:null,
               ar:(typeof ar!=='undefined'?ar:'16:9'), trans:'', auto:0, els:[]});
           }
           if(typeof cur!=='undefined') cur=0;

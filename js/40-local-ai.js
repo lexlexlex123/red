@@ -185,7 +185,7 @@ function applySlides(data){
   const base = slides[0] || {};
   data.forEach((sd, i)=>{
     const s = {
-      title: sd.title || ('Слайд '+(slides.length+1)),
+      title: sd.title || (typeof defaultSlideTitle==='function'?defaultSlideTitle(slides.length+1):('Слайд '+(slides.length+1))),
       bg: base.bg||'dark1', bgc: base.bgc||'#1a1a2e',
       ar: base.ar||'16:9', trans:'', auto:0, els:[],
     };

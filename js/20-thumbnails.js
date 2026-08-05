@@ -455,8 +455,7 @@ function renderThumbCanvas(cnv,s,slideIdx,customW,customH){
   const _themeForBg=(typeof appliedThemeIdx!=='undefined'&&appliedThemeIdx>=0)?THEMES[appliedThemeIdx]:null;
   const _themeBg=_themeForBg?_themeForBg.bg:'#1a1a2e';
   const bg=(s.bg==='custom'||s.bg==='theme')?(s.bgc||_themeBg):((BGS.find(b=>b.id===s.bg)||BGS[0]).s);
-  if(bg.startsWith('linear-gradient')||bg.startsWith('radial-gradient')){
-    // Parse gradient for canvas
+  if(typeof bg==='string' && (bg.startsWith('linear-gradient')||bg.startsWith('radial-gradient'))){
     const stops=parseGradientStops(bg);
     let grad;
     if(bg.startsWith('linear-gradient')){
@@ -469,10 +468,16 @@ function renderThumbCanvas(cnv,s,slideIdx,customW,customH){
     }
     stops.forEach(([pos,col])=>grad.addColorStop(pos,col));
     ctx.fillStyle=grad;
+    ctx.fillRect(0,0,TW,TH);
   } else {
-    ctx.fillStyle=bg||'#111';
+    let solid=bg||'#111';
+    if(typeof solid==='string' && (solid.indexOf('gradient')>=0||solid.indexOf(',')>=0||solid.indexOf('url(')>=0)){
+      const hex=solid.match(/#[0-9a-fA-F]{6}/);
+      solid=hex?hex[0]:'#f7f3e9';
+    }
+    ctx.fillStyle=solid;
+    ctx.fillRect(0,0,TW,TH);
   }
-  ctx.fillRect(0,0,TW,TH);
 
   if(s.bgImg&&s.bgImg.exportBaked){
     const bakedSrc=s.bgImg.exportBaked;
@@ -544,6 +549,7 @@ function renderThumbCanvas(cnv,s,slideIdx,customW,customH){
       if (sideKey === 'bottom') return {x: cx, y: d.y+d.h, side: 'bottom'};
       if (sideKey === 'left') return {x: d.x, y: cy, side: 'left'};
       if (sideKey === 'right') return {x: d.x+d.w, y: cy, side: 'right'};
+      if (sideKey === 'center') return {x: cx, y: cy, side: 'center'};
       const od = elMap[otherId];
       const ox = od?od.x+od.w/2:cx, oy = od?od.y+od.h/2:cy;
       const dx=ox-cx, dy=oy-cy;
@@ -595,7 +601,7 @@ function renderThumbCanvas(cnv,s,slideIdx,customW,customH){
       const sw  = (conn.sw||2) * scaleX;
       const dash = conn.dash||'solid';
       ctx.save();
-      ctx.strokeStyle = conn.color||'#60a5fa';
+      ctx.strokeStyle = (conn.color === 'none' || conn.color === 'transparent') ? 'rgba(0,0,0,0)' : (conn.color||'#60a5fa');
       ctx.lineWidth   = sw;
       ctx.lineCap     = 'round';
       ctx.lineJoin    = 'round';

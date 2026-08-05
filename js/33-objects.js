@@ -11,21 +11,27 @@
     markdown: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="12" height="8" rx="1"/><path d="M5 10V6l2 2 2-2v4"/><path d="M12 10V6l-2 3"/></svg>',
     svg:      '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5.5"/><path d="M4 8c1-3 7-3 8 0s-7 3-8 0"/></svg>',
     applet:   '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M5 8h6M8 5v6"/></svg>',
-    pagenum:  '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><text x="8" y="11" text-anchor="middle" font-size="7" fill="currentColor" stroke="none">1/3</text></svg>',
+    connector: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 12 C6 12 10 4 14 4"/><circle cx="2" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="14" cy="4" r="1.5" fill="currentColor" stroke="none"/></svg>',
   };
 
   const EYE_ON  = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>';
   const EYE_OFF = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M13.5 5.5C12.3 6.8 10.2 8 8 8s-4.3-1.2-5.5-2.5"/><path d="M1.5 3l13 10"/><path d="M6.2 9.8a3 3 0 0 0 3.8-2"/></svg>';
 
+  function _elKindKey(d) {
+    if (d.type === 'shape')  return 'shape:'  + (d.shape   || '?');
+    if (d.type === 'icon')   return 'icon:'   + (d.iconId  || '?');
+    if (d.type === 'applet') return 'applet:' + (d.appletId|| '?');
+    return d.type;
+  }
+
   function elLabel(d, allEls) {
-    const sameType = allEls ? allEls.filter(x => x.type === d.type) : [];
-    const idx = sameType.length > 1 ? sameType.findIndex(x => x.id === d.id) + 1 : 0;
+    const kind = _elKindKey(d);
+    const sameKind = allEls ? allEls.filter(x => _elKindKey(x) === kind) : [];
+    const idx = sameKind.length > 1 ? sameKind.findIndex(x => x.id === d.id) + 1 : 0;
     const sfx = idx > 0 ? ' ' + idx : '';
     if (d.type === 'text') {
-      const tmp = document.createElement('div');
-      tmp.innerHTML = d.html || '';
-      const t = (tmp.textContent || '').trim().replace(/\s+/g,' ');
-      return t ? (t.length > 22 ? t.slice(0,22)+'…' : t) : 'Текст' + sfx;
+      const label = (typeof getLang === 'function' && getLang() !== 'ru') ? 'Text' : 'Текст';
+      return label + sfx;
     }
     if (d.type === 'shape')    return (d.shape || 'Фигура') + sfx;
     if (d.type === 'image')    return 'Изображение' + sfx;
@@ -34,7 +40,12 @@
     if (d.type === 'code')     return 'Код' + sfx;
     if (d.type === 'markdown') return 'Markdown' + sfx;
     if (d.type === 'svg')      return 'SVG' + sfx;
-    if (d.type === 'applet')   return (d.appletId || 'Апплет') + sfx;
+    if (d.type === 'applet') {
+      const a = (typeof APPLETS !== 'undefined') ? APPLETS.find(x => x.id === d.appletId) : null;
+      const isRu = typeof getLang === 'function' && getLang() === 'ru';
+      const lbl = a ? (isRu && a.nameRu ? a.nameRu : a.name) : (d.appletId || 'Апплет');
+      return lbl + sfx;
+    }
     if (d.type === 'pagenum')  return 'Номер страницы';
     return (d.type || 'Объект') + sfx;
   }
@@ -66,6 +77,49 @@
   window.reapplyHiddenEls = reapplyHidden;
 
   // ── Render ────────────────────────────────────────────────────────────────
+  function startObjRename(d, lbl, allEls, id) {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'obj-label-input';
+    input.value = (d.morphName && String(d.morphName).trim()) ? d.morphName : elLabel(d, allEls);
+    input.maxLength = 60;
+    lbl.replaceWith(input);
+    input.focus();
+    input.select();
+    let done = false;
+    const commit = () => {
+      if (done) return;
+      done = true;
+      const val = input.value.trim();
+      const autoLabel = elLabel(d, allEls);
+      if (!val || val === autoLabel) delete d.morphName;
+      else d.morphName = val;
+      try {
+        const cv = document.getElementById('canvas');
+        const domEl = cv && Array.from(cv.querySelectorAll(':scope > .el')).find(e => e.dataset.id === id);
+        if (domEl) {
+          if (d.morphName) domEl.dataset.morphName = d.morphName;
+          else delete domEl.dataset.morphName;
+        }
+      } catch (e) {}
+      if (typeof save === 'function') save();
+      renderObjectsPanel();
+    };
+    const cancel = () => {
+      if (done) return;
+      done = true;
+      renderObjectsPanel();
+    };
+    input.addEventListener('keydown', e2 => {
+      if (e2.key === 'Enter') { e2.preventDefault(); commit(); }
+      else if (e2.key === 'Escape') { e2.preventDefault(); cancel(); }
+    });
+    input.addEventListener('blur', commit);
+    input.addEventListener('mousedown', e2 => e2.stopPropagation());
+    input.addEventListener('click', e2 => e2.stopPropagation());
+    input.addEventListener('dblclick', e2 => e2.stopPropagation());
+  }
+
   function renderObjectsPanel() {
     const panel = document.getElementById('obj-panel-list');
     if (!panel) return;
@@ -104,9 +158,20 @@
 
       // ── label ──
       const lbl = document.createElement('span');
-      lbl.className   = 'obj-label';
-      lbl.textContent = elLabel(d, allEls);
-      lbl.title       = elLabel(d, allEls);
+      const hasName = d.morphName && String(d.morphName).trim();
+      const autoLbl = elLabel(d, allEls);
+      lbl.className   = 'obj-label' + (hasName ? ' obj-label-named' : '');
+      lbl.textContent = hasName ? d.morphName : autoLbl;
+      lbl.title       = hasName
+        ? 'Имя: ' + d.morphName + ' (двойной клик — переименовать; используется для связывания при морфинге)'
+        : autoLbl + ' (двойной клик — задать имя для морфинга)';
+      lbl.addEventListener('dblclick', e => {
+        e.stopPropagation(); e.preventDefault();
+        startObjRename(d, lbl, allEls, id);
+      });
+      lbl.addEventListener('mousedown', e => {
+        if (e.detail > 1) e.preventDefault(); // avoid text-selection flicker on dblclick
+      });
 
       // ── eye button ──
       const eye = document.createElement('button');
@@ -132,6 +197,13 @@
       // select on row click (not handle/eye)
       row.addEventListener('mousedown', e => {
         if (e.target.closest('.obj-eye') || e.target.closest('.obj-handle')) return;
+        if (e.target.closest('.obj-label') && e.detail > 1) {
+          // Second (and later) clicks of a double-click on the label must NOT
+          // trigger a panel re-render — otherwise the label node gets replaced
+          // mid-sequence and the browser's native 'dblclick' never fires on it.
+          e.preventDefault();
+          return;
+        }
         e.preventDefault(); e.stopPropagation();
         if (!hidden && typeof pick === 'function') pick(el);
         renderObjectsPanel();
@@ -139,6 +211,69 @@
 
       panel.appendChild(row);
     });
+
+    // ── Connector lines (shown as objects) ─────────────────────────────────
+    const conns = (slides[cur] && slides[cur].connectors) || [];
+    const selConnId = (typeof window._getSelConnId === 'function') ? window._getSelConnId() : null;
+    const connFrag = document.createDocumentFragment();
+    conns.forEach((conn, ci) => {
+      const hidden = !!conn.objHidden;
+      const row = document.createElement('div');
+      row.className = 'obj-row obj-row-conn' +
+        (selConnId === conn.id ? ' obj-row-sel' : '') +
+        (hidden ? ' obj-row-hidden' : '');
+      row.dataset.connId = conn.id;
+
+      const handle = document.createElement('span');
+      handle.className = 'obj-handle';
+      handle.style.opacity = '0.25';
+      handle.innerHTML = '<svg viewBox="0 0 16 16" fill="currentColor" style="opacity:.45"><circle cx="5" cy="4" r="1.1"/><circle cx="5" cy="8" r="1.1"/><circle cx="5" cy="12" r="1.1"/><circle cx="11" cy="4" r="1.1"/><circle cx="11" cy="8" r="1.1"/><circle cx="11" cy="12" r="1.1"/></svg>';
+
+      const typeIcon = document.createElement('span');
+      typeIcon.className = 'obj-icon';
+      typeIcon.innerHTML = TYPE_ICON.connector;
+
+      const lbl = document.createElement('span');
+      lbl.className = 'obj-label';
+      const kind = (conn.type === 'arrow' || (conn.toMarker && conn.toMarker !== 'none'))
+        ? ((typeof getLang === 'function' && getLang() !== 'ru') ? 'Arrow' : 'Стрелка')
+        : ((typeof getLang === 'function' && getLang() !== 'ru') ? 'Line' : 'Линия');
+      const cLabel = (conn.morphName && String(conn.morphName).trim())
+        ? conn.morphName
+        : (kind + (conns.length > 1 ? ' ' + (ci + 1) : ''));
+      lbl.textContent = cLabel;
+      lbl.title = cLabel;
+
+      const eye = document.createElement('button');
+      eye.className = 'obj-eye' + (hidden ? ' obj-eye-off' : '');
+      eye.innerHTML = hidden ? EYE_OFF : EYE_ON;
+      eye.title = hidden ? 'Показать' : 'Скрыть';
+      eye.addEventListener('mousedown', e => { e.preventDefault(); e.stopPropagation(); });
+      eye.addEventListener('click', e => {
+        e.stopPropagation();
+        if (conn.objHidden) delete conn.objHidden;
+        else conn.objHidden = true;
+        if (typeof renderConnectors === 'function') renderConnectors();
+        if (typeof save === 'function') save();
+        renderObjectsPanel();
+      });
+
+      row.appendChild(handle);
+      row.appendChild(typeIcon);
+      row.appendChild(lbl);
+      row.appendChild(eye);
+
+      row.addEventListener('mousedown', e => {
+        if (e.target.closest('.obj-eye') || e.target.closest('.obj-handle')) return;
+        e.preventDefault(); e.stopPropagation();
+        if (hidden) return;
+        if (typeof window._selectConn === 'function') window._selectConn(conn.id);
+        renderObjectsPanel();
+      });
+
+      connFrag.appendChild(row);
+    });
+    if (connFrag.childNodes.length) panel.insertBefore(connFrag, panel.firstChild);
 
     // ── Mouse-drag reorder ─────────────────────────────────────────────────
     let dragRow = null, ghost = null, placeholder = null;
@@ -202,6 +337,7 @@
       // Read final order from panel (front-first), reorder canvas DOM
       const cv2      = document.getElementById('canvas');
       const newOrder = Array.from(panel.querySelectorAll('.obj-row'))
+                         .filter(r => r.dataset.id)
                          .map(r => r.dataset.id);
       // newOrder[0] = front = last in canvas DOM
       if (typeof pushUndo === 'function') pushUndo();
@@ -221,7 +357,7 @@
       handle.addEventListener('mousedown', e => {
         e.preventDefault(); e.stopPropagation();
         dragRow  = handle.closest('.obj-row');
-        if (!dragRow) return;
+        if (!dragRow || dragRow.dataset.connId) return; // connectors are not reorderable with elements
         const rect = dragRow.getBoundingClientRect();
         panelRect  = panel.getBoundingClientRect();
         startY     = e.clientY - rect.top; // offset inside row
@@ -282,6 +418,12 @@
 
   window.morphMatchKey = function (d, allEls) {
     if (!d) return '';
+    // Counters linked by a shared "ID" (cntGroupId) always morph into one
+    // another, regardless of appearance (color, shadow, border, size, etc.)
+    // and regardless of any manual morphName / auto label.
+    if (d.type === 'applet' && d.appletId === 'counter' && d.cntGroupId && String(d.cntGroupId).trim()) {
+      return '__counterGroup__:' + String(d.cntGroupId).trim();
+    }
     if (d.morphName && String(d.morphName).trim()) return String(d.morphName).trim();
     return elLabel(d, allEls || []);
   };

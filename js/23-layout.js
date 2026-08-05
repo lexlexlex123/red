@@ -535,7 +535,7 @@ const LAYOUTS=[
         </svg>`;
       }
       return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden">
-        <rect x="0" y="0" width="5" height="${h}" fill="${a1}" opacity="0.5"/>
+      <rect x="0" y="0" width="5" height="${h}" fill="${a1}" opacity="0.5"/>
         <polygon points="0,0 ${(w * .14).toFixed(1)},0 0,${(h * .28).toFixed(1)}" fill="${a1}" opacity="0.08"/>
       </svg>`;
     },
@@ -2821,7 +2821,196 @@ M-29,-2.5 L-47,-19 L-44,0 L-47,19 L-29,2.5 Z"/>
     titleSvg(w,h,a1,a2,d){return this._build(w,h,a1,a2,true,d!==false);},
     contentSvg(w,h,a1,a2,d){return this._build(w,h,a1,a2,false,d!==false);},
   },
+
+  // ── Notebook paper (same on title & content; colours follow colour scheme) ──
+  {
+    name:'Тетрадь · клетка', nameEn:'Notebook · Grid',
+    desc:'Крупная клетка — цвета из схемы', descEn:'Large grid — colours from scheme',
+    animated:false,
+    paper:{kind:'grid', cell:48, fade:0.08},
+    _build(w,h,a1,a2){ return _notebookLayoutSvg(w,h,this.paper,a1,a2); },
+    titleSvg(w,h,a1,a2){ return this._build(w,h,a1,a2); },
+    contentSvg(w,h,a1,a2){ return this._build(w,h,a1,a2); },
+  },
+  {
+    name:'Тетрадь · мелкая клетка', nameEn:'Notebook · Fine grid',
+    desc:'Мелкая клетка — цвета из схемы', descEn:'Fine grid — colours from scheme',
+    animated:false,
+    paper:{kind:'grid', cell:28, fade:0.08},
+    _build(w,h,a1,a2){ return _notebookLayoutSvg(w,h,this.paper,a1,a2); },
+    titleSvg(w,h,a1,a2){ return this._build(w,h,a1,a2); },
+    contentSvg(w,h,a1,a2){ return this._build(w,h,a1,a2); },
+  },
+  {
+    name:'Тетрадь · линия', nameEn:'Notebook · Lined',
+    desc:'Линовка — цвета из схемы', descEn:'Lined paper — colours from scheme',
+    animated:false,
+    paper:{kind:'lined', pitch:36, fade:0.08},
+    _build(w,h,a1,a2){ return _notebookLayoutSvg(w,h,this.paper,a1,a2); },
+    titleSvg(w,h,a1,a2){ return this._build(w,h,a1,a2); },
+    contentSvg(w,h,a1,a2){ return this._build(w,h,a1,a2); },
+  },
+  {
+    name:'Тетрадь · частая линия', nameEn:'Notebook · Fine lined',
+    desc:'Частая линовка — цвета из схемы', descEn:'Fine lined — colours from scheme',
+    animated:false,
+    paper:{kind:'lined', pitch:24, fade:0.08},
+    _build(w,h,a1,a2){ return _notebookLayoutSvg(w,h,this.paper,a1,a2); },
+    titleSvg(w,h,a1,a2){ return this._build(w,h,a1,a2); },
+    contentSvg(w,h,a1,a2){ return this._build(w,h,a1,a2); },
+  },
 ];
+
+/** Active colour scheme (applied, else selected in modal). */
+function _activeTheme(){
+  const ti = (typeof appliedThemeIdx !== 'undefined' && appliedThemeIdx >= 0) ? appliedThemeIdx
+    : ((typeof selTheme !== 'undefined' && selTheme >= 0) ? selTheme : -1);
+  return (ti >= 0 && typeof THEMES !== 'undefined') ? THEMES[ti] : null;
+}
+
+/** Push scheme background onto slides (same look as colour-scheme thumbnails). */
+function _syncSlidesThemeBg(opts){
+  const theme = _activeTheme();
+  if(!theme || typeof slides === 'undefined' || !slides) return;
+  const force = !!(opts && opts.force);
+  const onlyNotebook = !!(opts && opts.onlyNotebook);
+  let changed = false;
+  slides.forEach(s=>{
+    if(onlyNotebook){
+      const hasNb = (s.els || []).some(d=>{
+        if(!d || !d._isDecor) return false;
+        const L = LAYOUTS[d._layoutIdx];
+        return !!(L && L.paper);
+      });
+      if(!hasNb) return;
+    }
+    if(!force && s.bgScheme === null) return;
+    s.bg = 'custom';
+    s.bgc = theme.bg;
+    if(force && 'bgScheme' in s) delete s.bgScheme;
+    changed = true;
+  });
+  if(changed && typeof _applySlideBgToEl === 'function'){
+    const cvbg = document.getElementById('cvbg');
+    if(cvbg && typeof cur === 'number' && slides[cur]) _applySlideBgToEl(cvbg, slides[cur]);
+  }
+}
+
+/** Resolve notebook stroke colours from the active colour scheme. */
+function _notebookSchemeColors(a1, a2){
+  const theme = _activeTheme();
+  const isLight = !!(theme && theme.dark === false);
+  const palette = (theme && typeof _themeColors === 'function')
+    ? _themeColors(theme).slice(0, 7)
+    : null;
+  const fallback1 = a1 || (isLight ? '#1d4ed8' : '#86efac');
+  const fallback2 = a2 || (isLight ? '#3b82f6' : '#a7f3d0');
+
+  function lum(col){
+    if(!col || typeof col !== 'string') return 0.5;
+    let hex = col;
+    if(hex.charAt(0) !== '#'){
+      const m = hex.match(/#([0-9a-fA-F]{6})/);
+      hex = m ? '#' + m[1] : '';
+    }
+    const m = /^#([0-9a-fA-F]{6})$/.exec(hex);
+    if(!m) return 0.5;
+    const n = parseInt(m[1], 16);
+    const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  }
+
+  let lineCol = fallback1, lineCol2 = fallback2;
+  if(palette && palette.length){
+    const ranked = palette.slice().sort((x, y) => lum(x) - lum(y));
+    if(isLight){
+      // Not the darkest — mid-dark keeps lines softer on light paper
+      lineCol = ranked[Math.min(2, ranked.length - 1)] || ranked[0] || fallback1;
+      lineCol2 = ranked[Math.min(3, ranked.length - 1)] || ranked[1] || lineCol;
+    } else {
+      // Not the lightest — mid-light keeps lines softer on dark bg
+      lineCol = ranked[Math.max(0, ranked.length - 3)] || ranked[ranked.length - 1] || fallback1;
+      lineCol2 = ranked[Math.max(0, ranked.length - 4)] || ranked[ranked.length - 2] || lineCol;
+    }
+  }
+
+  // Soften further: lighten on light schemes, darken on dark schemes
+  function soften(hex, towardLight){
+    const m = /^#([0-9a-fA-F]{6})$/.exec(hex);
+    if(!m) return hex;
+    const n = parseInt(m[1], 16);
+    let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    const t = towardLight ? 0.42 : 0.38; // blend toward white / black
+    if(towardLight){ r = Math.round(r + (255 - r) * t); g = Math.round(g + (255 - g) * t); b = Math.round(b + (255 - b) * t); }
+    else { r = Math.round(r * (1 - t)); g = Math.round(g * (1 - t)); b = Math.round(b * (1 - t)); }
+    return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
+  }
+  lineCol = soften(lineCol, isLight);
+  lineCol2 = soften(lineCol2, isLight);
+
+  const lineOp = isLight ? 0.34 : 0.30;
+  const bgCss = (theme && theme.bg) ? theme.bg : (isLight ? '#f8fafc' : '#0f172a');
+  return { theme, isLight, lineCol, lineCol2, lineOp, bgCss };
+}
+
+/** Edge fade via SVG mask (lines → transparent). No solid overlays → no colour patches. */
+function _notebookEdgeMaskDefs(uid, w, h, fade){
+  const fPct = Math.max(4, Math.min(18, Math.round((fade != null ? fade : 0.08) * 100)));
+  return `<defs>
+    <linearGradient id="${uid}fx" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="${fPct}%" stop-color="#fff" stop-opacity="1"/>
+      <stop offset="${100 - fPct}%" stop-color="#fff" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="${uid}fy" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="${fPct}%" stop-color="#fff" stop-opacity="1"/>
+      <stop offset="${100 - fPct}%" stop-color="#fff" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <mask id="${uid}mx" maskUnits="userSpaceOnUse" x="0" y="0" width="${w}" height="${h}">
+      <rect width="${w}" height="${h}" fill="url(#${uid}fx)"/>
+    </mask>
+    <mask id="${uid}my" maskUnits="userSpaceOnUse" x="0" y="0" width="${w}" height="${h}">
+      <rect width="${w}" height="${h}" fill="url(#${uid}fy)"/>
+    </mask>
+  </defs>`;
+}
+
+/** SVG for notebook-paper layout previews and slide decor (title = content). */
+function _notebookLayoutSvg(w, h, paper, a1, a2){
+  const p = paper || {};
+  const c = _notebookSchemeColors(a1, a2);
+  const scale = w / 1200;
+  const f = n => n.toFixed(1);
+  const fade = p.fade != null ? p.fade : 0.08;
+  const uid = 'nb' + Math.random().toString(36).slice(2, 7);
+  const sw = Math.max(0.45, scale).toFixed(2);
+  let lines = '';
+
+  if(p.kind === 'lined'){
+    const pitch = (p.pitch || 32) * scale;
+    // Equal left/right inset matching the fade zone (no vertical margin strip)
+    const inset = fade * w;
+    for(let y = pitch; y < h - pitch * 0.25; y += pitch){
+      lines += `<line x1="${f(inset)}" y1="${f(y)}" x2="${f(w - inset)}" y2="${f(y)}" stroke="${c.lineCol}" stroke-opacity="${c.lineOp}" stroke-width="${sw}"/>`;
+    }
+  } else {
+    const cell = (p.cell || 36) * scale;
+    for(let y = 0; y <= h; y += cell){
+      lines += `<line x1="0" y1="${f(y)}" x2="${w}" y2="${f(y)}" stroke="${c.lineCol}" stroke-opacity="${c.lineOp}" stroke-width="${sw}"/>`;
+    }
+    for(let x = 0; x <= w; x += cell){
+      lines += `<line x1="${f(x)}" y1="0" x2="${f(x)}" y2="${h}" stroke="${c.lineCol}" stroke-opacity="${c.lineOp}" stroke-width="${sw}"/>`;
+    }
+  }
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden">
+    ${_notebookEdgeMaskDefs(uid, w, h, fade)}
+    <g mask="url(#${uid}mx)"><g mask="url(#${uid}my)">${lines}</g></g>
+  </svg>`;
+}
 
 // ══════════════ LAYOUT ENGINE ══════════════
 
@@ -2923,6 +3112,8 @@ function makeDecorEl(si, style){
 // Called after: theme change (new colors), AR change (new dimensions)
 // skipRender=true: only update data, caller handles rendering
 function refreshDecorColors(ac1, ac2, skipRender){
+  // Notebook (and locked cream leftovers): keep slide bg = colour scheme
+  _syncSlidesThemeBg({ force:true, onlyNotebook:true });
   // Override _decorAccents temporarily if explicit colors passed
   const _oa1=ac1||_decorAccents()[0], _oa2=ac2||_decorAccents()[1];
   slides.forEach(s=>{
@@ -2983,13 +3174,24 @@ function refreshDecorOnCanvas(slideIdx){
           if(_parsed&&_parsed.tagName!=='parsererror'){
             const _newSvg=document.adoptNode(_parsed);
             _newSvg.style.width='100%';_newSvg.style.height='100%';
+            _newSvg.style.pointerEvents='none';
+            _newSvg.setAttribute('pointer-events','none');
+            try{ _newSvg.querySelectorAll('*').forEach(n=>{ n.style.pointerEvents='none'; n.setAttribute('pointer-events','none'); }); }catch(e){}
             svgEl.replaceWith(_newSvg);
           }
         }catch(e){}
       }
       return;
     }
-    if(d.svgContent) ec.innerHTML=d.svgContent;
+    if(d.svgContent){
+      ec.innerHTML=d.svgContent;
+      const _s=ec.querySelector('svg');
+      if(_s){
+        _s.style.pointerEvents='none';
+        _s.setAttribute('pointer-events','none');
+        try{ _s.querySelectorAll('*').forEach(n=>{ n.style.pointerEvents='none'; n.setAttribute('pointer-events','none'); }); }catch(e){}
+      }
+    }
   });
 }
 
@@ -3004,11 +3206,13 @@ function buildLayoutGrid(){
   grid.style.alignContent='flex-start';
   const [a1,a2]=_decorAccents();
   const PW=320,PH=180;
+  const _themeBgPreview=(_activeTheme()&&_activeTheme().bg)||'';
 
   // "No layout" card
   const none=document.createElement('div');
   none.className='layout-item'+(selLayout===-1?' active':'');
   none.title='Без декора';
+  if(_themeBgPreview) none.style.background=_themeBgPreview;
   const noneBox=document.createElement('div');
   noneBox.className='layout-item-inner';
   const noneInner=document.createElement('div');
@@ -3036,6 +3240,7 @@ function buildLayoutGrid(){
     const btn=document.createElement('div');
     btn.className='layout-item'+(selLayout===i?' active':'');
     btn.title=(isRu?L.desc:L.descEn)||'';
+    if(_themeBgPreview) btn.style.background=_themeBgPreview;
     const doAnim = L.animated ? _layoutAnimated : false;
     const svgStr=typeof L.titleSvg==='function'?L.titleSvg.call(L,PW,PH,a1,a2,doAnim):'';
     const lbl=document.createElement('div');
@@ -3177,6 +3382,10 @@ function applyLayout(idx,btn){
     _syncAnimToggleBtns();
     if(typeof saveState==='function') saveState();
   }
+
+  // Фон слайдов = фон цветовой схемы (как на миниатюре схемы)
+  if(L && L.paper) _syncSlidesThemeBg({ force:true });
+  else if(_activeTheme()) _syncSlidesThemeBg({ force:false });
 
   // Apply to every slide: replace or add decor
   slides.forEach((s,si)=>{

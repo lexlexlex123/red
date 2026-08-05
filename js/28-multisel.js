@@ -4,15 +4,18 @@ function clearMultiSel(){
   multiSel.clear();
   window._explicitMultiSel=false;
   updateMultiBar();
+  if(typeof _updateSelFrames==='function') _updateSelFrames();
 }
 function addToMultiSel(el){
   if(el.classList.contains('decor-el'))return; // never select decor
   multiSel.add(el);el.classList.add('multi-sel');
   updateMultiBar();
+  if(typeof _updateSelFrames==='function') _updateSelFrames();
 }
 function removeFromMultiSel(el){
   multiSel.delete(el);el.classList.remove('multi-sel');
   updateMultiBar();
+  if(typeof _updateSelFrames==='function') _updateSelFrames();
 }
 function updateMultiBar(){
   // Show count in a toast-like way if >1 selected
@@ -21,6 +24,37 @@ function updateMultiBar(){
     // ensure primary sel is also in multiSel
   }
 }
+
+/** Bright selection frames outside element opacity (visible even at opacity 0). */
+function _updateSelFrames(){
+  const layer = document.getElementById('sel-frames-layer');
+  if(!layer) return;
+  layer.innerHTML = '';
+  const targets = new Set();
+  if(typeof multiSel!=='undefined' && multiSel && multiSel.size>1){
+    multiSel.forEach(el => targets.add(el));
+  } else if(typeof sel!=='undefined' && sel){
+    targets.add(sel);
+  }
+  targets.forEach(el => {
+    if(!el || !el.isConnected) return;
+    const l = parseInt(el.style.left)||0;
+    const t = parseInt(el.style.top)||0;
+    const w = parseInt(el.style.width)||0;
+    const h = parseInt(el.style.height)||0;
+    const rot = parseFloat(el.dataset.rot)||0;
+    const frame = document.createElement('div');
+    frame.className = 'sel-frame' + ((typeof multiSel!=='undefined' && multiSel.size>1 && multiSel.has(el)) ? ' multi' : '');
+    frame.style.left = l + 'px';
+    frame.style.top = t + 'px';
+    frame.style.width = w + 'px';
+    frame.style.height = h + 'px';
+    if(rot) frame.style.transform = 'rotate(' + rot + 'deg)';
+    frame.style.transformOrigin = 'center center';
+    layer.appendChild(frame);
+  });
+}
+window._updateSelFrames = _updateSelFrames;
 
 // Multi-select aware pick
 function pickMulti(el,shiftKey){
@@ -52,94 +86,127 @@ function pickMulti(el,shiftKey){
   const cv=document.getElementById('canvas');
   const cc=document.getElementById('canvas-container');
   const cwrap=document.getElementById('cwrap');
+  if(!cv||!cwrap) return;
 
-  // Helper: mouse event → canvas-space coords (accounts for zoom)
+  // Keep rubberband as sibling of #canvas (above SVG/elements), not inside it
+  function _ensureRubberband(){
+    let rb=document.getElementById('rubberband');
+    const host=cc||cv;
+    if(!rb){
+      rb=document.createElement('div');
+      rb.id='rubberband';
+      host.appendChild(rb);
+    } else if(rb.parentElement!==host){
+      host.appendChild(rb);
+    }
+    return rb;
+  }
+  _ensureRubberband();
+
   function toCanvasCoords(e){
     const z=typeof _canvasZoom==='number'?_canvasZoom:1;
     const rect=cv.getBoundingClientRect();
-    // getBoundingClientRect already gives scaled rect, divide by zoom to get canvas-space
     return {
       x:(e.clientX-rect.left)/z,
       y:(e.clientY-rect.top)/z
     };
   }
 
-  // Start rubber-band on canvas background OR on cwrap (outside canvas)
+  function magneticPickAt(pt, shiftKey){
+    const SNAP_R = 40;
+    const allEls = Array.from(cv.querySelectorAll('.el:not(.decor-el)'));
+    let bestEl = null, bestD2 = SNAP_R;
+    allEls.forEach(el => {
+      if(el.dataset.objHidden==='1') return;
+      const l=parseInt(el.style.left)||0, t2=parseInt(el.style.top)||0;
+      const w=parseInt(el.style.width)||0, h=parseInt(el.style.height)||0;
+      const cx2 = Math.max(l, Math.min(pt.x, l+w));
+      const cy2 = Math.max(t2, Math.min(pt.y, t2+h));
+      const d2 = Math.hypot(pt.x-cx2, pt.y-cy2);
+      if(d2 < bestD2){ bestD2 = d2; bestEl = el; }
+    });
+    if(bestEl){
+      if(shiftKey && typeof pickMulti==='function') pickMulti(bestEl, true);
+      else if(typeof pick==='function') pick(bestEl);
+      return true;
+    }
+    return false;
+  }
+
+  function _isEmptyCanvasTarget(t){
+    if(!t||!t.closest) return false;
+    // Animated layout décor is background — never blocks rubber-band / selection
+    if(t.closest('.decor-el') || t.closest('#cvbg') || t.closest('.cvbg-img-layer') || t.closest('.decor-gl-layer')) {
+      return !!(t.closest('#cwrap'));
+    }
+    // Real interactive targets — do not start rubber-band
+    if(t.closest('.el')) return false;
+    if(t.closest('.rh')) return false;
+    if(t.closest('.conn-hit')) return false;
+    if(t.closest('#conn-handles')) return false;
+    if(t.closest('#handles-overlay [data-cls]')) return false;
+    if(t.closest('#motion-ghosts') || t.closest('#motion-svg') || t.closest('.motion-ghost') || t.closest('.motion-handle') || t.closest('[data-motion-ui]')) return false;
+    if(t.closest('.arc-handle,.star-handle,.para-handle,.chev-handle,.moon-handle,.trap-handle,.curve-handle')) return false;
+    // Empty slide / overlays / outside-slide chrome — OK to rubber-band
+    if(t.closest('#cwrap')) return true;
+    return false;
+  }
+
+  function _showRubber(x,y,w,h){
+    const rb=_ensureRubberband();
+    rb.style.cssText='position:absolute;display:block;left:'+x+'px;top:'+y+'px;width:'+(w||0)+'px;height:'+(h||0)+'px;border:1.5px dashed var(--accent,#3b82f6);background:rgba(59,130,246,.08);pointer-events:none;z-index:10050;box-sizing:border-box;';
+    return rb;
+  }
+
+  // Capture phase so we start rubber-band even when SVG overlay is under the cursor
   function onDown(e){
     if(e.button!==0)return;
     if(typeof window._isPreviewActive==='function'&&window._isPreviewActive())return;
     if(window._anyDragging)return;
     if(typeof _rotDragging!=='undefined'&&_rotDragging)return;
-    // If clicked near a rotation corner — skip (let rotation handler take over)
+    if(window._resizeDragging)return;
     if(typeof _rotEl!=='undefined'&&_rotEl&&typeof _nearCorner==='function'){
       const pt=toCanvasCoords(e);
       if(_nearCorner(_rotEl,pt.x,pt.y))return;
     }
-    // If clicked on an element or resize handle — skip
-    if(e.target.closest('.el'))return;
-    if(e.target.closest('.rh'))return;
-    // In curve edit mode — rubber-band still works but only for node selection
-    if(e.target.closest('#conn-handles'))return;
-    if(e.target.closest('#conn-svg-layer'))return;
-    if(e.target.closest('#handles-overlay'))return;
-    // Must be inside cwrap area
-    if(!e.target.closest('#cwrap'))return;
-    // Magnetic selection: if near an element within 40px, pick it and skip rubber-band
-    if(e.target.closest('#canvas')||e.target.closest('#canvas-bg-rect')||e.target.closest('#lego-layer')){
-      const SNAP_R = 40;
-      const pt2 = toCanvasCoords(e);
-      const allEls = Array.from(cv.querySelectorAll('.el:not(.decor-el)'));
-      let bestEl = null, bestD2 = SNAP_R;
-      allEls.forEach(el => {
-        const l=parseInt(el.style.left)||0, t2=parseInt(el.style.top)||0;
-        const w=parseInt(el.style.width)||0, h=parseInt(el.style.height)||0;
-        const cx2 = Math.max(l, Math.min(pt2.x, l+w));
-        const cy2 = Math.max(t2, Math.min(pt2.y, t2+h));
-        const d2 = Math.hypot(pt2.x-cx2, pt2.y-cy2);
-        if(d2 < bestD2){ bestD2 = d2; bestEl = el; }
-      });
-      if(bestEl){
-        if(e.shiftKey && typeof pickMulti==='function') pickMulti(bestEl, true);
-        else if(typeof pick==='function') pick(bestEl);
-        return;
-      }
-    }
+    if(!_isEmptyCanvasTarget(e.target))return;
     if(typeof stopTextEditing==='function')stopTextEditing();
-    // In curve edit mode: clicking background starts node rubber-band, don't deselect
+
+    const onCanvas = !!(e.target.closest('#canvas') || e.target.closest('#canvas-bg-rect') ||
+      e.target.closest('#lego-layer') || e.target.closest('#conn-svg-layer') ||
+      e.target.closest('#sel-frames-layer') || e.target.closest('#handles-overlay') ||
+      e.target.closest('#rubberband') || e.target.closest('.decor-el') ||
+      e.target.closest('#cvbg') || e.target.closest('.cvbg-img-layer'));
+
     if(window._curveEditMode) {
       const pt0=toCanvasCoords(e);
-      rbStart={x:pt0.x,y:pt0.y};
-      const rb=document.getElementById('rubberband');
-      rb.style.cssText=`display:block;left:${pt0.x}px;top:${pt0.y}px;width:0;height:0;`;
+      rbStart={x:pt0.x,y:pt0.y,shift:e.shiftKey,onCanvas:onCanvas};
+      _showRubber(pt0.x,pt0.y,0,0);
       e.preventDefault();
       return;
     }
     const wasMulti = multiSel.size > 1;
     _justClearedMulti = wasMulti;
     clearMultiSel();
-    if(sel&&!(typeof _rotDragging!=='undefined'&&_rotDragging)&&!window._curveEditMode){if(typeof pick==='function')pick(null);else{sel.classList.remove('sel');sel=null;}}
-    // If clicking outside canvas (on cwrap bg) always show slide props regardless
-    const onCanvas = e.target.closest('#canvas') || e.target.closest('#canvas-bg-rect');
+    if(sel&&!(typeof _rotDragging!=='undefined'&&_rotDragging)&&!window._curveEditMode){
+      if(typeof pick==='function')pick(null);
+      else{sel.classList.remove('sel');sel=null;}
+    }
     if(!wasMulti || !onCanvas) _justClearedMulti = false;
     syncProps();
     _justClearedMulti = false;
     const pt=toCanvasCoords(e);
-    rbStart={x:pt.x,y:pt.y};
-    const rb=document.getElementById('rubberband');
-    rb.style.cssText=`display:block;left:${pt.x}px;top:${pt.y}px;width:0;height:0;`;
+    rbStart={x:pt.x,y:pt.y,shift:e.shiftKey,onCanvas:onCanvas};
+    _showRubber(pt.x,pt.y,0,0);
     e.preventDefault();
   }
 
-  // Remove old canvas-only listener, attach to document for cwrap-wide start
-  cc.addEventListener('mousedown',onDown);
-  cwrap.addEventListener('mousedown',onDown);
+  // One listener in capture — avoids double-fire on cc+cwrap bubble
+  cwrap.addEventListener('mousedown', onDown, true);
 
-  // Снимаем выделение ТОЛЬКО при клике по слайду (#canvas, #cvbg) или холсту (#cwrap вне слайда).
-  // Все панели, тулбары, сайдбар — НЕ снимают выделение.
   document.addEventListener('mousedown', function(e) {
     if(e.button!==0) return;
     if(window._anyDragging) return;
-    // Разрешаем клики по любым UI-панелям — выделение не снимаем
     if(e.target.closest('#ribbon')) return;
     if(e.target.closest('#props')) return;
     if(e.target.closest('#ctoolbar')) return;
@@ -147,7 +214,6 @@ function pickMulti(el,shiftKey){
     if(e.target.closest('.modal-ov')) return;
     if(e.target.closest('.modal')) return;
     if(e.target.closest('#anim-panel')) return;
-    // cwrap: onDown уже ставит sel=null — чистим overlay после тика
     if(e.target.closest('#cwrap')) {
       if(!e.target.closest('.el') && !e.target.closest('#handles-overlay')) {
         requestAnimationFrame(function() {
@@ -159,19 +225,21 @@ function pickMulti(el,shiftKey){
     }
   });
 
-
   document.addEventListener('mousemove',e=>{
     if(!rbStart)return;
-    if(typeof _rotDragging!=='undefined'&&_rotDragging){rbStart=null;document.getElementById('rubberband').style.display='none';return;}
+    if(window._anyDragging || (typeof _rotDragging!=='undefined'&&_rotDragging)){
+      rbStart=null;
+      const rb=document.getElementById('rubberband');
+      if(rb) rb.style.display='none';
+      return;
+    }
     const z=typeof _canvasZoom==='number'?_canvasZoom:1;
     const rect=cv.getBoundingClientRect();
-    // Clamp to canvas bounds in canvas-space
     const mx=(e.clientX-rect.left)/z;
     const my=(e.clientY-rect.top)/z;
     const x=Math.min(mx,rbStart.x),y=Math.min(my,rbStart.y);
     const w=Math.abs(mx-rbStart.x),h=Math.abs(my-rbStart.y);
-    const rb=document.getElementById('rubberband');
-    rb.style.left=x+'px';rb.style.top=y+'px';rb.style.width=w+'px';rb.style.height=h+'px';
+    _showRubber(x,y,w,h);
   });
 
   document.addEventListener('mouseup',e=>{
@@ -182,22 +250,34 @@ function pickMulti(el,shiftKey){
     const my=(e.clientY-rect.top)/z;
     const rx=Math.min(mx,rbStart.x),ry=Math.min(my,rbStart.y);
     const rw=Math.abs(mx-rbStart.x),rh=Math.abs(my-rbStart.y);
+    const wasOnCanvas=!!rbStart.onCanvas;
+    const wasShift=!!rbStart.shift;
     rbStart=null;
-    document.getElementById('rubberband').style.display='none';
-    if(rw<4&&rh<4)return;
-    // In curve edit mode: select nodes within rect instead of elements
+    const rb=document.getElementById('rubberband');
+    if(rb) rb.style.display='none';
+    if(rw<4&&rh<4){
+      if(wasOnCanvas && !window._curveEditMode){
+        const pt={x:mx,y:my};
+        if(!magneticPickAt(pt, wasShift)){
+          if(!wasShift && typeof desel==='function') desel();
+          else if(!wasShift && typeof pick==='function') pick(null);
+        }
+        if(typeof _updateSelFrames==='function') _updateSelFrames();
+      }
+      return;
+    }
     if(window._curveEditMode && typeof sel!=='undefined' && sel && sel.dataset.shape==='curve') {
       if(typeof _curveRubberBandSelect==='function') _curveRubberBandSelect(rx,ry,rw,rh);
       return;
     }
     cv.querySelectorAll('.el').forEach(el=>{
+      if(el.dataset.objHidden==='1') return;
       const ex=parseInt(el.style.left),ey=parseInt(el.style.top);
       const ew=parseInt(el.style.width),eh=parseInt(el.style.height);
       if(ex<rx+rw&&ex+ew>rx&&ey<ry+rh&&ey+eh>ry){
         addToMultiSel(el);
       }
     });
-    // Expand selection: if any group member is selected, add ALL members of that group
     const _selectedGroupIds = new Set();
     multiSel.forEach(el => {
       const gid = el.dataset && el.dataset.groupId;
@@ -215,22 +295,17 @@ function pickMulti(el,shiftKey){
       const onlyEl=[...multiSel][0];clearMultiSel();pick(onlyEl);
     } else if(multiSel.size>1){
       window._explicitMultiSel=true;
-      // Freeze the full selection before pick() can overwrite it
       const _frozenSel = [...multiSel];
-      // Pick the last element for props panel, but without letting group patch clear multiSel
       const _lastEl = _frozenSel[_frozenSel.length-1];
-      // Temporarily disable group-pick expansion by calling original pick via flag
       window._rbSelecting = true;
       if(typeof pick==='function') pick(_lastEl);
       window._rbSelecting = false;
-      // Re-add all rubber-band selected elements (pick may have wiped them)
       _frozenSel.forEach(el => { if(!multiSel.has(el)) addToMultiSel(el); });
       if(typeof _updateHandlesOverlay==='function') _updateHandlesOverlay();
       if(typeof toast==="function")toast(multiSel.size+t('toastMultiSel'),'ok');
     }
+    if(typeof _updateSelFrames==='function') _updateSelFrames();
   });
-
-  // element shift-click is handled directly in mkEl's mousedown
 })();
 
 // ══════════════ GROUP COPY / PASTE ══════════════
@@ -303,11 +378,12 @@ function deleteSelected(){
     // htmlframe: delete linked code; code: unlink parent
     if(typeof _hfOnDelete==='function'){ const _d=s.els[idx2]; if(_d)_hfOnDelete(_d); }
     if(idx2>=0)s.els.splice(idx2,1);
-    sel.remove();sel=null;_rotEl=null;const _ov=document.getElementById('handles-overlay');if(_ov)_ov.innerHTML='';document.querySelectorAll('.arc-handle,.star-handle,.para-handle,.chev-handle,.moon-handle,.trap-handle').forEach(h=>h.remove());save();if(typeof drawThumbs==="function")drawThumbs();if(typeof saveState==="function")saveState();syncProps();
+    sel.remove();
+    pick(null);
+    _rotEl=null;
+    save();if(typeof drawThumbs==="function")drawThumbs();if(typeof saveState==="function")saveState();
     if(typeof renderAnimPanel==="function")renderAnimPanel();
     if(typeof renderMotionOverlay==="function")renderMotionOverlay();
-    // Final cleanup — syncProps may have rebuilt handles
-    document.querySelectorAll('.arc-handle,.star-handle,.para-handle,.chev-handle,.moon-handle,.trap-handle').forEach(h=>h.remove());
   }
 }
 

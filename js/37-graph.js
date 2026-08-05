@@ -527,9 +527,36 @@ async function refreshAllGraphs(theme){
   const newColor = (theme.colors && theme.colors[0]) || (isDark ? '#6366f1' : '#4f46e5');
   const newLineColors = (theme.colors || []).slice(0,7);
   if(!newLineColors.length) newLineColors.push(newColor);
+  const chemColors = (typeof window._chemThemeColors==='function')
+    ? window._chemThemeColors(theme) : null;
   for(const s of slides){
     for(const el of s.els){
       if(el.type !== 'graph') continue;
+      if(el.graphKind === 'chem' && typeof window._chemRender === 'function'){
+        const cc = chemColors || { bg:'', fg:'#ffffff', isDark:true };
+        const _defScheme = {col:7, row:0};
+        const _defColor = (typeof _resolveSchemeColor==='function'
+          ? _resolveSchemeColor(_defScheme, theme) : null) || cc.fg;
+        // Same rules as text/formula: scheme-pinned remaps, undefined→pin default, null→custom keep
+        if(el.graphColorScheme !== null && el.graphColorScheme !== undefined){
+          el.graphColor = (typeof _resolveSchemeColor==='function'
+            ? _resolveSchemeColor(el.graphColorScheme, theme) : null) || _defColor;
+        } else if(el.graphColorScheme === undefined){
+          el.graphColorScheme = _defScheme;
+          el.graphColor = _defColor;
+        }
+        // graphColorScheme===null: custom — leave graphColor as-is
+        if(el.graphBgScheme !== null && el.graphBgScheme !== undefined
+           && typeof _resolveSchemeColor==='function'){
+          const resolved = _resolveSchemeColor(el.graphBgScheme, theme);
+          if(resolved) el.graphBg = resolved;
+        }
+        el.graphDark = cc.isDark;
+        const raw = el.graphLatex || el.chemKey || '';
+        const result = window._chemRender(raw, { w:720, h:680, fg:el.graphColor||_defColor, isDark:cc.isDark });
+        if(result && result.dataUrl) el.graphImg = result.dataUrl;
+        continue;
+      }
       el.graphBg = newBg; el.graphColor = newColor; el.graphDark = isDark;
       el.graphLineColors = newLineColors;
       const exprs = el.graphExprs || (el.graphExpr ? [el.graphExpr] : []);
@@ -557,6 +584,277 @@ function _deleteLinkedGraphs(formulaId){
 }
 window._deleteLinkedGraphs = _deleteLinkedGraphs;
 
+// ── Place / update linked graph element on canvas ───────────────────────────
+function _upsertLinkedGraph(formulaData, payload){
+  const existing = slides[cur].els.find(x => x.type==='graph' && x.linkedFormulaId===formulaData.id);
+  if(existing){
+    pushUndo();
+    Object.assign(existing, payload);
+    const domEl=document.getElementById('canvas').querySelector('[data-id="'+existing.id+'"]');
+    if(domEl){ const img=domEl.querySelector('img'); if(img && payload.graphImg) img.src=payload.graphImg; }
+    save(); drawThumbs(); saveState();
+    return { existing:true, el:existing };
+  }
+  pushUndo();
+  const _fDom=document.getElementById('canvas').querySelector('[data-id="'+formulaData.id+'"]');
+  const fx=_fDom?parseInt(_fDom.style.left):formulaData.x;
+  const fy=_fDom?parseInt(_fDom.style.top):formulaData.y;
+  const fh=_fDom?parseInt(_fDom.style.height):formulaData.h;
+  const fw=_fDom?parseInt(_fDom.style.width):formulaData.w;
+  const isChem = payload.graphKind === 'chem';
+  const W=Math.max(fw, isChem ? 320 : 380);
+  const H=Math.round(W * (isChem ? 0.95 : 0.7));
+  const gd={
+    id:'e'+(++ec), type:'graph',
+    x:snapV(fx), y:snapV(fy+fh+16),
+    w:snapV(W),  h:snapV(H),
+    rot:0, anims:[],
+    linkedFormulaId:formulaData.id,
+    ...payload
+  };
+  if(gd.y+gd.h>canvasH) gd.y=Math.max(0,canvasH-gd.h);
+  if(gd.x+gd.w>canvasW) gd.x=Math.max(0,canvasW-gd.w);
+  slides[cur].els.push(gd);
+  mkEl(gd);
+  const domEl=document.getElementById('canvas').querySelector('[data-id="'+gd.id+'"]');
+  if(domEl) pick(domEl);
+  save(); drawThumbs(); saveState();
+  return { existing:false, el:gd };
+}
+
+// ── Chemistry structure (instead of function graph) ─────────────────────────
+function _chemHexRgba(hex, a){
+  if(!hex || hex==='none' || hex==='transparent') return 'rgba(0,0,0,0)';
+  const h = String(hex).replace('#','');
+  if(h.length!==6) return hex;
+  const r=parseInt(h.slice(0,2),16), g=parseInt(h.slice(2,4),16), b=parseInt(h.slice(4,6),16);
+  return 'rgba('+r+','+g+','+b+','+a+')';
+}
+
+function _applyChemGraphStyle(el, d){
+  if(!el || !d || d.graphKind!=='chem') return;
+  const host = el.querySelector('.ec') || el;
+  // Same corner radius as function graphs
+  host.style.borderRadius = '6px';
+  host.style.overflow = 'hidden';
+  host.style.position = 'relative';
+
+  // Prefer layer inside .ec (clips to radius); migrate if it was on el
+  let layer = null;
+  Array.from(host.children).forEach(function(ch){ if(ch.classList && ch.classList.contains('chem-bg-layer')) layer = ch; });
+  Array.from(el.children).forEach(function(ch){
+    if(ch.classList && ch.classList.contains('chem-bg-layer') && ch.parentElement !== host) ch.remove();
+  });
+
+  const bg = d.graphBg;
+  const hasBg = bg && bg!=='none' && bg!=='transparent' && bg!=='';
+  const blur = +(d.graphBgBlur||0);
+  const op = d.graphBgOp!=null ? +d.graphBgOp : 1;
+
+  if(!hasBg && blur<=0){
+    if(layer) layer.remove();
+    host.style.backdropFilter = '';
+    host.style.webkitBackdropFilter = '';
+    el.style.backdropFilter = '';
+    el.style.webkitBackdropFilter = '';
+    return;
+  }
+
+  if(!layer){
+    layer = document.createElement('div');
+    layer.className = 'chem-bg-layer';
+    layer.style.cssText = 'position:absolute;inset:0;z-index:0;pointer-events:none;border-radius:inherit;';
+    host.insertBefore(layer, host.firstChild);
+  }
+  layer.style.background = hasBg ? _chemHexRgba(bg, op) : '';
+  if(blur>0){
+    host.style.backdropFilter = 'blur('+blur+'px)';
+    host.style.webkitBackdropFilter = 'blur('+blur+'px)';
+  } else {
+    host.style.backdropFilter = '';
+    host.style.webkitBackdropFilter = '';
+  }
+  const img = host.querySelector('img');
+  if(img){ img.style.position = 'absolute'; img.style.zIndex = '1'; }
+}
+
+function _rerenderChemGraph(d, opts){
+  opts = opts || {};
+  if(!d || d.graphKind!=='chem' || typeof window._chemRender!=='function') return false;
+  let raw = d.graphLatex || d.chemKey || '';
+  if(d.linkedFormulaId && slides[cur]){
+    const f = slides[cur].els.find(x => x.id===d.linkedFormulaId);
+    if(f && f.formulaRaw) raw = f.formulaRaw;
+  }
+  const fg = d.graphColor || '#111111';
+  const result = window._chemRender(raw, {
+    w:720, h:680,
+    fg: fg,
+    isDark: !!d.graphDark
+  });
+  if(!result || !result.dataUrl) return false;
+  d.graphImg = result.dataUrl;
+  if(result.chemName) d.chemName = result.chemName;
+  if(result.chemKey) d.chemKey = result.chemKey;
+  const domEl = document.getElementById('canvas')?.querySelector('[data-id="'+d.id+'"]');
+  if(domEl){
+    const img = domEl.querySelector('img');
+    if(img) img.src = result.dataUrl;
+    _applyChemGraphStyle(domEl, d);
+  }
+  if(!opts.silent){
+    if(typeof save==='function') save();
+    if(typeof drawThumbs==='function') drawThumbs();
+    if(typeof saveState==='function') saveState();
+  }
+  return true;
+}
+window._applyChemGraphStyle = _applyChemGraphStyle;
+window._rerenderChemGraph = _rerenderChemGraph;
+
+function setChemGraphColor(color, schemeRef){
+  if(!sel) return;
+  let d = slides[cur]?.els?.find(x => x.id===sel.dataset.id);
+  if(!d || d.graphKind!=='chem') return;
+  if(typeof pushUndo==='function') pushUndo();
+  // pushUndo/save rebuilds slides[cur].els — re-fetch live object
+  d = slides[cur]?.els?.find(x => x.id===sel.dataset.id);
+  if(!d || d.graphKind!=='chem') return;
+  d.graphColor = color;
+  d.graphColorScheme = (schemeRef!==undefined) ? schemeRef : null;
+  sel.dataset.graphColor = color;
+  _rerenderChemGraph(d);
+  const sw = document.getElementById('gp-chem-fg-preview');
+  const hx = document.getElementById('gp-chem-fg-hex');
+  if(sw) sw.style.background = color;
+  if(hx) hx.value = (typeof _colorFieldDisplay==='function')
+    ? _colorFieldDisplay(color, d.graphColorScheme)
+    : color;
+}
+window.setChemGraphColor = setChemGraphColor;
+
+function setChemGraphBg(color, schemeRef){
+  if(!sel) return;
+  let d = slides[cur]?.els?.find(x => x.id===sel.dataset.id);
+  if(!d || d.graphKind!=='chem') return;
+  if(typeof pushUndo==='function') pushUndo();
+  d = slides[cur]?.els?.find(x => x.id===sel.dataset.id);
+  if(!d || d.graphKind!=='chem') return;
+  d.graphBg = (color && color!=='none') ? color : '';
+  d.graphBgScheme = (schemeRef!==undefined) ? schemeRef : null;
+  if(d.graphBg) sel.dataset.graphBg = d.graphBg; else delete sel.dataset.graphBg;
+  if(d.graphBgScheme) sel.dataset.graphBgScheme = JSON.stringify(d.graphBgScheme); else delete sel.dataset.graphBgScheme;
+  _applyChemGraphStyle(sel, d);
+  if(typeof save==='function') save();
+  if(typeof drawThumbs==='function') drawThumbs();
+  if(typeof saveState==='function') saveState();
+  const sw = document.getElementById('gp-chem-bg-preview');
+  const hx = document.getElementById('gp-chem-bg-hex');
+  if(sw) sw.style.background = d.graphBg || 'transparent';
+  if(hx) hx.value = d.graphBg
+    ? ((typeof _colorFieldDisplay==='function')
+        ? _colorFieldDisplay(d.graphBg, d.graphBgScheme)
+        : d.graphBg)
+    : '';
+}
+window.setChemGraphBg = setChemGraphBg;
+
+function setChemGraphBgOp(v){
+  if(!sel) return;
+  const d = slides[cur]?.els?.find(x => x.id===sel.dataset.id);
+  if(!d || d.graphKind!=='chem') return;
+  d.graphBgOp = Math.max(0, Math.min(1, +v));
+  sel.dataset.graphBgOp = String(d.graphBgOp);
+  _applyChemGraphStyle(sel, d);
+  if(typeof save==='function') save();
+  if(typeof drawThumbs==='function') drawThumbs();
+}
+window.setChemGraphBgOp = setChemGraphBgOp;
+
+function setChemGraphBgBlur(v){
+  if(!sel) return;
+  const d = slides[cur]?.els?.find(x => x.id===sel.dataset.id);
+  if(!d || d.graphKind!=='chem') return;
+  d.graphBgBlur = Math.max(0, +v||0);
+  sel.dataset.graphBgBlur = String(d.graphBgBlur);
+  _applyChemGraphStyle(sel, d);
+  if(typeof save==='function') save();
+  if(typeof drawThumbs==='function') drawThumbs();
+}
+window.setChemGraphBgBlur = setChemGraphBgBlur;
+
+function _buildChemFromFormula(d){
+  if(typeof window._chemLookup !== 'function' || typeof window._chemRender !== 'function') return null;
+  const raw = d.formulaRaw || '';
+  const info = window._chemLookup(raw);
+  if(!info) return null;
+
+  const existing = slides[cur].els.find(x => x.type==='graph' && x.linkedFormulaId===d.id && x.graphKind==='chem');
+
+  const _ti=typeof appliedThemeIdx!=='undefined'?appliedThemeIdx:-1;
+  const _theme=_ti>=0?THEMES[_ti]:null;
+  const colors = (typeof window._chemThemeColors==='function')
+    ? window._chemThemeColors(_theme)
+    : { bg:'', fg:'#ffffff', isDark:true };
+
+  const _defScheme = {col:7, row:0};
+  let fgScheme;
+  if(existing && existing.graphColorScheme !== undefined){
+    fgScheme = existing.graphColorScheme; // may be null (custom) or {col,row}
+  } else {
+    fgScheme = _defScheme; // new / legacy → pin to theme text color
+  }
+  let fg;
+  if(fgScheme !== null && typeof _resolveSchemeColor==='function' && _theme){
+    fg = _resolveSchemeColor(fgScheme, _theme) || colors.fg;
+  } else if(fgScheme === null){
+    fg = existing?.graphColor || colors.fg; // custom — keep
+  } else {
+    fg = colors.fg;
+  }
+
+  const bg = existing ? (existing.graphBg ?? '') : '';
+  const bgOp = existing?.graphBgOp != null ? existing.graphBgOp : 1;
+  const bgBlur = existing?.graphBgBlur != null ? existing.graphBgBlur : 0;
+  const bgScheme = existing ? (existing.graphBgScheme !== undefined ? existing.graphBgScheme : null) : null;
+
+  const result = window._chemRender(raw, {
+    w:720, h:680,
+    fg: fg,
+    isDark: colors.isDark
+  });
+  if(!result || result.error || !result.dataUrl) return null;
+
+  const out = _upsertLinkedGraph(d, {
+    graphKind:'chem',
+    graphLatex: raw,
+    graphLines:[raw],
+    graphExprs:[],
+    graphExpr:'',
+    graphImg: result.dataUrl,
+    graphColor: fg,
+    graphColorScheme: fgScheme,
+    graphBg: bg,
+    graphBgOp: bgOp,
+    graphBgBlur: bgBlur,
+    graphBgScheme: bgScheme,
+    graphDark: colors.isDark,
+    chemKey: result.chemKey,
+    chemName: result.chemName
+  });
+  const domEl = document.getElementById('canvas')?.querySelector('[data-id="'+out.el.id+'"]');
+  if(domEl){
+    if(fg) domEl.dataset.graphColor = fg;
+    _applyChemGraphStyle(domEl, out.el);
+  }
+  if(typeof toast==='function'){
+    toast(out.existing
+      ? ('Структура обновлена: ' + (result.chemName || result.pretty))
+      : ('Структура: ' + (result.chemName || result.pretty)), 'ok');
+  }
+  return out;
+}
+
 // ── Build / update graph ────────────────────────────────────────────────────
 async function buildFormulaGraph(formulaEl){
   if(!formulaEl) return;
@@ -564,6 +862,13 @@ async function buildFormulaGraph(formulaEl){
   if(!d||d.type!=='formula'){ if(typeof toast==='function') toast('Выберите формулу','err'); return; }
 
   const raw  = d.formulaRaw || '';
+
+  // Chemistry formula → structural diagram + name
+  if(typeof window._chemIsFormula==='function' && window._chemIsFormula(raw)){
+    const chem = _buildChemFromFormula(d);
+    if(chem) return;
+  }
+
   // Support multi-line system: formulaLines array or single raw
   let lines = (Array.isArray(d.formulaLines) && d.formulaLines.length)
     ? d.formulaLines.filter(l => l && l.trim())
@@ -614,49 +919,17 @@ async function buildFormulaGraph(formulaEl){
   const raw_result = _renderGraph(exprs, lines, {w:800, h:560, color, lineColors, bg, isDark, xMin, xMax, step, yMin, yMax, conditions});
   const result = await _addMathLabel(raw_result);
 
-  if(existing){
-    pushUndo();
-    existing.graphExprs=exprs; existing.graphLines=lines;
-    existing.graphExpr=exprs[0]; existing.graphLatex=lines[0];
-    existing.graphImg=result.dataUrl; existing.graphColor=color;
-    existing.graphLineColors=lineColors;
-    existing.graphBg=bg; existing.graphDark=isDark;
-    existing.graphXMin=xMin; existing.graphXMax=xMax; existing.graphStep=step;
-    existing.graphYMin=yMin; existing.graphYMax=yMax;
-    const domEl=document.getElementById('canvas').querySelector('[data-id="'+existing.id+'"]');
-    if(domEl){ const img=domEl.querySelector('img'); if(img) img.src=result.dataUrl; }
-    save(); drawThumbs(); saveState();
-    if(typeof toast==='function') toast('График обновлён','ok');
-  } else {
-    pushUndo();
-    const _fDom=document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
-    const fx=_fDom?parseInt(_fDom.style.left):d.x;
-    const fy=_fDom?parseInt(_fDom.style.top):d.y;
-    const fh=_fDom?parseInt(_fDom.style.height):d.h;
-    const fw=_fDom?parseInt(_fDom.style.width):d.w;
-    const W=Math.max(fw,380), H=Math.round(W*0.7);
-    const gd={
-      id:'e'+(++ec), type:'graph',
-      x:snapV(fx), y:snapV(fy+fh+16),
-      w:snapV(W),  h:snapV(H),
-      rot:0, anims:[],
-      linkedFormulaId:d.id,
-      graphExprs:exprs, graphLines:lines,
-      graphExpr:exprs[0], graphLatex:lines[0],
-      graphImg:result.dataUrl, graphColor:color,
-      graphLineColors:lineColors,
-      graphBg:bg, graphDark:isDark,
-      graphXMin:-10, graphXMax:10, graphStep:1,
-    };
-    if(gd.y+gd.h>canvasH) gd.y=Math.max(0,canvasH-gd.h);
-    if(gd.x+gd.w>canvasW) gd.x=Math.max(0,canvasW-gd.w);
-    slides[cur].els.push(gd);
-    mkEl(gd);
-    const domEl=document.getElementById('canvas').querySelector('[data-id="'+gd.id+'"]');
-    if(domEl) pick(domEl);
-    save(); drawThumbs(); saveState();
-    if(typeof toast==='function') toast('График построен','ok');
-  }
+  const out = _upsertLinkedGraph(d, {
+    graphKind:'fn',
+    graphExprs:exprs, graphLines:lines,
+    graphExpr:exprs[0], graphLatex:lines[0],
+    graphImg:result.dataUrl, graphColor:color,
+    graphLineColors:lineColors,
+    graphBg:bg, graphDark:isDark,
+    graphXMin:xMin, graphXMax:xMax, graphStep:step,
+    graphYMin:yMin, graphYMax:yMax,
+  });
+  if(typeof toast==='function') toast(out.existing ? 'График обновлён' : 'График построен','ok');
 }
 window.buildFormulaGraph = buildFormulaGraph;
 
@@ -666,6 +939,32 @@ function syncGraphProps(){
   const d = slides[cur] && slides[cur].els.find(x => x.id === sel.dataset.id);
   if(!d || d.type !== 'graph') return;
   const get = id => document.getElementById(id);
+  const isChem = d.graphKind === 'chem';
+  const ph = document.querySelector('#graphprops .ph');
+  if(ph) ph.textContent = isChem ? '🧪 Структура' : '📈 График';
+  const rangeBlock = document.getElementById('gp-range-block');
+  if(rangeBlock) rangeBlock.style.display = isChem ? 'none' : '';
+  const chemBlock = document.getElementById('gp-chem-block');
+  if(chemBlock) chemBlock.style.display = isChem ? 'flex' : 'none';
+  const rebuildBtn = document.querySelector('#graphprops button.mbtn-sm');
+  if(rebuildBtn) rebuildBtn.textContent = isChem ? '🔄 Перестроить структуру' : '🔄 Перестроить';
+  if(isChem){
+    const fg = d.graphColor || '#ffffff';
+    const bg = d.graphBg || '';
+    if(get('gp-chem-fg-preview')) get('gp-chem-fg-preview').style.background = fg;
+    if(get('gp-chem-fg-hex')) get('gp-chem-fg-hex').value =
+      (typeof _colorFieldDisplay==='function')
+        ? _colorFieldDisplay(fg, d.graphColorScheme)
+        : fg;
+    if(get('gp-chem-bg-preview')) get('gp-chem-bg-preview').style.background = bg || 'transparent';
+    if(get('gp-chem-bg-hex')) get('gp-chem-bg-hex').value = bg
+      ? ((typeof _colorFieldDisplay==='function')
+          ? _colorFieldDisplay(bg, d.graphBgScheme)
+          : bg)
+      : '';
+    if(get('gp-chem-bg-op')) get('gp-chem-bg-op').value = d.graphBgOp != null ? d.graphBgOp : 1;
+    if(get('gp-chem-bg-blur')) get('gp-chem-bg-blur').value = d.graphBgBlur != null ? d.graphBgBlur : 0;
+  }
   if(get('gp-xmin')) get('gp-xmin').value = d.graphXMin != null ? d.graphXMin : -10;
   if(get('gp-xmax')) get('gp-xmax').value = d.graphXMax != null ? d.graphXMax :  10;
   if(get('gp-ymin')) get('gp-ymin').value = d.graphYMin != null ? d.graphYMin : '';
@@ -685,6 +984,12 @@ async function rebuildGraphFromProps(){
   if(!sel) return;
   const d = slides[cur] && slides[cur].els.find(x => x.id === sel.dataset.id);
   if(!d || d.type !== 'graph') return;
+
+  // Chemistry structure — re-render from linked formula / stored latex
+  if(d.graphKind === 'chem' && typeof _rerenderChemGraph === 'function'){
+    _rerenderChemGraph(d);
+    return;
+  }
 
   const get = id => { const el = document.getElementById(id); return el ? el.value : ''; };
   const xMinV = parseFloat(get('gp-xmin'));

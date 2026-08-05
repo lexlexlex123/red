@@ -76,7 +76,7 @@ function _bootDeferredUI(){
     } catch(e) {}
     if (families.size) addFamilies([...families].sort());
   })();
-  buildSwatches('bgswatches');buildSwatches('bgswatches2');
+  buildSwatches('bgswatches');buildSwatches('bgswatches2'); // no-op if elements removed
   buildThemeGrid();buildShapeGallery();buildAppletGallery();
   buildPalette('cp-text-palette','text');
   buildPalette('cp-fill-palette','fill');
@@ -123,30 +123,10 @@ function boot(){
   document.getElementById('canvas').addEventListener('mousedown',e=>{
     if(e.target.id==='canvas'||e.target.id==='cvbg'){
       if(pipetteMode){cancelPipetteMode();return;}
-      // Don't intercept clicks on connector layer
-      if(e.target.closest&&e.target.closest('#conn-svg-layer'))return;
-      // Magnetic selection: find nearest element within 40px
-      const SNAP_R = 40;
-      const z = typeof _canvasZoom!=='undefined' ? _canvasZoom : 1;
-      const cvRect = document.getElementById('canvas').getBoundingClientRect();
-      const mx = (e.clientX - cvRect.left) / z;
-      const my = (e.clientY - cvRect.top) / z;
-      const els = Array.from(document.getElementById('canvas').querySelectorAll('.el:not(.decor-el)'));
-      let best = null, bestD = SNAP_R;
-      els.forEach(el => {
-        const l=parseInt(el.style.left)||0, t2=parseInt(el.style.top)||0;
-        const w=parseInt(el.style.width)||0, h=parseInt(el.style.height)||0;
-        // Distance from point to rectangle
-        const cx = Math.max(l, Math.min(mx, l+w));
-        const cy = Math.max(t2, Math.min(my, t2+h));
-        const d = Math.hypot(mx-cx, my-cy);
-        if(d < bestD){ bestD = d; best = el; }
-      });
-      if(best){
-        if(e.shiftKey && typeof pickMulti==='function') pickMulti(best, true);
-        else if(typeof pick==='function') pick(best);
-      }
-      else if(!e.shiftKey&&!window._curveEditMode && typeof desel==='function') desel();
+      // Connector hits are handled by connectors.js; don't steal empty-canvas rubber-band
+      if(e.target.closest&&(e.target.closest('.conn-hit')||e.target.closest('#conn-handles')))return;
+      // Magnetic pick deferred to rubber-band mouseup in 28-multisel.js
+      // so rectangular selection works when dragging on the slide.
     }
   });
   // Global: clicking anywhere outside an element exits text/table editing
@@ -154,6 +134,11 @@ function boot(){
     if(!sel)return;
     // If click is inside the currently editing element, allow it
     if(sel.contains(e.target))return;
+    // If clicking inside an open modal (icon picker, etc.) — that's not
+    // "clicking outside the text block" in the way that should end editing;
+    // let the modal's own click handler run without us first tearing down
+    // and rebuilding the editor DOM out from under it.
+    if(e.target.closest('.modal-ov.open')) return;
     // If clicking slide panel — let pickSlide handle it; just exit editing silently
     const inSlidePanel=e.target.closest('#slide-list')||e.target.closest('#sidebar');
     // Exit table cell editing
@@ -202,6 +187,10 @@ function boot(){
     addSlide();
     // First launch — apply first theme automatically
     _applyThemeByIdx(0);
+    const titleEl=document.getElementById('pres-title');
+    if(titleEl && !titleEl.value.trim() && typeof defaultPresentationTitle==='function'){
+      titleEl.value=defaultPresentationTitle();
+    }
   }
   renderAll();
   if(typeof _applyCanvasZoom==='function') _applyCanvasZoom();
@@ -222,7 +211,8 @@ function newPresentation(){
   if(!confirm(t('confirmNewPresentation')||'Создать новую презентацию? Текущая будет потеряна.'))return;
   // Clear state
   slides=[];cur=0;
-  document.getElementById('pres-title').value='';
+  const titleEl=document.getElementById('pres-title');
+  if(titleEl) titleEl.value = (typeof defaultPresentationTitle === 'function' ? defaultPresentationTitle() : 'Презентация');
   addSlide();
   // Apply first theme
   _applyThemeByIdx(0);
@@ -520,88 +510,56 @@ function openColorPanel(panelId, mode, onPick) {
     ? appliedThemeIdx
     : ((typeof selTheme !== 'undefined' && selTheme >= 0) ? selTheme : -1);
 
-  // ── Scheme grid: 8 cols × 6 tint rows ────────────────────────
+  // ── Scheme grid: 8 cols × 9 lightness rows (0.1…0.9) ──
+  // Position codes shown in the hex input field, not above the grid.
   if (schemeIdx >= 0 && THEMES[schemeIdx]) {
     const t = THEMES[schemeIdx];
-    const isLightTheme = !t.dark;
-    const base8 = _themeColors(t);
-    // Last column: light themes use white→black, dark themes use black→white
-    if (isLightTheme) base8[base8.length - 1] = '#ffffff';
-
-    const hdr = document.createElement('div');
-    hdr.style.cssText = 'font-size:9px;color:var(--text3);margin-bottom:5px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;';
-    hdr.textContent = t.name;
-    slot.appendChild(hdr);
+    const levels = (typeof SCHEME_TINT_LEVELS !== 'undefined' && SCHEME_TINT_LEVELS)
+      ? SCHEME_TINT_LEVELS : [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9];
+    const nCols = _themeColors(t).length;
 
     const grid = document.createElement('div');
-    grid.style.cssText = 'display:grid;grid-template-columns:repeat(8,1fr);gap:2px;margin-bottom:8px;';
+    grid.style.cssText = 'display:grid;grid-template-columns:repeat(8,1fr);gap:1px;margin-bottom:8px;';
 
-    // Last column: dark themes = white→black, light themes = black→white
-    const tintLevels = [0, 0.22, 0.44, 0.66, 0.88];
-    tintLevels.forEach((tint, rowIdx) => {
-      base8.forEach((baseHex, colIdx) => {
-        const isLastCol = colIdx === base8.length - 1;
-        let color;
-        if (isLastCol) {
-          // Dark theme: row 0=white, row 4=black
-          // Light theme: row 0=black, row 4=white
-          if (isLightTheme) {
-            const isLastRow = rowIdx === tintLevels.length - 1;
-            color = isLastRow ? '#ffffff' : (tint === 0 ? '#000000' : _blendToWhite('#000000', tint));
-          } else {
-            color = tint === 0 ? '#ffffff' : _blendToBlack('#ffffff', tint);
-          }
-        } else {
-          const hex = _solidColor(baseHex);
-          color = tint === 0 ? hex : _blendToWhite(hex, tint);
-        }
+    for (let rowIdx = 0; rowIdx < levels.length; rowIdx++) {
+      for (let colIdx = 0; colIdx < nCols; colIdx++) {
+        const color = _schemeSwatchColor(t, colIdx, rowIdx);
+        const pos = _schemePosCode(colIdx, rowIdx);
         const s = document.createElement('div');
-        s.style.cssText = 'aspect-ratio:1;border-radius:2px;cursor:pointer;background:'+color+';min-height:14px;';
-        s.title = color;
-        s.onmouseover = () => s.style.outline = '2px solid var(--accent)';
-        s.onmouseout  = () => s.style.outline = '';
+        // Half-height rectangles (same width as before via grid column)
+        s.style.cssText = 'aspect-ratio:2/1;border-radius:2px;cursor:pointer;background:'+color+';min-height:6px;';
+        s.title = pos + ' · ' + color;
+        s.onmouseover = () => { s.style.outline = '2px solid var(--accent)'; };
+        s.onmouseout  = () => { s.style.outline = ''; };
         s.onmousedown = e => { e.preventDefault(); e.stopPropagation();
           onPick(color, {col: colIdx, row: rowIdx}); closeColorPanel(panelId); };
         grid.appendChild(s);
-      });
-    });
+      }
+    }
     slot.appendChild(grid);
   }
 
-  // ── Custom color picker toggle ───────────────────────────────
-  const sep = document.createElement('div');
-  sep.style.cssText = 'height:1px;background:var(--border);margin:4px 0 6px;';
-  slot.appendChild(sep);
-
-  // Toggle button row
-  const customRow = document.createElement('div');
-  customRow.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer;padding:2px 0;';
-  const customLbl = document.createElement('span');
-  customLbl.style.cssText = 'font-size:10px;color:var(--text2);flex:1;';
-  customLbl.textContent = 'Свой цвет';
+  // ── Custom color: full-width bar (same inset as palette via .cp-slot padding) ──
   const customSwatch = document.createElement('div');
   customSwatch.id = panelId + '-swatch';
-  customSwatch.style.cssText = 'width:22px;height:14px;border-radius:3px;border:1px solid var(--border2);background:#3b82f6;flex-shrink:0;';
-  const customArrow = document.createElement('span');
-  customArrow.textContent = '▸';
-  customArrow.style.cssText = 'font-size:9px;color:var(--text3);transition:transform .15s;';
-  customRow.appendChild(customLbl);
-  customRow.appendChild(customSwatch);
-  customRow.appendChild(customArrow);
-  slot.appendChild(customRow);
+  customSwatch.title = 'Свой цвет';
+  customSwatch.style.cssText = 'width:100%;height:14px;border-radius:3px;border:1px solid var(--border2);background:#3b82f6;cursor:pointer;box-sizing:border-box;';
+  slot.appendChild(customSwatch);
 
-  // Photoshop-style picker container (hidden by default)
   const pickerWrap = document.createElement('div');
   pickerWrap.style.cssText = 'display:none;margin-top:8px;';
   slot.appendChild(pickerWrap);
 
   let pickerOpen = false;
-  customRow.onmousedown = e => {
+  customSwatch.onmousedown = e => {
     e.preventDefault(); e.stopPropagation();
     pickerOpen = !pickerOpen;
     pickerWrap.style.display = pickerOpen ? 'block' : 'none';
-    customArrow.style.transform = pickerOpen ? 'rotate(90deg)' : '';
-    if (pickerOpen) _cpBuildPhotoshopPicker(pickerWrap, customSwatch, onPick, panelId);
+    if (pickerOpen) {
+      _cpBuildPhotoshopPicker(pickerWrap, customSwatch, (hex, schemeRef) => {
+        onPick(hex, schemeRef);
+      }, panelId);
+    }
   };
 }
 
@@ -941,7 +899,7 @@ function applyTextColor(c, schemeRef){
     sel.dataset.textColorGrad1=c;
     if(d){d.textColorGrad1=c;}
     if(typeof applyTextColorGrad==='function')applyTextColorGrad(sel);
-    try{const _sw=document.getElementById('p-col-preview');if(_sw)_sw.style.background=c;document.getElementById('p-hex').value=c;}catch(e){}
+    try{const _sw=document.getElementById('p-col-preview');if(_sw)_sw.style.background=c;document.getElementById('p-hex').value=(typeof _colorFieldDisplay==='function')?_colorFieldDisplay(c,schemeRef||null):c;}catch(e){}
     save();saveState();
     return;
   }
@@ -958,7 +916,7 @@ function applyTextColor(c, schemeRef){
     rtColor(c, schemeRef || null);
     if(typeof _rtColorPickInProgress!=='undefined') _rtColorPickInProgress=false;
   } else setTS('color',c);
-  try{const _sw=document.getElementById('p-col-preview');if(_sw)_sw.style.background=c;document.getElementById('p-hex').value=c;}catch(e){}
+  try{const _sw=document.getElementById('p-col-preview');if(_sw)_sw.style.background=c;document.getElementById('p-hex').value=(typeof _colorFieldDisplay==='function')?_colorFieldDisplay(c,(!_isFragment&&d)?d.textColorScheme:(schemeRef||null)):c;}catch(e){}
 }
 function applyFillColor(c, schemeRef){
   if(!sel)return;
@@ -969,6 +927,66 @@ function applyFillColor(c, schemeRef){
     if(sh&&sh.special==='cloud') _cloudSyncMeta(sel,d);
   }
   d.fill=c; d.fillScheme = schemeRef || null; sel.dataset.fill=c;
-  try{const _fsw=document.getElementById('sh-fill-preview');if(_fsw)_fsw.style.background=c;document.getElementById('sh-fill-hex').value=c;}catch(e){}
+  try{
+    const _fsw=document.getElementById('sh-fill-preview');if(_fsw)_fsw.style.background=c;
+    document.getElementById('sh-fill-hex').value=(typeof _colorFieldDisplay==='function')?_colorFieldDisplay(c,schemeRef||null):c;
+  }catch(e){}
   renderShapeEl(sel,d);save();saveState();
 }
+
+// ── Esc closes whichever modal/panel is currently open ──
+// Each modal below toggles visibility via the '.open' class (a couple use an
+// inline style too, but always alongside that class), so checking for it is
+// a reliable, uniform way to know what's currently showing.
+document.addEventListener('keydown', function(e){
+  if(e.key!=='Escape') return;
+  // Never interfere with the presentation overlay — it has its own capturing
+  // Escape handler (_attachPreviewExitHandlers) that runs first and stops
+  // propagation while active, so by the time we get here it's not showing.
+  const ov=document.getElementById('preview-ov');
+  if(ov&&ov.classList.contains('active')) return;
+
+  let closedSomething=false;
+
+  // Generic pass: EVERY modal in this app (shape/icon/applet/svg/img/layout/
+  // theme/link/htmlframe/code/md/...) toggles visibility purely via the
+  // '.open' class on a '.modal-ov' wrapper, plus a couple of extra panels
+  // that use '.open' on their own id. Rather than hard-coding every modal id
+  // (easy to miss one — new modals get added over time), just find whatever
+  // is currently showing and close it. Where a dedicated close function
+  // exists we call it (it may also reset some extra state, e.g. a selected
+  // path), otherwise removing '.open' is exactly what these modals' own
+  // Cancel/× buttons do, so it's always a safe, correct fallback.
+  const namedClosers = {
+    'img-modal':       ()=>typeof closeImageModal==='function'&&closeImageModal(),
+    'svg-modal':       ()=>typeof _closeSvgModal==='function'&&_closeSvgModal(),
+    'layout-modal':    ()=>typeof closeLayoutModal==='function'&&closeLayoutModal(),
+    'theme-modal':     ()=>typeof closeThemeModal==='function'&&closeThemeModal(),
+    'link-modal':      ()=>typeof window.closeLinkModal==='function'&&window.closeLinkModal(),
+    'settings-modal':  ()=>typeof closeSettings==='function'&&closeSettings(),
+    'local-ai-modal':  ()=>typeof window.closeLocalAIModal==='function'&&window.closeLocalAIModal(),
+    'ai-panel':        ()=>typeof window.closeAIPanel==='function'&&window.closeAIPanel(),
+  };
+  document.querySelectorAll('.open').forEach(elOpen=>{
+    const id=elOpen.id;
+    const isModalLike = elOpen.classList.contains('modal-ov') || id==='settings-modal' || id==='local-ai-modal' || id==='ai-panel';
+    if(!isModalLike) return;
+    const closer=id&&namedClosers[id];
+    if(closer) closer();
+    else elOpen.classList.remove('open');
+    closedSomething=true;
+  });
+
+  // Anim panel doesn't use the '.open' class — it's shown/hidden via display.
+  const animWrap=document.getElementById('props-anim-wrap');
+  if(animWrap&&animWrap.style.display==='flex'&&typeof window.closeAnimPanel==='function'){
+    window.closeAnimPanel(); closedSomething=true;
+  }
+
+  // Any open inline color picker panel.
+  if(typeof _cpActivePanelId!=='undefined'&&_cpActivePanelId&&typeof closeColorPanel==='function'){
+    closeColorPanel(); closedSomething=true;
+  }
+
+  if(closedSomething){ e.stopPropagation(); e.preventDefault(); }
+}, true);

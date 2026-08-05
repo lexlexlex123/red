@@ -17,7 +17,7 @@ function _preloadAlphaCanvas(imgTag) {
     } catch (e) { /* tainted */ }
     imgTag._alphaLoading = false;
   };
-  if (src.startsWith('data:') || location.protocol === 'file:') {
+  if (src.startsWith('data:')) {
     buildCanvas(imgTag);
     return;
   }
@@ -40,11 +40,43 @@ function _imgPixelAt(imgTag, clientX, clientY) {
   if (!nw || !nh) return null;
   const imgRect = imgTag.getBoundingClientRect();
   if (!imgRect.width || !imgRect.height) return null;
-  let relX = (clientX - imgRect.left) / imgRect.width;
-  let relY = (clientY - imgRect.top) / imgRect.height;
+  // Un-rotate the click point around the box's own center before mapping it
+  // into the image's local 0..1 space. getBoundingClientRect() on a rotated
+  // element returns the enlarged AXIS-ALIGNED bounding box of the rotated
+  // shape, not its actual local box — using its width/height directly (as
+  // before) only worked for rot=0. The box's own CENTER, however, stays the
+  // same whether rotated or not (rotation pivots around center), so we can
+  // recover the true local point by rotating (clientX,clientY) back by -rot
+  // around that center, then measuring against the element's real
+  // (unrotated) on-screen width/height.
+  const ownerEl = imgTag.closest('.el, .psel');
+  const deg = ownerEl ? (parseFloat(ownerEl.dataset.rot) || _parseTransformRotDeg(ownerEl)) : 0;
+  const cx = imgRect.left + imgRect.width / 2;
+  const cy = imgRect.top + imgRect.height / 2;
+  let px = clientX, py = clientY;
+  let boxW = imgRect.width, boxH = imgRect.height;
+  if (deg) {
+    const rad = -deg * Math.PI / 180;
+    const dx = clientX - cx, dy = clientY - cy;
+    const cos = Math.cos(rad), sin = Math.sin(rad);
+    px = cx + dx * cos - dy * sin;
+    py = cy + dx * sin + dy * cos;
+    // Recover the real (unrotated) box size from the enlarged bounding box:
+    // bbox_w = w*|cos| + h*|sin|, bbox_h = w*|sin| + h*|cos|  →  solve for w,h.
+    const c = Math.abs(Math.cos(deg * Math.PI / 180));
+    const s = Math.abs(Math.sin(deg * Math.PI / 180));
+    const det = c * c - s * s;
+    if (Math.abs(det) > 1e-6) {
+      boxW = (imgRect.width * c - imgRect.height * s) / det;
+      boxH = (imgRect.height * c - imgRect.width * s) / det;
+    }
+    if (!(boxW > 0) || !(boxH > 0)) { boxW = imgRect.width; boxH = imgRect.height; }
+  }
+  let relX = (px - (cx - boxW / 2)) / boxW;
+  let relY = (py - (cy - boxH / 2)) / boxH;
   const fit = imgTag.style.objectFit || (typeof getComputedStyle === 'function' ? getComputedStyle(imgTag).objectFit : '') || 'fill';
   if (fit === 'contain' || fit === 'cover') {
-    const imgAspect = nw / nh, boxAspect = imgRect.width / imgRect.height;
+    const imgAspect = nw / nh, boxAspect = boxW / boxH;
     let ox = 0, oy = 0, iw = 1, ih = 1;
     if (fit === 'contain') {
       if (imgAspect > boxAspect) { ih = boxAspect / imgAspect; oy = (1 - ih) / 2; }
@@ -59,6 +91,19 @@ function _imgPixelAt(imgTag, clientX, clientY) {
   if (relX < 0 || relY < 0 || relX > 1 || relY > 1) return null;
   return { px: Math.floor(relX * nw), py: Math.floor(relY * nh) };
 }
+// Fallback: read the rotation angle straight off the element's CSS
+// transform matrix, for elements where dataset.rot isn't set for some reason.
+function _parseTransformRotDeg(el) {
+  try {
+    const tf = getComputedStyle(el).transform;
+    if (!tf || tf === 'none') return 0;
+    const m = tf.match(/^matrix\(([^)]+)\)$/);
+    if (!m) return 0;
+    const parts = m[1].split(',').map(parseFloat);
+    const a = parts[0], b = parts[1];
+    return Math.atan2(b, a) * 180 / Math.PI;
+  } catch (e) { return 0; }
+}
 
 // Returns true if the pixel under cursor is transparent (alpha < threshold)
 function _isTransparentPixel(elOuter, clientX, clientY, threshold) {
@@ -66,11 +111,10 @@ function _isTransparentPixel(elOuter, clientX, clientY, threshold) {
   try {
     const imgTag = elOuter.querySelector('img');
     if (!imgTag || !imgTag.complete || !imgTag.naturalWidth || !imgTag.naturalHeight) return false;
-    const elRect = elOuter.getBoundingClientRect();
-    if (!elRect.width || !elRect.height) return false;
-    const relX = (clientX - elRect.left) / elRect.width;
-    const relY = (clientY - elRect.top) / elRect.height;
-    if (relX < 0 || relY < 0 || relX > 1 || relY > 1) return true;
+    // Bounds + rotation-aware local-pixel mapping both happen inside
+    // _imgPixelAt now — no separate axis-aligned pre-check here, since that
+    // used getBoundingClientRect() directly and broke for any rotated image
+    // (its bounding box is enlarged/axis-aligned, not the real local box).
     const pt = _imgPixelAt(imgTag, clientX, clientY);
     if (!pt) return true;
     const src = imgTag.src || '';
@@ -115,6 +159,21 @@ function _pointHitsEl(el, clientX, clientY, threshold) {
         const sh = typeof SHAPES !== 'undefined' ? SHAPES.find(s => s.id === el.dataset.shape) : null;
         if (e === el && sh && sh.noFill) continue;
       }
+    }
+    return false;
+  }
+  if (type === 'svg') {
+    // Rely on the browser's own SVG hit-testing (default pointer-events:
+    // visiblePainted skips unpainted/transparent regions) — if any element
+    // stacked at this point, owned by this element, is an actual drawn SVG
+    // primitive (not just the outer <svg>/<g> wrapper covering the whole
+    // bounding box), the click landed on real content.
+    const elems = document.elementsFromPoint(clientX, clientY);
+    const tags = ['path', 'rect', 'ellipse', 'circle', 'polygon', 'polyline', 'line', 'text', 'tspan', 'use', 'image'];
+    for (const e of elems) {
+      const owner = e.closest('.el, .psel');
+      if (owner !== el) continue;
+      if (tags.includes(e.tagName ? e.tagName.toLowerCase() : '')) return true;
     }
     return false;
   }
@@ -232,6 +291,10 @@ window._finishTextEdit = function(el) {
   c.contentEditable = 'false';
   delete el.dataset.editing;
   el.style.cursor = '';
+  if (typeof window._fitTextHeight === 'function') {
+    const _dFit = slides[cur] && slides[cur].els.find(e => e.id === el.dataset.id);
+    if (_dFit && window._fitTextHeight(_dFit)) el.style.height = _dFit.h + 'px';
+  }
   if (typeof commitAll === 'function') commitAll();
   delete el.dataset._savedHtml;
   if (vw) vw.innerHTML = _snap;
@@ -241,6 +304,11 @@ window._finishTextEdit = function(el) {
     applyTextShadowStyle(el);
   }
   if (typeof _attachBulletClickHandlers === 'function') _attachBulletClickHandlers(c);
+  if (typeof _rtNormalizeTextDisplay === 'function') {
+    const _dNorm = slides[cur] && slides[cur].els.find(e => e.id === el.dataset.id);
+    _rtNormalizeTextDisplay(c, (_dNorm && _dNorm.cs) || '', el.dataset.bulletGap);
+  }
+  if (typeof _rtUpdateCharCounter === 'function') _rtUpdateCharCounter(el, c);
 };
 
 function stopTextEditing() {
@@ -467,9 +535,45 @@ window._shadowMorphNeeds = function(from, to) {
   return from.ss !== to.ss || from.sb !== to.sb || String(from.sc) !== String(to.sc);
 };
 
-window._morphEase = function(t) {
-  return t * t * (3 - 2 * t);
+// Exact cubic-bezier(0.4, 0, 0.2, 1) evaluator — the SAME easing curve used
+// by the geometry ".animate()" (WAAPI) morph animation. Any manually
+// rAF-driven property (shadow, color, shape geometry, connector lines) must
+// use this exact curve, or it will visibly drift out of sync with the
+// object's own WAAPI-driven movement (different speed at every instant,
+// even with matching start/end times and duration).
+window._morphCubicBezier = function(x1, y1, x2, y2) {
+  function A(a1, a2) { return 1.0 - 3.0 * a2 + 3.0 * a1; }
+  function B(a1, a2) { return 3.0 * a2 - 6.0 * a1; }
+  function C(a1) { return 3.0 * a1; }
+  function calcX(t) { return ((A(x1, x2) * t + B(x1, x2)) * t + C(x1)) * t; }
+  function calcY(t) { return ((A(y1, y2) * t + B(y1, y2)) * t + C(y1)) * t; }
+  function calcSlopeX(t) { return 3.0 * A(x1, x2) * t * t + 2.0 * B(x1, x2) * t + C(x1); }
+  function getTForX(x) {
+    let t = x;
+    for (let i = 0; i < 8; i++) {
+      const dx = calcX(t) - x;
+      if (Math.abs(dx) < 1e-6) return t;
+      const slope = calcSlopeX(t);
+      if (Math.abs(slope) < 1e-6) break;
+      t -= dx / slope;
+    }
+    let lo = 0, hi = 1;
+    t = x;
+    for (let i = 0; i < 20; i++) {
+      const xEst = calcX(t);
+      if (Math.abs(xEst - x) < 1e-6) break;
+      if (xEst < x) lo = t; else hi = t;
+      t = (lo + hi) / 2;
+    }
+    return t;
+  }
+  return function (x) {
+    if (x <= 0) return 0;
+    if (x >= 1) return 1;
+    return calcY(getTForX(x));
+  };
 };
+window._morphEase = window._morphCubicBezier(0.4, 0, 0.2, 1);
 
 window._shapeShadowFilterNode = function(svg, fid) {
   if (!svg) return null;
@@ -760,6 +864,116 @@ function imgSetAsSlideBg(){
 }
 function imgCoverSlide(){ imgSetAsSlideBg(); }
 
+// ── SVG element properties (opacity / shadow / set as slide background) ──
+// Mirrors the equivalent image-element functions above. Note: opacity and
+// the shadow filter are applied to the inner ".ec" wrapper, NOT to "el"
+// itself and NOT to the <svg> tag — this avoids two pitfalls: (1) el.style
+// is also used elsewhere (elOpacity for morph fades, shapeBlur, etc.) and
+// would silently fight with it; (2) save() rebuilds d.svgContent straight
+// from ".ec".innerHTML, so anything set directly on the <svg> tag would get
+// permanently baked into the stored markup instead of staying a live style.
+window._applySvgShadowFilter = function(host, d) {
+  if (!host || !d || !d.svgShadow) {
+    if (host) host.style.filter = '';
+    return;
+  }
+  const ss = d.svgShadowSize != null ? +d.svgShadowSize : 4;
+  const sb = d.svgShadowBlur != null ? +d.svgShadowBlur : 15;
+  const sc = d.svgShadowColor || '#000000';
+  const fid = 'svgsh_' + String(d.id || 'x').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const defs = window._ensureShadowFilterHost();
+  const old = defs.querySelector('#' + fid);
+  if (old) old.remove();
+  const filter = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
+  filter.setAttribute('id', fid);
+  filter.setAttribute('x', '-50%');
+  filter.setAttribute('y', '-50%');
+  filter.setAttribute('width', '200%');
+  filter.setAttribute('height', '200%');
+  filter.innerHTML = window._shadowFilterInner(ss, sb, sc);
+  defs.appendChild(filter);
+  host.style.filter = 'url(#' + fid + ')';
+};
+
+function applySvgStyles(el,d){
+  const ec=el.querySelector('.ec');
+  if(!ec)return;
+  ec.style.opacity=d.svgOpacity!=null?d.svgOpacity:1;
+  if(d.svgShadow&&typeof window._applySvgShadowFilter==='function') window._applySvgShadowFilter(ec,d);
+  else ec.style.filter='';
+  // Mirror the values into the DOM dataset too (same pattern as images'
+  // imgOpacity/imgShadow*) — mkEl only sets the *visual* style above, but
+  // save() rebuilds slides[cur].els fresh from dataset on every save. If the
+  // node ever gets rebuilt from data (switching slides, undo/redo,
+  // duplicating, loading a project) without the user touching the slider in
+  // that exact session, a missing dataset entry would silently reset these
+  // fields back to their defaults on the very next save().
+  if(d.svgOpacity!=null)el.dataset.svgOpacity=d.svgOpacity; else delete el.dataset.svgOpacity;
+  if(d.svgShadow!=null)el.dataset.svgShadow=String(!!d.svgShadow); else delete el.dataset.svgShadow;
+  if(d.svgShadowBlur!=null)el.dataset.svgShadowBlur=d.svgShadowBlur;
+  if(d.svgShadowSize!=null)el.dataset.svgShadowSize=d.svgShadowSize;
+  if(d.svgShadowColor)el.dataset.svgShadowColor=d.svgShadowColor;
+  if(d.svgShadowColorScheme)el.dataset.svgShadowColorScheme=JSON.stringify(d.svgShadowColorScheme);
+  else if(d.svgShadowColorScheme===null)delete el.dataset.svgShadowColorScheme;
+}
+
+function updateSvgStyle(prop,val){
+  if(!sel||sel.dataset.type!=='svg')return;
+  pushUndo();
+  const d=slides[cur].els.find(e=>e.id===sel.dataset.id);if(!d)return;
+  const propMap={opacity:'svgOpacity',shadow:'svgShadow',shadowBlur:'svgShadowBlur',shadowSize:'svgShadowSize',shadowColor:'svgShadowColor'};
+  const key=propMap[prop];if(!key)return;
+  const parsed=prop==='shadow'?!!val:(prop==='opacity'||prop==='shadowBlur'||prop==='shadowSize')?+val:val;
+  d[key]=parsed;
+  sel.dataset[key]=parsed; // also store in DOM dataset for reliable save()
+  if(prop==='shadow'){try{const opts=document.getElementById('svg-shadow-options');if(opts)opts.style.display=parsed?'flex':'none';}catch(e){}}
+  applySvgStyles(sel,d);commitAll();
+}
+
+function updateSvgStyleScheme(prop, val, schemeRef) {
+  if (!sel || sel.dataset.type !== 'svg') return;
+  const d = slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (!d) return;
+  if (prop === 'shadowColor') {
+    d.svgShadowColorScheme = schemeRef !== undefined ? (schemeRef || null) : d.svgShadowColorScheme;
+    if (schemeRef) sel.dataset.svgShadowColorScheme = JSON.stringify(schemeRef);
+    else delete sel.dataset.svgShadowColorScheme;
+  }
+  updateSvgStyle(prop, val);
+}
+
+function syncSvgProps(el,d){
+  try{document.getElementById('svg-op').value=d.svgOpacity!=null?+d.svgOpacity:1;}catch(e){}
+  try{document.getElementById('svg-shadow').checked=!!d.svgShadow;}catch(e){}
+  try{const opts=document.getElementById('svg-shadow-options');if(opts)opts.style.display=d.svgShadow?'flex':'none';}catch(e){}
+  try{document.getElementById('svg-sb').value=d.svgShadowBlur!=null?d.svgShadowBlur:15;}catch(e){}
+  try{document.getElementById('svg-ss').value=d.svgShadowSize!=null?d.svgShadowSize:4;}catch(e){}
+  try{const sc=d.svgShadowColor||'#000000';document.getElementById('svg-sc-preview').style.background=sc;}catch(e){}
+}
+
+function svgSetAsSlideBg(){
+  if(!sel||sel.dataset.type!=='svg')return;
+  pushUndo();
+  const id=sel.dataset.id;
+  const d=slides[cur].els.find(e=>e.id===id);
+  if(!d||!d.svgContent)return;
+  const src='data:image/svg+xml;utf8,'+encodeURIComponent(d.svgContent);
+  const resolvedBg=typeof _resolveSlideColorBg==='function'?_resolveSlideColorBg(slides[cur]):null;
+  slides[cur].bgImg={src,name:'SVG',mode:'cover',opacity:1,blur:0,tileSize:120,tileGap:10,tileRot:0};
+  slides[cur].bg='custom';
+  if(!slides[cur].bgc&&resolvedBg)slides[cur].bgc=resolvedBg;
+  slides[cur].els=slides[cur].els.filter(e=>e.id!==id);
+  const el=sel;
+  desel();
+  el.remove();
+  if(typeof _applySlideBgToCanvas==='function')_applySlideBgToCanvas(slides[cur]);
+  if(typeof syncSlideBgPreview==='function')syncSlideBgPreview();
+  if(typeof syncSlideBgImageUI==='function')syncSlideBgImageUI();
+  save();drawThumbs();saveState();
+  if(typeof renderObjectsPanel==='function')renderObjectsPanel();
+  toast(t('toastImgBg'),'ok');
+}
+
 function syncImgProps(el,d){
   try{document.getElementById('img-fit').value=d.imgFit||'contain';}catch(e){}
   try{document.getElementById('img-rx').value=d.imgRx||0;}catch(e){}
@@ -811,6 +1025,7 @@ function mkEl(d){
   if(d.isTrigger)el.dataset.isTrigger='true';
   if(d.link){el.dataset.link=d.link;el.classList.add('has-link');}
   if(d.linkt)el.dataset.linkt=d.linkt;
+  if(d.rideConnId)el.dataset.rideConnId=d.rideConnId;
   if(d.anims&&d.anims.length)el.dataset.anims=JSON.stringify(d.anims);else el.dataset.anims='[]';
   if(d.rot)el.dataset.rot=d.rot;
   if(d.shapeFlipH){el.dataset.shapeFlipH='true';}
@@ -842,10 +1057,15 @@ function mkEl(d){
     if (typeof _rtNormalizeTextDisplay === 'function') _rtNormalizeTextDisplay(c, d.cs || '', d.bulletGap);
     // Re-attach bullet icon click handlers (onclick attr stripped by innerHTML assignment in some browsers)
     if (typeof _attachBulletClickHandlers==='function') _attachBulletClickHandlers(c);
+    const _charCounter=document.createElement('div');
+    _charCounter.className='char-counter';
+    el.appendChild(_charCounter);
+    if (typeof _rtUpdateCharCounter==='function') _rtUpdateCharCounter(el, c);
     c.addEventListener('dblclick',e=>{
       e.stopPropagation();
       c.contentEditable='true';
       if(typeof _toEditMode==='function') _toEditMode(c);
+      if (typeof _rtNormalizeTextDisplay === 'function') _rtNormalizeTextDisplay(c, d.cs || '', d.bulletGap);
       c.focus();
       el.dataset.editing='true';el.style.cursor='text';
       // Prevent growing text from scrolling #cwrap
@@ -855,9 +1075,16 @@ function mkEl(d){
     });
     c.addEventListener('blur',()=>{
       if(el.dataset.editing!=='true')return;
+      // If the focus-stealing click landed inside an open modal (e.g. the
+      // bullet icon picker), don't tear down the editor yet — the modal's
+      // own click handler still needs the live DOM to apply its change.
+      if(typeof window._rtModalInteracting !== 'undefined' && window._rtModalInteracting) return;
       if(typeof window._finishTextEdit==='function') window._finishTextEdit(el);
     });
-    c.addEventListener('input',()=>{ if(typeof _rtCommit==='function') _rtCommit(); else save(); });
+    c.addEventListener('input',()=>{
+      if(typeof _rtCommit==='function') _rtCommit(); else save();
+      if (typeof _rtUpdateCharCounter==='function') _rtUpdateCharCounter(el, c);
+    });
     c.addEventListener('keydown',e=>{
       if(e.key==='Escape'){
         if(typeof window._finishTextEdit==='function') window._finishTextEdit(el);
@@ -1096,10 +1323,12 @@ function mkEl(d){
     });
   }else if(d.type==='graph'){
     c.style.cssText='width:100%;height:100%;overflow:hidden;border-radius:6px;position:relative;';
+    if(d.graphKind) el.dataset.graphKind = d.graphKind;
     if(d.graphImg){
       const _gi=document.createElement('img');
       _gi.src=d.graphImg;
-      _gi.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:fill;display:block;pointer-events:none;user-select:none;';
+      // Chem: contain keeps formula unstretched if size drifts; fn graphs fill axes area
+      _gi.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:'+(d.graphKind==='chem'?'contain':'fill')+';display:block;pointer-events:none;user-select:none;';
       c.appendChild(_gi);
     } else {
       const _gph=document.createElement('div');
@@ -1111,6 +1340,16 @@ function mkEl(d){
     const _ghit=document.createElement('div');
     _ghit.style.cssText='position:absolute;inset:0;z-index:1;';
     c.appendChild(_ghit);
+    if(d.graphKind==='chem' && typeof window._applyChemGraphStyle==='function'){
+      if(d.graphBg) el.dataset.graphBg = d.graphBg;
+      if(d.graphBgOp!=null) el.dataset.graphBgOp = String(d.graphBgOp);
+      if(d.graphBgBlur!=null) el.dataset.graphBgBlur = String(d.graphBgBlur);
+      if(d.graphColor) el.dataset.graphColor = d.graphColor;
+      if(d.graphBgScheme) el.dataset.graphBgScheme = JSON.stringify(d.graphBgScheme);
+      // Apply after el is in DOM tree — caller appends el after mkEl returns,
+      // so defer one frame.
+      requestAnimationFrame(function(){ window._applyChemGraphStyle(el, d); });
+    }
   }else if(d.type==='svg'){
     // Use DOMParser so SVG SMIL animations (<animate>, <animateTransform>) work correctly.
     // innerHTML uses the HTML parser which drops unknown SVG animation elements.
@@ -1134,6 +1373,11 @@ function mkEl(d){
       el.style.zIndex='0';
       el.style.cursor='default';
       el.classList.add('decor-el');
+      if(svgEl){
+        svgEl.style.pointerEvents='none';
+        svgEl.setAttribute('pointer-events','none');
+        try{ svgEl.querySelectorAll('*').forEach(n=>{ n.style.pointerEvents='none'; if(n.setAttribute) n.setAttribute('pointer-events','none'); }); }catch(e){}
+      }
       if(typeof _ensureGlDecorCfg==='function') _ensureGlDecorCfg(d);
       else if(typeof _ensureCrystalCfg==='function') _ensureCrystalCfg(d);
       const _glCfg=d._glCfg||d._crystalCfg;
@@ -1239,6 +1483,7 @@ function mkEl(d){
       el.dataset.cntOnEnd       = d.cntOnEnd || 'none';
       el.dataset.cntOnEndSlide  = d.cntOnEndSlide !== undefined ? d.cntOnEndSlide : 0;
       el.dataset.cntOnEndAnim   = d.cntOnEndAnim || '';
+      el.dataset.cntGroupId     = d.cntGroupId || '';
       el.dataset.genStep        = d.genStep !== undefined ? d.genStep : 1;
       el.dataset.genFontSize    = d.genFontSize !== undefined ? d.genFontSize : 64;
       el.dataset.genColor       = d.genColor || '';
@@ -1411,6 +1656,7 @@ function mkEl(d){
   if(d.type==='code'){renderCodeEl(el,d);el.addEventListener('dblclick',e=>{e.stopPropagation();if(typeof openCodeEditor==='function')openCodeEditor();});}
   if(d.type==='htmlframe'){renderHtmlFrameEl(el,d);el.addEventListener('dblclick',e=>{e.stopPropagation();if(typeof openHtmlFrameEditor==='function')openHtmlFrameEditor();});}
   if(d.type==='image')applyImgStyles(el,d);
+  if(d.type==='svg')applySvgStyles(el,d);
   if(d.type==='table'&&typeof renderTableEl==='function'){if(typeof _tblSaveToDataset==='function')_tblSaveToDataset(el,d);renderTableEl(el,d);if(typeof _tblAttachResizeObs==='function')_tblAttachResizeObs(el,d);}
   // Restore elOpacity for all element types
   if(d.elOpacity!=null&&+d.elOpacity!==1){el.dataset.elOpacity=d.elOpacity;el.style.opacity=d.elOpacity;}
@@ -1562,6 +1808,17 @@ function mkEl(d){
   // Note: ResizeObserver removed - renderShapeEl is called explicitly from mkResize
 }
 function pick(el){
+  // Safety net: if a particle-animation preview left this element's ORIGINAL
+  // node hidden (visibility:hidden / pointer-events:none) because its
+  // cleanup timer got cancelled/skipped for some reason, force-restore it
+  // here. Selecting via canvas click still works for elements where pointer
+  // events pass through (they'd otherwise be permanently undraggable), and
+  // this also covers selection via the Objects panel, which bypasses
+  // pointer-events entirely.
+  if (el && el._particlesOrigVis != null && !(el._particlesRun && !el._particlesRun.cancelled)) {
+    if (typeof window._resetParticles === 'function') window._resetParticles(el);
+    else if (typeof window._particlesShowOriginal === 'function') window._particlesShowOriginal(el);
+  }
   // Remove arc/star handles when deselecting or switching element
   document.querySelectorAll('.arc-handle').forEach(h=>h.remove());
   document.querySelectorAll('.star-handle').forEach(h=>h.remove()); document.querySelectorAll('.para-handle').forEach(h=>h.remove()); document.querySelectorAll('.chev-handle').forEach(h=>h.remove()); document.querySelectorAll('.curve-handle').forEach(h=>h.remove()); if(typeof _curveSelPts!=='undefined'&&el!==sel)_curveSelPts.clear(); if(typeof _exitCurveEditMode==='function'&&el!==sel&&!(window._curveEditMode&&el===null))_exitCurveEditMode();
@@ -1591,6 +1848,9 @@ function pick(el){
   sel=el;
   if(el){
     el.classList.add('sel');
+    if (el.dataset.type === 'text' && typeof _rtUpdateCharCounter === 'function') {
+      _rtUpdateCharCounter(el, el.querySelector('.tel') || el.querySelector('.ec'));
+    }
     // Restore pivot transform-origin if set
 
     // When selected: restore full pointer-events so resize handles work
@@ -1640,6 +1900,8 @@ function pick(el){
   syncProps();
   if(window._propsScrollMem) window._propsScrollMem.maybeRestoreAfterPick();
   if(typeof _updateHandlesOverlay==='function') _updateHandlesOverlay();
+  if(typeof _updateSelFrames==='function') _updateSelFrames();
+  if(typeof window._hideElCtxMenu==='function') window._hideElCtxMenu();
   // Refresh lego z-order so selected element appears on top
   if(typeof _refreshAllLegoZ==='function') _refreshAllLegoZ();
   if(document.getElementById('props-anim-wrap')?.style.display==='flex'||document.getElementById('anim-panel')?.classList.contains('open'))renderAnimPanel();

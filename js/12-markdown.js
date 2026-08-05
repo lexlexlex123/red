@@ -89,7 +89,10 @@ function updateMdColor(v, schemeRef){
   d.mdColorScheme = schemeRef !== undefined ? schemeRef : null;
   const c=sel.querySelector('.ec');
   if(c){c.style.color=v;c.style.setProperty('--md-c',v);}
-  try{document.getElementById('md-color-hex').value=v;document.getElementById('md-color-preview').style.background=v;}catch(e){}
+  try{
+    document.getElementById('md-color-hex').value=(typeof _colorFieldDisplay==='function')?_colorFieldDisplay(v,d.mdColorScheme):v;
+    document.getElementById('md-color-preview').style.background=v;
+  }catch(e){}
   if(typeof save==="function")save();
 }
 

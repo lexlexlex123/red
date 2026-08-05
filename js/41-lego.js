@@ -464,7 +464,7 @@ function _buildGrid() {
       panel.style.flexDirection = 'column';
 
       // Re-hide everything _orig may have re-shown
-      ['slide-props','tprops','shprops','imgprops','codeprops','mdprops','formulaprops',
+      ['slide-props','tprops','shprops','imgprops','svgprops','codeprops','mdprops','formulaprops',
        'graphprops','tableprops','genprops','qrprops','iconprops','hfprops','hoverprops',
        'nosel'].forEach(id => {
         const el_ = document.getElementById(id);

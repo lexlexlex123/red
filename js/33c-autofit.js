@@ -93,7 +93,10 @@ window.fitCurrentSlideTexts = function(){
     if(typeof origPPTX==='function' && !origPPTX._fitPatched){
       window.importPPTX = function(){
         const r=origPPTX.apply(this,arguments);
-        setTimeout(()=>fitAllTextsAllSlides(), 1200);
+        setTimeout(()=>{
+          if(window._skipImportAutofit) return;
+          fitAllTextsAllSlides();
+        }, 1200);
         return r;
       };
       window.importPPTX._fitPatched=true;

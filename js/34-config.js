@@ -225,6 +225,19 @@
           v => _safe(() => { _call('setLang', v); })
         ));
 
+        const voiceLogOn = _safe(() => {
+          if (typeof window.isVoiceUnknownBtnEnabled === 'function') return window.isVoiceUnknownBtnEnabled();
+          return localStorage.getItem('sf-voice-log-btn') === '1';
+        }, false);
+        _row(box, 'Лог голосовых команд (📋)', _chk(voiceLogOn, v => _safe(() => {
+          if (typeof window.setVoiceUnknownBtn === 'function') window.setVoiceUnknownBtn(v);
+          else {
+            localStorage.setItem('sf-voice-log-btn', v ? '1' : '0');
+            if (typeof window._syncVoiceExportBtn === 'function') window._syncVoiceExportBtn();
+          }
+        })));
+        _info(box, 'Показывать кнопку 📋 рядом с «Голосовое» для копирования нераспознанных команд. По умолчанию скрыта.');
+
         _divider(box);
         _info(box, 'ℹ ' + _get('APP_NAME','Слайды') + ' v' + _get('APP_VERSION','?') + ' · ' + _get('APP_AUTHOR',''));
       }
@@ -240,7 +253,7 @@
         _btn(box, '📥 Импорт PPTX', () => _safe(() => {
           const input = document.createElement('input');
           input.type = 'file';
-          input.accept = '.pptx';
+          input.accept = '.pptx,.ppt';
           input.onchange = e => _safe(() => {
             const f = e.target.files[0];
             if (f && typeof importPPTX === 'function') importPPTX(f);
@@ -269,7 +282,8 @@
           ['Ctrl+D', 'Дублировать'],
           ['Ctrl+A', 'Выделить всё'],
           ['Delete', 'Удалить элемент'],
-          ['F5', 'Показ / выход'],
+          ['F5', 'Показ с начала'],
+          ['Shift+F5', 'Показ с текущего'],
           ['Esc', 'Выйти из показа'],
           ['← →', 'Слайды (показ)'],
           ['↑ ↓ ← →', 'Сдвиг на 1px'],

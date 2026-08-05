@@ -125,6 +125,12 @@ function _renderIconCells(grid,icons){
       cell.classList.add('selected');
       const nm=document.getElementById('icon-sel-name');
       if(nm)nm.textContent=ic.name;
+      // For the bullet-marker picker, one click is the whole interaction —
+      // there's no style/color step to configure first, so apply right away
+      // instead of waiting for a separate "Вставить" click.
+      if (typeof window._listIconInsertCallback === 'function') {
+        insertIconSelected();
+      }
     };
     cell.ondblclick=()=>{selIconId=ic.id; insertIconSelected();};
     grid.appendChild(cell);
@@ -196,6 +202,7 @@ function insertIconSelected(){
   slides[cur].els.push(d); mkEl(d);
   save(); if(typeof drawThumbs==="function")drawThumbs(); if(typeof saveState==="function")saveState();
   if(typeof _refreshHandlesOverlay==='function')_refreshHandlesOverlay();
+  if(typeof window._connMaybeAttachAfterInsert==='function') window._connMaybeAttachAfterInsert();
   document.getElementById('icon-modal').classList.remove('open');
 }
 
@@ -275,7 +282,11 @@ function syncIconProps(el,d){
   const ic_ss=d.shadowSize!=null?d.shadowSize:(el.dataset.shadowSize!=null?+el.dataset.shadowSize:3);
   const ic_sc=d.shadowColor||el.dataset.shadowColor||'#000000';
   try{document.getElementById('ic-p-color-swatch').style.background=ic_col;}catch(e){}
-  try{document.getElementById('ic-p-color-hex').value=ic_col;}catch(e){}
+  try{
+    document.getElementById('ic-p-color-hex').value=(typeof _colorFieldDisplay==='function')
+      ? _colorFieldDisplay(ic_col, d.iconColorScheme)
+      : ic_col;
+  }catch(e){}
   try{document.getElementById('ic-p-sw').value=ic_sw;}catch(e){}
   const styleEl=document.getElementById('ic-p-style');
   if(styleEl)styleEl.value=ic_st;
@@ -292,7 +303,12 @@ function updateIconStyle(prop,val){
   if(typeof pushUndo==="function")pushUndo();
   var d=slides[cur].els.find(function(e){return e.id===sel.dataset.id;});
   if(!d)return;
-  if(prop==='color'){d.iconColor=val;sel.dataset.iconColor=val;d.iconColorCustom=true;}
+  if(prop==='color'){
+    d.iconColor=val;sel.dataset.iconColor=val;
+    // Palette position → theme-adaptive; raw #hex → fixed custom
+    if(d.iconColorScheme){ d.iconColorCustom=false; }
+    else { d.iconColorCustom=true; }
+  }
   else if(prop==='sw'){d.iconSw=parseFloat(val);sel.dataset.iconSw=val;}
   else if(prop==='style'){d.iconStyle=val;sel.dataset.iconStyle=val;}
   else if(prop==='shadow'){d.shadow=val;sel.dataset.shadow=val?'true':'false';
@@ -338,7 +354,10 @@ function openIconPickerForList(bulletSpan, textData) {
     var style = document.getElementById('ic-style') ? document.getElementById('ic-style').value : 'stroke';
     var color = 'currentColor'; // always inherit text color for scheme-awareness
     var sw = parseFloat(document.getElementById('ic-sw') ? document.getElementById('ic-sw').value : '1.8') || 1.8;
-    c.querySelectorAll('span[data-list-bullet]').forEach(function(sp) {
+    var allBulletSpans = (typeof window._getTargetedMarkers === 'function')
+      ? window._getTargetedMarkers(c).filter(function(sp){ return sp.hasAttribute('data-list-bullet'); })
+      : Array.prototype.slice.call(c.querySelectorAll('span[data-list-bullet]'));
+    allBulletSpans.forEach(function(sp) {
       sp.setAttribute('data-icon-id', ic.id);
       sp.setAttribute('data-icon-style', style);
       sp.setAttribute('data-icon-color', color);

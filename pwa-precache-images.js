@@ -1,5 +1,5 @@
 // Автогенерация: node images/build-index.js — не редактировать вручную
-// Дата: 2026-06-22T12:21:59.810Z
+// Дата: 2026-08-05T14:58:50.000Z
 self.PRECACHE_IMAGES = [
   "./images/nature/wild (14).png",
   "./images/nature/wild (15).png",
@@ -17,6 +17,18 @@ self.PRECACHE_IMAGES = [
   "./images/nature/wild (39).png",
   "./images/nature/wild (40).png",
   "./images/nature/wild (41).png",
+  "./images/nature/wild2 (1).png",
+  "./images/nature/wild2 (10).png",
+  "./images/nature/wild2 (11).png",
+  "./images/nature/wild2 (2).png",
+  "./images/nature/wild2 (3).png",
+  "./images/nature/wild2 (4).png",
+  "./images/nature/wild2 (5).png",
+  "./images/nature/wild2 (6).png",
+  "./images/nature/wild2 (7).png",
+  "./images/nature/wild2 (8).png",
+  "./images/nature/wild2 (9).png",
+  "./images/nature/wild2.png",
   "./images/animals/123.png",
   "./images/animals/ComfyUI_00014_ (1).png",
   "./images/animals/ComfyUI_00014_ (10).png",

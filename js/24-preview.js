@@ -69,6 +69,10 @@ window._pvCleanupPreviewStage = function(container, slideIdx) {
       if (el && typeof window._resetSlideAnimEl === 'function') window._resetSlideAnimEl(el, d);
     });
   }
+  if (container._rideAnimCancels) {
+    container._rideAnimCancels.forEach(fn => { try { fn(); } catch (e) {} });
+    container._rideAnimCancels = [];
+  }
   delete container._fireNextStep;
   delete container._hasSteps;
   delete container._elemTrigBindings;
@@ -211,8 +215,16 @@ function _detachPreviewExitHandlers(po){
     document.removeEventListener('webkitfullscreenchange',po._previewFsChange);
     delete po._previewFsChange;
   }
+  if(po._fsArm){
+    po.removeEventListener('pointerdown',po._fsArm,true);
+    delete po._fsArm;
+  }
 }
 function startPreview(startIdx){
+  // Fresh presentation session — linked counters (same-ID counters that
+  // continue counting from one another) must always start from their real
+  // default value, never from a leftover value of a previous session.
+  window._counterGroupVal={};
   // If a table cell is being edited, save its content first
   if(typeof tblClearSel==='function') tblClearSel();
   if(typeof pnLock==='function') pnLock(); // freeze PN settings during preview
@@ -318,7 +330,19 @@ function startPreview(startIdx){
   document.getElementById('psa').style.cssText='position:absolute;inset:0;width:'+canvasW+'px;height:'+canvasH+'px;transform:scale('+sc+');transform-origin:top left;';
   document.getElementById('psb').style.cssText='position:absolute;inset:0;opacity:0;pointer-events:none;width:'+canvasW+'px;height:'+canvasH+'px;transform:scale('+sc+');transform-origin:top left;';
   updatePUI();scheduleAuto();_syncPreviewPlaybackBtns();
-  po.requestFullscreen&&po.requestFullscreen().then(()=>resizePStage()).catch(()=>{});
+  po.requestFullscreen&&po.requestFullscreen().then(()=>resizePStage()).catch(()=>{
+    // Голос / async: браузер блокирует Fullscreen без жеста пользователя
+    if(po._fsArm) return;
+    po._fsArm=function(){
+      po.removeEventListener('pointerdown',po._fsArm,true);
+      delete po._fsArm;
+      const req=po.requestFullscreen||po.webkitRequestFullscreen;
+      if(!req) return;
+      Promise.resolve(req.call(po)).then(()=>resizePStage()).catch(()=>{});
+    };
+    po.addEventListener('pointerdown',po._fsArm,true);
+    if(typeof toast==='function') toast('Кликните по экрану для полного экрана','ok');
+  });
 }
 function _syncPreviewPlaybackBtns(){
   [['p-loop-btn',presLoop],['p-shuffle-btn',presShuffle]].forEach(([id,on])=>{
@@ -357,6 +381,11 @@ function stopPreview(){
   if(typeof window._pvCancelEditorPointer==='function') window._pvCancelEditorPointer();
   window._pvRestoring=true;
   _pvDecorTimes={};
+  // Reset the shared "linked counter" registry (same-ID counters that
+  // continue counting from one another across slides) — otherwise, on the
+  // next presentation, a counter with a linked twin would start from
+  // whatever value was last clicked to instead of its real default.
+  window._counterGroupVal={};
   clearAutoTimer();
   _clearPreviewTransTimers();
   pTransitionTo=null;
@@ -683,22 +712,47 @@ function _morphEligible(d){
   if(!d||d._isDecor) return false;
   return !(d.anims&&d.anims.length);
 }
-function _morphPairOnTo(fd,toSlide){
+// Plain (tag-stripped) text content of a text element, or null for non-text.
+function _morphPlainText(d){
+  if(!d||d.type!=='text') return null;
+  const tmp=document.createElement('div');
+  tmp.innerHTML=d.html||'';
+  return (tmp.textContent||'').trim().replace(/\s+/g,' ');
+}
+// Two text elements with genuinely different wording must NOT be treated as
+// "the same object" during morph (even if they happen to share the same id,
+// e.g. after duplicating a slide and only editing the text) — unless the
+// user has explicitly linked them via a shared custom name (morphName),
+// set via double-click rename in the Objects panel.
+function _morphTextBlocksMatch(fd,td){
+  if(!fd||!td||fd.type!=='text'||td.type!=='text') return false;
+  const hasLink=(fd.morphName&&String(fd.morphName).trim())||(td.morphName&&String(td.morphName).trim());
+  if(hasLink) return false;
+  const a=_morphPlainText(fd), b=_morphPlainText(td);
+  return a!==null && b!==null && a!==b;
+}
+function _morphPairOnTo(fd,toSlide,fromEls){
   if(!fd||!toSlide||!toSlide.els) return null;
   const byId=toSlide.els.find(e=>e.id===fd.id&&!e._isDecor);
-  if(byId) return byId;
-  const key=typeof morphMatchKey==='function'?morphMatchKey(fd,toSlide.els):'';
+  if(byId&&!_morphTextBlocksMatch(fd,byId)) return byId;
+  // IMPORTANT: compute fd's key using its OWN slide's element list (fromEls),
+  // not toSlide.els — otherwise fd.id is never found in a foreign array,
+  // the numeric suffix silently drops (idx=0), and "ellipse 2" degrades to
+  // an unsuffixed "ellipse" that can never match a real "ellipse 2" label.
+  const key=typeof morphMatchKey==='function'?morphMatchKey(fd,fromEls||[fd]):'';
   if(!key) return null;
-  return toSlide.els.find(e=>!e._isDecor&&e.type===fd.type&&(typeof morphMatchKey==='function'?morphMatchKey(e,toSlide.els):'')===key)||null;
+  return toSlide.els.find(e=>!e._isDecor&&e.type===fd.type&&!_morphTextBlocksMatch(fd,e)&&(typeof morphMatchKey==='function'?morphMatchKey(e,toSlide.els):'')===key)||null;
 }
-function _morphFindFrom(fromEls, toEl, used){
+function _morphFindFrom(fromEls, toEl, used, toEls){
   if(!toEl||toEl._isDecor||!_morphEligible(toEl)) return null;
   const pool=fromEls.filter(f=>!f._isDecor&&!used.has(f.id)&&_morphEligible(f));
-  let fd=pool.find(f=>f.id===toEl.id);
+  let fd=pool.find(f=>f.id===toEl.id&&!_morphTextBlocksMatch(f,toEl));
   if(fd){ used.add(fd.id); return fd; }
-  const key=typeof morphMatchKey==='function'?morphMatchKey(toEl,fromEls):'';
+  // Same fix as above: toEl's key must be computed against ITS OWN slide's
+  // element list (toEls), not fromEls, or the numeric suffix gets lost.
+  const key=typeof morphMatchKey==='function'?morphMatchKey(toEl,toEls||[toEl]):'';
   if(key){
-    fd=pool.find(f=>f.type===toEl.type&&(typeof morphMatchKey==='function'?morphMatchKey(f,fromEls):'')===key);
+    fd=pool.find(f=>f.type===toEl.type&&!_morphTextBlocksMatch(f,toEl)&&(typeof morphMatchKey==='function'?morphMatchKey(f,fromEls):'')===key);
     if(fd){ used.add(fd.id); return fd; }
   }
   return null;
@@ -713,6 +767,173 @@ function _morphCleanupExits(root){
   if(!root) return;
   root.querySelectorAll('.psel._morph-exit').forEach(el=>el.remove());
 }
+// ── Smooth color crossfade for morph pairs ──
+// Extracts the "paint" (color/background/border/fill/stroke, and for
+// counters also font-size) of an element per type, so from/to can be
+// compared and — if different — interpolated frame-by-frame via
+// requestAnimationFrame (same driver as the shadow-morph system), instead
+// of relying on CSS transitions racing against the geometry animation.
+// This keeps both playback directions (next/prev) symmetric and reliable.
+function _morphColorState(d){
+  if(!d) return null;
+  if(d.type==='applet' && d.appletId==='counter'){
+    return {
+      kind:'counter',
+      color: (d.genColor && d.genColor[0]==='#') ? d.genColor : null,
+      bg: (d.genBg && d.genBg[0]==='#') ? d.genBg : null,
+      border: (d.genBorderColor && d.genBorderColor[0]==='#') ? d.genBorderColor : null,
+      fs: d.genFontSize!=null ? +d.genFontSize : 64
+    };
+  }
+  if(d.type==='text'){
+    const m=/color:\s*(#[0-9a-fA-F]{3,8}|rgba?\([^)]+\))/i.exec(d.cs||'');
+    return {
+      kind:'text',
+      color: (!d.textColorGrad && m) ? m[1] : null,
+      bg: (!d.textBgGrad && d.textBg && d.textBg[0]==='#') ? d.textBg : null
+    };
+  }
+  if(d.type==='shape'){
+    return null; // handled separately by _morphShapeJob (geometry + paint together)
+  }
+  return null;
+}
+// ── Shape geometry morph (stroke width + arc/sector/chord "grow from zero") ──
+// Normalized arc state for ellipse-special shapes: {mode:'full'|'sector'|'chord', start, end}.
+function _morphArcState(d){
+  if(!d||d.type!=='shape'||d.shape!=='ellipse') return null;
+  const mode=d.arcMode||'full';
+  if(mode==='full') return {mode:'full', start:0, end:360};
+  const start=d.arcStart!=null?+d.arcStart:0;
+  const end=d.arcEnd!=null?+d.arcEnd:270;
+  return {mode, start, end};
+}
+function _morphSweep(a){
+  const raw=((a.end-a.start)%360+360)%360;
+  return raw||360;
+}
+// Builds a combined geometry+paint morph job for a matched shape pair, or
+// null if nothing (stroke width / fill / stroke color / arc cut) differs.
+function _morphShapeJob(bel, fd, td){
+  if(!fd||!td||fd.type!=='shape'||td.type!=='shape') return null;
+  const svgHost=bel.querySelector('.shape-svg');
+  if(!svgHost) return null;
+  const fromSw=fd.sw===undefined?2:+fd.sw, toSw=td.sw===undefined?2:+td.sw;
+  const needsSw=fromSw!==toSw;
+  const fromFillHex=(fd.fill&&fd.fill[0]==='#'&&!(fd.fillGrad&&fd.fillGrad2))?fd.fill:null;
+  const toFillHex=(td.fill&&td.fill[0]==='#'&&!(td.fillGrad&&td.fillGrad2))?td.fill:null;
+  const needsFill=!!(fromFillHex&&toFillHex&&fromFillHex!==toFillHex);
+  const fromStrokeHex=(fd.stroke&&fd.stroke[0]==='#')?fd.stroke:null;
+  const toStrokeHex=(td.stroke&&td.stroke[0]==='#')?td.stroke:null;
+  const needsStroke=!!(fromStrokeHex&&toStrokeHex&&fromStrokeHex!==toStrokeHex);
+  const fromArc=_morphArcState(fd), toArc=_morphArcState(td);
+  const needsArc=!!(fromArc&&toArc&&(fromArc.mode!==toArc.mode||fromArc.start!==toArc.start||fromArc.end!==toArc.end));
+  if(!needsSw&&!needsFill&&!needsStroke&&!needsArc) return null;
+  return {kind:'shapeGeom', svgHost, td, fromSw, toSw, needsSw,
+    fromFillHex, toFillHex, needsFill, fromStrokeHex, toStrokeHex, needsStroke,
+    fromArc, toArc, needsArc};
+}
+// Builds a color-morph job for a matched (fd -> td) pair, or null if nothing
+// paint-related differs (or the pair isn't a type we handle).
+function _morphColorJob(bel, fd, td){
+  if(fd&&td&&fd.type==='shape'&&td.type==='shape') return _morphShapeJob(bel,fd,td);
+  const fromSt=_morphColorState(fd), toSt=_morphColorState(td);
+  if(!fromSt||!toSt||fromSt.kind!==toSt.kind) return null;
+  if(fromSt.kind==='counter'){
+    const iframe=bel.querySelector('iframe');
+    const bord=bel.querySelector('.applet-border-overlay');
+    const needsColor=!!(fromSt.color && toSt.color && fromSt.color!==toSt.color);
+    const needsBg=!!(fromSt.bg && toSt.bg && fromSt.bg!==toSt.bg);
+    const needsFs=fromSt.fs!==toSt.fs;
+    const needsBorder=!!(bord && fromSt.border && toSt.border && fromSt.border!==toSt.border);
+    if(!iframe || (!needsColor && !needsBg && !needsFs && !needsBorder)) return null;
+    return {kind:'counter', iframe, bord, from:fromSt, to:toSt, needsColor, needsBg, needsFs, needsBorder};
+  }
+  if(fromSt&&fromSt.kind==='text'){
+    const c=bel.querySelector('.ec.tel')||bel.querySelector('.ec');
+    const layer=bel.querySelector('.el-bg-layer');
+    const needsColor=!!(c && fromSt.color && toSt.color && fromSt.color!==toSt.color);
+    const needsBg=!!(layer && fromSt.bg && toSt.bg && fromSt.bg!==toSt.bg);
+    if(!needsColor && !needsBg) return null;
+    return {kind:'text', c, layer, from:fromSt, to:toSt, needsColor, needsBg};
+  }
+  if(fd&&td&&fd.type==='shape'&&td.type==='shape') return _morphShapeJob(bel,fd,td);
+  return null;
+}
+function _morphApplyColorJobs(jobs, e){
+  jobs.forEach(function(j){
+    if(j.kind==='counter'){
+      const msg={type:'counterMorphStyle'};
+      let hasMsg=false;
+      if(j.needsColor){ msg.color=window._lerpHexColor(j.from.color,j.to.color,e); hasMsg=true; }
+      if(j.needsBg){ msg.bg=window._lerpHexColor(j.from.bg,j.to.bg,e); hasMsg=true; }
+      if(j.needsFs){ msg.fs=Math.round(j.from.fs+(j.to.fs-j.from.fs)*e); hasMsg=true; }
+      if(hasMsg){ try{ j.iframe.contentWindow.postMessage(msg,'*'); }catch(err){} }
+      if(j.needsBorder){ j.bord.style.borderColor=window._lerpHexColor(j.from.border,j.to.border,e); }
+    } else if(j.kind==='text'){
+      if(j.needsColor) j.c.style.color=window._lerpHexColor(j.from.color,j.to.color,e);
+      if(j.needsBg) j.layer.style.backgroundColor=window._lerpHexColor(j.from.bg,j.to.bg,e);
+    } else if(j.kind==='shape'){
+      if(j.needsFill) j.shapeEl.style.fill=window._lerpHexColor(j.from.fill,j.to.fill,e);
+      if(j.needsStroke) j.shapeEl.style.stroke=window._lerpHexColor(j.from.stroke,j.to.stroke,e);
+    } else if(j.kind==='shapeGeom'){
+      const dd=Object.assign({}, j.td);
+      if(j.needsSw) dd.sw=j.fromSw+(j.toSw-j.fromSw)*e;
+      if(j.needsFill) dd.fill=window._lerpHexColor(j.fromFillHex,j.toFillHex,e);
+      if(j.needsStroke) dd.stroke=window._lerpHexColor(j.fromStrokeHex,j.toStrokeHex,e);
+      if(j.needsArc){
+        const fa=j.fromArc, ta=j.toArc;
+        if(fa.mode==='full' && ta.mode!=='full'){
+          dd.arcMode=ta.mode; dd.arcStart=ta.start;
+          const sweepTo=_morphSweep(ta);
+          dd.arcEnd=ta.start+(360+(sweepTo-360)*e);
+        } else if(fa.mode!=='full' && ta.mode==='full'){
+          dd.arcMode=fa.mode; dd.arcStart=fa.start;
+          const sweepFrom=_morphSweep(fa);
+          dd.arcEnd=fa.start+(sweepFrom+(360-sweepFrom)*e);
+        } else if(fa.mode!=='full' && ta.mode!=='full'){
+          dd.arcMode=ta.mode;
+          dd.arcStart=fa.start+(ta.start-fa.start)*e;
+          dd.arcEnd=fa.end+(ta.end-fa.end)*e;
+        }
+      }
+      try{
+        if(typeof buildShapeSVG==='function') j.svgHost.innerHTML=buildShapeSVG(dd, j.td.w, j.td.h);
+      }catch(err){}
+    } else if(j.kind==='connMove'){
+      const fe=j.fromEl, te=j.toEl;
+      const curX=fe.x+(te.x-fe.x)*e, curY=fe.y+(te.y-fe.y)*e;
+      const curW=fe.w+(te.w-fe.w)*e, curH=fe.h+(te.h-fe.h)*e;
+      const curRot=(fe.rot||0)+((te.rot||0)-(fe.rot||0))*e;
+      try{
+        window._pUpdateConnForMotion(j.elId, curX-te.x, curY-te.y, curW, curH, curRot);
+      }catch(err){}
+    }
+  });
+}
+function _morphRunColorAnims(jobs, durMs){
+  if(!jobs||!jobs.length) return;
+  const dur=Math.max(1,+durMs||500);
+  const start=performance.now();
+  // Make sure counter iframes have finished loading before we start posting to them.
+  const pending=jobs.filter(j=>j.kind==='counter'&&j.iframe&&j.iframe.dataset.morphReady!=='1');
+  function begin(){
+    _morphApplyColorJobs(jobs,0);
+    function frame(now){
+      const t=Math.min(1,(now-start)/dur);
+      const e=typeof window._morphEase==='function'?window._morphEase(t):t;
+      _morphApplyColorJobs(jobs,e);
+      if(t<1) requestAnimationFrame(frame);
+      else _morphApplyColorJobs(jobs,1);
+    }
+    requestAnimationFrame(frame);
+  }
+  if(!pending.length){ begin(); return; }
+  let left=pending.length;
+  pending.forEach(function(j){
+    j.iframe.addEventListener('load', function(){ left--; if(left<=0) begin(); }, {once:true});
+  });
+}
 function _morphExitClone(ael, fd, b){
   ael.style.visibility='hidden';
   ael.style.opacity='0';
@@ -722,7 +943,7 @@ function _morphExitClone(ael, fd, b){
   clone.style.zIndex='100';
   clone.style.pointerEvents='none';
   clone.style.transition='none';
-  clone.style.transformOrigin='0 0';
+  clone.style.transformOrigin='center';
   clone.style.willChange='transform,opacity';
   clone.style.visibility='visible';
   const baseRot=`rotate(${fd.rot||0}deg)${_morphFlipPart(fd)}`;
@@ -788,6 +1009,7 @@ function doMorphTransition(a,b,to,cb,durMs){
   const usedFrom=new Set();
   const animB=[];
   const shadowJobs=[];
+  const colorJobs=[];
   const _shFrom=typeof window._shadowStateFromData==='function'?window._shadowStateFromData:null;
   const _shApply=typeof window._applyShadowValues==='function'?window._applyShadowValues:null;
   const _shNeeds=typeof window._shadowMorphNeeds==='function'?window._shadowMorphNeeds:null;
@@ -798,21 +1020,51 @@ function doMorphTransition(a,b,to,cb,durMs){
   b.querySelectorAll('.psel').forEach(bel=>{
     const td=toSlide.els.find(e=>e.id===bel.dataset.id);
     if(!td||td._isDecor||!_morphEligible(td)) return;
-    const fd=_morphFindFrom(fromSlide.els,td,usedFrom);
+    const fd=_morphFindFrom(fromSlide.els,td,usedFrom,toSlide.els);
     const flipEnd=_morphFlipPart(td);
     const endTf=`rotate(${td.rot||0}deg)${flipEnd}`;
     const endOp=td.elOpacity!=null?td.elOpacity:1;
-    bel.style.transformOrigin='0 0';
+    // IMPORTANT: transform-origin must match normal (non-morph) rendering,
+    // which rotates around the element's own CENTER (CSS default origin,
+    // never explicitly overridden elsewhere). Using '0 0' here made rotation
+    // pivot around the top-left corner instead — fine for elements with no
+    // rotation, but for a rotated+moved element it traces a completely wrong
+    // arc, visually reading as a sideways "jump" before settling into place.
+    bel.style.transformOrigin='center';
     bel.style.willChange='transform,opacity';
 
     if(fd){
-      const dx=fd.x-td.x, dy=fd.y-td.y;
+      // Reposition/rescale relative to each box's own CENTER (not top-left),
+      // so rotation always pivots correctly and the element's screen path
+      // exactly matches its real from/to positions with no detour.
+      const fCx=fd.x+fd.w/2, fCy=fd.y+fd.h/2;
+      const tCx=td.x+td.w/2, tCy=td.y+td.h/2;
+      const dx=fCx-tCx, dy=fCy-tCy;
       const sw=td.w?fd.w/td.w:1, sh=td.h?fd.h/td.h:1;
-      const startTf=`translate(${dx}px,${dy}px) scale(${sw},${sh}) rotate(${fd.rot||0}deg)${_morphFlipPart(fd)}`;
+      const startTf=`translate(${dx}px,${dy}px) rotate(${fd.rot||0}deg) scale(${sw},${sh})${_morphFlipPart(fd)}`;
       bel.style.transition='none';
       bel.style.transform=startTf;
       bel.style.opacity=String(endOp);
       animB.push({bel,endTf,op:endOp,kind:'move',startTf,endOp});
+      if(typeof window._pUpdateConnForMotion==='function' && toSlide.connectors && toSlide.connectors.length){
+        const hasConn=toSlide.connectors.some(c=>c.fromId===td.id||c.toId===td.id);
+        if(hasConn && (fd.x!==td.x||fd.y!==td.y||fd.w!==td.w||fd.h!==td.h||(fd.rot||0)!==(td.rot||0))){
+          const cmj={kind:'connMove', elId:td.id, fromEl:fd, toEl:td};
+          colorJobs.push(cmj);
+          try{ _morphApplyColorJobs([cmj], 0); }catch(err){}
+        }
+      }
+      if(typeof _morphColorJob==='function'){
+        const cj=_morphColorJob(bel,fd,td);
+        if(cj){
+          colorJobs.push(cj);
+          // Snap paint (color/stroke-width/arc) to the "from" state right now,
+          // in the same synchronous pass as the geometry startTf above — so the
+          // very first painted frame already matches (no one-frame flash where
+          // geometry shows "from" but paint still shows the final "to" look).
+          try{ _morphApplyColorJobs([cj], 0); }catch(err){}
+        }
+      }
       if(_shFrom&&_shApply&&_shNeeds){
         const fromSh=_shFrom(fd), toSh=_shFrom(td);
         if(_shNeeds(fromSh,toSh)){
@@ -842,7 +1094,7 @@ function doMorphTransition(a,b,to,cb,durMs){
     if(!id) return;
     const fd=fromSlide.els.find(e=>e.id===id);
     if(!fd||fd._isDecor) return;
-    const td=_morphPairOnTo(fd,toSlide);
+    const td=_morphPairOnTo(fd,toSlide,fromSlide.els);
     if(td&&(!_morphEligible(fd)||!_morphEligible(td))){
       _morphHideOnFrom(ael);
       return;
@@ -878,6 +1130,9 @@ function doMorphTransition(a,b,to,cb,durMs){
       _morphAnimateJobs(animB,dur);
       if(shadowJobs.length&&typeof window._morphRunShadowAnims==='function'){
         window._morphRunShadowAnims(shadowJobs,dur);
+      }
+      if(colorJobs.length&&typeof _morphRunColorAnims==='function'){
+        _morphRunColorAnims(colorJobs,dur);
       }
       a.style.transition=`opacity ${Math.round(dur*0.65)}ms ease`;
       a.style.opacity='0';
@@ -1635,6 +1890,8 @@ function buildPSlide(container,idx,transOffset,noScale){
       const svgEl=el.querySelector('svg');if(svgEl){svgEl.style.width='100%';svgEl.style.height='100%';
         if(d._isDecor) _pvApplyDecorTime(svgEl, idx);
       }
+      if(d.svgOpacity!=null)el.style.opacity=d.svgOpacity;
+      if(d.svgShadow&&typeof window._applySvgShadowFilter==='function')window._applySvgShadowFilter(el,d);
       if(d._isDecor && (typeof _isGlDecorRenderer==='function'?_isGlDecorRenderer(d._decorRenderer):(d._decorRenderer==='crystal'||d._decorRenderer==='dna'))){
         const _pvCfg=d._glCfg||d._crystalCfg;
         const _Decor=typeof _glDecorByRenderer==='function'?_glDecorByRenderer(d._decorRenderer)
@@ -1665,8 +1922,26 @@ function buildPSlide(container,idx,transOffset,noScale){
       el.style.color=d.formulaColor||'#ffffff';
       if(d.formulaSvg){el.innerHTML=d.formulaSvg;var _fsvgP=el.querySelector('svg');if(_fsvgP){_fsvgP.style.width='100%';_fsvgP.style.height='100%';}}
     }else if(d.type==='graph'){
-      el.style.overflow='hidden';el.style.borderRadius='6px';
-      if(d.graphImg){var _gi=document.createElement('img');_gi.src=d.graphImg;_gi.style.cssText='width:100%;height:100%;object-fit:fill;display:block;';el.appendChild(_gi);}
+      el.style.overflow='hidden';el.style.borderRadius='6px';el.style.position='absolute';
+      if(d.graphKind==='chem'){
+        var _cbg=d.graphBg;
+        var _hasCbg=_cbg && _cbg!=='none' && _cbg!=='transparent' && _cbg!=='';
+        var _cop=d.graphBgOp!=null?+d.graphBgOp:1;
+        var _cbl=+(d.graphBgBlur||0);
+        if(_hasCbg||_cbl>0){
+          var _cl=document.createElement('div');
+          _cl.style.cssText='position:absolute;inset:0;z-index:0;pointer-events:none;border-radius:inherit;';
+          if(_hasCbg){
+            var _ch=String(_cbg).replace('#','');
+            if(_ch.length===6){
+              _cl.style.background='rgba('+parseInt(_ch.slice(0,2),16)+','+parseInt(_ch.slice(2,4),16)+','+parseInt(_ch.slice(4,6),16)+','+_cop+')';
+            } else _cl.style.background=_cbg;
+          }
+          el.appendChild(_cl);
+          if(_cbl>0){ el.style.backdropFilter='blur('+_cbl+'px)'; el.style.webkitBackdropFilter='blur('+_cbl+'px)'; }
+        }
+      }
+      if(d.graphImg){var _gi=document.createElement('img');_gi.src=d.graphImg;_gi.style.cssText='position:relative;z-index:1;width:100%;height:100%;object-fit:fill;display:block;';el.appendChild(_gi);}
     }else if(d.type==='applet'){
       el.dataset.appletId=d.appletId||'';
       var _aRx=(d.rx?d.rx+'px':'0px');
@@ -1677,7 +1952,8 @@ function buildPSlide(container,idx,transOffset,noScale){
       var _aClip=document.createElement('div');
       _aClip.style.cssText='position:absolute;inset:0;overflow:hidden;border-radius:'+_aRx+';';
       if(typeof ensureAppletHtmlFromData==='function') ensureAppletHtmlFromData(d);
-      var iframe=document.createElement('iframe');iframe.srcdoc=d.appletHtml||'';
+      var _mountHtml = (d.appletId==='counter' && typeof window._counterMountHTML==='function') ? window._counterMountHTML(d) : (d.appletHtml||'');
+      var iframe=document.createElement('iframe');iframe.srcdoc=_mountHtml;
       var _pvPE = (d.appletId==='timer'||d.appletId==='counter'||d.appletId==='generator') ? 'none' : 'auto';
       iframe.style.cssText='width:100%;height:100%;border:none;background:transparent;pointer-events:'+_pvPE+';user-select:none;';
       iframe.setAttribute('allowtransparency','true');
@@ -1686,6 +1962,10 @@ function buildPSlide(container,idx,transOffset,noScale){
         iframe.addEventListener('load', function(){
           try{ iframe.contentWindow.postMessage({type:'timerStart'}, '*'); }catch(e){}
         }, {once:true});
+      }
+      if(d.appletId==='counter'){
+        el.dataset.cntGroupId = d.cntGroupId || '';
+        iframe.addEventListener('load', function(){ iframe.dataset.morphReady='1'; }, {once:true});
       }
       _aClip.appendChild(iframe);
       el.appendChild(_aClip);
@@ -1903,7 +2183,8 @@ function buildPSlide(container,idx,transOffset,noScale){
         motionAnims.forEach(({anim:a,absDelay})=>{
           fireAnim(el,d,a,idx,absDelay + transOffset,cumTx,cumTy);
           if(a.name==='moveTo'){
-            cumTx+=a.tx||0; cumTy+=a.ty||0;
+            // tx/ty — абсолютные смещения от исходной позиции объекта (не дельты)
+            cumTx=a.tx||0; cumTy=a.ty||0;
           } else if(a.name==='orbitTo'){
             const ocx=a.orbitCx||0, ocy=a.orbitCy||0;
             const r=Math.sqrt(ocx*ocx+ocy*ocy)||(a.orbitR||120);
@@ -2079,6 +2360,21 @@ function buildPSlide(container,idx,transOffset,noScale){
         r2.setAttribute('x','0.2');r2.setAttribute('y','0.2');r2.setAttribute('width','3.0');r2.setAttribute('height','3.0');
         r2.setAttribute('rx','0.5');r2.setAttribute('ry','0.5');r2.setAttribute('stroke-width','0');
         m.appendChild(r2);
+      } else if (type === 'circle') {
+        m.setAttribute('markerWidth','3.0'); m.setAttribute('markerHeight','3.0');
+        m.setAttribute('refX','1.5'); m.setAttribute('refY','1.5');
+        const c2 = document.createElementNS('http://www.w3.org/2000/svg','circle');
+        c2.setAttribute('cx','1.5'); c2.setAttribute('cy','1.5'); c2.setAttribute('r','1.3');
+        c2.setAttribute('stroke-width','0');
+        m.appendChild(c2);
+      } else if (type === 'bar') {
+        m.setAttribute('markerWidth','3.0'); m.setAttribute('markerHeight','3.0');
+        m.setAttribute('refX','1.5'); m.setAttribute('refY','1.5');
+        const ln2 = document.createElementNS('http://www.w3.org/2000/svg','path');
+        ln2.setAttribute('d','M1.5,0.2 L1.5,2.8');
+        ln2.setAttribute('stroke',color); ln2.setAttribute('stroke-width','1');
+        ln2.setAttribute('stroke-linecap','round'); ln2.setAttribute('fill','none');
+        m.appendChild(ln2);
       } else if (type === 'cross') {
         m.setAttribute('orient','0');
         m.setAttribute('markerWidth','3.0'); m.setAttribute('markerHeight','3.0');
@@ -2119,6 +2415,7 @@ function buildPSlide(container,idx,transOffset,noScale){
         right:  {...rot(d.x+d.w, cy      ), ...rotDir( 1, 0)},
         bottom: {...rot(cx,      d.y+d.h ), ...rotDir( 0, 1)},
         left:   {...rot(d.x,     cy      ), ...rotDir(-1, 0)},
+        center: {x: cx, y: cy, nx: 0, ny: 0},
       };
       if (raw[sideKey]) return raw[sideKey];
       const od=elMap[otherElId];
@@ -2147,7 +2444,7 @@ function buildPSlide(container,idx,transOffset,noScale){
 
     function _pApplySideGap(raw, gap) {
       if (!gap) return raw;
-      const n = { top:{x:0,y:-1}, right:{x:1,y:0}, bottom:{x:0,y:1}, left:{x:-1,y:0} };
+      const n = { top:{x:0,y:-1}, right:{x:1,y:0}, bottom:{x:0,y:1}, left:{x:-1,y:0}, center:{x:0,y:0} };
       const side = raw.side;
       const nx = raw.nx != null ? raw.nx : (n[side] || { x: 0, y: 0 }).x;
       const ny = raw.ny != null ? raw.ny : (n[side] || { x: 0, y: 0 }).y;
@@ -2197,7 +2494,7 @@ function buildPSlide(container,idx,transOffset,noScale){
       ).join(' ');
     }
 
-    function _pMkDist(t) { return t==='arrow'?1.386 : t==='square'?1.7 : t==='cross'?1.5 : 0; }
+    function _pMkDist(t) { return t==='arrow'?1.386 : t==='square'?1.7 : t==='circle'?1.5 : t==='bar'?1.5 : t==='cross'?1.5 : 0; }
     function _pMkRetract(pt, cpNear, d, sw) {
       if (!d || sw <= 0) return pt;
       const tdx=cpNear.x-pt.x, tdy=cpNear.y-pt.y, tl=Math.sqrt(tdx*tdx+tdy*tdy)||1;
@@ -2231,7 +2528,7 @@ function buildPSlide(container,idx,transOffset,noScale){
 
       const sw = conn.sw || 2;
       const dash = conn.dash || 'solid';
-      const color = conn.color || '#60a5fa';
+      const color = (conn.color === 'none' || conn.color === 'transparent') ? 'none' : (conn.color || '#60a5fa');
       const fromMk = conn.fromMarker || 'none';
       const toMk   = conn.toMarker   || (conn.type==='arrow'?'arrow':'none');
       const animated = !!conn.animated;
@@ -2248,7 +2545,9 @@ function buildPSlide(container,idx,transOffset,noScale){
       if (animated && dash !== 'solid') {
         const style = document.createElementNS('http://www.w3.org/2000/svg','style');
         const animOff = dash==='dot' ? sw*4 : sw*8;
-        style.textContent = `@keyframes pconn_${conn.id}{from{stroke-dashoffset:${animOff}}to{stroke-dashoffset:0}}`;
+        const fromOff = conn.animInvert ? 0 : animOff;
+        const toOff   = conn.animInvert ? animOff : 0;
+        style.textContent = `@keyframes pconn_${conn.id}{from{stroke-dashoffset:${fromOff}}to{stroke-dashoffset:${toOff}}}`;
         pdefs.appendChild(style);
       }
 
@@ -2267,7 +2566,31 @@ function buildPSlide(container,idx,transOffset,noScale){
       if (fromMk !== 'none') line.setAttribute('marker-start', `url(#${mkFId})`);
       if (toMk   !== 'none') line.setAttribute('marker-end',   `url(#${mkTId})`);
       line.setAttribute('data-pconn-id', conn.id);
-      psvg.appendChild(line);
+      if (conn.opacity != null && conn.opacity !== 1) {
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        g.setAttribute('opacity', conn.opacity);
+        g.appendChild(line);
+        psvg.appendChild(g);
+      } else {
+        psvg.appendChild(line);
+      }
+
+      // Ride-along: animate along path via getPointAtLength (works with image filters)
+      const rider = s.els && s.els.find(e => e.rideConnId === conn.id);
+      if (rider) {
+        const riderEl = container.querySelector(`.psel[data-id="${rider.id}"]`);
+        if (riderEl && typeof window._connStartRideAnim === 'function') {
+          const cancel = window._connStartRideAnim(riderEl, pd, {
+            duration: conn.rideDuration || 3.5,
+            gap: conn.rideInterval || 0,
+            invert: !!conn.animInvert,
+            opacity: rider.elOpacity != null ? rider.elOpacity : 1,
+            baseRot: rider.rot || 0
+          });
+          if (!container._rideAnimCancels) container._rideAnimCancels = [];
+          container._rideAnimCancels.push(cancel);
+        }
+      }
     });
 
     container.appendChild(psvg);
@@ -2275,8 +2598,8 @@ function buildPSlide(container,idx,transOffset,noScale){
     // Функция обновления коннекторов при анимации перемещения объекта
     // motionOffsets: {elId: {tx, ty}} — смещения от исходной позиции
     const _motionOffsets = {};
-    window._pUpdateConnForMotion = function(elId, tx, ty) {
-      _motionOffsets[elId] = {tx, ty};
+    window._pUpdateConnForMotion = function(elId, tx, ty, w, h, rot) {
+      _motionOffsets[elId] = {tx, ty, w, h, rot};
       // Перерисовываем только линии связанные с этим объектом
       if (!s.connectors) return;
       s.connectors.forEach(conn => {
@@ -2287,9 +2610,11 @@ function buildPSlide(container,idx,transOffset,noScale){
         function _offsetMid(did, otherDid, sideKey) {
           const base = elMap[did]; if (!base) return {x:0,y:0};
           const off = _motionOffsets[did] || {tx:0,ty:0};
+          const bw = off.w != null ? off.w : base.w;
+          const bh = off.h != null ? off.h : base.h;
           const bx = base.x + off.tx, by = base.y + off.ty;
-          const cx = bx+base.w/2, cy = by+base.h/2;
-          const deg = base.rot || 0;
+          const cx = bx+bw/2, cy = by+bh/2;
+          const deg = off.rot != null ? off.rot : (base.rot || 0);
           function rot(px,py){
             if(!deg)return{x:px,y:py};
             const rad=deg*Math.PI/180,cos=Math.cos(rad),sin=Math.sin(rad);
@@ -2302,9 +2627,10 @@ function buildPSlide(container,idx,transOffset,noScale){
           }
           const sides = {
             top:    { ...rot(cx, by),      ...rotDir(0,-1), side: 'top' },
-            right:  { ...rot(bx+base.w, cy), ...rotDir(1,0),  side: 'right' },
-            bottom: { ...rot(cx, by+base.h), ...rotDir(0,1),  side: 'bottom' },
+            right:  { ...rot(bx+bw, cy), ...rotDir(1,0),  side: 'right' },
+            bottom: { ...rot(cx, by+bh), ...rotDir(0,1),  side: 'bottom' },
             left:   { ...rot(bx, cy),      ...rotDir(-1,0), side: 'left' },
+            center: { x: cx, y: cy, nx: 0, ny: 0, side: 'center' },
           };
           if (sides[sideKey]) return sides[sideKey];
           const od = elMap[otherDid];
@@ -2337,6 +2663,24 @@ function buildPSlide(container,idx,transOffset,noScale){
         const toMk   = conn.toMarker   || (conn.type==='arrow'?'arrow':'none');
         const sw = conn.sw || 2;
         line.setAttribute('d', _pConnPathD(conn, p1, p2, cp1, cp2, fromMk, toMk, sw));
+        const rider = s.els && s.els.find(e => e.rideConnId === conn.id);
+        if (rider) {
+          const riderEl = container.querySelector(`.psel[data-id="${rider.id}"]`);
+          if (riderEl && typeof window._connStartRideAnim === 'function') {
+            if (riderEl._rideCancel) { try { riderEl._rideCancel(); } catch (e) {} }
+            const pd2 = line.getAttribute('d');
+            const cancel = window._connStartRideAnim(riderEl, pd2, {
+              duration: conn.rideDuration || 3.5,
+              gap: conn.rideInterval || 0,
+              invert: !!conn.animInvert,
+              opacity: rider.elOpacity != null ? rider.elOpacity : 1,
+              baseRot: rider.rot || 0
+            });
+            riderEl._rideCancel = cancel;
+            if (!container._rideAnimCancels) container._rideAnimCancels = [];
+            container._rideAnimCancels.push(cancel);
+          }
+        }
       });
     };
   }

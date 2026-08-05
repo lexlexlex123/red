@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
@@ -16,13 +16,13 @@
 <link rel="stylesheet" href="fonts/fonts.css">
 <script src="fonts/fonts-list.js"></script>
 <script src="fonts/fonts-data.js"></script>
-  <link rel="stylesheet" href="css/styles.css?v=8">
+  <link rel="stylesheet" href="css/styles.css?v=13">
 </head>
 <body>
 <div id="ribbon">
   <div id="ribbon-top">
     <div class="app-logo">
-      <svg viewBox="0 0 24 24" fill="none"><rect x="2" y="3" width="20" height="14" rx="2.5" fill="#3b82f6" opacity=".2"/><rect x="2" y="3" width="20" height="14" rx="2.5" stroke="#3b82f6" stroke-width="1.5"/><path d="M2 9h20" stroke="#3b82f6" stroke-width="1" opacity=".4"/><path d="M8 21h8M12 17v4" stroke="#3b82f6" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <img class="app-logo-icon" src="icons/icon.svg" alt="" width="18" height="18">
       <span id="app-name-span" data-i18n="appName">Слайды</span>
     </div>
     <input id="pres-title" type="text" value="" data-i18n-placeholder="newPresentation" placeholder="Новая презентация" spellcheck="false">
@@ -44,7 +44,13 @@
     <button class="rtab" onclick="switchTab('anim',this)" ondblclick="toggleRibbonCollapse()"><span data-i18n="tabAnim">Анимации</span></button>
     <button class="rtab" onclick="switchTab('transitions',this)" ondblclick="toggleRibbonCollapse()"><span data-i18n="tabTransitions">Переходы</span></button>
     <button class="rtab" onclick="switchTab('slideshow',this)" ondblclick="toggleRibbonCollapse()"><span data-i18n="tabSlideshow">Показ</span></button>
-    <button class="rtab" onclick="toggleVoiceControl(this)" id="voice-tab-btn"><span>🎙 Голосовое</span></button>
+    <button class="rtab" onclick="toggleVoiceControl(this)" id="voice-tab-btn" title="Voice control">
+      <span class="voice-mic-wrap" id="voice-mic-wrap" aria-hidden="true">
+        <span class="voice-mic-level" id="voice-mic-level"></span>
+        <span class="voice-mic-dot" id="voice-mic-dot"></span>
+      </span>
+      <span data-i18n="tabVoice">Голосовое</span>
+    </button>
     <button class="rtab" onclick="exportVoiceUnknown()" id="voice-export-btn" title="Скопировать нераспознанные команды" style="display:none"><span>📋</span></button>
   </div>
   <div id="ribbon-body">
@@ -113,16 +119,6 @@
       <div class="rglbl"><span data-i18n="grpInsert">Вставить</span></div>
     </div>
     <!-- DESIGN -->
-    <div class="rg" data-tab="design" style="display:none">
-      <div style="display:flex;flex-direction:column;gap:4px;justify-content:center">
-        <span style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Background</span>
-        <div style="display:flex;gap:3px;align-items:center">
-          <div class="bgswatches" id="bgswatches"></div>
-          <input type="color" id="bgcustom" data-i18n-title="propSlideBg" title="Custom BG" onchange="setCustomBg(this.value)">
-        </div>
-      </div>
-      <div class="rglbl"><span data-i18n="grpBackground">Фон</span></div>
-    </div>
     <div class="rg" data-tab="design" style="display:none">
       <button class="rb" onclick="openThemeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="9" r="2"/><circle cx="15" cy="7" r="1.5"/><circle cx="16" cy="14" r="1.5"/><circle cx="10" cy="16" r="1.5"/><path d="M12 3C7 3 3 7 3 12s4 9 9 9c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.4-.3-.4-.5-.8-.5-1.3 0-1.1.9-2 2-2h2.4c2.8 0 5-2.2 5-5C22 6.7 17.5 3 12 3z"/></svg><span class="rbl" data-i18n="btnTheme">Темы</span></button>
       <button class="rb" onclick="openLayoutModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg><span class="rbl" data-i18n="btnLayout">Макет</span></button>
@@ -271,7 +267,7 @@
     </div>
     <div id="cwrap">
       <canvas id="grid-canvas"></canvas>
-      <div id="canvas-container"><div id="canvas-bg-rect"></div><div id="canvas"><div id="cvbg"></div><div id="lego-layer" style="position:absolute;inset:0;z-index:2;overflow:visible;pointer-events:none;"></div><div id="rubberband"></div><div id="handles-overlay"></div></div></div>
+      <div id="canvas-container"><div id="canvas-bg-rect"></div><div id="canvas"><div id="cvbg"></div><div id="lego-layer" style="position:absolute;inset:0;z-index:2;overflow:visible;pointer-events:none;"></div><div id="sel-frames-layer"></div><div id="handles-overlay"></div></div><div id="rubberband"></div></div>
     </div>
   </div>
   <div id="props">
@@ -460,8 +456,8 @@
           <div style="margin-bottom:7px">
             <div class="pr" style="margin:0"><label data-i18n="propTextColor">Цвет <span id="sel-hint" style="font-size:9px;color:var(--accent4);display:none">· выделение</span></label>
               <div style="display:flex;gap:4px;align-items:center">
-                <div class="tprops-swatch" onmousedown="event.preventDefault();_rtOnPanelMousedown(event);openColorPanel('cp-text-slot','text',function(c,sr){onColorPick(c,'text',sr);})" data-i18n-title="propTextColor" title="Цвет текста"><div id="p-col-preview" class="tprops-swatch-inner" style="background:#ffffff"></div></div>
-                <div class="hex-field" style="flex:1"><input type="text" id="p-hex" class="tprops-hex hex-field-input" maxlength="7" placeholder="#ffffff" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){onColorHex(this.value,'text');document.getElementById('p-col-preview').style.background=this.value;}"></div>
+                <div class="tprops-swatch" onmousedown="event.preventDefault();_rtOnPanelMousedown(event);openColorPanel('cp-text-slot','text',colorPickHandler('p-hex','p-col-preview',function(c,sr){onColorPick(c,'text',sr);}))" data-i18n-title="propTextColor" title="Цвет текста"><div id="p-col-preview" class="tprops-swatch-inner" style="background:#ffffff"></div></div>
+                <div class="hex-field" style="flex:1"><input type="text" id="p-hex" class="tprops-hex hex-field-input" maxlength="7" placeholder="11 или #hex" oninput="colorFieldOnInput(this.value,'p-col-preview',function(c,sr){onColorPick(c,'text',sr);})"></div>
                 <button onclick="togglePipetteMode()" id="eye-text" class="pipette-btn" title="Пипетка" style="background:var(--surface2);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:3px 6px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;width:26px;height:26px"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M20.71 5.63l-2.34-2.34a1 1 0 0 0-1.41 0l-3.12 3.12-1.41-1.42-1.42 1.42 1.41 1.41-6.6 6.6A2 2 0 0 0 5 16v3h3a2 2 0 0 0 1.42-.59l6.6-6.6 1.41 1.42 1.42-1.42-1.42-1.41 3.12-3.12a1 1 0 0 0 0-1.65z"/></svg></button>
               </div>
             </div>
@@ -526,8 +522,8 @@
               </div>
               <!-- Color 1 row -->
               <div class="tprops-color-row">
-                <div class="tprops-swatch" style="background:repeating-conic-gradient(#aaa 0% 25%,#fff 0% 50%) 0 0/8px 8px" onmousedown="openColorPanel('cp-bg-slot','bg',function(c,sr){document.getElementById('p-bg-hex').value=c;document.getElementById('p-bg-swatch-inner').style.background=c;setTextBg(c,sr);})" data-i18n-title="propBgColor" title="Цвет фона"><div id="p-bg-swatch-inner" class="tprops-swatch-inner"></div></div>
-                <div class="hex-field"><input type="text" id="p-bg-hex" class="tprops-hex hex-field-input" maxlength="7" placeholder="" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('p-bg-swatch-inner').style.background=this.value;setTextBg(this.value,null);}"></div>
+                <div class="tprops-swatch" style="background:repeating-conic-gradient(#aaa 0% 25%,#fff 0% 50%) 0 0/8px 8px" onmousedown="openColorPanel('cp-bg-slot','bg',function(c,sr){document.getElementById('p-bg-swatch-inner').style.background=c;setTextBg(c,sr);})" data-i18n-title="propBgColor" title="Цвет фона"><div id="p-bg-swatch-inner" class="tprops-swatch-inner"></div></div>
+                <div class="hex-field"><input type="text" id="p-bg-hex" class="tprops-hex hex-field-input" maxlength="7" placeholder="11 или #hex" oninput="(function(v){var p=typeof _parseColorField==='function'&&_parseColorField(v);if(p){document.getElementById('p-bg-swatch-inner').style.background=p.color;setTextBg(p.color,p.schemeRef);}})(this.value)"></div>
                 <button type="button" class="tprops-icon-btn" onclick="clearTextBgCol1()" data-i18n-title="propClearColor" title="Убрать">&#x2715;</button>
               </div>
               <div id="cp-bg-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
@@ -681,6 +677,13 @@
                 <input type="number" id="cnt-goal" placeholder="—" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 6px;font-size:11px;box-sizing:border-box" oninput="setCounterGoal(this.value)">
                 <button title="Очистить" onclick="clearCounterGoal()" style="flex-shrink:0;background:var(--surface3);border:1px solid var(--border2);color:var(--text2);border-radius:3px;padding:2px 6px;cursor:pointer;font-size:10px;white-space:nowrap">✕</button>
               </div>
+            </div>
+          </div>
+          <!-- Counter group ID — links counters across slides so they share a running value -->
+          <div id="cnt-group-row" style="display:none;flex-direction:column;gap:5px;margin-bottom:8px">
+            <div class="pr" style="margin:0">
+              <label style="font-size:9px" title="Счётчики с одинаковым ID на разных слайдах продолжают счёт друг за другом">ID (связать со счётчиком на др. слайде)</label>
+              <input type="text" id="cnt-group-id" placeholder="напр. score" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 6px;font-size:11px;box-sizing:border-box" oninput="setCounterGroupId(this.value)">
             </div>
           </div>
           <!-- Font size + Bold -->
@@ -906,8 +909,8 @@
           </div>
           <div class="pr" id="sh-fill-section"><label data-i18n="propFillColor">Заливка</label>
             <div style="display:flex;gap:4px;align-items:center;margin-bottom:4px">
-              <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;background:repeating-conic-gradient(#aaa 0% 25%,transparent 0% 50%) 0 0/8px 8px;" onmousedown="openColorPanel('cp-fill-slot','fill',function(c,sr){document.getElementById('sh-fill-preview').style.background=c;try{document.getElementById('sh-fill-hex').value=c;}catch(e){}updateShapeStyleScheme('fill',c,sr);})" title="Цвет заливки"><div id="sh-fill-preview" style="width:100%;height:100%;background:#3b82f6;"></div></div>
-              <input type="text" id="sh-fill-hex" maxlength="7" placeholder="#3b82f6" style="flex:1;min-width:0;height:28px;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:0 6px;font-size:11px;font-family:monospace" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('sh-fill-preview').style.background=this.value;updateShapeStyleScheme('fill',this.value,null);}">
+              <div class="tprops-swatch" style="background:repeating-conic-gradient(#aaa 0% 25%,transparent 0% 50%) 0 0/8px 8px;" onmousedown="openColorPanel('cp-fill-slot','fill',colorPickHandler('sh-fill-hex','sh-fill-preview',function(c,sr){updateShapeStyleScheme('fill',c,sr);}))" title="Цвет заливки"><div id="sh-fill-preview" class="tprops-swatch-inner" style="background:#3b82f6;"></div></div>
+              <input type="text" id="sh-fill-hex" maxlength="7" placeholder="11 или #hex" style="flex:1;min-width:0;height:28px;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:0 6px;font-size:11px;font-family:monospace" oninput="colorFieldOnInput(this.value,'sh-fill-preview',function(c,sr){updateShapeStyleScheme('fill',c,sr);})">
               <button onmousedown="event.preventDefault()" onclick="document.getElementById('sh-fill-preview').style.background='transparent';try{document.getElementById('sh-fill-hex').value='';}catch(e){}updateShapeStyleScheme('fill','none',null);" title="Убрать заливку" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;line-height:1" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">✕</button>
               <button onclick="togglePipetteMode()" id="eye-fill" class="pipette-btn" title="Пипетка" style="background:var(--surface2);border:1px solid var(--border2);color:var(--text2);border-radius:3px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;width:26px;height:26px"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M20.71 5.63l-2.34-2.34a1 1 0 0 0-1.41 0l-3.12 3.12-1.41-1.42-1.42 1.42 1.41 1.41-6.6 6.6A2 2 0 0 0 5 16v3h3a2 2 0 0 0 1.42-.59l6.6-6.6 1.41 1.42 1.42-1.42-1.42-1.41 3.12-3.12a1 1 0 0 0 0-1.65z"/></svg></button>
             </div>
@@ -934,8 +937,8 @@
           <!-- Stroke row: swatch + hex + width + rx -->
           <div class="pr"><label data-i18n="propStrokeColor">Обводка</label>
             <div style="display:flex;gap:4px;align-items:center;margin-bottom:4px">
-              <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;overflow:hidden;flex-shrink:0" onmousedown="openColorPanel('cp-stroke-slot','stroke',function(c){document.getElementById('sh-stroke-preview').style.background=c;try{document.getElementById('sh-stroke-hex').value=c;}catch(e){}updateShapeStyle('stroke',c);})"><div id="sh-stroke-preview" style="width:100%;height:100%;background:#1d4ed8;"></div></div>
-              <input type="text" id="sh-stroke-hex" maxlength="7" placeholder="#1d4ed8" style="flex:1;min-width:0;height:24px;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:0 6px;font-size:11px;font-family:monospace" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('sh-stroke-preview').style.background=this.value;updateShapeStyle('stroke',this.value);}">
+              <div class="tprops-swatch" onmousedown="openColorPanel('cp-stroke-slot','stroke',colorPickHandler('sh-stroke-hex','sh-stroke-preview',function(c,sr){updateShapeStyleScheme('stroke',c,sr);}))"><div id="sh-stroke-preview" class="tprops-swatch-inner" style="background:#1d4ed8;"></div></div>
+              <input type="text" id="sh-stroke-hex" maxlength="7" placeholder="11 или #hex" style="flex:1;min-width:0;height:28px;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:0 6px;font-size:11px;font-family:monospace" oninput="colorFieldOnInput(this.value,'sh-stroke-preview',function(c,sr){updateShapeStyleScheme('stroke',c,sr);})">
               <button title="Сбросить" onmousedown="event.preventDefault()" onclick="document.getElementById('sh-sw').value=0;updateShapeStyle('sw',0);" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;line-height:1" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">✕</button>
             </div>
             <div id="cp-stroke-slot" class="cp-slot" style="display:none;margin-bottom:4px" onmousedown="event.preventDefault()"></div>
@@ -981,8 +984,8 @@
           <button class="mbtn-sm" onclick="startEditShapeText()" style="margin-bottom:6px;width:100%">✏️ Редактировать (или двойной клик)</button>
           <div class="pr"><label data-i18n="propTextColor">Цвет текста</label>
             <div style="display:flex;gap:6px;align-items:center">
-              <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;" onmousedown="event.preventDefault();openColorPanel('cp-sh-tc-slot','sh-tc',function(c,sr){document.getElementById('sh-tc-preview').style.background=c;document.getElementById('sh-tc-hex').value=c.replace('#','');updateShapeTextColor(c,sr);})" title="Цвет текста фигуры"><div id="sh-tc-preview" style="width:100%;height:100%;background:#ffffff;pointer-events:none;"></div></div>
-              <input type="text" id="sh-tc-hex" maxlength="7" value="ffffff" style="width:72px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;font-family:monospace" oninput="var c='#'+this.value.replace('#','');if(/^#[0-9a-fA-F]{6}$/.test(c)){document.getElementById('sh-tc-preview').style.background=c;updateShapeTextColor(c);}">
+              <div class="tprops-swatch" onmousedown="event.preventDefault();openColorPanel('cp-sh-tc-slot','sh-tc',colorPickHandler('sh-tc-hex','sh-tc-preview',updateShapeTextColor))" title="Цвет текста фигуры"><div id="sh-tc-preview" class="tprops-swatch-inner" style="background:#ffffff;"></div></div>
+              <input type="text" id="sh-tc-hex" maxlength="7" placeholder="11 или #hex" style="flex:1;min-width:0;height:28px;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:0 6px;font-size:11px;font-family:monospace" oninput="colorFieldOnInput(this.value,'sh-tc-preview',updateShapeTextColor)">
             </div>
             <div id="cp-sh-tc-slot" class="cp-slot" style="display:none;margin-top:4px" onmousedown="event.preventDefault()"></div>
           </div>
@@ -997,7 +1000,7 @@
         </div>
         <!-- QR PROPS -->
         <div id="qrprops" style="display:none">
-          <div class="ph">▦ QR Code</div>
+          <div class="ph">▦ QR-код</div>
           <div class="psec" style="display:flex;flex-direction:column;gap:8px">
             <div class="pr" style="margin:0">
               <label>Ссылка или текст</label>
@@ -1210,8 +1213,8 @@
               </div>
               <div class="pr" style="margin:0;flex:1"><label data-i18n="propTextColor">Цвет текста</label>
                 <div style="display:flex;gap:4px;align-items:center">
-                  <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;" onmousedown="openColorPanel('cp-md-color-slot','md-color',function(c,sr){document.getElementById('md-color-hex').value=c;document.getElementById('md-color-preview').style.background=c;updateMdColor(c,sr);})" title="Цвет текста"><div id="md-color-preview" style="width:100%;height:100%;background:#ffffff;pointer-events:none;"></div></div>
-                  
+                  <div class="tprops-swatch" onmousedown="openColorPanel('cp-md-color-slot','md-color',colorPickHandler('md-color-hex','md-color-preview',updateMdColor))" title="Цвет текста"><div id="md-color-preview" class="tprops-swatch-inner" style="background:#ffffff;"></div></div>
+                  <input type="text" id="md-color-hex" maxlength="7" placeholder="11 или #hex" style="flex:1;min-width:0;height:28px;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:0 6px;font-size:11px;font-family:monospace" oninput="colorFieldOnInput(this.value,'md-color-preview',updateMdColor)">
                 </div>
               </div>
             </div>
@@ -1259,10 +1262,11 @@
             <!-- Preview -->
             <div id="fp-preview" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;min-height:64px;display:flex;align-items:center;justify-content:center;padding:8px;overflow:hidden;"></div>
             <!-- Color -->
-            <div style="display:flex;align-items:center;gap:6px">
-              <label style="font-size:11px;color:var(--text2);flex-shrink:0">Цвет:</label>
-              <div id="fp-color-swatch" style="width:26px;height:26px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;background:#ffffff" onclick="openColorPanel('cp-formula-color-slot','formula-color',function(c,ref){document.getElementById('fp-color-hex').value=c;document.getElementById('fp-color-swatch').style.background=c;setFormulaColor(c,ref);})"></div>
-              <input type="text" id="fp-color-hex" value="#ffffff" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('fp-color-swatch').style.background=this.value;setFormulaColor(this.value,null);}">
+            <div class="pr" style="margin:0"><label style="font-size:11px;color:var(--text2)">Цвет текста</label>
+              <div style="display:flex;gap:4px;align-items:center">
+                <div class="tprops-swatch" onmousedown="event.preventDefault();openColorPanel('cp-formula-color-slot','formula-color',colorPickHandler('fp-color-hex','fp-color-swatch-inner',setFormulaColor))" title="Цвет формулы"><div id="fp-color-swatch-inner" class="tprops-swatch-inner" style="background:#ffffff"></div></div>
+                <input type="text" id="fp-color-hex" maxlength="7" placeholder="11 или #hex" style="flex:1;min-width:0;height:28px;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:0 6px;font-size:11px;font-family:monospace" oninput="colorFieldOnInput(this.value,'fp-color-swatch-inner',setFormulaColor)">
+              </div>
             </div>
             <div id="cp-formula-color-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
             <!-- Edit button -->
@@ -1275,6 +1279,7 @@
         <div id="graphprops" style="display:none">
           <div class="ph">📈 График</div>
           <div class="psec" style="display:flex;flex-direction:column;gap:8px">
+            <div id="gp-range-block" style="display:flex;flex-direction:column;gap:8px">
             <!-- X range -->
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
               <div class="pr" style="margin:0"><label style="font-size:11px;color:var(--text2)">x min</label>
@@ -1296,6 +1301,33 @@
             <!-- Step -->
             <div class="pr" style="margin:0"><label style="font-size:11px;color:var(--text2)">Шаг сетки</label>
               <input type="number" id="gp-step" value="1" min="0.1" step="0.5" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:12px;width:100%;box-sizing:border-box" oninput="updateGraphRange()">
+            </div>
+            </div>
+            <!-- Chemistry style controls -->
+            <div id="gp-chem-block" style="display:none;flex-direction:column;gap:8px">
+              <div class="pr" style="margin:0"><label style="font-size:11px;color:var(--text2)">Цвет текста</label>
+                <div style="display:flex;gap:4px;align-items:center">
+                  <div class="tprops-swatch" onmousedown="openColorPanel('cp-gp-chem-fg-slot','formula-color',colorPickHandler('gp-chem-fg-hex','gp-chem-fg-preview',setChemGraphColor))" title="Цвет текста"><div id="gp-chem-fg-preview" class="tprops-swatch-inner" style="background:#ffffff;"></div></div>
+                  <input type="text" id="gp-chem-fg-hex" maxlength="7" placeholder="11 или #hex" style="flex:1;min-width:0;height:28px;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:0 6px;font-size:11px;font-family:monospace" oninput="colorFieldOnInput(this.value,'gp-chem-fg-preview',setChemGraphColor)">
+                </div>
+                <div id="cp-gp-chem-fg-slot" class="cp-slot" style="display:none;margin-top:4px" onmousedown="event.preventDefault()"></div>
+              </div>
+              <div class="pr" style="margin:0"><label style="font-size:11px;color:var(--text2)">Цвет фона</label>
+                <div style="display:flex;gap:4px;align-items:center">
+                  <div class="tprops-swatch" style="background:repeating-conic-gradient(#aaa 0% 25%,transparent 0% 50%) 0 0/8px 8px;" onmousedown="openColorPanel('cp-gp-chem-bg-slot','fill',colorPickHandler('gp-chem-bg-hex','gp-chem-bg-preview',setChemGraphBg))" title="Цвет фона"><div id="gp-chem-bg-preview" class="tprops-swatch-inner" style="background:transparent;"></div></div>
+                  <input type="text" id="gp-chem-bg-hex" maxlength="7" placeholder="прозрачный" style="flex:1;min-width:0;height:28px;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:0 6px;font-size:11px;font-family:monospace" oninput="colorFieldOnInput(this.value,'gp-chem-bg-preview',setChemGraphBg)">
+                  <button onmousedown="event.preventDefault()" onclick="document.getElementById('gp-chem-bg-preview').style.background='transparent';document.getElementById('gp-chem-bg-hex').value='';setChemGraphBg('',null);" title="Убрать фон" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;line-height:1" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">✕</button>
+                </div>
+                <div id="cp-gp-chem-bg-slot" class="cp-slot" style="display:none;margin-top:4px" onmousedown="event.preventDefault()"></div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                <div class="pr" style="margin:0"><label style="font-size:11px;color:var(--text2)">Прозрачность фона</label>
+                  <input type="number" id="gp-chem-bg-op" min="0" max="1" step="0.05" value="1" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:12px;width:100%;box-sizing:border-box" oninput="setChemGraphBgOp(+this.value)">
+                </div>
+                <div class="pr" style="margin:0"><label style="font-size:11px;color:var(--text2)">Размытие фона</label>
+                  <input type="number" id="gp-chem-bg-blur" min="0" max="40" step="1" value="0" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:12px;width:100%;box-sizing:border-box" oninput="setChemGraphBgBlur(+this.value)">
+                </div>
+              </div>
             </div>
             <!-- Rebuild button -->
             <button class="mbtn-sm" onclick="rebuildGraphFromProps()" style="width:100%">🔄 Перестроить</button>
@@ -1319,8 +1351,8 @@
             </div>
             <div class="pr" style="margin:0"><label data-i18n="propIconColor">Цвет</label>
               <div style="display:flex;gap:4px;align-items:center">
-                <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;background:repeating-conic-gradient(#aaa 0% 25%,transparent 0% 50%) 0 0/8px 8px;" onmousedown="openColorPanel('cp-ic-color-slot','ic-color',function(c,sr){document.getElementById('ic-p-color-hex').value=c;document.getElementById('ic-p-color-swatch').style.background=c;updateIconStyleScheme('color',c,sr);})" title="Цвет значка"><div id="ic-p-color-swatch" style="width:100%;height:100%;background:#3b82f6;"></div></div>
-                <input type="text" id="ic-p-color-hex" maxlength="7" placeholder="#3b82f6" style="flex:1;min-width:0;height:28px;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:0 6px;font-size:11px;font-family:monospace" oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('ic-p-color-swatch').style.background=this.value;updateIconStyleScheme('color',this.value,null);}">
+                <div class="tprops-swatch" style="background:repeating-conic-gradient(#aaa 0% 25%,transparent 0% 50%) 0 0/8px 8px;" onmousedown="openColorPanel('cp-ic-color-slot','ic-color',colorPickHandler('ic-p-color-hex','ic-p-color-swatch',function(c,sr){updateIconStyleScheme('color',c,sr);}))" title="Цвет значка"><div id="ic-p-color-swatch" class="tprops-swatch-inner" style="background:#3b82f6;"></div></div>
+                <input type="text" id="ic-p-color-hex" maxlength="7" placeholder="11 или #hex" style="flex:1;min-width:0;height:28px;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:0 6px;font-size:11px;font-family:monospace" oninput="colorFieldOnInput(this.value,'ic-p-color-swatch',function(c,sr){updateIconStyleScheme('color',c,sr);})">
                 <button onclick="togglePipetteMode()" id="eye-ic-color" class="pipette-btn" title="Пипетка" style="background:var(--surface2);border:1px solid var(--border2);color:var(--text2);border-radius:3px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;width:26px;height:26px"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M20.71 5.63l-2.34-2.34a1 1 0 0 0-1.41 0l-3.12 3.12-1.41-1.42-1.42 1.42 1.41 1.41-6.6 6.6A2 2 0 0 0 5 16v3h3a2 2 0 0 0 1.42-.59l6.6-6.6 1.41 1.42 1.42-1.42-1.42-1.41 3.12-3.12a1 1 0 0 0 0-1.65z"/></svg></button>
               </div>
               <div id="cp-ic-color-slot" class="cp-slot" style="display:none;margin-top:4px" onmousedown="event.preventDefault()"></div>
@@ -1338,6 +1370,29 @@
                     <input type="number" id="ic-p-ss" value="3" min="0" max="40" title="Толщина" placeholder="size" style="flex:1;min-width:0;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;box-sizing:border-box" oninput="updateIconStyle('shadowSize',this.value)">
                   </div>
                   <div id="ic-sc-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- SVG PROPS -->
+        <div id="svgprops" style="display:none">
+          <div class="ph">SVG</div>
+          <div class="psec" style="display:flex;flex-direction:column;gap:6px">
+            <button class="mbtn-sm" onclick="svgSetAsSlideBg()" title="Сделать фоном слайда" style="width:100%">🖼 Сделать фоном</button>
+            <div class="pr" style="margin:0"><label>Прозрачность</label>
+              <input type="number" id="svg-op" min="0" max="1" step="0.05" value="1" oninput="updateSvgStyle('opacity',this.value)">
+            </div>
+            <div class="pr" style="margin:0"><label>Тень</label>
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2)"><label class="tog"><input type="checkbox" id="svg-shadow" onchange="updateSvgStyle('shadow',this.checked)"><span class="tog-track"></span><span class="tog-thumb"></span></label><span data-i18n="btnShadowEnable">Включить тень</span></label>
+                <div id="svg-shadow-options" style="display:none;flex-direction:column;gap:4px">
+                  <div style="display:flex;gap:4px;align-items:center">
+                    <div style="width:24px;height:24px;border-radius:3px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden;" onmousedown="openColorPanel('cp-svg-sc-slot','svg-sc',function(c,sr){document.getElementById('svg-sc-preview').style.background=c;updateSvgStyleScheme('shadowColor',c,sr);})"><div id="svg-sc-preview" style="width:100%;height:100%;background:#000000;"></div></div>
+                    <input type="number" id="svg-sb" value="15" min="0" max="60" title="Размытие" placeholder="blur" style="flex:1;min-width:0;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;box-sizing:border-box" oninput="updateSvgStyle('shadowBlur',this.value)">
+                    <input type="number" id="svg-ss" value="4" min="0" max="60" title="Смещение" placeholder="size" style="flex:1;min-width:0;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;box-sizing:border-box" oninput="updateSvgStyle('shadowSize',this.value)">
+                  </div>
+                  <div id="cp-svg-sc-slot" class="cp-slot" style="display:none;" onmousedown="event.preventDefault()"></div>
                 </div>
               </div>
             </div>
@@ -1749,9 +1804,10 @@
         <div class="psec">
           <div class="pr">
             <label>Цвет линии</label>
-            <div style="display:flex;gap:6px;align-items:center">
-              <div style="width:28px;height:28px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;flex-shrink:0;overflow:hidden" onmousedown="openColorPanel('cp-color-slot','conn-color',function(c){cpSetColor(c);})" title="Цвет линии"><div id="cp-color-swatch" style="width:100%;height:100%;background:#60a5fa"></div></div>
-              
+            <div style="display:flex;gap:4px;align-items:center">
+              <div class="tprops-swatch" style="background:repeating-conic-gradient(#aaa 0% 25%,transparent 0% 50%) 0 0/8px 8px;" onmousedown="event.preventDefault();openColorPanel('cp-color-slot','conn-color',colorPickHandler('cp-color-hex','cp-color-swatch',cpSetColor))" title="Цвет линии"><div id="cp-color-swatch" class="tprops-swatch-inner" style="background:#60a5fa"></div></div>
+              <input type="text" id="cp-color-hex" maxlength="7" placeholder="11 или #hex" style="flex:1;min-width:0;height:28px;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:0 6px;font-size:11px;font-family:monospace" oninput="colorFieldOnInput(this.value,'cp-color-swatch',cpSetColor)">
+              <button onmousedown="event.preventDefault()" onclick="cpClearColor()" title="Прозрачная линия" style="flex-shrink:0;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;line-height:1" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">✕</button>
             </div>
           </div>
           <div id="cp-color-slot" class="cp-slot" style="display:none;margin-bottom:4px" onmousedown="event.preventDefault()"></div>
@@ -1787,9 +1843,36 @@
               <option value="dot">Точки (круги)</option>
             </select>
           </div>
+          <div class="pr">
+            <label title="Элемент будет плавно проплывать вдоль линии, разворачиваясь по направлению движения. В редакторе он ставится в начало линии — его можно выбрать и настроить как обычный объект.">Плывущий элемент</label>
+            <div id="cp-ride-attach-wrap" style="display:flex;gap:6px">
+              <button class="mbtn-sm" style="flex:1" onclick="connAttachRideElement('image')">🖼 Изображение</button>
+              <button class="mbtn-sm" style="flex:1" onclick="connAttachRideElement('icon')">★ Значок</button>
+            </div>
+            <div id="cp-ride-row" style="display:none;flex-direction:column;gap:6px;margin-top:6px">
+              <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:4px 6px 4px 8px">
+                <span style="font-size:10px;color:var(--text2)" id="cp-ride-label">Прикреплён</span>
+                <button title="Удалить" onclick="connDetachRideElement()" style="flex-shrink:0;background:none;border:none;color:var(--text2);cursor:pointer;font-size:13px;line-height:1;padding:2px 4px;border-radius:3px">✕</button>
+              </div>
+              <div style="display:flex;gap:6px">
+                <div class="pr" style="margin:0;flex:1">
+                  <label style="font-size:9px">Скорость (сек)</label>
+                  <input type="number" id="cp-ride-speed" min="0.3" max="30" step="0.1" value="3.5" oninput="connUpdateRideSettings()" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 6px;font-size:11px;box-sizing:border-box">
+                </div>
+                <div class="pr" style="margin:0;flex:1">
+                  <label style="font-size:9px" title="Пауза после каждого проплытия, перед тем как элемент появится снова">Пауза (сек)</label>
+                  <input type="number" id="cp-ride-gap" min="0" max="30" step="0.1" value="0" oninput="connUpdateRideSettings()" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 6px;font-size:11px;box-sizing:border-box">
+                </div>
+              </div>
+            </div>
+          </div>
           <div class="pr" style="display:flex;align-items:center;justify-content:space-between">
             <label style="margin:0">Анимация движения</label>
             <label class="tog"><input type="checkbox" id="cp-anim" onchange="cpUpdate()"><span class="tog-track"></span><span class="tog-thumb"></span></label>
+          </div>
+          <div class="pr" id="cp-anim-invert-row" style="display:none;align-items:center;justify-content:space-between">
+            <label style="margin:0" title="Анимация движения пойдёт в обратную сторону">Инвертировать</label>
+            <label class="tog"><input type="checkbox" id="cp-anim-invert" onchange="cpUpdate()"><span class="tog-track"></span><span class="tog-thumb"></span></label>
           </div>
         </div>
 
@@ -2223,6 +2306,7 @@
   <script src="js/24-preview.js"></script>
   <script src="js/25-links.js"></script>
   <script src="js/26-export.js"></script>
+  <script src="js/26b-ppt-binary.js"></script>
   <script src="js/27-persist.js"></script>
   <script src="js/31-table.js"></script>
   <script src="js/28-multisel.js"></script>
@@ -2245,6 +2329,7 @@
   <script src="js/35-ai.js"></script>
   <script src="js/28-filedrop.js"></script>
   <script src="js/36-formula.js"></script>
+  <script src="js/37b-chem.js"></script>
   <script src="js/37-graph.js"></script>
   <script src="js/38-connectors.js"></script>
   <script src="js/41-lego.js"></script>
@@ -2366,7 +2451,7 @@
   else initEditors();
 })();
 </script>
-<script>boot();</script>
+<script>boot(); if (typeof window.pwaReadyForFileLaunch === 'function') window.pwaReadyForFileLaunch();</script>
   <script src="js/36-ai.js?v=gigachat"></script>
 <!-- ── Version History Modal ── -->
 <div id="version-history-modal" onclick="if(event.target===this)closeVersionHistory()">

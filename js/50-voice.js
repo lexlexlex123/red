@@ -35,7 +35,54 @@ function _buildPropsPanel() {
   panel.id = 'props-voice-panel';
   panel.style.cssText = 'display:none;padding:10px 12px;';
 
-  const commands = [
+  const en = _voiceUiLang() === 'en';
+  const commands = en ? [
+    ['Create', [
+      'add text / add image',
+      'add rectangle / circle / arrow',
+    ]],
+    ['Selection', [
+      'select all',
+      'clear slide / clear all',
+      'deselect',
+      'next object / previous object',
+    ]],
+    ['Actions', [
+      'delete / copy / paste / duplicate',
+      'undo / redo',
+      'bring forward / send backward',
+    ]],
+    ['Move', [
+      'up / down / left / right',
+      'move up by 50',
+      'center / align horizontally',
+    ]],
+    ['Size & rotate', [
+      'width 300 / height 200',
+      'rotate by 45 degrees',
+    ]],
+    ['Text', [
+      'font size 24',
+      'bold / italic',
+    ]],
+    ['Slides', [
+      'new slide / delete slide',
+      'next slide / previous slide',
+      'go to slide 3',
+    ]],
+    ['Slideshow', [
+      'start presentation',
+      'start from current',
+      'next / previous / stop',
+    ]],
+    ['Other', [
+      'save / export / fullscreen',
+    ]],
+    ['Dictation', [
+      'dictation — start voice typing',
+      'stop — end dictation',
+    ]],
+  ] : [
     ['Создание', [
       'добавь текст / добавить текст',
       'добавь изображение',
@@ -43,12 +90,18 @@ function _buildPropsPanel() {
     ]],
     ['Выделение', [
       'выдели всё / выделить всё',
+      'выдели структуру серной кислоты',
+      'выдели молекулярную структуру',
+      'выдели нижний элемент',
+      'очисти слайд / убрать всё',
       'сними выделение',
       'следующий объект',
       'предыдущий объект',
     ]],
     ['Действия', [
       'удали / удалить',
+      'удали все формулы / только формулы',
+      'удали все структуры',
       'скопируй / копировать',
       'вставь / вставить',
       'дублируй / дублировать',
@@ -58,8 +111,8 @@ function _buildPropsPanel() {
       'опусти / назад',
     ]],
     ['Перемещение', [
-      'вверх / вниз / влево / вправо',
-      'сдвинь вверх на 50',
+      'вправо / вниз / влево / вверх',
+      'перемести вправо / сдвинь вверх на 50',
       'выровняй по центру',
       'выровняй по горизонтали',
       'выровняй по вертикали',
@@ -73,6 +126,10 @@ function _buildPropsPanel() {
       'размер шрифта 24',
       'установи шрифт 24',
       'жирный / курсив',
+      'напиши формулу y = x / h2so4',
+      'напиши формулу серной кислоты и её структуру',
+      'нарисуй структуру серной кислоты',
+      'отобразить строение / молекулярное строение …',
     ]],
     ['Слайды', [
       'создай слайд / новый слайд',
@@ -91,6 +148,8 @@ function _buildPropsPanel() {
       'сохрани / сохранить',
       'экспортируй',
       'полный экран',
+      'стоп / остановить — выключить голос (или показ)',
+      'закончить голосовую команду',
     ]],
     ['Диктовка текста', [
       'диктовка — начать голосовой ввод в надпись',
@@ -100,7 +159,12 @@ function _buildPropsPanel() {
     ]],
   ];
 
-  let html = '<div style="font-size:11px;font-weight:600;color:var(--text);margin-bottom:8px;">Голосовые команды</div>';
+  let html = '<div style="font-size:11px;font-weight:600;color:var(--text);margin-bottom:6px;">' + (en ? 'Voice commands' : 'Голосовые команды') + '</div>';
+  html += '<div style="font-size:9px;color:var(--text3);line-height:1.45;margin-bottom:8px;padding:6px 8px;background:var(--surface2);border-radius:6px;border:1px solid var(--border);">'
+    + (en
+      ? 'Commands are parsed <b style="color:var(--text2)">in a stream</b> — speak several in a row.<br>Recognition language follows the UI (English). Offline needs an en-US language pack in Chrome/Edge.'
+      : 'Команды разбираются <b style="color:var(--text2)">в потоке</b>: можно говорить подряд — сработают по мере распознавания.<br>Офлайн: в Chrome/Edge при установленном языковом пакете ru-RU; иначе нужен интернет.')
+    + '</div>';
   commands.forEach(([group, cmds]) => {
     html += `<div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin:8px 0 3px;">${group}</div>`;
     cmds.forEach(cmd => {
@@ -125,12 +189,73 @@ function _deleteByType(type) {
   const d = slides[cur]?.els.find(e => e.id === target.dataset.id);
   if (!d) return;
   if (typeof pushUndo === 'function') pushUndo();
+  if (d.type === 'formula' && typeof window._deleteLinkedGraphs === 'function') {
+    window._deleteLinkedGraphs(d.id);
+  }
   slides[cur].els.splice(slides[cur].els.indexOf(d), 1);
   target.remove();
   if (typeof pick === 'function') pick(null);
   if (typeof save === 'function') save();
   if (typeof drawThumbs === 'function') drawThumbs();
   if (typeof saveState === 'function') saveState();
+}
+
+/** Выбрать формулу или хим. структуру (graphKind=chem) по названию вещества. */
+function _voicePickFormulaOrStruct(kind, hint) {
+  const cv = document.getElementById('canvas'); if (!cv) return;
+  const chemKey = hint && typeof window._chemFindBySpokenName === 'function'
+    ? window._chemFindBySpokenName(hint) : null;
+  const hintL = (hint || '').toLowerCase().replace(/ё/g, 'е');
+
+  function matchesChemData(d) {
+    if (!d) return false;
+    if (!hint) return true;
+    if (chemKey && (d.chemKey === chemKey || d.graphLatex === chemKey || d.formulaRaw === chemKey)) return true;
+    if (chemKey && d.linkedFormulaId) {
+      const f = slides[cur]?.els.find(e => e.id === d.linkedFormulaId);
+      if (f) {
+        const raw = f.formulaRaw || '';
+        if (typeof window._chemNormalize === 'function' && window._chemNormalize(raw) === chemKey) return true;
+        if (raw.replace(/[{}\\_\s]/g, '').toUpperCase() === chemKey) return true;
+      }
+    }
+    if (d.chemName && String(d.chemName).toLowerCase().replace(/ё/g, 'е').includes(hintL.slice(0, Math.min(6, hintL.length)))) return true;
+    if (d.formulaRaw && hintL && d.formulaRaw.toLowerCase().includes(hintL.slice(0, 4))) return true;
+    return !!(chemKey && (d.chemKey === chemKey));
+  }
+
+  let pool = [];
+  if (kind === 'formula') {
+    pool = Array.from(cv.querySelectorAll('.el[data-type="formula"]:not(.decor-el)'));
+    if (hint) {
+      const filtered = pool.filter(el => {
+        const d = slides[cur]?.els.find(e => e.id === el.dataset.id);
+        if (!d) return false;
+        if (chemKey && typeof window._chemNormalize === 'function') {
+          const n = window._chemNormalize(d.formulaRaw || '');
+          if (n === chemKey) return true;
+        }
+        return matchesChemData(d) || (d.formulaRaw || '').toLowerCase().includes(hintL.slice(0, 4));
+      });
+      if (filtered.length) pool = filtered;
+    }
+  } else {
+    pool = Array.from(cv.querySelectorAll('.el[data-type="graph"]:not(.decor-el)')).filter(el => {
+      const d = slides[cur]?.els.find(e => e.id === el.dataset.id);
+      return d && d.graphKind === 'chem';
+    });
+    if (hint) {
+      const filtered = pool.filter(el => matchesChemData(slides[cur]?.els.find(e => e.id === el.dataset.id)));
+      if (filtered.length) pool = filtered;
+    }
+  }
+  if (!pool.length) {
+    _voiceMsg(kind === 'formula' ? 'Формул нет' : 'Структур нет');
+    return;
+  }
+  const idx = hasSel() && pool.includes(sel) ? pool.indexOf(sel) : -1;
+  const next = pool[(idx + 1) % pool.length];
+  if (typeof pick === 'function') { pick(next); _lastCtx = 'select'; }
 }
 
 // ── Dictation mode ────────────────────────────────────────────────
@@ -249,27 +374,278 @@ function _forEachSel(fn) {
 
 // ── Command handler ─────────────────────────────────────────────────
 // Normalizes speech input: strips filler words, maps imperative forms
+let _lastNormHit = false; // true if _normalize matched a known command pattern
+
+function _voiceUiLang() {
+  return (typeof getLang === 'function' && getLang() === 'en') ? 'en' : 'ru';
+}
+function _voiceSpeechLang() {
+  return _voiceUiLang() === 'en' ? 'en-US' : 'ru-RU';
+}
+
+// English phrases → same canonical tokens as Russian handler expects
+const _EN_VOICE_MAP = [
+  [/^(start|begin|show)\s+(presentation|slideshow|slide\s*show)(\s+from\s+start)?$/, 'начать показ'],
+  [/^(start|begin)\s+(from\s+)?(current|this)(\s+slide)?$/, 'начать с текущего'],
+  [/^(stop|exit|close|end)(\s+(presentation|slideshow|preview))?$/, 'стоп'],
+  [/^(turn\s+off|disable|stop)\s+(voice|microphone|mic|voice\s+control)$/, 'голос выкл'],
+  [/^(end|finish|stop)\s+(voice|voice\s+command|listening)$/, 'голос выкл'],
+  [/^(next|forward|continue)$/, 'следующий'],
+  [/^(previous|back|go\s+back)$/, 'предыдущий'],
+  [/^(new|add|create|insert)\s+slide$/, 'новый слайд'],
+  [/^(delete|remove)\s+(this\s+)?slide$/, 'удалить слайд'],
+  [/^(delete|remove)\s+all(\s+(elements|objects|items))?$/, 'удалить всё'],
+  [/^(clear|clear\s+(the\s+)?(slide|all)|clear\s+slide)$/, 'удалить всё'],
+  [/^(duplicate|copy)\s+slide$/, 'дублировать слайд'],
+  [/^(next)\s+slide$/, 'следующий слайд'],
+  [/^(previous|prev)\s+slide$/, 'предыдущий слайд'],
+  [/^(go\s+to|open|switch\s+to)\s+slide\s+(\d+)$/, (m) => 'перейти на слайд ' + m[2]],
+  [/^(undo|cancel)$/, 'отменить'],
+  [/^(undo)\s+(\d+)$/, (m) => 'отменить ' + m[2]],
+  [/^(redo)$/, 'повторить'],
+  [/^(select\s+all|select\s+everything)$/, 'выделить всё'],
+  [/^(deselect|clear\s+selection|unselect)$/, 'снять выделение'],
+  [/^(next)\s+(object|element|item)$/, 'следующий объект'],
+  [/^(previous|prev)\s+(object|element|item)$/, 'предыдущий объект'],
+  [/^(delete|remove)(\s+(it|this|selection|selected))?$/, 'удалить'],
+  [/^(copy)$/, 'копировать'],
+  [/^(paste)$/, 'вставить'],
+  [/^(duplicate)(\s+(object|element|it))?$/, 'дублировать'],
+  [/^(group)(\s+(objects|elements|selection))?$/, 'сгруппировать'],
+  [/^(ungroup)(\s+(objects|elements|group))?$/, 'разгруппировать'],
+  [/^(bring\s+forward|bring\s+to\s+front|forward)$/, 'вперёд'],
+  [/^(send\s+backward|send\s+to\s+back|backward)$/, 'назад'],
+  [/^(add|insert|create)\s+(text|textbox|label|caption)$/, 'добавить текст'],
+  [/^(add|insert)\s+(image|picture|photo)$/, 'добавить изображение'],
+  [/^(add|insert|draw)\s+(rectangle|square)$/, 'добавить прямоугольник'],
+  [/^(add|insert|draw)\s+(circle|ellipse|oval)$/, 'добавить круг'],
+  [/^(add|insert|draw)\s+(triangle)$/, 'добавить треугольник'],
+  [/^(add|insert|draw)\s+(star)$/, 'добавить звезду'],
+  [/^(add|insert|draw)\s+(arrow)$/, 'добавить стрелку'],
+  [/^(add|insert)\s+(icon)$/, 'добавить иконку'],
+  [/^(add|insert|draw)\s+(shape)$/, 'добавить фигуру'],
+  [/^(select)\s+(text|textbox|label)$/, 'выбрать текст'],
+  [/^(select)\s+(shape)$/, 'выбрать фигуру'],
+  [/^(select)\s+(image|picture|icon)$/, 'выбрать изображение'],
+  [/^(move\s+)?(up)(\s+by\s+(\d+))?$/, (m) => 'вверх на ' + (m[4] || 'obj')],
+  [/^(move\s+)?(down)(\s+by\s+(\d+))?$/, (m) => 'вниз на ' + (m[4] || 'obj')],
+  [/^(move\s+)?(left)(\s+by\s+(\d+))?$/, (m) => 'влево на ' + (m[4] || 'obj')],
+  [/^(move\s+)?(right)(\s+by\s+(\d+))?$/, (m) => 'вправо на ' + (m[4] || 'obj')],
+  [/^(center|align\s+center|align\s+to\s+center)$/, 'по центру'],
+  [/^(align\s+horizontal(ly)?|center\s+horizontal(ly)?)$/, 'по горизонтали'],
+  [/^(align\s+vertical(ly)?|center\s+vertical(ly)?)$/, 'по вертикали'],
+  [/^(width)\s+(\d+)$/, (m) => 'ширина ' + m[2]],
+  [/^(height)\s+(\d+)$/, (m) => 'высота ' + m[2]],
+  [/^(set\s+)?(width)\s+(to\s+)?(\d+)$/, (m) => 'ширина ' + m[4]],
+  [/^(set\s+)?(height)\s+(to\s+)?(\d+)$/, (m) => 'высота ' + m[4]],
+  [/^(rotate)\s+(by\s+)?(\d+)(\s+degrees?)?$/, (m) => 'повернуть на ' + m[3]],
+  [/^(font\s+size|set\s+font)\s+(\d+)$/, (m) => 'размер шрифта ' + m[2]],
+  [/^(bold)$/, 'жирный'],
+  [/^(italic)$/, 'курсив'],
+  [/^(save)$/, 'сохранить'],
+  [/^(export)$/, 'экспортируй'],
+  [/^(fullscreen|full\s+screen)$/, 'полный экран'],
+  [/^(dictation|start\s+dictation|dictate|voice\s+input)$/, 'начать диктовку'],
+  [/^(stop\s+dictation|end\s+dictation)$/, 'остановить диктовку'],
+  [/^(write|add|create|insert)\s+(a\s+)?formula\s+(.+)$/, (m) => 'создать формулу ' + m[3]],
+  [/^(formula)\s+(.+)$/, (m) => 'создать формулу ' + m[2]],
+  [/^(auto\s*layout|arrange\s+objects|auto\s+place)$/, 'разместить объекты'],
+];
+
+function _matchVoiceMap(t, map) {
+  for (const [re, val] of map) {
+    const m = t.match(re);
+    if (m) return typeof val === 'function' ? val(m) : val;
+  }
+  return null;
+}
+
+/** Расстояние Левенштейна (для опечаток ASR). */
+function _voiceLev(a, b) {
+  a = String(a || ''); b = String(b || '');
+  const n = a.length, m = b.length;
+  if (!n) return m; if (!m) return n;
+  const dp = new Array(m + 1);
+  for (let j = 0; j <= m; j++) dp[j] = j;
+  for (let i = 1; i <= n; i++) {
+    let prev = dp[0];
+    dp[0] = i;
+    for (let j = 1; j <= m; j++) {
+      const tmp = dp[j];
+      dp[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, dp[j], dp[j - 1]);
+      prev = tmp;
+    }
+  }
+  return dp[m];
+}
+
+/** Поправить слова команды при близком совпадении с известным глаголом (переместив → перемести, перести → перемести). */
+function _voiceFuzzyFix(t) {
+  const verbs = [
+    'перемести', 'переместить', 'сдвинь', 'сдвинуть', 'двигай', 'смести', 'передвинь', 'подвинь',
+    'добавь', 'добавить', 'удали', 'удалить', 'убери', 'убрать', 'очисти', 'очистить',
+    'напиши', 'нарисуй', 'нарисуем', 'выдели', 'выделить', 'выделим', 'выбери', 'выбрать',
+    'создай', 'создать', 'построй', 'показать', 'покажи', 'отобрази', 'отобразить',
+    'останови', 'остановить', 'закончи', 'закончить', 'дублируй', 'сохрани', 'запусти', 'начать',
+  ];
+  // Короткие слова-паразиты — не раздувать (пока ≠ покажи)
+  const noFuzzy = new Set(['пока', 'так', 'ага', 'угу', 'это', 'там', 'тут', 'ну', 'да', 'нет', 'ой', 'эх', 'го', 'пре', 'кра']);
+  // Стебли: если слово начинается так же (или наоборот) — считаем совпадением
+  const stems = [
+    ['перемест', 'перемести'],
+    ['сдвин', 'сдвинь'],
+    ['передвин', 'передвинь'],
+    ['нарису', 'нарисуй'],
+    ['отобраз', 'отобразить'],
+    ['перенес', 'перенеси'],
+    ['выдел', 'выдели'],
+  ];
+  const parts = t.split(/\s+/);
+  for (let i = 0; i < parts.length; i++) {
+    const w = parts[i];
+    if (!w || w.length < 4) continue;
+    if (noFuzzy.has(w) || verbs.includes(w)) continue;
+    // показ / показы / показа — не трогать (иначе → покажи)
+    if (/^показ/.test(w) && w !== 'показать' && w !== 'покажи') continue;
+    let stemHit = null;
+    for (const [stem, canon] of stems) {
+      if (w.startsWith(stem) || canon.startsWith(w)) { stemHit = canon; break; }
+      if (_voiceLev(w, stem) <= 2 || _voiceLev(w, canon) <= 2) { stemHit = canon; break; }
+    }
+    if (stemHit) { parts[i] = stemHit; continue; }
+    let best = null, bestD = 99;
+    for (const v of verbs) {
+      const d = _voiceLev(w, v);
+      const maxD = v.length <= 6 ? 2 : 3;
+      // Не раздувать короткие слова до длинных глаголов
+      if (w.length < 5 && v.length > w.length + 1) continue;
+      if (d > 0 && d <= maxD && (d < bestD || (d === bestD && v.length < (best || '').length))) {
+        bestD = d; best = v;
+      }
+    }
+    if (best) parts[i] = best;
+  }
+  return parts.join(' ');
+}
+
+/** Убрать слова-паразиты и обрезки ASR в начале фразы (так / кра / го / пре…). */
+function _voiceStripFillers(t) {
+  let prev;
+  do {
+    prev = t;
+    t = t.replace(/^(так|ага|угу|ну|ладно|отлично|хорошо|давай|да|ой|эх|кра|го|пре|ну)\s+/i, '');
+  } while (t !== prev && t);
+  if (!t || /^(так\s*)+$/i.test(t)) return '';
+  return t.trim();
+}
+
+function _voiceIsNoise(t) {
+  if (!t || t.length < 2) return true;
+  if (/^(так|ага|угу|ну|ладно|отлично|хорошо|давай|ой|эх|пока|молекулярный|молекулярная|молекулярное)(\s+(так|ага|отлично|хорошо))*$/i.test(t)) return true;
+  if (/^(так\s+)+$/i.test(t)) return true;
+  return false;
+}
+
+/** Словесные числа → цифры («на двадцать пикселей» → «на 20 пикселей»). */
+const _VOICE_NUM_ONES = {
+  ноль: 0, один: 1, одна: 1, одно: 1, два: 2, две: 2, три: 3, четыре: 4,
+  пять: 5, шесть: 6, семь: 7, восемь: 8, девять: 9,
+};
+const _VOICE_NUM_TEENS = {
+  десять: 10, одиннадцать: 11, двенадцать: 12, тринадцать: 13, четырнадцать: 14,
+  пятнадцать: 15, шестнадцать: 16, семнадцать: 17, восемнадцать: 18, девятнадцать: 19,
+};
+const _VOICE_NUM_TENS = {
+  двадцать: 20, тридцать: 30, сорок: 40, пятьдесят: 50, шестьдесят: 60,
+  семьдесят: 70, восемьдесят: 80, девяносто: 90,
+};
+const _VOICE_NUM_HUNDREDS = {
+  сто: 100, двести: 200, триста: 300, четыреста: 400, пятьсот: 500,
+  шестьсот: 600, семьсот: 700, восемьсот: 800, девятьсот: 900,
+};
+
+function _voiceParseNumWords(words) {
+  let n = 0, i = 0, got = false;
+  while (i < words.length) {
+    const w = words[i];
+    if (_VOICE_NUM_HUNDREDS[w] != null) { n += _VOICE_NUM_HUNDREDS[w]; got = true; i++; continue; }
+    if (_VOICE_NUM_TEENS[w] != null) { n += _VOICE_NUM_TEENS[w]; got = true; i++; break; }
+    if (_VOICE_NUM_TENS[w] != null) {
+      n += _VOICE_NUM_TENS[w]; got = true; i++;
+      if (i < words.length && _VOICE_NUM_ONES[words[i]] != null) { n += _VOICE_NUM_ONES[words[i]]; i++; }
+      break;
+    }
+    if (_VOICE_NUM_ONES[w] != null) { n += _VOICE_NUM_ONES[w]; got = true; i++; break; }
+    break;
+  }
+  return got ? { value: n, consumed: i } : null;
+}
+
+function _voiceWordsToDigits(t) {
+  const parts = t.split(/\s+/);
+  const out = [];
+  for (let i = 0; i < parts.length; i++) {
+    const parsed = _voiceParseNumWords(parts.slice(i));
+    if (parsed) {
+      out.push(String(parsed.value));
+      i += parsed.consumed - 1;
+    } else {
+      out.push(parts[i]);
+    }
+  }
+  return out.join(' ');
+}
+
 function _normalize(raw) {
+  _lastNormHit = false;
   let t = raw.toLowerCase().trim();
-  // Remove common filler prefixes
-  t = t.replace(/^(пожалуйста|команда|скажи|выполни|сделай|введи)\s+/, '');
+  // Remove common filler prefixes (RU + EN)
+  t = t.replace(/^(пожалуйста|команда|скажи|выполни|сделай|введи|please|command|ok)\s+/, '');
+  t = _voiceStripFillers(t);
+  if (!t || _voiceIsNoise(t)) { _lastNormHit = false; return ''; }
+  t = _voiceFuzzyFix(t);
+  t = _voiceWordsToDigits(t);
+  // единицы измерения после числа не мешают матчам (\b не работает с кириллицей)
+  t = t.replace(/(\d+)\s*(пикселей|пикселя|пиксель|px|пкс)(?=\s|$)/g, '$1');
+  const preferEn = _voiceUiLang() === 'en';
+
+  if (preferEn) {
+    const enHit = _matchVoiceMap(t, _EN_VOICE_MAP);
+    if (enHit != null) { _lastNormHit = true; return enHit; }
+  }
+
   // Imperative → canonical form mapping
   const map = [
     // Показ
-    [/^(запусти|начни|покажи|запустить|начать)\s+(показ|презентацию)\s*(с начала)?$/, 'начать показ'],
-    [/^(запусти|начни|покажи)\s+(с текущего|с этого)/, 'начать с текущего'],
-    [/^(останови|остановить|закрой|закрыть|выйди|выйти|стоп|стопе)$/, 'стоп'],
+    [/^(запусти|начни|покажи|показать|запустить|начать)\s+(показ[аыу]?|презентацию)\s*(с начала)?$/, 'начать показ'],
+    [/^(запусти|начни|покажи|показать|запустить|начать)\s+(показ|презентацию|слайд|слайды)$/, 'начать показ'],
+    [/^(покажи|показать)\s+(слайд|слайды|презентацию|показ)$/, 'начать показ'],
+    [/^(запусти|начни|покажи|запустить|начать)\s+(с текущего|с этого)/, 'начать с текущего'],
     [/^(останови|выключи|отключи|остановить|выключить|отключить)\s+(голосовое|голосовое управление|микрофон|голос)$/, 'голос выкл'],
+    [/^(закончи|закончить|заверши|завершить)\s+голосовую\s+команду$/, 'голос выкл'],
+    [/^(закончи|закончить|заверши|завершить)\s+голосовое(\s+управление)?$/, 'голос выкл'],
+    [/^(закончи|закончить|заверши|завершить)\s+(голос|управление|команду)$/, 'голос выкл'],
+    [/^(голос\s+выкл|хватит|выключись)$/, 'голос выкл'],
+    [/^(останови|остановить|закрой|закрыть|выйди|выйти|стоп|стопе)$/, 'стоп'],
     [/^(следующий|следующую|следующее|вперёд|вперед|дальше|далее)$/, 'следующий'],
     [/^(предыдущий|назад|обратно)$/, 'предыдущий'],
     // Слайды
     [/^(создай|добавь|вставь|сделай|новый)\s+(слайд)$/, 'новый слайд'],
     [/^(удали|убери|удалить)\s+(слайд|этот слайд)$/, 'удалить слайд'],
-    [/^(удали|убери|удалить|стереть?)\s+(всё?|все|всё|все элементы|все объекты|всё на слайде)$/, 'удалить всё'],
+    [/^(удали|убери|убрать|удалить|стереть?)\s+(всё?|все|всё|все элементы|все объекты|всё на слайде)(\s+(со\s+)?слайда)?$/, 'удалить всё'],
+    [/^(очисти|очистить)(\s+(слайд|этот слайд|всё|все|всё на слайде|все объекты|все элементы))?$/, 'удалить всё'],
+    [/^(очисти|очистить)\s+(содержимое\s+)?слайда$/, 'удалить всё'],
     [/^(удали|убери|удалить)\s+(все\s+)?(надписи|тексты|текстовые блоки)$/, 'удалить все тексты'],
     [/^(удали|убери|удалить)\s+(все\s+)?(фигуры?)$/, 'удалить все фигуры'],
     [/^(удали|убери|удалить)\s+(все\s+)?(изображения?|картинки?)$/, 'удалить все изображения'],
     [/^(удали|убери|удалить)\s+(все\s+)?(иконки?|значки?)$/, 'удалить все иконки'],
+    // Формулы / структуры (порядок слов и «только» от ASR)
+    [/^(удали|убери|удалить)\s+(только\s+)?(все\s+)?(формулы?|форму)$/, 'удалить все формулы'],
+    [/^(только\s+)?(удали|убери|удалить)\s+(только\s+)?(все\s+)?(формулы?)$/, 'удалить все формулы'],
+    [/^(формулы?|форму)\s+(удали|убери|удалить)\s+(все\s+)?(формулы?)?$/, 'удалить все формулы'],
+    [/^(только\s+)*(формулы?)\s+(только\s+)*(удали|убери|удалить)(\s+(только\s+)?(все\s+)?формулы?)?$/, 'удалить все формулы'],
+    [/^(удали|убери|удалить)\s+(только\s+)?(все\s+)?(структуры?|строения?|молекулярные\s+структуры?)$/, 'удалить все структуры'],
+    [/^(убери|удали|удалить)\s+(все\s+)?(графики?)$/, 'удалить все графики'],
     [/^(дублируй|скопируй|дублировать)\s+(слайд)$/, 'дублировать слайд'],
     [/^(продублируй|дублируй|скопируй)\s+(слайд\s+)?(\d+|первый|второй|третий|последний)$/, (m) => 'дублировать слайд ' + m[3]],
     [/^(дублируй|продублируй)\s+(первый|1)\s+слайд$/, 'дублировать слайд первый'],
@@ -286,7 +662,18 @@ function _normalize(raw) {
     [/^(отмени|отменить|отмена)\s+(трижды|три раза|3 раза)$/, 'отменить 3'],
     [/^(повтори|повторить|верни|вернуть)$/, 'повторить'],
     // Выделение
-    [/^(выдели|выделить|выбери|выбрать|выбор)\s+(всё?|все|всё|все элементы|все объекты)$/, 'выделить всё'],
+    [/^(выдели|выделить|выделим|выбери|выбрать|выбор)\s+(всё?|все|всё|все элементы|все объекты)$/, 'выделить всё'],
+    [/^(выдели|выделить|выделим|выбери|выбрать)\s+(структуру|строение|молекулярную\s+структуру|молекулярное\s+строение|хим\.?\s*структуру)(\s+(.+))?$/, (m) => {
+      const name = (m[4] || '').trim();
+      return name ? 'выбрать структуру ' + name : 'выбрать структуру';
+    }],
+    [/^(выдели|выделить|выделим|выбери|выбрать)\s+формулу(\s+(.+))?$/, (m) => {
+      const name = (m[3] || '').trim();
+      return name ? 'выбрать формулу ' + name : 'выбрать формулу';
+    }],
+    [/^(выдели|выделить|выделим|выбери|выбрать)\s+нижн(ий|юю|ее|его)\s*(элемент|объект|надпись|текст)?$/, 'выбрать нижний'],
+    [/^(выдели|выделить|выделим|выбери|выбрать)\s+верхн(ий|юю|ее|его)\s*(элемент|объект|надпись|текст)?$/, 'выбрать верхний'],
+    [/^(выдели|выделить|выделим|выбери|выбрать)\s+(левый|правый)\s*(элемент|объект)?$/, (m) => 'выбрать ' + m[2]],
     [/^(выбери|выбрать|выделить?|выдели|найди)\s+(надпись|текст|заголовок|подзаголовок|надпись снизу|текстовый блок|текстовый объект)(.*)$/, (m) => 'выбрать текст '+m[3].trim()],
     [/^(выбери|выбрать|выделить?|выдели)\s+(следующий)\s*(объект|элемент|надпись|текст)?$/, 'следующий объект'],
     [/^(выбери|выбрать|выделить?|выдели)\s+(предыдущий)\s*(объект|элемент|надпись|текст)?$/, 'предыдущий объект'],
@@ -294,6 +681,8 @@ function _normalize(raw) {
     [/^выбрать\s+(объект|элемент)$/, 'следующий объект'],
     [/^выбор\s+(объекта|элемента)$/, 'следующий объект'],
     [/^(сними|убери|снять)\s+(выделение)$/, 'снять выделение'],
+    [/^выделение$/, 'следующий объект'],
+    [/^выдели$/, 'следующий объект'],
     [/^(выбери|выбрать|выдели|выделить?)\s+всё?$/, 'выделить всё'],
     [/^все\s*(элементы|объекты)?$/, 'выделить всё'],
     [/^выбрать\s+всё?$/, 'выделить всё'],
@@ -342,17 +731,22 @@ function _normalize(raw) {
     [/^(выбери|выбрать|выделить?|выдели)\s+(текст|надпись|заголовок)$/, 'выбрать текст'],
     [/^(выбери|выбрать|выделить?|выдели)\s+(иконку?|значок|картинку?|изображение)$/, 'выбрать изображение'],
     [/^(добавь|вставь|выбери)\s+(иконку?|значок|пиктограмму?)$/, 'добавить иконку'],
-    // Перемещение
-    [/^(двигай|переместить?|двигаться|сдвинь?|смести|сместить?)\s+вверх\s*(на\s*(\d+))?/, (m) => 'вверх на '+(m[3]||'obj')],
-    [/^(смести|снести|снеси|перемести)\s+вверх$/, () => 'вверх на obj'],
-    [/^(двигай|переместить?|двигаться|сдвинь?|смести|сместить?)\s+вниз\s*(на\s*(\d+))?/, (m) => 'вниз на '+(m[3]||'obj')],
-    [/^(двигай|переместить?|двигаться|сдвинь?|смести|сместить?)\s+влево\s*(на\s*(\d+))?/, (m) => 'влево на '+(m[3]||'obj')],
-    [/^(двигай|переместить?|двигаться|сдвинь?|смести|сместить?)\s+вправо\s*(на\s*(\d+))?/, (m) => 'вправо на '+(m[3]||'obj')],
+    // Перемещение (ASR: переместив / переместим / перести…)
+    [/^(двигай|перемест[а-яё]*|передвинь|подвинь|двигаться|сдвин[а-яё]*|смести|сместить?|перенес[а-яё]*)\s+вверх\s*(на\s*(\d+))?/, (m) => 'вверх на '+(m[3]||'obj')],
+    [/^(смести|снести|снеси|перемест[а-яё]*|передвинь|подвинь)\s+вверх$/, () => 'вверх на obj'],
+    [/^(двигай|перемест[а-яё]*|передвинь|подвинь|двигаться|сдвин[а-яё]*|смести|сместить?|перенес[а-яё]*)\s+вниз\s*(на\s*(\d+))?/, (m) => 'вниз на '+(m[3]||'obj')],
+    [/^(двигай|перемест[а-яё]*|передвинь|подвинь|двигаться|сдвин[а-яё]*|смести|сместить?|перенес[а-яё]*)\s+влево\s*(на\s*(\d+))?/, (m) => 'влево на '+(m[3]||'obj')],
+    [/^(двигай|перемест[а-яё]*|передвинь|подвинь|двигаться|сдвин[а-яё]*|смести|сместить?|перенес[а-яё]*)\s+вправо\s*(на\s*(\d+))?/, (m) => 'вправо на '+(m[3]||'obj')],
     [/^(другой|другое|ещё один|следующий элемент|следующий объект|другой объект|другой элемент)$/, 'следующий'],
-    [/^(смести|снести|снеси|перемести)\s+вниз$/, () => 'вниз на obj'],
+    [/^(смести|снести|снеси|перемест[а-яё]*)\s+вниз$/, () => 'вниз на obj'],
     [/^смести\s+вверх$/, () => 'вверх на obj'],
-    [/^(смести|снести|снеси|перемести)\s+влево$/, () => 'влево на obj'],
-    [/^(смести|снести|снеси|перемести)\s+вправо$/, () => 'вправо на obj'],
+    [/^(смести|снести|снеси|перемест[а-яё]*)\s+влево$/, () => 'влево на obj'],
+    [/^(смести|снести|снеси|перемест[а-яё]*)\s+вправо$/, () => 'вправо на obj'],
+    // Короткие направления (опционально «на N» — единицы уже сняты в _normalize)
+    [/^(вверх|наверх)(\s+на\s+(\d+))?$/, (m) => 'вверх на ' + (m[3] || 'obj')],
+    [/^(вниз)(\s+на\s+(\d+))?$/, (m) => 'вниз на ' + (m[3] || 'obj')],
+    [/^(влево)(\s+на\s+(\d+))?$/, (m) => 'влево на ' + (m[3] || 'obj')],
+    [/^(вправо)(\s+на\s+(\d+))?$/, (m) => 'вправо на ' + (m[3] || 'obj')],
     // Центрирование
     // Позиционирование объекта на слайде
     [/^(выровняй|выровнять|центрируй|центрировать|поставь|поставить|размести|разместить|расположи|расположить|помести|поместить|перемести|переместить)\s+(по центру|в центр(е)?|по середин[еы]|посередине)$/, 'по центру'],
@@ -360,6 +754,12 @@ function _normalize(raw) {
     [/^(размести|разместить|расположи|перемести|переместить|выровняй|выровнять|центрируй|поставь)\s+(по центру|в центр)\s+(вертикали|вертикально|по вертикали)$/, 'по вертикали'],
     [/^(выровняй|выровнять|центрируй|центрировать|размести|разместить|перемести|переместить)\s+по горизонтали$/, 'по горизонтали'],
     [/^(выровняй|выровнять|центрируй|центрировать|размести|разместить|перемести|переместить)\s+по вертикали$/, 'по вертикали'],
+    // Короткие формы без глагола
+    [/^по\s+центру\s+(горизонтали|горизонтально)$/, 'по горизонтали'],
+    [/^по\s+центру\s+(вертикали|вертикально)$/, 'по вертикали'],
+    [/^по\s+горизонтали$/, 'по горизонтали'],
+    [/^по\s+вертикали$/, 'по вертикали'],
+    [/^по\s+центру$/, 'по центру'],
     [/^(прижми|прижать|сдвинь|перемести|размести)\s+(к левому краю|влево к краю|к левому)$/, 'к левому краю'],
     [/^(прижми|прижать|сдвинь|перемести|размести)\s+(к правому краю|вправо к краю|к правому)$/, 'к правому краю'],
     [/^(прижми|прижать|сдвинь|перемести|размести)\s+(к верхнему краю|наверх|к верху|к верхнему)$/, 'к верхнему краю'],
@@ -445,6 +845,21 @@ function _normalize(raw) {
     // Редактирование текста
     [/^(измени|поменяй|редактируй|изменить)\s+текст$/, 'редактировать текст'],
     [/^(измени|поменяй|изменить)\s+текст\s+(.+)$/, (m) => 'установить текст ' + m[2]],
+    // Формула — ДО общего «напиши …», иначе уходит в «установить текст»
+    [/^(напиши|набери|введи|создай|добавь|построй)\s+формулу?\s+(.+?)\s+и\s+(е[её]?\s+)?(структуру|строение)$/, (m) => 'создать формулу и структуру ' + m[2]],
+    [/^(напиши|набери|введи|создай|добавь|построй)\s+формулу?\s+(.+)$/, (m) => 'создать формулу ' + m[2]],
+    [/^(формула)\s+(.+)$/, (m) => 'создать формулу ' + m[2]],
+    [/^(напиши|набери|введи|создай|добавь)\s+формулу?\s*$/, 'добавить формулу'],
+    // Хим. структура / строение молекулы
+    [/^(нарисуй|нарисуем|рисуй|отобрази|отобразить|покажи|построй|построить|добавь)\s+(структуру|строение|молекулярную\s+структуру|молекулярное\s+строение|регулярное\s+строение|линейное\s+строение|молекулу)(\s+(.+))?$/, (m) => {
+      const name = (m[4] || '').trim();
+      return name ? 'создать структуру ' + name : 'создать структуру';
+    }],
+    [/^(структура|строение|молекулярная\s+структура|молекулярное\s+строение)\s*(.*)$/, (m) => {
+      const name = (m[2] || '').trim();
+      return name ? 'создать структуру ' + name : 'создать структуру';
+    }],
+    [/^создать\s+структуру(\s+(.+))?$/, (m) => m[2] ? 'создать структуру ' + m[2].trim() : 'создать структуру'],
     [/^(набери|напиши|введи|вставь)\s+текст\s+(.+)$/, (m) => 'установить текст ' + m[2]],
     [/^(набери|напиши|введи)\s+(.+)$/, (m) => 'установить текст ' + m[2]],
     // Удаление по роли/позиции
@@ -482,9 +897,10 @@ function _normalize(raw) {
     [/^(межстрочный\s+интервал|интервал\s+строк?)\s+([\d.]+)$/, (m) => 'межстрочный ' + m[2]],
     // Межбуквенный интервал
     [/^(межбуквенный\s+интервал|расстояние\s+между\s+буквами?)\s+(-?[\d.]+)$/, (m) => 'межбуквенный ' + m[2]],
-    // Скрыть/показать объект
+    // Скрыть/показать объект (без голого «покажи»/«пока» — это показ презентации)
     [/^(скрой|скрыть|спрячь|сделай\s+невидимым?)\s*(объект|элемент|это)?$/, 'скрыть объект'],
-    [/^(покажи|показать|сделай\s+видимым?)\s*(объект|элемент|это)?$/, 'показать объект'],
+    [/^(покажи|показать)\s+(объект|элемент|это|выделенное|выделенный)$/, 'показать объект'],
+    [/^(сделай\s+видимым?)\s*(объект|элемент|это)?$/, 'показать объект'],
     // Блокировка
     [/^(заблокируй|заблокировать|lock)\s*(объект|элемент)?$/, 'заблокировать'],
     [/^(разблокируй|разблокировать|unlock)\s*(объект|элемент)?$/, 'разблокировать'],
@@ -544,7 +960,8 @@ function _normalize(raw) {
     [/^(выделить?|выбрать?)\s+(фигуры?|все\s+фигуры)$/, 'выбрать фигуру'],
     [/^(выделить?|выбрать?)\s+(тексты?|все\s+тексты?)$/, 'выбрать текст'],
     // Показ/презентация
-    [/^(покажи|показать?|начать?)\s+(презентацию|показ|слайды?)$/, 'начать показ'],
+    [/^(покажи|показать?|начать?|запусти|запустить)\s+(презентацию|показ[аыу]?|слайды?)$/, 'начать показ'],
+    [/^(начать|начни|запусти)\s+пока$/, 'начать показ'],
     // Сдвинуть без "на"
     [/^(сдвинуть?|сдвинь)\s+(вниз|вверх|влево|вправо)$/, (m) => {const dir={вниз:'вниз',вверх:'вверх',влево:'влево',вправо:'вправо'}[m[2]]; return dir+' на obj';}],
     // Отразить/перевернуть по горизонтали/вертикали
@@ -560,7 +977,15 @@ function _normalize(raw) {
   ];
   for (const [re, val] of map) {
     const m = t.match(re);
-    if (m) return typeof val === 'function' ? val(m) : val;
+    if (m) {
+      _lastNormHit = true;
+      return typeof val === 'function' ? val(m) : val;
+    }
+  }
+  // Fallback: English patterns when UI is Russian (or RU patterns already tried first)
+  if (!preferEn) {
+    const enHit = _matchVoiceMap(t, _EN_VOICE_MAP);
+    if (enHit != null) { _lastNormHit = true; return enHit; }
   }
   return t; // return as-is if no mapping found
 }
@@ -574,6 +999,12 @@ function _handleCommand(raw) {
   _lastCmd = t; _lastCmdTime = now;
   // Log all commands — mark as 'ok' initially, overwrite if falls through to unknown
   const _logEntry = {raw, normalized: t, ts: new Date().toLocaleTimeString('ru-RU', {hour:'2-digit',minute:'2-digit',second:'2-digit'}), status: 'ok'};
+  // Шум / паразиты после нормализации
+  if (!t || _voiceIsNoise(t)) {
+    _logEntry.status = 'noise';
+    _voiceLog.push(_logEntry);
+    return;
+  }
   _voiceLog.push(_logEntry);
   _voiceMsg(raw, 'ok');
 
@@ -638,15 +1069,26 @@ function _handleCommand(raw) {
 
   // ── Голосовое управление ──
   if (t === 'голос выкл') {
-    const btn = document.getElementById('voice-tab-btn');
-    if (typeof window.toggleVoiceControl === 'function') window.toggleVoiceControl(btn);
+    if (_active) {
+      const btn = document.getElementById('voice-tab-btn');
+      if (typeof window.toggleVoiceControl === 'function') window.toggleVoiceControl(btn);
+    }
     return;
   }
 
   // ── Показ ──
   if (t === 'начать показ') { if (typeof startPreview === 'function') startPreview(0); return; }
   if (t === 'начать с текущего') { if (typeof startPreview === 'function') startPreview(cur); return; }
-  if (t === 'стоп') { if (typeof stopPreview === 'function') stopPreview(); return; }
+  if (t === 'стоп') {
+    // Во время показа — остановить показ; иначе — выключить голосовое управление
+    if (inPreview()) {
+      if (typeof stopPreview === 'function') stopPreview();
+    } else if (_active) {
+      const btn = document.getElementById('voice-tab-btn');
+      if (typeof window.toggleVoiceControl === 'function') window.toggleVoiceControl(btn);
+    }
+    return;
+  }
   if (t === 'следующий' && inPreview()) { if (typeof nextPreview === 'function') nextPreview(); return; }
   if (t === 'предыдущий' && inPreview()) { if (typeof prevPreview === 'function') prevPreview(); return; }
 
@@ -772,10 +1214,43 @@ function _handleCommand(raw) {
 
   if (t === 'выделить всё') {
     const cv = document.getElementById('canvas');
-    if (cv && typeof pickMulti==='function') cv.querySelectorAll('.el:not(.decor-el)').forEach(el=>pickMulti(el,true));
+    if (!cv) return;
+    // Не через pickMulti: pick() у группы очищает multiSel и оставляет только одну группу
+    if (typeof clearMultiSel === 'function') clearMultiSel();
+    const els = Array.from(cv.querySelectorAll('.el:not(.decor-el)')).filter(el => el.dataset.objHidden !== '1');
+    els.forEach(el => { if (typeof addToMultiSel === 'function') addToMultiSel(el); });
+    if (!multiSel.size) return;
+    if (multiSel.size === 1) {
+      const only = [...multiSel][0];
+      clearMultiSel();
+      if (typeof pick === 'function') pick(only);
+    } else {
+      window._explicitMultiSel = true;
+      const frozen = [...multiSel];
+      const last = frozen[frozen.length - 1];
+      window._rbSelecting = true;
+      if (typeof pick === 'function') pick(last);
+      window._rbSelecting = false;
+      frozen.forEach(el => { if (!multiSel.has(el)) addToMultiSel(el); });
+      if (typeof _updateHandlesOverlay === 'function') _updateHandlesOverlay();
+      if (typeof _updateSelFrames === 'function') _updateSelFrames();
+    }
+    _lastCtx = 'select';
     return;
   }
-  if (t === 'снять выделение') { if (typeof pick==='function') pick(null); return; }
+  if (t === 'снять выделение') {
+    if (typeof clearMultiSel === 'function') clearMultiSel();
+    if (typeof desel === 'function') desel();
+    else if (typeof pick === 'function') pick(null);
+    if (typeof _updateSelFrames === 'function') _updateSelFrames();
+    const ov = document.getElementById('handles-overlay');
+    if (ov) {
+      const gob = ov.querySelector('.group-outline-box');
+      if (gob) gob.remove();
+    }
+    _lastCtx = null;
+    return;
+  }
   if (t === 'следующий объект' || t === 'предыдущий объект') {
     const cv=document.getElementById('canvas'); if (!cv) return;
     const els=Array.from(cv.querySelectorAll('.el:not(.decor-el)')); if (!els.length) return;
@@ -789,12 +1264,21 @@ function _handleCommand(raw) {
   if (t.startsWith('удалить всё') || t === 'удалить всё') {
     if (typeof pushUndo === 'function') pushUndo();
     const cv = document.getElementById('canvas'); if (!cv) return;
+    if (typeof clearMultiSel === 'function') clearMultiSel();
     const els = Array.from(cv.querySelectorAll('.el:not(.decor-el)'));
     els.forEach(el => {
       const d = slides[cur]?.els.find(e => e.id === el.dataset.id);
       if (d) slides[cur].els.splice(slides[cur].els.indexOf(d), 1);
       el.remove();
     });
+    // Линии связи и призраки движения
+    if (slides[cur]) slides[cur].connectors = [];
+    if (typeof renderConnectors === 'function') renderConnectors();
+    else if (typeof window.renderConnectors === 'function') window.renderConnectors();
+    document.dispatchEvent(new Event('_connPrune'));
+    if (typeof renderMotionOverlay === 'function') renderMotionOverlay();
+    document.getElementById('motion-ghosts')?.remove();
+    document.getElementById('motion-svg')?.remove();
     if (typeof pick === 'function') pick(null);
     if (typeof save === 'function') save();
     if (typeof drawThumbs === 'function') drawThumbs();
@@ -804,23 +1288,70 @@ function _handleCommand(raw) {
   const typeDelM = t.match(/^удалить тип (\w+)$/);
   if (typeDelM) { _deleteByType(typeDelM[1]); return; }
 
-  const bulkDelM = t.match(/^удалить все (тексты|фигуры|изображения|иконки)$/);
+  const bulkDelM = t.match(/^удалить все (тексты|фигуры|изображения|иконки|формулы|структуры|графики)$/);
   if (bulkDelM) {
-    const typeMap = { тексты:'text', фигуры:'shape', изображения:'image', иконки:'svg' };
-    const delType = typeMap[bulkDelM[1]];
-    if (!delType) return;
+    const kind = bulkDelM[1];
     if (typeof pushUndo === 'function') pushUndo();
     const cv = document.getElementById('canvas'); if (!cv) return;
-    const els = Array.from(cv.querySelectorAll(`.el[data-type="${delType}"]`));
-    els.forEach(el => {
-      const d = slides[cur]?.els.find(e => e.id === el.dataset.id);
-      if (d) slides[cur].els.splice(slides[cur].els.indexOf(d), 1);
-      el.remove();
-    });
+    const typeMap = { тексты:'text', фигуры:'shape', изображения:'image', иконки:'svg', формулы:'formula' };
+    let removed = 0;
+    if (kind === 'структуры' || kind === 'графики') {
+      const els = Array.from(cv.querySelectorAll('.el[data-type="graph"]:not(.decor-el)'));
+      els.forEach(el => {
+        const d = slides[cur]?.els.find(e => e.id === el.dataset.id);
+        if (!d) return;
+        if (kind === 'структуры' && d.graphKind !== 'chem') return;
+        slides[cur].els.splice(slides[cur].els.indexOf(d), 1);
+        el.remove();
+        removed++;
+      });
+    } else {
+      const delType = typeMap[kind];
+      if (!delType) return;
+      const els = Array.from(cv.querySelectorAll(`.el[data-type="${delType}"]:not(.decor-el)`));
+      els.forEach(el => {
+        const id = el.dataset.id;
+        if (delType === 'formula' && typeof window._deleteLinkedGraphs === 'function') {
+          window._deleteLinkedGraphs(id);
+        }
+        const d = slides[cur]?.els.find(e => e.id === id);
+        if (d) slides[cur].els.splice(slides[cur].els.indexOf(d), 1);
+        el.remove();
+        removed++;
+      });
+    }
     if (typeof pick === 'function') pick(null);
     if (typeof save === 'function') save();
     if (typeof drawThumbs === 'function') drawThumbs();
     if (typeof saveState === 'function') saveState();
+    if (!removed) _voiceMsg(kind === 'формулы' ? 'Формул нет' : kind === 'структуры' ? 'Структур нет' : 'Нечего удалять');
+    return;
+  }
+
+  // ── Выбрать формулу / хим. структуру ──
+  const pickFm = t.match(/^выбрать формулу\s*(.*)$/);
+  if (pickFm) {
+    _voicePickFormulaOrStruct('formula', (pickFm[1] || '').trim());
+    return;
+  }
+  const pickStruct = t.match(/^выбрать структуру\s*(.*)$/);
+  if (pickStruct) {
+    _voicePickFormulaOrStruct('structure', (pickStruct[1] || '').trim());
+    return;
+  }
+
+  // ── Выбрать по краю слайда ──
+  if (t.match(/^выбрать (нижний|верхний|левый|правый)$/)) {
+    const dir = t.replace('выбрать ', '');
+    const cv = document.getElementById('canvas'); if (!cv) return;
+    const all = Array.from(cv.querySelectorAll('.el:not(.decor-el)'));
+    if (!all.length) { _voiceMsg('Объектов нет'); return; }
+    let best = null;
+    if (dir === 'нижний') best = all.reduce((a,b) => (parseInt(b.style.top)||0) > (parseInt(a.style.top)||0) ? b : a);
+    if (dir === 'верхний') best = all.reduce((a,b) => (parseInt(b.style.top)||0) < (parseInt(a.style.top)||0) ? b : a);
+    if (dir === 'правый')  best = all.reduce((a,b) => (parseInt(b.style.left)||0) > (parseInt(a.style.left)||0) ? b : a);
+    if (dir === 'левый')   best = all.reduce((a,b) => (parseInt(b.style.left)||0) < (parseInt(a.style.left)||0) ? b : a);
+    if (best && typeof pick === 'function') { pick(best); _lastCtx = 'select'; }
     return;
   }
 
@@ -879,6 +1410,39 @@ function _handleCommand(raw) {
         const last=els[els.length-1];
         if (last && typeof pick==='function') pick(last);
       });
+    }
+    return;
+  }
+  if (t === 'добавить формулу') {
+    if (typeof addFormula === 'function') addFormula();
+    return;
+  }
+  const createFmStruct = t.match(/^создать формулу и структуру (.+)$/);
+  if (createFmStruct) {
+    const raw = createFmStruct[1].trim();
+    if (typeof window.createFormulaFromText === 'function') {
+      window.createFormulaFromText(raw, { withStructure: true });
+    }
+    return;
+  }
+  const createFm = t.match(/^создать формулу (.+)$/);
+  if (createFm) {
+    const raw = createFm[1].trim();
+    if (typeof window.createFormulaFromText === 'function') window.createFormulaFromText(raw);
+    else if (typeof addFormula === 'function') addFormula();
+    return;
+  }
+  const createStruct = t.match(/^создать структуру\s*(.*)$/);
+  if (createStruct) {
+    const raw = (createStruct[1] || '').trim();
+    if (typeof window.createChemStructureFromText === 'function') {
+      window.createChemStructureFromText(raw);
+    } else if (raw && typeof window.createFormulaFromText === 'function') {
+      window.createFormulaFromText(raw, { withStructure: true });
+    } else if (typeof sel !== 'undefined' && sel && sel.dataset.type === 'formula' && typeof buildFormulaGraph === 'function') {
+      buildFormulaGraph(sel);
+    } else {
+      _voiceMsg('Скажите вещество: «нарисуй структуру серной кислоты»');
     }
     return;
   }
@@ -966,10 +1530,27 @@ function _handleCommand(raw) {
     }
     return 50;
   };
-  if (t.match(/^вверх/))  { move(0, -_getStep(t,'v')); return; }
-  if (t.match(/^вниз/))   { move(0,  _getStep(t,'v')); return; }
-  if (t.match(/^влево/))  { move(-_getStep(t,'h'), 0); return; }
-  if (t.match(/^вправо/)) { move( _getStep(t,'h'), 0); return; }
+  // Если только что сдвинули «влево на obj», а сейчас «влево на 20» — скорректировать до 20
+  const _moveDir = (t2) => {
+    const m = t2.match(/^(вверх|вниз|влево|вправо)/);
+    return m ? m[1] : null;
+  };
+  const _doMove = (dx, dy, t2) => {
+    let fdx = dx, fdy = dy;
+    const dir = _moveDir(t2);
+    const isPrecise = /на \d+/.test(t2);
+    if (isPrecise && dir && _voiceLastMove && _voiceLastMove.dir === dir
+        && _voiceLastMove.wasObj && (Date.now() - _voiceLastMove.t) < 1800) {
+      fdx = dx - _voiceLastMove.dx;
+      fdy = dy - _voiceLastMove.dy;
+    }
+    move(fdx, fdy);
+    _voiceLastMove = { dir, dx, dy, wasObj: /на obj/.test(t2), t: Date.now() };
+  };
+  if (t.match(/^вверх/))  { _doMove(0, -_getStep(t,'v'), t); return; }
+  if (t.match(/^вниз/))   { _doMove(0,  _getStep(t,'v'), t); return; }
+  if (t.match(/^влево/))  { _doMove(-_getStep(t,'h'), 0, t); return; }
+  if (t.match(/^вправо/)) { _doMove( _getStep(t,'h'), 0, t); return; }
 
   // ── Центрирование ──
   if (['по центру','по горизонтали','по вертикали','к левому краю','к правому краю','к верхнему краю','к нижнему краю'].includes(t)) {
@@ -1051,13 +1632,6 @@ function _handleCommand(raw) {
 
   // ── Прочее ──
   if (t === 'разместить объекты') { if (typeof autoPlaceAll==='function') autoPlaceAll(); return; }
-
-  // ── Снять выделение ──
-  if (t === 'снять выделение') {
-    if (typeof clearMultiSel==='function') clearMultiSel();
-    if (typeof desel==='function') desel();
-    return;
-  }
 
   // ── Начать/остановить показ ──
   if (t === 'начать показ') {
@@ -1541,94 +2115,294 @@ function _handleCommand(raw) {
 
   // Unknown — skip noise (single punctuation, very short fragments)
   if (raw.replace(/[.,!?\s]/g,'').length < 2) {
-    _logEntry.status = 'noise'; _voiceLog.push(_logEntry); return;
+    _logEntry.status = 'noise';
+    return;
   }
   _logEntry.status = 'unknown';
-  _voiceLog.push(_logEntry);
   _unknownCmds.push(raw);
-  const exportBtn = document.getElementById('voice-export-btn');
-  if (exportBtn) exportBtn.style.display = '';
+  if (typeof window._syncVoiceExportBtn === 'function') window._syncVoiceExportBtn();
   _voiceMsg('Неизвестная команда: «' + raw + '»');
+}
+
+// ── Streaming command buffer ───────────────────────────────────────
+// Накапливает речь и исполняет команды по мере появления в тексте,
+// не дожидаясь конца всей фразы (кроме последней незавершённой команды).
+let _voiceBuf = '';
+let _voiceStableTimer = null;
+let _voiceMode = 'cloud'; // 'local' | 'cloud' | 'unknown'
+let _voiceRecent = []; // recently executed normalized cmds (anti double-fire)
+let _voiceLastMove = null; // {dir, dx, dy, wasObj, t} — для отмены преждевременного сдвига
+
+function _voiceClean(s) {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/[.,!?…:;]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function _voiceMarkDone(norm) {
+  const now = Date.now();
+  _voiceRecent = _voiceRecent.filter(x => now - x.t < 1600);
+  _voiceRecent.push({ norm, t: now });
+}
+
+function _voiceAlreadyDone(norm) {
+  const now = Date.now();
+  _voiceRecent = _voiceRecent.filter(x => now - x.t < 1600);
+  return _voiceRecent.some(x => x.norm === norm);
+}
+
+/** Команда может дорасти (не стрелять «влево», пока идёт «на 20»). */
+function _voiceCmdCanGrow(norm, rest, isFinal) {
+  const restC = _voiceClean(rest);
+  if (/^(вверх|вниз|влево|вправо) на obj$/.test(norm)) {
+    if (!restC && !isFinal) return true;
+    // «на …» с продолжением — ждём число; голое «на» в финале не блокируем
+    if (/^на\s+\S/.test(restC)) return true;
+    if (/^на$/i.test(restC)) return !isFinal;
+  }
+  return false;
+}
+
+/** Съесть единицы измерения / обрывки после уже распознанной команды. */
+function _voiceConsumeTrailingFluff(rest) {
+  return _voiceClean(rest)
+    .replace(/^(пикселей|пикселя|пиксель|px|пкс|градусов|градуса|градус|процентов|процент)\s*/i, '')
+    .replace(/^на$/i, '')
+    .trim();
+}
+
+/** Longest known command at the start of text (by words). */
+function _voiceLongestHit(text) {
+  const t = _voiceClean(text);
+  if (!t) return null;
+  const words = t.split(' ');
+  for (let n = words.length; n >= 1; n--) {
+    const cand = words.slice(0, n).join(' ');
+    const norm = _normalize(cand);
+    if (_lastNormHit) return { cand, norm, wordCount: n, words };
+  }
+  return null;
+}
+
+/**
+ * Scan buffer and execute complete commands.
+ * @param {string} text
+ * @param {boolean} isFinal - if false, keep a trailing full-match (may still grow)
+ * @returns {string} leftover unparsed text
+ */
+function _voiceStreamExecute(text, isFinal) {
+  let rest = _voiceClean(text);
+  let guard = 0;
+  while (rest && guard++ < 20) {
+    const hit = _voiceLongestHit(rest);
+    if (!hit) break;
+    const leftover = hit.words.slice(hit.wordCount).join(' ');
+    const entire = hit.wordCount === hit.words.length;
+    // Пока фраза не финальна и команда занимает весь буфер — ждём продолжения
+    if (entire && !isFinal) break;
+    // «влево» + ещё «на двадцать…» — не сдвигать на ширину объекта
+    if (_voiceCmdCanGrow(hit.norm, leftover, isFinal)) break;
+    if (!_voiceAlreadyDone(hit.norm)) {
+      _voiceMarkDone(hit.norm);
+      _handleCommand(hit.cand);
+    }
+    rest = _voiceConsumeTrailingFluff(leftover);
+  }
+  if (isFinal && rest && rest.replace(/\s+/g, '').length >= 3) {
+    _unknownCmds.push(rest);
+    _voiceLog.push({
+      raw: rest,
+      normalized: rest,
+      ts: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      status: 'unknown',
+    });
+    if (typeof window._syncVoiceExportBtn === 'function') window._syncVoiceExportBtn();
+    _voiceMsg('Неизвестная команда: «' + rest + '»');
+    rest = '';
+  }
+  return rest;
+}
+
+function _voiceClearStableTimer() {
+  if (_voiceStableTimer) {
+    clearTimeout(_voiceStableTimer);
+    _voiceStableTimer = null;
+  }
+}
+
+function _voiceScheduleStable(combined) {
+  _voiceClearStableTimer();
+  // Для сдвига с возможным «на N» ждём чуть дольше, чтобы не сработать на голом «влево»
+  const growable = /^(вверх|вниз|влево|вправо|перемест|сдвин|двигай|смести)/i.test(_voiceClean(combined).split(/\s+/)[0] || '');
+  _voiceStableTimer = setTimeout(() => {
+    _voiceStableTimer = null;
+    if (!_active || _dictMode) return;
+    _voiceBuf = _voiceStreamExecute(combined, true);
+  }, growable ? 700 : 420);
 }
 
 // ── Speech Recognition ─────────────────────────────────────────────
 function _startRecognition() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) {
-    _voiceMsg('Браузер не поддерживает распознавание речи');
+    _voiceMsg(_voiceUiLang() === 'en' ? 'Speech recognition is not supported' : 'Браузер не поддерживает распознавание речи');
     return false;
   }
 
   // Reuse existing recognition object to avoid re-requesting microphone permission
   if (!_recognition) {
     _recognition = new SpeechRecognition();
-    _recognition.lang = 'ru-RU';
     _recognition.continuous = true;
-    _recognition.interimResults = true; // enables live preview for dictation
+    _recognition.interimResults = true;
     _recognition.maxAlternatives = 1;
     _setupRecognitionHandlers();
+    _setupLocalRecognition(_recognition, SpeechRecognition);
   }
+  _recognition.lang = _voiceSpeechLang();
 
+  _voiceBuf = '';
+  _voiceClearStableTimer();
   try { _recognition.start(); } catch(e) {}
+  _startMicLevel();
   return true;
 }
 
+/** Prefer on-device recognition when the browser supports it (Chrome/Edge + language pack). */
+function _setupLocalRecognition(rec, SpeechRecognition) {
+  _voiceMode = 'unknown';
+  const finish = (mode, msg) => {
+    _voiceMode = mode;
+    if (msg) setTimeout(() => _voiceMsg(msg, mode === 'local' ? 'ok' : ''), 350);
+  };
+
+  try {
+    if (!('processLocally' in rec)) {
+      finish('cloud', 'Распознавание через сеть (офлайн в этом браузере недоступен)');
+      return;
+    }
+  } catch (e) {
+    finish('cloud');
+    return;
+  }
+
+  const tryLocal = async () => {
+    const packLang = _voiceSpeechLang();
+    try {
+      rec.processLocally = true;
+      if (typeof SpeechRecognition.available !== 'function') {
+        finish('local', _voiceUiLang() === 'en'
+          ? 'On-device recognition (if language pack installed)'
+          : 'Режим: локальное распознавание (если пакет языка установлен)');
+        return;
+      }
+      const avail = await SpeechRecognition.available({ langs: [packLang], processLocally: true });
+      if (avail === 'available') {
+        finish('local', _voiceUiLang() === 'en' ? 'Offline recognition ready' : 'Офлайн-распознавание готово');
+        return;
+      }
+      if ((avail === 'downloadable' || avail === 'downloading') && typeof SpeechRecognition.install === 'function') {
+        _voiceMsg(_voiceUiLang() === 'en' ? ('Downloading offline pack ' + packLang + '…') : ('Скачивание офлайн-пакета ' + packLang + '…'));
+        const ok = await SpeechRecognition.install({ langs: [packLang], processLocally: true });
+        if (ok) {
+          finish('local', _voiceUiLang() === 'en' ? 'Offline pack installed' : 'Офлайн-пакет установлен');
+          return;
+        }
+      }
+      try { rec.processLocally = false; } catch (e2) {}
+      finish('cloud', _voiceUiLang() === 'en' ? 'Offline pack unavailable — internet required' : 'Офлайн-пакет недоступен — нужен интернет');
+    } catch (err) {
+      try { rec.processLocally = false; } catch (e2) {}
+      finish('cloud', _voiceUiLang() === 'en' ? 'Using network recognition' : 'Распознавание через сеть');
+    }
+  };
+  tryLocal();
+}
+
 function _setupRecognitionHandlers() {
-  let _lastResultIdx = 0;
   _recognition.onresult = (e) => {
     const result = e.results[e.resultIndex];
+    const piece = ((result[0] && result[0].transcript) || '').trim();
 
-    // Live interim preview during dictation
-    if (_dictMode && !result.isFinal) {
-      const interim = result[0].transcript.trim();
+    // ── Dictation ──
+    if (_dictMode) {
+      if (!result.isFinal) {
+        if (_dictEl && piece) {
+          const tel = _dictEl.querySelector('.tel');
+          const preview = (_dictText ? _dictText + ' ' : '') + piece;
+          if (tel) tel.textContent = preview;
+        }
+        return;
+      }
+      if (!piece) return;
+      const lower = piece.toLowerCase().replace(/[.,!?]/g, '').trim();
+      if (lower === 'стоп' || lower === 'остановить диктовку' || lower === 'стоп диктовка' || lower === 'завершить диктовку'
+          || lower === 'stop' || lower === 'stop dictation' || lower === 'end dictation') {
+        _stopDictation();
+        return;
+      }
+      const processed = _dictApplyPunct(piece);
+      _dictText = (_dictText && !_dictText.endsWith('\n') ? _dictText + ' ' : _dictText) + processed;
+      _dictText = _dictText.replace(/ ([,\.!?:;…])/g, '$1').replace(/  +/g, ' ').trimStart();
       if (_dictEl) {
         const tel = _dictEl.querySelector('.tel');
-        const preview = (_dictText ? _dictText + ' ' : '') + interim;
-        if (tel) tel.textContent = preview;
+        if (tel) tel.textContent = _dictText;
+        const d2 = slides[cur]?.els.find(el => el.id === _dictEl.dataset.id);
+        if (d2 && d2.type === 'text') d2.html = tel ? tel.innerHTML : _dictText;
+        else if (d2 && d2.type === 'shape') {
+          d2.shapeHtml = _dictText;
+          const stxt = _dictEl.querySelector('.shape-text');
+          if (stxt) stxt.textContent = _dictText;
+        }
       }
+      _voiceMsg('🎤 ' + _dictText.slice(-80));
       return;
     }
 
-    if (result.isFinal) {
-      const text = result[0].transcript.trim();
-      if (!text) return;
+    // ── Command mode (streaming) ──
+    if (!piece) return;
 
-      // Dictation mode: route text to element, not command handler
-      if (_dictMode) {
-        const lower = text.toLowerCase().replace(/[.,!?]/g, '').trim();
-        if (lower === 'стоп' || lower === 'остановить диктовку' || lower === 'стоп диктовка' || lower === 'завершить диктовку') {
-          _stopDictation();
-          return;
+    if (!result.isFinal) {
+      const combined = [_voiceBuf, piece].filter(Boolean).join(' ');
+      const before = _voiceClean(combined);
+      const leftover = _voiceStreamExecute(combined, false);
+      // Если из потока уже вырезали команду(ы) — не тащим их снова в финале
+      if (_voiceClean(leftover) !== before) {
+        const cleanPiece = _voiceClean(piece);
+        const cleanLeft = _voiceClean(leftover);
+        if (cleanPiece && (cleanLeft === cleanPiece || cleanLeft.endsWith(' ' + cleanPiece) || cleanLeft.endsWith(cleanPiece))) {
+          // хвост = текущий interim (или его конец) → финальный буфер очищен
+          _voiceBuf = '';
+        } else {
+          // хвост без текущего interim
+          _voiceBuf = cleanLeft;
         }
-        // Replace punctuation words inside any phrase
-        const processed = _dictApplyPunct(text);
-        _dictText = (_dictText && !_dictText.endsWith('\n') ? _dictText + ' ' : _dictText) + processed;
-        _dictText = _dictText.replace(/ ([,\.!?:;…])/g, '$1').replace(/  +/g, ' ').trimStart();
-        if (_dictEl) {
-          const tel = _dictEl.querySelector('.tel');
-          if (tel) { tel.textContent = _dictText; }
-          const d2 = slides[cur]?.els.find(e => e.id === _dictEl.dataset.id);
-          if (d2 && d2.type === 'text') d2.html = tel ? tel.innerHTML : _dictText;
-          else if (d2 && d2.type === 'shape') {
-            d2.shapeHtml = _dictText;
-            const stxt = _dictEl.querySelector('.shape-text');
-            if (stxt) stxt.textContent = _dictText;
-          }
-        }
-        _voiceMsg('🎤 ' + _dictText.slice(-80));
-        return;
       }
-
-      // Normal command mode
-      _handleCommand(text);
+      // Последнюю ещё растущую команду добьём после короткой паузы в речи
+      _voiceScheduleStable(leftover);
+      return;
     }
+
+    _voiceClearStableTimer();
+    _voiceBuf = _voiceStreamExecute([_voiceBuf, piece].filter(Boolean).join(' '), true);
   };
 
   _recognition.onerror = (e) => {
-    if (e.error === 'no-speech') return; // ignore silence
-    if (e.error === 'aborted') return;   // ignore manual stops
+    if (e.error === 'no-speech') return;
+    if (e.error === 'aborted') return;
     if (e.error === 'network') {
+      if (_voiceMode === 'local') {
+        _voiceMsg('Сеть не нужна при офлайн-пакете — перезапуск…');
+      }
       if (_active) setTimeout(() => { try { _recognition.abort(); } catch(e2){} setTimeout(()=>{ try { _recognition.start(); } catch(err) {} }, 50); }, 500);
+      return;
+    }
+    if (e.error === 'language-not-supported' || e.error === 'service-not-allowed') {
+      try { if (_recognition) _recognition.processLocally = false; } catch (e2) {}
+      _voiceMode = 'cloud';
+      _voiceMsg('Локальный пакет недоступен — нужен интернет');
+      if (_active) setTimeout(() => { try { _recognition.start(); } catch (err) {} }, 200);
       return;
     }
     _voiceMsg('Ошибка: ' + e.error);
@@ -1638,28 +2412,124 @@ function _setupRecognitionHandlers() {
   _recognition.onend = () => {
     if (!_active || _isRestarting) return;
     _isRestarting = true;
-    // Use abort+start cycle: abort clears state without triggering permission dialog
     try { _recognition.abort(); } catch(e) {}
-    // Small delay ensures abort completes before start
     setTimeout(() => {
       _isRestarting = false;
       if (_active) try { _recognition.start(); } catch(err) {}
     }, 50);
   };
-
 }
 
 function _stopRecognition() {
+  _voiceClearStableTimer();
+  _voiceBuf = '';
+  _voiceRecent = [];
+  _stopMicLevel();
   if (_recognition) {
     try { _recognition.stop(); } catch(e) {}
-    // Don't set _recognition=null — keep the object to avoid permission prompt on restart
   }
 }
+
+// ── Mic level visualizer (volume → green ring scale) ───────────────
+let _micStream = null;
+let _micCtx = null;
+let _micAnalyser = null;
+let _micRaf = 0;
+let _micLevelSmooth = 0;
+
+function _startMicLevel() {
+  _stopMicLevel();
+  const levelEl = document.getElementById('voice-mic-level');
+  const btn = document.getElementById('voice-tab-btn');
+  if (btn) btn.classList.add('voice-on');
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+
+  navigator.mediaDevices.getUserMedia({ audio: true, video: false }).then(stream => {
+    if (!_active) {
+      stream.getTracks().forEach(t => t.stop());
+      return;
+    }
+    _micStream = stream;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    _micCtx = new AC();
+    const src = _micCtx.createMediaStreamSource(stream);
+    _micAnalyser = _micCtx.createAnalyser();
+    _micAnalyser.fftSize = 512;
+    _micAnalyser.smoothingTimeConstant = 0.35;
+    src.connect(_micAnalyser);
+    const data = new Uint8Array(_micAnalyser.fftSize);
+
+    const tick = () => {
+      if (!_active || !_micAnalyser) return;
+      _micAnalyser.getByteTimeDomainData(data);
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) {
+        const v = (data[i] - 128) / 128;
+        sum += v * v;
+      }
+      const rms = Math.sqrt(sum / data.length);
+      // Чувствительность: тихий голос тоже виден, пики не улетают слишком далеко
+      const target = Math.min(1, Math.pow(rms * 5.5, 0.85));
+      _micLevelSmooth += (target - _micLevelSmooth) * 0.35;
+      if (levelEl) {
+        const scale = 1 + _micLevelSmooth * 2.8; // радиус ~1×…3.8×
+        levelEl.style.transform = 'scale(' + scale.toFixed(3) + ')';
+        levelEl.style.opacity = String(0.25 + _micLevelSmooth * 0.55);
+      }
+      _micRaf = requestAnimationFrame(tick);
+    };
+    _micRaf = requestAnimationFrame(tick);
+  }).catch(() => {
+    // permission denied — dot still turns green via voice-on class
+  });
+}
+
+function _stopMicLevel() {
+  if (_micRaf) { cancelAnimationFrame(_micRaf); _micRaf = 0; }
+  if (_micStream) {
+    try { _micStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+    _micStream = null;
+  }
+  if (_micCtx) {
+    try { _micCtx.close(); } catch (e) {}
+    _micCtx = null;
+  }
+  _micAnalyser = null;
+  _micLevelSmooth = 0;
+  const levelEl = document.getElementById('voice-mic-level');
+  if (levelEl) {
+    levelEl.style.transform = 'scale(1)';
+    levelEl.style.opacity = '';
+  }
+  const btn = document.getElementById('voice-tab-btn');
+  if (btn) btn.classList.remove('voice-on');
+}
+
+/** Sync recognition language when UI language changes */
+window._voiceOnLangChange = function() {
+  const oldPanel = document.getElementById('props-voice-panel');
+  const panelWasOpen = !!(oldPanel && oldPanel.style.display !== 'none');
+  if (oldPanel) oldPanel.remove();
+  _buildPropsPanel();
+  const panel = document.getElementById('props-voice-panel');
+  if (panel) panel.style.display = (_active || panelWasOpen) ? '' : 'none';
+
+  if (!_recognition) return;
+  _recognition.lang = _voiceSpeechLang();
+  if (_active) {
+    try { _recognition.abort(); } catch (e) {}
+    setTimeout(() => {
+      if (!_active) return;
+      try { _recognition.start(); } catch (e) {}
+    }, 80);
+  }
+};
 
 // ── Toggle ─────────────────────────────────────────────────────────
 window.exportVoiceUnknown = function() {
   if (!_voiceLog.length) {
-    if (typeof toast === 'function') toast('Лог пуст', 'ok');
+    if (typeof toast === 'function') toast((typeof getLang === 'function' && getLang() === 'en') ? 'Log is empty' : 'Лог пуст', 'ok');
     return;
   }
   const icons = {ok:'✅', unknown:'❓', noise:'🔇'};
@@ -1689,32 +2559,57 @@ window.exportVoiceUnknown = function() {
   }
 };
 
+/** Показывать ли кнопку 📋 лога нераспознанных команд (🔧 Конфигурация → Интерфейс / CFG_UI). По умолчанию скрыта. */
+window.isVoiceUnknownBtnEnabled = function() {
+  const v = localStorage.getItem('sf-voice-log-btn');
+  if (v === '1') return true;
+  if (v === '0') return false;
+  if (window.CFG_UI && typeof window.CFG_UI.showVoiceUnknownBtn === 'boolean') {
+    return !!window.CFG_UI.showVoiceUnknownBtn;
+  }
+  return false;
+};
+
+window.setVoiceUnknownBtn = function(on) {
+  localStorage.setItem('sf-voice-log-btn', on ? '1' : '0');
+  if (typeof window._syncVoiceExportBtn === 'function') window._syncVoiceExportBtn();
+};
+
+window._syncVoiceExportBtn = function() {
+  const btn = document.getElementById('voice-export-btn');
+  if (!btn) return;
+  const enabled = typeof window.isVoiceUnknownBtnEnabled === 'function' && window.isVoiceUnknownBtnEnabled();
+  // Показывать только если опция включена и (голос активен или уже есть неизвестные)
+  btn.style.display = (enabled && (_active || _unknownCmds.length > 0)) ? '' : 'none';
+};
+
 window.toggleVoiceControl = function(btn) {
   _buildPropsPanel();
   _active = !_active;
 
   if (_active) {
     const started = _startRecognition();
-    if (!started) { _active = false; return; }
-    _voiceMsg('Голосовое управление включено', 'ok');
-    // Show log button when voice is active
-    const _eb = document.getElementById('voice-export-btn');
-    if (_eb) _eb.style.display = '';
-    if (btn) { btn.classList.add('active'); btn.style.color = 'var(--accent)'; }
-    // Switch props to show commands
+    if (!started) {
+      _active = false;
+      _stopMicLevel();
+      return;
+    }
+    _voiceMsg(_voiceUiLang() === 'en' ? 'Voice control on' : 'Голосовое управление включено', 'ok');
+    if (typeof window._syncVoiceExportBtn === 'function') window._syncVoiceExportBtn();
+    if (btn) { btn.classList.add('active'); btn.classList.add('voice-on'); btn.style.color = 'var(--accent)'; }
     const propsPanel = document.getElementById('props-voice-panel');
     if (propsPanel) {
       propsPanel.style.display = '';
-      // Scroll props to top to show commands
       const ps = document.getElementById('props-scroll');
       if (ps) ps.scrollTop = 0;
     }
   } else {
     _stopRecognition();
-    _voiceMsg('Голосовое управление выключено');
-    if (btn) { btn.classList.remove('active'); btn.style.color = ''; btn.style.outline = ''; btn.blur(); }
+    _voiceMsg(_voiceUiLang() === 'en' ? 'Voice control off' : 'Голосовое управление выключено');
+    if (btn) { btn.classList.remove('active'); btn.classList.remove('voice-on'); btn.style.color = ''; btn.style.outline = ''; btn.blur(); }
     const propsPanel = document.getElementById('props-voice-panel');
     if (propsPanel) propsPanel.style.display = 'none';
+    if (typeof window._syncVoiceExportBtn === 'function') window._syncVoiceExportBtn();
   }
 };
 

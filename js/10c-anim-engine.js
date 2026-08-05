@@ -940,6 +940,7 @@ window._resetParticles = function(el) {
   if (layer && layer.parentNode) layer.parentNode.removeChild(layer);
   el._particlesLayer = null;
   window._particlesShowOriginal(el);
+  el.classList.remove('has-particles');
   if (el._liveAnimsByName && el._liveAnimsByName.particles) {
     try { delete el._liveAnimsByName.particles; } catch (e) {}
   }
@@ -1013,10 +1014,14 @@ window._particlesApplyCloneShadow = function(host, pd, uid) {
 
 function _particlesNeutralizePointer(node) {
   if (!node || node.nodeType !== 1) return;
-  node.style.pointerEvents = 'none';
-  node.style.cursor = 'default';
+  if (node.style) { node.style.pointerEvents = 'none'; node.style.cursor = 'default'; }
   if (node.querySelectorAll) {
     node.querySelectorAll('*').forEach(function(n) {
+      // Some SVG nodes (e.g. <animate>, <animateTransform>, <mpath>,
+      // <metadata>, <title>, <stop>) don't expose a usable CSSStyleDeclaration
+      // via .style in every browser — guard against that instead of crashing
+      // and silently aborting the whole particle effect for SVG content.
+      if (!n.style) return;
       n.style.pointerEvents = 'none';
       n.style.cursor = 'default';
     });
@@ -1083,6 +1088,10 @@ window._particlesCloneVisual = function(el, pd, uid, visScale) {
     }
   } else if (type === 'icon' || type === 'formula' || type === 'svg') {
     adopt(el.querySelector('svg'));
+    if (type === 'svg' && pd) {
+      const so = pd.svgOpacity != null ? +pd.svgOpacity : 1;
+      wrap.style.opacity = isNaN(so) ? '1' : String(so);
+    }
   } else {
     const kids = Array.from(el.children).filter(ch => !ch.classList.contains('_particles_layer'));
     if (!kids.length || !adopt(kids[0])) {
@@ -1096,8 +1105,10 @@ window._particlesCloneVisual = function(el, pd, uid, visScale) {
     root.style.transform = 'scale(' + visScale + ')';
   }
   if (pd && uid != null) window._particlesApplyCloneShadow(root, pd, uid);
-  if (type === 'image' && el.style && el.style.filter && !root.style.filter) {
-    root.style.filter = el.style.filter;
+  if ((type === 'image' || type === 'svg') && !root.style.filter) {
+    const _ecHost = el.querySelector && el.querySelector('.ec');
+    const filterSrc = (el.style && el.style.filter) || (_ecHost && _ecHost.style && _ecHost.style.filter) || '';
+    if (filterSrc) root.style.filter = filterSrc;
   }
   root.style.overflow = 'visible';
   _particlesNeutralizePointer(root);
@@ -2402,6 +2413,7 @@ window.renderAnimTimelineBar = function(slide) {
     tracks.appendChild(bg);
   }
   if (!tl.segments.length) {
+    tracks.style.height = Math.max(tracksH, 22) + 'px';
     const empty = document.createElement('div');
     empty.className = 'anim-tl-empty';
     empty.textContent = 'Нет анимаций на слайде';

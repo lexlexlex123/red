@@ -60,6 +60,14 @@ function syncProps(){
   if(_dictWrap) _dictWrap.style.display=t==='text'?'flex':'none';
   shp.style.display=t==='shape'?'flex':'none';shp.style.flexDirection='column';
   if(imp){imp.style.display=(t==='image'&&!isQR)?'flex':'none';imp.style.flexDirection='column';}
+  const svgp=document.getElementById('svgprops');
+  if(svgp){
+    svgp.style.display=t==='svg'?'flex':'none';svgp.style.flexDirection='column';
+    if(t==='svg'&&typeof syncSvgProps==='function'){
+      const _svgD=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+      if(_svgD)syncSvgProps(sel,_svgD);
+    }
+  }
   if(cdp){cdp.style.display=t==='code'?'flex':'none';cdp.style.flexDirection='column';}
   const hfp=document.getElementById('hfprops');
   if(hfp){hfp.style.display=t==='htmlframe'?'flex':'none';
@@ -82,14 +90,17 @@ function syncProps(){
     // Regex с \s* — учитываем пробелы вокруг двоеточия
     const _fsFromCs=m(/font-size\s*:\s*([\d.]+)px/,'');
     const _pxToPt = px => Math.round(parseFloat(px) * 72 / 96);
-    document.getElementById('p-fs').value=_fsFromCs?_pxToPt(_fsFromCs):'';
-    document.getElementById('p-fs').title='pt';
+    const _fsInputFocused = document.activeElement === document.getElementById('p-fs');
+    if (!_fsInputFocused) {
+      document.getElementById('p-fs').value=_fsFromCs?_pxToPt(_fsFromCs):'';
+      document.getElementById('p-fs').title='pt';
+    }
     // Проверяем span[data-ch] — если у них свои размеры, показываем их
     // (но не перезаписываем если span пустые — тогда cs уже верный)
     // Check if all chars have same font size; if mixed, blank the field
     try {
       const _d = slides[cur] && slides[cur].els.find(e=>e.id===sel.dataset.id);
-      if (_d && _d.html) {
+      if (_d && _d.html && !_fsInputFocused) {
         const _spans = document.createElement('div');
         _spans.innerHTML = _d.html;
         const _fsVals = [...new Set(Array.from(_spans.querySelectorAll('span[data-ch]')).map(s=>{
@@ -104,7 +115,12 @@ function syncProps(){
       }
     } catch(e){}
     const col=m(/(?:^|;|\s)color:(#[0-9a-fA-F]{3,8})/,'#ffffff');
-    try{const _sw=document.getElementById('p-col-preview');if(_sw)_sw.style.background=col;document.getElementById('p-hex').value=col;}catch(e){}
+    try{
+      const _sw=document.getElementById('p-col-preview');if(_sw)_sw.style.background=col;
+      const _dCol=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+      const _sr=_dCol&&_dCol.textColorScheme;
+      document.getElementById('p-hex').value=(typeof _colorFieldDisplay==='function')?_colorFieldDisplay(col,_sr):col;
+    }catch(e){}
     // Sync text color gradient UI
     try{
       const _tcGrad=sel.dataset.textColorGrad==='1';
@@ -158,7 +174,10 @@ function syncProps(){
     const bgOp=parseFloat(sel.dataset.textBgOp!=null?sel.dataset.textBgOp:1);
     try{
       const _bgsw=document.getElementById('p-bg-swatch-inner');if(_bgsw)_bgsw.style.background=bgCol||'';
-      document.getElementById('p-bg-hex').value=bgCol||'';
+      const _dBg=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+      document.getElementById('p-bg-hex').value=bgCol
+        ? ((typeof _colorFieldDisplay==='function')?_colorFieldDisplay(bgCol,_dBg&&_dBg.textBgScheme):bgCol)
+        : '';
       document.getElementById('p-bg-op').value=bgOp;
       const bgBlur=parseFloat(sel.dataset.textBgBlur!=null?sel.dataset.textBgBlur:0);
       document.getElementById('p-bg-blur').value=bgBlur;
@@ -212,8 +231,18 @@ function syncProps(){
     try { const r = document.getElementById('bullet-color-row'); if(r) r.style.display = 'none'; } catch(e) {}
   }
   if(sel.dataset.type==='shape'){
-    try{const _fsw=document.getElementById('sh-fill-preview');if(_fsw)_fsw.style.background=sel.dataset.fill||'#3b82f6';document.getElementById('sh-fill-hex').value=sel.dataset.fill||'#3b82f6';}catch(e){}
-    try{const _strk=document.getElementById('sh-stroke-preview');if(_strk)_strk.style.background=sel.dataset.stroke||'#1d4ed8';document.getElementById('sh-stroke-hex').value=sel.dataset.stroke||'#1d4ed8';}catch(e){}
+    try{
+      const _fsw=document.getElementById('sh-fill-preview');if(_fsw)_fsw.style.background=sel.dataset.fill||'#3b82f6';
+      const _dFill=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+      const _fill=sel.dataset.fill||'#3b82f6';
+      document.getElementById('sh-fill-hex').value=(typeof _colorFieldDisplay==='function')?_colorFieldDisplay(_fill,_dFill&&_dFill.fillScheme):_fill;
+    }catch(e){}
+    try{
+      const _strk=document.getElementById('sh-stroke-preview');if(_strk)_strk.style.background=sel.dataset.stroke||'#1d4ed8';
+      const _dStr=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+      const _stroke=sel.dataset.stroke||'#1d4ed8';
+      document.getElementById('sh-stroke-hex').value=(typeof _colorFieldDisplay==='function')?_colorFieldDisplay(_stroke,_dStr&&_dStr.strokeScheme):_stroke;
+    }catch(e){}
     // For curve with selected nodes: show node's sw if uniform, else show global sw
     let _dispSw = sel.dataset.sw!=null ? sel.dataset.sw : 2;
     let _dispStyle = sel.dataset.strokeStyle||'solid';
@@ -300,7 +329,8 @@ function syncProps(){
         const _tcPr=document.getElementById('sh-tc-preview');
         if(_tcPr)_tcPr.style.background=tc;
         const _tcHx=document.getElementById('sh-tc-hex');
-        if(_tcHx)_tcHx.value=tc.replace('#','');
+        const _dTc=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+        if(_tcHx)_tcHx.value=(typeof _colorFieldDisplay==='function')?_colorFieldDisplay(tc,_dTc&&_dTc.shapeTextColorScheme):tc;
       }catch(e){}
     }
   }
@@ -321,7 +351,7 @@ function syncProps(){
       try{document.getElementById('md-fs').value=d.mdFs||16;}catch(e){}
       try{
         const col=d.mdColor||'#ffffff';
-        document.getElementById('md-color-hex').value=col;
+        document.getElementById('md-color-hex').value=(typeof _colorFieldDisplay==='function')?_colorFieldDisplay(col,d.mdColorScheme):col;
         document.getElementById('md-color-preview').style.background=col;
       }catch(e){}
       // bg
@@ -446,12 +476,20 @@ function setTextBg(col, schemeRef){
   sel.dataset.textBg=col;
   const d=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
   if(d) d.textBgScheme = (schemeRef !== undefined ? (schemeRef || null) : d.textBgScheme);
+  try{
+    const hx=document.getElementById('p-bg-hex');
+    if(hx) hx.value=(typeof _colorFieldDisplay==='function')
+      ? _colorFieldDisplay(col, d ? d.textBgScheme : schemeRef)
+      : (col||'');
+  }catch(e){}
   applyTextBg(sel);
   commitAll();
 }
 function clearTextBgCol1(){
   if(!sel||sel.dataset.type!=='text')return;
   delete sel.dataset.textBg;
+  const d=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+  if(d){ d.textBgScheme=null; delete d.textBg; }
   try{
     document.getElementById('p-bg-hex').value='';
     const _bgsw=document.getElementById('p-bg-swatch-inner');if(_bgsw)_bgsw.style.background='';
@@ -463,6 +501,8 @@ function clearTextBg(){
   if(!sel||sel.dataset.type!=='text')return;
   delete sel.dataset.textBg;delete sel.dataset.textBgOp;delete sel.dataset.textBgBlur;
   delete sel.dataset.textBgGrad;delete sel.dataset.textBgCol2;delete sel.dataset.textBgDir;
+  const d=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+  if(d){ d.textBgScheme=null; delete d.textBg; delete d.textBgOp; delete d.textBgBlur; }
   // Clear both .ec and .el styles (skip .ec background if text color gradient is active — it owns that)
   const c=sel.querySelector('.ec');if(c&&sel.dataset.textColorGrad!=='1')c.style.background='';
   sel.style.background='';sel.style.backdropFilter='';sel.style.webkitBackdropFilter='';
@@ -755,6 +795,7 @@ function syncGenProps(){
   const tr=document.getElementById('tm-row'); if(tr) tr.style.display='none';
   const oer2=document.getElementById('tm-onend-row'); if(oer2) oer2.style.display='none';
   const cgr=document.getElementById('cnt-goal-row'); if(cgr) cgr.style.display='none';
+  const cgir=document.getElementById('cnt-group-row'); if(cgir) cgir.style.display='none';
   try{
     const animRow=document.getElementById('tm-onend-anim-row');
     if(animRow) animRow.style.display='none';
@@ -831,6 +872,12 @@ function syncCounterProps(){
     if(goalInput) goalInput.value = d.cntGoal !== undefined && d.cntGoal !== null && d.cntGoal !== '' ? d.cntGoal : '';
   }catch(e){}
   try{
+    const cgir = document.getElementById('cnt-group-row');
+    if(cgir) cgir.style.display = 'flex';
+    const groupInput = document.getElementById('cnt-group-id');
+    if(groupInput) groupInput.value = d.cntGroupId || '';
+  }catch(e){}
+  try{
     const oer = document.getElementById('tm-onend-row');
     if(oer){
       oer.style.display = 'flex';
@@ -843,7 +890,7 @@ function syncCounterProps(){
       if(slideSel){
         const curVal = d.cntOnEndSlide !== undefined ? +d.cntOnEndSlide : 0;
         slideSel.innerHTML = slides.map((s, i) => {
-          const label = s.title && s.title.trim() ? s.title.trim() : ('Слайд ' + (i + 1));
+          const label = s.title && s.title.trim() ? s.title.trim() : (typeof defaultSlideTitle === 'function' ? defaultSlideTitle(i + 1) : ('Слайд ' + (i + 1)));
           return `<option value="${i}"${i === curVal ? ' selected' : ''}>${i + 1}. ${label}</option>`;
         }).join('');
       }
@@ -919,6 +966,8 @@ function syncClockProps(){
   try{
     const cgr = document.getElementById('cnt-goal-row');
     if(cgr) cgr.style.display = 'none';
+    const cgir = document.getElementById('cnt-group-row');
+    if(cgir) cgir.style.display = 'none';
   }catch(e){}
   // Sync shared visual props (same as timer)
   try{document.getElementById('gen-fs').value = d_.genFontSize !== undefined ? d_.genFontSize : 48;}catch(e){}
@@ -970,7 +1019,7 @@ function syncTimerProps(){
     if(slideSel){
       const curVal = d_.tmOnEndSlide !== undefined ? +d_.tmOnEndSlide : 0;
       slideSel.innerHTML = slides.map((s,i)=>{
-        const label = s.title && s.title.trim() ? s.title.trim() : ('Слайд '+(i+1));
+        const label = s.title && s.title.trim() ? s.title.trim() : (typeof defaultSlideTitle === 'function' ? defaultSlideTitle(i + 1) : ('Слайд '+(i+1)));
         const sel2 = i===curVal ? ' selected' : '';
         return `<option value="${i}"${sel2}>${i+1}. ${label}</option>`;
       }).join('');
@@ -982,6 +1031,8 @@ function syncTimerProps(){
   try{
     const cgr = document.getElementById('cnt-goal-row');
     if(cgr) cgr.style.display = 'none';
+    const cgir = document.getElementById('cnt-group-row');
+    if(cgir) cgir.style.display = 'none';
     const onEndLbl = oer && oer.querySelector('label');
     if(onEndLbl) onEndLbl.textContent = 'По окончании';
   }catch(e){}
@@ -1123,6 +1174,15 @@ window.clearCounterGoal = function(){
     if(goalInput) goalInput.value = '';
   }catch(e){}
   setCounterGoal('');
+};
+
+window.setCounterGroupId = function(val){
+  if(!sel) return;
+  const s = slides[cur]; if(!s) return;
+  const d_ = s.els.find(x => x.id === sel.dataset.id); if(!d_ || d_.appletId !== 'counter') return;
+  d_.cntGroupId = (val || '').trim();
+  if(typeof refreshCounterEl === 'function') refreshCounterEl(d_.id);
+  if(typeof saveState === 'function') saveState();
 };
 
 window.setCounterOnEnd = function(val){

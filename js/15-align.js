@@ -28,11 +28,14 @@ function layerEl(dir){
 }
 function setAlignScope(s){
   _alignScope=s;
+  try{ window._alignScope=s; }catch(e){}
   const bs=document.getElementById('align-scope-sel');
   const bsl=document.getElementById('align-scope-slide');
   if(bs)bs.classList.toggle('active',s==='sel');
   if(bsl)bsl.classList.toggle('active',s==='slide');
 }
+// Expose for inline onclick handlers (let is not always visible there)
+try{ window._alignScope = (typeof _alignScope!=='undefined') ? _alignScope : 'sel'; }catch(e){ window._alignScope='sel'; }
 
 function alignEl(t,scope){
   // If selected element is part of a group — align the whole group as one unit
@@ -45,17 +48,24 @@ function alignEl(t,scope){
     const gEls=Array.from(cvEl.querySelectorAll('.el[data-group-id="'+gid+'"]'));
     if(gEls.length>1) targets=gEls;
   }
+  // Resolve scope: inline onclick may pass undefined if let-binding isn't visible
+  if(scope!=='slide' && scope!=='sel'){
+    scope = (typeof _alignScope!=='undefined' && _alignScope==='slide') ? 'slide' : 'sel';
+  }
+  // Center vs selection with a single object is a no-op — fall back to slide
+  if((t==='centerH'||t==='centerV'||t==='center') && scope==='sel' && targets.length<2){
+    scope='slide';
+  }
   pushUndo();
 
   // Helper: get rotated visual bounding box of an element
   function getRotBB(el){
-    const l=parseInt(el.style.left)||0, tp=parseInt(el.style.top)||0;
-    const w=parseInt(el.style.width)||0, h=parseInt(el.style.height)||0;
+    const l=parseFloat(el.style.left)||0, tp=parseFloat(el.style.top)||0;
+    const w=parseFloat(el.style.width)||0, h=parseFloat(el.style.height)||0;
     const rot=(parseFloat(el.dataset.rot)||0)*Math.PI/180;
     if(!rot) return {l,t:tp,r:l+w,b:tp+h,cx:l+w/2,cy:tp+h/2};
     const cx=l+w/2, cy=tp+h/2;
     const cos=Math.cos(rot), sin=Math.sin(rot);
-    // 4 corners in screen space
     const corners=[[-w/2,-h/2],[w/2,-h/2],[w/2,h/2],[-w/2,h/2]].map(([dx,dy])=>({
       x:cx+dx*cos-dy*sin, y:cy+dx*sin+dy*cos
     }));
@@ -66,38 +76,35 @@ function alignEl(t,scope){
   // Bounding box of the selection (visual, rotation-aware)
   const bb={l:Infinity,t:Infinity,r:-Infinity,b:-Infinity};
   targets.forEach(el=>{const rb=getRotBB(el);bb.l=Math.min(bb.l,rb.l);bb.t=Math.min(bb.t,rb.t);bb.r=Math.max(bb.r,rb.r);bb.b=Math.max(bb.b,rb.b);});
-  // Reference bounds depend on scope:
-  // 'slide' → align to slide edges
-  // 'sel'   → align to selection bounding box (each element to the group's edge)
+
+  // Reference bounds:
+  // 'slide' → slide edges / center
+  // 'sel'   → selection bounding box (each element aligns to that box)
+  const W = (typeof canvasW==='number' && canvasW>0) ? canvasW : 1200;
+  const H = (typeof canvasH==='number' && canvasH>0) ? canvasH : 675;
   const refL = scope==='slide' ? 0 : bb.l;
   const refT = scope==='slide' ? 0 : bb.t;
-  const refR = scope==='slide' ? canvasW : bb.r;
-  const refB = scope==='slide' ? canvasH : bb.b;
+  const refR = scope==='slide' ? W : bb.r;
+  const refB = scope==='slide' ? H : bb.b;
   const refMX=(refL+refR)/2, refMY=(refT+refB)/2;
-  let dx=0,dy=0;
-  if(t==='centerH') dx=refMX-(bb.l+bb.r)/2;
-  else if(t==='centerV') dy=refMY-(bb.t+bb.b)/2;
-  else if(t==='center'){dx=refMX-(bb.l+bb.r)/2;dy=refMY-(bb.t+bb.b)/2;}
 
-  // Apply: edge alignment = each element individually; center = group moves together
-  const isEdge = t==='left'||t==='right'||t==='top'||t==='bottom';
+  // Per-element alignment (PowerPoint-style): edges AND centers
   targets.forEach(el=>{
-    if(isEdge){
-      const rb = getRotBB(el);
-      let edx=0, edy=0;
-      if(t==='left')        edx = refL - rb.l;
-      else if(t==='right')  edx = refR - rb.r;
-      else if(t==='top')    edy = refT - rb.t;
-      else if(t==='bottom') edy = refB - rb.b;
-      if(edx!==0) el.style.left=(parseInt(el.style.left)+Math.round(edx))+'px';
-      if(edy!==0) el.style.top=(parseInt(el.style.top)+Math.round(edy))+'px';
-    } else {
-      if(dx!==0) el.style.left=(parseInt(el.style.left)+Math.round(dx))+'px';
-      if(dy!==0) el.style.top=(parseInt(el.style.top)+Math.round(dy))+'px';
-    }
+    const rb = getRotBB(el);
+    let edx=0, edy=0;
+    if(t==='left')          edx = refL - rb.l;
+    else if(t==='right')    edx = refR - rb.r;
+    else if(t==='top')      edy = refT - rb.t;
+    else if(t==='bottom')   edy = refB - rb.b;
+    else if(t==='centerH')  edx = refMX - rb.cx;
+    else if(t==='centerV')  edy = refMY - rb.cy;
+    else if(t==='center'){  edx = refMX - rb.cx; edy = refMY - rb.cy; }
+    if(edx!==0) el.style.left=(Math.round((parseFloat(el.style.left)||0)+edx))+'px';
+    if(edy!==0) el.style.top=(Math.round((parseFloat(el.style.top)||0)+edy))+'px';
   });
   syncPos();
   if(typeof _updateHandlesOverlay==='function')_updateHandlesOverlay();
+  if(typeof _updateSelFrames==='function')_updateSelFrames();
   save();drawThumbs();saveState();
 }
 

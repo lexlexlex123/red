@@ -81,6 +81,10 @@ function loadState(){
     if(typeof _applyCanvasZoom==='function') _applyCanvasZoom();
     document.querySelectorAll('.ar-btn').forEach(b=>b.classList.toggle('active',b.textContent===ar));
     if(s.title)document.getElementById('pres-title').value=s.title;
+    else {
+      const te=document.getElementById('pres-title');
+      if(te && !te.value.trim() && typeof defaultPresentationTitle==='function') te.value=defaultPresentationTitle();
+    }
     if(s.appliedThemeIdx!=null)appliedThemeIdx=s.appliedThemeIdx;
     if(s.selLayout!=null&&typeof selLayout!=='undefined')selLayout=s.selLayout;
     if(s.layoutAnimated!=null){

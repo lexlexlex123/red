@@ -21,9 +21,12 @@ const BGS=[
   {id:'b8',s:'linear-gradient(135deg,#232526,#414345)'},
   {id:'wh',s:'#f8fafc'},{id:'dk',s:'#0d0d12'},
 ];
-// 8-color scheme for palette grid (8 cols × 6 tint rows like PowerPoint)
+// 8-color scheme for palette grid (8 cols × 9 lightness rows)
 // Base colors harmonize with the theme background — no pure white in base row.
-// col[7] is always black: its tints produce the full dark→light neutral range.
+// col[7] is neutral: theme-aware (row 0 = text contrast), remaps on theme change.
+// Lightness steps 0.1…0.9; scheme refs are {col,row} (0-based). Custom = hex, no scheme.
+const SCHEME_TINT_LEVELS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9];
+
 function _themeColors(t){
   if(t.colors) return t.colors;
   // Build from theme properties
@@ -35,6 +38,159 @@ function _themeColors(t){
   const c6 = t.headingColor || c1;
   const c7 = t.bodyColor || (t.dark ? '#e2e8f0' : '#1e293b');
   return [c1, c2, c3, c4, c5, c6, c7, t.dark ? '#000000' : '#ffffff'];
+}
+
+/** Position label: col/row 1-based, e.g. "11" = first swatch. */
+function _schemePosCode(col, row){
+  return String((col|0)+1)+String((row|0)+1);
+}
+
+function _activeThemeForScheme(){
+  const idx=(typeof appliedThemeIdx!=='undefined'&&appliedThemeIdx>=0)?appliedThemeIdx
+    :((typeof selTheme!=='undefined'&&selTheme>=0)?selTheme:-1);
+  return (idx>=0&&typeof THEMES!=='undefined'&&THEMES[idx])?THEMES[idx]:null;
+}
+
+/** Input display: scheme → "11", custom → "#rrggbb". */
+function _colorFieldDisplay(hex, schemeRef){
+  if(schemeRef&&schemeRef.col!=null&&schemeRef.row!=null)
+    return _schemePosCode(schemeRef.col, schemeRef.row);
+  return hex||'';
+}
+
+/** Parse field: "11" → scheme color, "#rrggbb" → custom. */
+function _parseColorField(str){
+  const s=(str||'').trim();
+  const pos=s.match(/^([1-8])([1-9])$/);
+  if(pos){
+    const scheme={col:+pos[1]-1, row:+pos[2]-1};
+    const theme=_activeThemeForScheme();
+    const color=theme&&typeof _schemeSwatchColor==='function'
+      ?_schemeSwatchColor(theme, scheme.col, scheme.row):null;
+    if(color) return {color, schemeRef:scheme};
+  }
+  if(/^#[0-9a-fA-F]{6}$/.test(s)) return {color:s, schemeRef:null};
+  if(/^[0-9a-fA-F]{6}$/.test(s)) return {color:'#'+s, schemeRef:null};
+  return null;
+}
+
+function _setColorFieldValue(inputId, previewId, color, schemeRef){
+  try{
+    const inp=document.getElementById(inputId);
+    if(inp) inp.value=_colorFieldDisplay(color, schemeRef);
+    if(previewId){
+      const prev=document.getElementById(previewId);
+      if(prev&&color) prev.style.background=color;
+    }
+  }catch(e){}
+}
+
+/** onPick for openColorPanel — пишет позицию или #hex в поле. */
+function colorPickHandler(inputId, previewId, applyFn){
+  return function(c, sr){
+    _setColorFieldValue(inputId, previewId, c, sr);
+    if(typeof applyFn==='function') applyFn(c, sr);
+  };
+}
+
+/** oninput для поля цвета: "11" или "#rrggbb". */
+function colorFieldOnInput(value, previewId, applyFn){
+  const p=typeof _parseColorField==='function'&&_parseColorField(value);
+  if(!p) return;
+  if(previewId){
+    const el=document.getElementById(previewId);
+    if(el) el.style.background=p.color;
+  }
+  if(typeof applyFn==='function') applyFn(p.color, p.schemeRef);
+}
+
+function _parseHexRgb(hex){
+  if(!hex||typeof hex!=='string') return null;
+  const m=hex.match(/#?([0-9a-fA-F]{6})/);
+  if(!m) return null;
+  const h=m[1];
+  return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];
+}
+
+function _rgbToHsl(r,g,b){
+  r/=255; g/=255; b/=255;
+  const mx=Math.max(r,g,b), mn=Math.min(r,g,b);
+  const l=(mx+mn)/2;
+  if(mx===mn) return {h:0,s:0,l};
+  const d=mx-mn;
+  const s=l>0.5?d/(2-mx-mn):d/(mx+mn);
+  let h;
+  if(mx===r) h=((g-b)/d+(g<b?6:0))/6;
+  else if(mx===g) h=((b-r)/d+2)/6;
+  else h=((r-g)/d+4)/6;
+  return {h:h*360,s,l};
+}
+
+function _hslToHex(h,s,l){
+  h=(((h%360)+360)%360)/360;
+  let r,g,b;
+  if(s===0){ r=g=b=l; }
+  else{
+    const hue2rgb=(p,q,t)=>{
+      if(t<0) t+=1; if(t>1) t-=1;
+      if(t<1/6) return p+(q-p)*6*t;
+      if(t<1/2) return q;
+      if(t<2/3) return p+(q-p)*(2/3-t)*6;
+      return p;
+    };
+    const q=l<0.5?l*(1+s):l+s-l*s;
+    const p=2*l-q;
+    r=hue2rgb(p,q,h+1/3); g=hue2rgb(p,q,h); b=hue2rgb(p,q,h-1/3);
+  }
+  const to=x=>Math.round(Math.max(0,Math.min(1,x))*255).toString(16).padStart(2,'0');
+  return '#'+to(r)+to(g)+to(b);
+}
+
+function _setHexLightness(hex, L){
+  const rgb=_parseHexRgb(hex);
+  if(!rgb) return hex;
+  const hsl=_rgbToHsl(rgb[0],rgb[1],rgb[2]);
+  return _hslToHex(hsl.h, hsl.s, Math.max(0, Math.min(1, L)));
+}
+
+function _grayHex(L){
+  const v=Math.round(Math.max(0,Math.min(1,L))*255);
+  const h=v.toString(16).padStart(2,'0');
+  return '#'+h+h+h;
+}
+
+/** Lightness for row: light theme dark→light, dark theme light→dark (so "11" stays readable). */
+function _schemeRowLightness(row, isLightTheme){
+  const levels=SCHEME_TINT_LEVELS;
+  const n=levels.length;
+  row=row|0;
+  if(row<0||row>=n) return levels[0];
+  return isLightTheme ? levels[row] : levels[n-1-row];
+}
+
+/** Palette swatch at (col,row). Dark themes reverse order so row0 is light. */
+function _schemeSwatchColor(theme, col, row){
+  if(!theme) return null;
+  const levels=SCHEME_TINT_LEVELS;
+  const base8=_themeColors(theme);
+  const isLightTheme=!theme.dark;
+  const n=levels.length;
+  col=col|0; row=row|0;
+  if(row<0||row>=n||col<0||col>=base8.length) return null;
+  const L=_schemeRowLightness(row, isLightTheme);
+  const isLastCol=col===base8.length-1;
+  if(isLastCol){
+    // Pure extremes for primary text / inverse ({col:7,row:0} stays contrast-safe)
+    if(row===0) return isLightTheme?'#000000':'#ffffff';
+    if(row===n-1) return isLightTheme?'#ffffff':'#000000';
+    return _grayHex(L);
+  }
+  let hex=base8[col]||'#888888';
+  if(typeof hex==='string'&&!hex.startsWith('#')){
+    const m=hex.match(/#[0-9a-fA-F]{6}/);
+    hex=m?m[0]:'#888888';
+  }
+  return _setHexLightness(hex, L);
 }
 
 const THEMES=[
@@ -189,6 +345,7 @@ const THEMES=[
    ac1:'#d4d4d8',ac2:'#a1a1aa',ac3:'#e4e4e7',shapeFill:'#52525b',shapeStroke:'#d4d4d8',headingColor:'#f4f4f5',bodyColor:'#d4d4d8',
    colors:['#f4f4f5','#60a5fa','#4ade80','#fbbf24','#f472b6','#a78bfa','#d4d4d8','#000000']},
 ];
+window.THEMES = THEMES;
 // PowerPoint-like color palette rows
 const PALETTE=[
   ['#000000','#262626','#404040','#595959','#737373','#8c8c8c','#a6a6a6','#bfbfbf','#d9d9d9','#f2f2f2','#ffffff'],

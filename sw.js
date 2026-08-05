@@ -1,7 +1,7 @@
 /* Service worker — офлайн-кэш для PWA «Слайды» */
 importScripts('./pwa-precache-images.js');
 
-const CACHE = 'slides-pwa-v7';
+const CACHE = 'slides-pwa-v15';
 
 /** Критичные файлы оболочки (галерея — в PRECACHE_IMAGES). */
 const PRECACHE = [
@@ -59,6 +59,7 @@ const PRECACHE = [
   './js/24-preview.js',
   './js/25-links.js',
   './js/26-export.js',
+  './js/26b-ppt-binary.js',
   './js/27-persist.js',
   './js/28-multisel.js',
   './js/28-filedrop.js',
@@ -75,6 +76,7 @@ const PRECACHE = [
   './js/35-ai.js',
   './js/36-formula.js',
   './js/36-ai.js',
+  './js/37b-chem.js',
   './js/37-graph.js',
   './js/38-connectors.js',
   './js/39-improvements.js',

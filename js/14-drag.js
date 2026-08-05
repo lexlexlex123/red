@@ -105,8 +105,8 @@ function mkDrag(el,c){
         if(!isSvgPart&&!e.target.closest('.shape-text')&&!isHitArea&&!isNoFillSelf)return;
       }
     }
-    // PNG alpha hit test: pass click/drag through transparent image pixels
-    if(el.dataset.type==='image' &&
+    // PNG/SVG alpha hit test: pass click/drag through transparent regions
+    if((el.dataset.type==='image'||el.dataset.type==='svg') &&
        !(typeof multiSel!=='undefined' && multiSel && multiSel.size>1 && multiSel.has(el))){
       const _hitBelow = typeof _findElAtPoint==='function'
         ? _findElAtPoint(e.clientX, e.clientY, { container: document.getElementById('canvas'), selector: '.el', excludeDecor: true })
@@ -115,14 +115,29 @@ function mkDrag(el,c){
         e.preventDefault(); e.stopPropagation();
         if(typeof pickMulti==='function') pickMulti(_hitBelow, false);
         else if(typeof pick==='function') pick(_hitBelow);
-        _hitBelow.dispatchEvent(new MouseEvent('mousedown', {
+        // Dispatch on the actual deepest element at this point that belongs
+        // to _hitBelow (a path/rect/.shape-hit-area/etc.), not on _hitBelow
+        // itself — dispatchEvent always sets e.target to the node you call
+        // it on, so targeting the outer .el directly would give every
+        // handler e.target === (a plain DIV). Shapes specifically check
+        // e.target.tagName to decide whether to accept the click, so that
+        // always failed and silently aborted the selection switch.
+        let _dispatchTarget = _hitBelow;
+        const _stack = document.elementsFromPoint(e.clientX, e.clientY);
+        for (const _cand of _stack) {
+          if (_cand.closest && _cand.closest('.el, .psel') === _hitBelow) { _dispatchTarget = _cand; break; }
+        }
+        _dispatchTarget.dispatchEvent(new MouseEvent('mousedown', {
           bubbles: true, cancelable: true,
           clientX: e.clientX, clientY: e.clientY,
           button: 0, buttons: 1
         }));
         return;
       }
-      if(typeof _isTransparentPixel==='function' && _isTransparentPixel(el, e.clientX, e.clientY, 20)){
+      if(el.dataset.type==='image' && typeof _isTransparentPixel==='function' && _isTransparentPixel(el, e.clientX, e.clientY, 20)){
+        return;
+      }
+      if(el.dataset.type==='svg' && typeof _pointHitsEl==='function' && !_pointHitsEl(el, e.clientX, e.clientY)){
         return;
       }
     }
@@ -147,6 +162,8 @@ function mkDrag(el,c){
     if(window._rotDragging) return;
     // Block figure drag in curve edit mode
     if(window._curveEditMode && el.dataset.shape==='curve') return;
+    // Ride-along elements stay locked to the connector — select/configure only
+    if(el.dataset.rideConnId){e.preventDefault();return;}
     e.preventDefault();on=true;window._anyDragging=true;ox=e.clientX;oy=e.clientY;ol=parseInt(el.style.left);ot=parseInt(el.style.top);
     let _dragUndo=false;
     // Capture group positions if multi-selecting; curve stroke alone moves only the curve
@@ -207,6 +224,11 @@ function mkResize(el,rh,cfg){
     // Applets with stored aspect ratio always resize proportionally from corners
     const _appletD=el.dataset.type==='applet'&&slides[cur]?slides[cur].els.find(x=>x.id===el.dataset.id):null;
     const appletAspect=_appletD&&_appletD._appletAspect||null;
+    // Chemistry structures: always keep aspect so formula/text don't stretch
+    const isChemGraph=el.dataset.type==='graph'&&(
+      el.dataset.graphKind==='chem' ||
+      (slides[cur]&&(slides[cur].els.find(x=>x.id===el.dataset.id)||{}).graphKind==='chem')
+    );
     const mm=e2=>{
       if(typeof window._isPreviewActive==='function'&&window._isPreviewActive()){mu();return;}
       if(e2.buttons===0){mu();return;}
@@ -234,6 +256,21 @@ function mkResize(el,rh,cfg){
         const delta=Math.abs(rawDx)>=Math.abs(rawDy)?rawDx:rawDy*appletAspect;
         nw=Math.max(120,sw+delta);
         nh=Math.max(80,nw/appletAspect);
+      } else if(isChemGraph){
+        // Always proportional — formula and structure must not stretch
+        if(isCorner){
+          const rawDx=cfg.dx*localDx;
+          const rawDy=cfg.dy*localDy;
+          const delta=Math.abs(rawDx)>=Math.abs(rawDy)?rawDx:rawDy*aspect;
+          nw=Math.max(80,sw+delta);
+          nh=Math.max(80,nw/aspect);
+        } else if(cfg.dx!==0){
+          nw=Math.max(80,sw+cfg.dx*localDx);
+          nh=Math.max(80,nw/aspect);
+        } else {
+          nh=Math.max(80,sh+cfg.dy*localDy);
+          nw=Math.max(80,nh*aspect);
+        }
       } else if(e2.shiftKey && isCorner) {
         // Shift + corner = proportional resize
         const rawDx=cfg.dx*localDx;
@@ -318,10 +355,36 @@ function mkResize(el,rh,cfg){
       // Sync data x/y/w/h from DOM after resize (important for rotated elements)
       const _dmu2 = slides[cur]&&slides[cur].els.find(x=>x.id===el.dataset.id);
       if(_dmu2){
-        _dmu2.x=parseInt(el.style.left)||0;
-        _dmu2.y=parseInt(el.style.top)||0;
-        _dmu2.w=parseInt(el.style.width)||0;
-        _dmu2.h=parseInt(el.style.height)||0;
+        const _newX=parseInt(el.style.left)||0, _newY=parseInt(el.style.top)||0;
+        const _newW=parseInt(el.style.width)||0, _newH=parseInt(el.style.height)||0;
+        // Keep hover-effect base/hover positions in sync with the resize delta.
+        // This must happen BEFORE _dmu2.x/y/w/h are overwritten below, and can't
+        // be deferred to save()'s own delta-detection because _dmu2 (the same
+        // object save() would compare against) is mutated right here first.
+        if(el.dataset.hoverFx){
+          let _fx; try{ _fx=JSON.parse(el.dataset.hoverFx); }catch(e){ _fx=null; }
+          if(_fx && _fx.base){
+            const _dx=_newX-(_dmu2.x||0), _dy=_newY-(_dmu2.y||0);
+            const _dw=_newW-(_dmu2.w||0), _dh=_newH-(_dmu2.h||0);
+            if(_dx||_dy||_dw||_dh){
+              _fx.base.x=(_fx.base.x||0)+_dx;
+              _fx.base.y=(_fx.base.y||0)+_dy;
+              _fx.base.w=(_fx.base.w||0)+_dw;
+              _fx.base.h=(_fx.base.h||0)+_dh;
+              if(_fx.hover){
+                if(_fx.hover.x!=null)_fx.hover.x=+_fx.hover.x+_dx;
+                if(_fx.hover.y!=null)_fx.hover.y=+_fx.hover.y+_dy;
+                if(_fx.hover.w!=null)_fx.hover.w=+_fx.hover.w+_dw;
+                if(_fx.hover.h!=null)_fx.hover.h=+_fx.hover.h+_dh;
+              }
+              el.dataset.hoverFx=JSON.stringify(_fx);
+            }
+          }
+        }
+        _dmu2.x=_newX;
+        _dmu2.y=_newY;
+        _dmu2.w=_newW;
+        _dmu2.h=_newH;
         // Clamp pivot so it stays inside new bounds
         const _nw=_dmu2.w, _nh=_dmu2.h;
         const _px=+(el.dataset.rotPivotX||0), _py=+(el.dataset.rotPivotY||0);

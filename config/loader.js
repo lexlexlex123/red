@@ -84,14 +84,19 @@
     if (!c) return;
 
     // Добавить кастомные темы к встроенным
+    // THEMES — const в 01-state.js; мутируем массив (push), не подменяем ссылку —
+    // иначе buildThemeGrid / applyTheme продолжат видеть старый список.
     if (Array.isArray(c.custom) && c.custom.length > 0) {
+      const target = (typeof THEMES !== 'undefined') ? THEMES
+        : (typeof window.THEMES !== 'undefined' ? window.THEMES : null);
+      if (!target) return;
       if (c.replaceBuiltin) {
-        window.THEMES = c.custom;
+        target.length = 0;
+        c.custom.forEach(th => target.push(th));
       } else {
-        if (typeof window.THEMES !== 'undefined') {
-          window.THEMES = window.THEMES.concat(c.custom);
-        }
+        c.custom.forEach(th => target.push(th));
       }
+      window.THEMES = target;
     }
 
     // Тема по умолчанию
@@ -209,6 +214,12 @@
         if (btn) btn.style.display = 'none';
       });
     }
+
+    // Кнопка лога нераспознанных голосовых команд (если ещё нет выбора в localStorage)
+    if (typeof c.showVoiceUnknownBtn === 'boolean' && localStorage.getItem('sf-voice-log-btn') == null) {
+      localStorage.setItem('sf-voice-log-btn', c.showVoiceUnknownBtn ? '1' : '0');
+    }
+    if (typeof window._syncVoiceExportBtn === 'function') window._syncVoiceExportBtn();
   });
 
   // ─────────────────────────────────────────────────────────────

@@ -35,9 +35,11 @@ function _ensureSvgLayer() {
     svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.id = SVG_LAYER_ID;
     svg.setAttribute('style',
-      'position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:1;');
+      'position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:5;');
     canvas.appendChild(svg);
     svg.innerHTML = '<defs></defs>';
+  } else if ((svg.style.zIndex || '') !== '5') {
+    svg.style.zIndex = '5';
   }
   return svg;
 }
@@ -45,7 +47,7 @@ function _ensureSvgLayer() {
 function _connId() { return 'cn' + Date.now().toString(36) + Math.random().toString(36).slice(2,5); }
 
 // ── Edge midpoints: 4 cardinal sides, rotated around element center ─────────
-function _edgeMidpoints(elId) {
+function _edgeMidpoints(elId, includeCenter) {
   const el = document.querySelector(`.el[data-id="${elId}"]`);
   if (!el) return null;
   const _moff = _motionOffsets[elId] || {tx:0,ty:0};
@@ -76,17 +78,20 @@ function _edgeMidpoints(elId) {
   const right  = rot(x + w,    cy     );
   const bottom = rot(cx,       y + h  );
   const left   = rot(x,        cy     );
-  return [
+  const pts = [
     { ...top,    side: 'top',    ...rotDir( 0, -1) },
     { ...right,  side: 'right',  ...rotDir( 1,  0) },
     { ...bottom, side: 'bottom', ...rotDir( 0,  1) },
     { ...left,   side: 'left',   ...rotDir(-1,  0) },
   ];
+  // Optional 5th anchor: dead-center of the object (no outward push/normal).
+  if (includeCenter) pts.push({ x: cx, y: cy, side: 'center', nx: 0, ny: 0 });
+  return pts;
 }
 
 // Returns closest edge midpoint of elId toward a target point or other element
-function _getAnchorSide(elId, otherElId, overridePt) {
-  const mids = _edgeMidpoints(elId);
+function _getAnchorSide(elId, otherElId, overridePt, includeCenter) {
+  const mids = _edgeMidpoints(elId, includeCenter);
   if (!mids) return { x: 0, y: 0, side: 'right' };
 
   let tx, ty;
@@ -108,14 +113,14 @@ function _getAnchorSide(elId, otherElId, overridePt) {
   return best;
 }
 
-// Snap canvas point to nearest edge midpoint within threshold
-function _snapToNearestEdge(canvasPt, excludeElId, threshold) {
+// Snap canvas point to nearest edge midpoint (or center, if allowed) within threshold
+function _snapToNearestEdge(canvasPt, excludeElId, threshold, includeCenter) {
   threshold = threshold || 44;
   const canvas = document.getElementById('canvas');
   let best = null, bestDist = Infinity;
   canvas.querySelectorAll('.el').forEach(el => {
     if (el.dataset.id === excludeElId) return;
-    const mids = _edgeMidpoints(el.dataset.id);
+    const mids = _edgeMidpoints(el.dataset.id, includeCenter);
     if (!mids) return;
     for (const m of mids) {
       const d = Math.sqrt((m.x - canvasPt.x) ** 2 + (m.y - canvasPt.y) ** 2);
@@ -134,6 +139,7 @@ const _SIDE_NORMAL = {
   right:  { x:  1, y:  0 },
   bottom: { x:  0, y:  1 },
   left:   { x: -1, y:  0 },
+  center: { x:  0, y:  0 },
 };
 
 // Get anchor point on object edge (no gap)
@@ -177,11 +183,12 @@ function _getAnchorRaw(conn, which) {
   const elId    = which === 'from' ? conn.fromId   : conn.toId;
   const sideKey = which === 'from' ? 'fromSide'    : 'toSide';
   const otherId = which === 'from' ? conn.toId     : conn.fromId;
-  const mids = _edgeMidpoints(elId);
+  const includeCenter = true;
+  const mids = _edgeMidpoints(elId, includeCenter);
   if (!mids) return { x: 0, y: 0 };
   const stored = conn[sideKey];
   let m = stored ? mids.find(p => p.side === stored) : null;
-  if (!m) m = _getAnchorSide(elId, otherId);
+  if (!m) m = _getAnchorSide(elId, otherId, null, includeCenter);
   return m;
 }
 
@@ -249,10 +256,11 @@ function _renderConnector(conn, svg) {
     g.setAttribute('data-conn-id', conn.id);
     svg.appendChild(g);
   }
-  g.setAttribute('opacity', conn.opacity != null ? conn.opacity : 1);
+  g.setAttribute('opacity', conn.objHidden ? 0 : (conn.opacity != null ? conn.opacity : 1));
+  g.style.display = conn.objHidden ? 'none' : '';
   while (g.firstChild) g.removeChild(g.firstChild);
 
-  const color  = conn.color  || '#60a5fa';
+  const color  = (conn.color === 'none' || conn.color === 'transparent') ? 'none' : (conn.color || '#60a5fa');
   const sw     = conn.sw     || 2;
   const dash   = conn.dash   || 'solid';
   const fromMk = conn.fromMarker || 'none';
@@ -296,6 +304,28 @@ function _renderConnector(conn, svg) {
       r.setAttribute('rx', '0.5'); r.setAttribute('ry', '0.5');
       r.setAttribute('stroke-width', '0');
       m.appendChild(r);
+    } else if (type === 'circle') {
+      // Filled circle, centered on the endpoint
+      m.setAttribute('markerWidth', '3.0'); m.setAttribute('markerHeight', '3.0');
+      m.setAttribute('refX', '1.5'); m.setAttribute('refY', '1.5');
+      const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      c.setAttribute('cx', '1.5'); c.setAttribute('cy', '1.5'); c.setAttribute('r', '1.3');
+      c.setAttribute('stroke-width', '0');
+      m.appendChild(c);
+    } else if (type === 'bar') {
+      // Single tick perpendicular to the line — orient=auto (inherited
+      // default) rotates the marker to align with the path direction, so a
+      // vertical stroke in marker-local space ends up crossing the line
+      // at a right angle, right where the path ends.
+      m.setAttribute('markerWidth', '3.0'); m.setAttribute('markerHeight', '3.0');
+      m.setAttribute('refX', '1.5'); m.setAttribute('refY', '1.5');
+      const ln = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      ln.setAttribute('d', 'M1.5,0.2 L1.5,2.8');
+      ln.setAttribute('stroke', color);
+      ln.setAttribute('stroke-width', '1');
+      ln.setAttribute('stroke-linecap', 'round');
+      ln.setAttribute('fill', 'none');
+      m.appendChild(ln);
     } else if (type === 'cross') {
       // Fixed orientation (no auto-rotate), centered on endpoint
       m.setAttribute('orient', '0');
@@ -320,7 +350,9 @@ function _renderConnector(conn, svg) {
       const style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
       style.id = animId;
       const off = dash === 'dot' ? sw * 4 : sw * 8;
-      style.textContent = `@keyframes conn_march_${conn.id}{from{stroke-dashoffset:${off}}to{stroke-dashoffset:0}}`;
+      const from = conn.animInvert ? 0 : off;
+      const to   = conn.animInvert ? off : 0;
+      style.textContent = `@keyframes conn_march_${conn.id}{from{stroke-dashoffset:${from}}to{stroke-dashoffset:${to}}}`;
       defs.appendChild(style);
     }
   }
@@ -342,6 +374,8 @@ function _renderConnector(conn, svg) {
   function _mkDist(type) {
     if (type === 'arrow')  return 1.386;
     if (type === 'square') return 1.7;
+    if (type === 'circle') return 1.5;
+    if (type === 'bar')    return 1.5;
     if (type === 'cross')  return 1.5;
     return 0;
   }
@@ -380,6 +414,7 @@ function _renderConnector(conn, svg) {
   hit.setAttribute('fill', 'none');
   hit.setAttribute('stroke', 'transparent');
   hit.setAttribute('stroke-width', Math.max(sw + 10, 16));
+  hit.setAttribute('class', 'conn-hit');
   hit.style.pointerEvents = 'stroke';
   hit.style.cursor = 'pointer';
   hit.addEventListener('mousedown', e => {
@@ -523,7 +558,7 @@ function _showHandles(connId) {
 
       const onMove = ev => {
         const cp = _canvasPoint(ev);
-        const snap = _snapToNearestEdge(cp, null, Math.max(48, (conn.gap || 0) + 48));
+        const snap = _snapToNearestEdge(cp, null, Math.max(48, (conn.gap || 0) + 48), true);
         const displayPt = snap ? snap.point : cp;
 
         // Move ghost
@@ -592,7 +627,7 @@ function _showHandles(connId) {
         ghost.remove();
 
         const cp = _canvasPoint(ev);
-        const snap = _snapToNearestEdge(cp, null, Math.max(48, (conn.gap || 0) + 48));
+        const snap = _snapToNearestEdge(cp, null, Math.max(48, (conn.gap || 0) + 48), true);
         if (snap) {
           if (which === 'from') { conn.fromId = snap.elId; conn.fromSide = snap.side; }
           else                  { conn.toId   = snap.elId; conn.toSide   = snap.side; }
@@ -696,7 +731,10 @@ function renderConnectors() {
   svg.querySelectorAll('[data-conn-id]').forEach(g => {
     if (!conns.find(c => c.id === g.getAttribute('data-conn-id'))) g.remove();
   });
-  conns.forEach(conn => _renderConnector(conn, svg));
+  conns.forEach(conn => {
+    _renderConnector(conn, svg);
+    _connSyncRiderPosition(conn);
+  });
   if (_selConnId) _highlightConn(_selConnId);
   else document.getElementById(SVG_LAYER_ID)?.querySelectorAll('.conn-sel-hl').forEach(n => n.remove());
 }
@@ -727,6 +765,7 @@ function updateConnectorsFor(elId, tx, ty) {
       if (conn.cp2offset) conn.cp2 = { x: a2.x + conn.cp2offset.x, y: a2.y + conn.cp2offset.y };
     }
     _renderConnector(conn, svg);
+    _connSyncRiderPosition(conn);
   });
   if (_selConnId && conns.find(c => c.id === _selConnId)) {
     _highlightConn(_selConnId);
@@ -816,6 +855,8 @@ function _pruneConnectors() {
   const existing = new Set(
     Array.from(document.querySelectorAll('#canvas .el')).map(e => e.dataset.id));
   const before = conns.length;
+  const removed = conns.filter(c => !existing.has(c.fromId) || !existing.has(c.toId));
+  removed.forEach(c => { if (typeof _connDeleteRiders === 'function') _connDeleteRiders(c.id); });
   slides[cur].connectors = conns.filter(c => existing.has(c.fromId) && existing.has(c.toId));
   if (slides[cur].connectors.length !== before) renderConnectors();
 }
@@ -827,6 +868,10 @@ if (typeof _origDeleteSelected === 'function') {
   window.deleteSelected = function(...args) {
     const r = _origDeleteSelected.apply(this, args);
     _pruneConnectors();
+    try {
+      const cid = (typeof window._getSelConnId === 'function') ? window._getSelConnId() : null;
+      if (cid && typeof _connSyncRideUI === 'function') _connSyncRideUI(cid);
+    } catch (e) {}
     return r;
   };
 }
@@ -908,12 +953,18 @@ let _handleDragging = false; // true while any handle is being dragged
 function _selectConn(id) {
   if (typeof window._blurActiveShapeText === 'function') window._blurActiveShapeText();
   if (sel) { sel.classList.remove('sel'); sel = null; }
+  if (typeof multiSel !== 'undefined' && multiSel) {
+    try { if (typeof clearMultiSel === 'function') clearMultiSel(); } catch (e) {}
+  }
   if (typeof _rotEl !== 'undefined' && _rotEl) { _rotEl = null; const _ov=document.getElementById('handles-overlay'); if(_ov) _ov.innerHTML=''; }
+  if (typeof _updateSelFrames === 'function') _updateSelFrames();
   _selConnId = id;
   _highlightConn(id);
   _showConnProps(id);
   _showHandles(id);
+  if (typeof renderObjectsPanel === 'function') renderObjectsPanel();
 }
+window._selectConn = _selectConn;
 
 function _deselectConn(restorePanel = true) {
   _selConnId = null;
@@ -926,6 +977,7 @@ function _deselectConn(restorePanel = true) {
     const sp = document.getElementById('slide-props'); if (sp) sp.style.display = 'block';
     const spn = document.getElementById('slide-props-pn'); if (spn) spn.style.display = 'block';
   }
+  if (typeof renderObjectsPanel === 'function') renderObjectsPanel();
 }
 
 function _highlightConn(id) {
@@ -960,41 +1012,69 @@ function _showConnProps(id) {
   if (!panel) return;
   panel.style.display = 'flex'; panel.style.flexDirection = 'column';
   const _g = id => document.getElementById(id);
-  if (_g('cp-color-swatch')) _g('cp-color-swatch').style.background = conn.color || '#60a5fa';
+  if (_g('cp-color-swatch') || _g('cp-color-hex')) {
+    const col = (conn.color && conn.color !== 'none' && conn.color !== 'transparent') ? conn.color : '';
+    if (typeof _setColorFieldValue === 'function') {
+      _setColorFieldValue('cp-color-hex', 'cp-color-swatch', col, conn.colorScheme || null);
+      if (!col && _g('cp-color-swatch')) _g('cp-color-swatch').style.background = 'transparent';
+    } else {
+      if (_g('cp-color-swatch')) _g('cp-color-swatch').style.background = col || 'transparent';
+      if (_g('cp-color-hex')) _g('cp-color-hex').value = col || '';
+    }
+  }
   if (_g('cp-sw'))   _g('cp-sw').value   = conn.sw  || 2;
   if (_g('cp-gap'))  _g('cp-gap').value  = conn.gap || 0;
   if (_g('cp-dash')) _g('cp-dash').value = conn.dash || 'solid';
   if (_g('cp-route')) _g('cp-route').value = conn.route || 'curve';
   if (_g('cp-anim')) _g('cp-anim').checked = !!conn.animated;
+  if (_g('cp-anim-invert')) _g('cp-anim-invert').checked = !!conn.animInvert;
+  const _hasRider = !!(slides[cur] && slides[cur].els.find(e => e.rideConnId === conn.id));
+  if (_g('cp-anim-invert-row')) _g('cp-anim-invert-row').style.display = (conn.animated || _hasRider) ? 'flex' : 'none';
+  _connSyncRideUI(conn.id);
   _updateMarkerButtons('from', conn.fromMarker || 'none');
   _updateMarkerButtons('to',   conn.toMarker   || 'none');
   const opEl2 = _g('cp-opacity'); if (opEl2) opEl2.value = conn.opacity != null ? Math.round(conn.opacity * 100) : 100;
+  if (typeof _connSyncRideUI === 'function') _connSyncRideUI(id);
 }
 
 window.cpSetColor = function(hex, schemeRef) {
   const conn = _getSelConn(); if (!conn) return;
-  conn.color = hex; conn.colorScheme = schemeRef || null;
+  const isClear = !hex || hex === 'none' || hex === 'transparent';
+  conn.color = isClear ? 'none' : hex;
+  conn.colorScheme = isClear ? null : (schemeRef || null);
   const sw = document.getElementById('cp-color-swatch');
   const hx = document.getElementById('cp-color-hex');
-  if (sw) sw.style.background = hex;
-  if (hx) hx.value = hex;
+  if (typeof _setColorFieldValue === 'function') {
+    _setColorFieldValue('cp-color-hex', 'cp-color-swatch', isClear ? '' : hex, conn.colorScheme);
+    if (isClear && sw) sw.style.background = 'transparent';
+  } else {
+    if (sw) sw.style.background = isClear ? 'transparent' : hex;
+    if (hx) hx.value = isClear ? '' : hex;
+  }
+  const strokeCol = isClear ? 'none' : hex;
   // Update SVG path color directly for immediate visual feedback
   const svg = document.getElementById(SVG_LAYER_ID);
   if (svg) {
     const g = svg.querySelector(`[data-conn-id="${conn.id}"]`);
     if (g) {
-      g.querySelectorAll('path[stroke]:not([stroke="transparent"])').forEach(p => {
-        p.setAttribute('stroke', hex);
+      g.querySelectorAll('path[stroke]').forEach(p => {
+        if (p.getAttribute('stroke') === 'transparent') return; // hit area
+        p.setAttribute('stroke', strokeCol);
       });
       // Update markers color
       svg.querySelectorAll(`[id^="${conn.id}_"] path, [id^="${conn.id}_"] polygon`).forEach(p => {
-        if (p.getAttribute('fill') && p.getAttribute('fill') !== 'none') p.setAttribute('fill', hex);
-        if (p.getAttribute('stroke') && p.getAttribute('stroke') !== 'none') p.setAttribute('stroke', hex);
+        if (p.getAttribute('fill') && p.getAttribute('fill') !== 'none') p.setAttribute('fill', strokeCol === 'none' ? 'none' : strokeCol);
+        if (p.getAttribute('stroke') && p.getAttribute('stroke') !== 'none' && p.getAttribute('stroke') !== 'transparent') {
+          p.setAttribute('stroke', strokeCol);
+        }
       });
     }
   }
   _rerender();
   if (typeof saveState === 'function') saveState();
+};
+window.cpClearColor = function() {
+  if (typeof cpSetColor === 'function') cpSetColor('none', null);
 };
 window.cpUpdate = function() {
   const conn = _getSelConn(); if (!conn) return;
@@ -1007,6 +1087,10 @@ window.cpUpdate = function() {
   conn.dash       = document.getElementById('cp-dash').value;
   conn.route      = document.getElementById('cp-route')?.value || 'curve';
   conn.animated   = document.getElementById('cp-anim').checked;
+  const _aiEl = document.getElementById('cp-anim-invert');
+  if (_aiEl) conn.animInvert = _aiEl.checked;
+  const _airRow = document.getElementById('cp-anim-invert-row');
+  if (_airRow) _airRow.style.display = (conn.animated || !!(slides[cur] && slides[cur].els.find(e => e.rideConnId === conn.id))) ? 'flex' : 'none';
   // markers are set via cpSetMarker buttons — read from dataset
   const fmEl = document.querySelector('#cp-marker-from .mk-btn.active');
   const tmEl = document.querySelector('#cp-marker-to .mk-btn.active');
@@ -1020,16 +1104,19 @@ window.cpUpdate = function() {
     conn.cp1offset = null; conn.cp2offset = null;
   }
   _rerender();
+  _connSyncRiderPosition(conn);
 };
 window.cpColorHex = function(val) {
   if (/^#[0-9a-fA-F]{6}$/.test(val)) window.cpSetColor(val);
 };
 window.cpDelete = function() {
   if (!_selConnId || !slides[cur]) return;
-  slides[cur].connectors = (slides[cur].connectors || []).filter(c => c.id !== _selConnId);
+  const removedId = _selConnId;
+  if (typeof _connDeleteRiders === 'function') _connDeleteRiders(removedId);
+  slides[cur].connectors = (slides[cur].connectors || []).filter(c => c.id !== removedId);
   const svg = document.getElementById(SVG_LAYER_ID);
   if (svg) {
-    svg.querySelector(`[data-conn-id="${_selConnId}"]`)?.remove();
+    svg.querySelector(`[data-conn-id="${removedId}"]`)?.remove();
     svg.querySelector('#conn-tangents')?.remove();
   }
   _deselectConn();
@@ -1039,6 +1126,7 @@ window.cpDelete = function() {
     sel = null;
     if (typeof syncProps === 'function') syncProps();
   }
+  if (typeof drawThumbs === 'function') drawThumbs();
   commitAll();
 };
 
@@ -1110,7 +1198,7 @@ document.addEventListener('keydown', e => {
 
 // ── Marker button UI ──────────────────────────────────────────────────────
 
-const _MARKER_TYPES = ['none', 'arrow', 'square', 'cross'];
+const _MARKER_TYPES = ['none', 'arrow', 'square', 'circle', 'bar', 'cross'];
 
 // SVG icons for each marker type (displayed in 28×28 viewBox)
 const _MARKER_SVGS = {
@@ -1124,6 +1212,14 @@ const _MARKER_SVGS = {
   square: `<svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
     <line x1="4" y1="14" x2="18" y2="14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
     <rect x="18" y="9" width="10" height="10" rx="1" stroke="currentColor" stroke-width="2" fill="currentColor" opacity="0.25"/>
+  </svg>`,
+  circle: `<svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <line x1="4" y1="14" x2="17" y2="14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="22" cy="14" r="5" stroke="currentColor" stroke-width="2" fill="currentColor" opacity="0.25"/>
+  </svg>`,
+  bar: `<svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <line x1="4" y1="14" x2="22" y2="14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <line x1="22" y1="7" x2="22" y2="21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
   </svg>`,
   cross: `<svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
     <line x1="4" y1="14" x2="17" y2="14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
@@ -1202,5 +1298,306 @@ document.addEventListener('DOMContentLoaded', () => { _ensureSvgLayer(); _startO
 if (document.readyState !== 'loading') {
   setTimeout(() => { _ensureSvgLayer(); _startObserver(); _injectMarkerButtons(); renderConnectors(); }, 300);
 }
+
+// ── Ride-along element attachment for connector lines ──
+// Image/icon linked via d.rideConnId. In editor sits at start (or end if inverted).
+// In preview/export animates along the path via getPointAtLength (reliable for images+filters).
+window._connRideTargetId = null;
+
+function _connRideAnchorPoint(conn) {
+  if (!conn || typeof _getAnchorPair !== 'function') return null;
+  try {
+    const pair = _getAnchorPair(conn);
+    if (!pair) return null;
+    return conn.animInvert ? pair.p2 : pair.p1;
+  } catch (e) { return null; }
+}
+
+function _connSyncRiderPosition(conn) {
+  if (!conn || !slides[cur]) return;
+  const d = slides[cur].els.find(e => e.rideConnId === conn.id);
+  if (!d) return;
+  const pt = _connRideAnchorPoint(conn);
+  if (!pt) return;
+  const w = d.w || 100, h = d.h || 100;
+  d.x = Math.round(pt.x - w / 2);
+  d.y = Math.round(pt.y - h / 2);
+  const el = document.querySelector('.el[data-id="' + d.id + '"]');
+  if (el) {
+    el.style.left = d.x + 'px';
+    el.style.top = d.y + 'px';
+    el.dataset.rideConnId = conn.id;
+  }
+}
+window._connSyncRiderPosition = _connSyncRiderPosition;
+
+/** Animate riderEl along pathD. Returns a cancel() function. */
+window._connStartRideAnim = function (riderEl, pathD, opts) {
+  if (!riderEl || !pathD) return function () {};
+  opts = opts || {};
+  const dur = Math.max(0.3, opts.duration || 3.5);
+  const gap = Math.max(0, opts.gap || 0);
+  const total = dur + gap;
+  const inv = !!opts.invert;
+  const baseOp = opts.opacity != null ? opts.opacity : 1;
+  const baseRot = opts.baseRot || 0;
+  const meas = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  meas.setAttribute('d', pathD);
+  // Must be in DOM for getTotalLength in some browsers
+  const holder = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  holder.setAttribute('width', '0');
+  holder.setAttribute('height', '0');
+  holder.style.cssText = 'position:absolute;left:-9999px;top:-9999px;overflow:hidden;';
+  holder.appendChild(meas);
+  document.body.appendChild(holder);
+  let len = 0;
+  try { len = meas.getTotalLength(); } catch (e) { len = 0; }
+  document.body.removeChild(holder);
+  if (!len || !isFinite(len)) return function () {};
+
+  const w = riderEl.offsetWidth || parseFloat(riderEl.style.width) || 0;
+  const h = riderEl.offsetHeight || parseFloat(riderEl.style.height) || 0;
+  riderEl.style.left = '0px';
+  riderEl.style.top = '0px';
+  riderEl.style.right = 'auto';
+  riderEl.style.bottom = 'auto';
+  riderEl.style.margin = '0';
+  riderEl.style.offsetPath = 'none';
+  riderEl.style.webkitOffsetPath = 'none';
+  riderEl.style.animation = 'none';
+  riderEl.style.transformOrigin = 'center center';
+  riderEl.style.opacity = '0';
+  riderEl.style.willChange = 'transform,opacity';
+
+  // Local path for sampling (detached is fine after measuring length once)
+  const sample = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  sample.setAttribute('d', pathD);
+  // Re-attach briefly for getPointAtLength if needed
+  holder.appendChild(sample);
+  document.body.appendChild(holder);
+
+  let raf = 0;
+  let start = performance.now();
+  let stopped = false;
+  function pointAt(dist) {
+    const t = Math.max(0, Math.min(len, dist));
+    try { return sample.getPointAtLength(t); } catch (e) { return { x: 0, y: 0 }; }
+  }
+  /** Rotate rider to face travel direction along the curve (+ baseRot offset). */
+  function angleAt(dist) {
+    const eps = Math.max(0.75, Math.min(4, len * 0.002));
+    let dA, dB;
+    if (!inv) {
+      dA = Math.max(0, dist - eps * 0.5);
+      dB = Math.min(len, dist + eps * 0.5);
+      if (dB <= dA) { dA = Math.max(0, len - eps); dB = len; }
+    } else {
+      // Moving toward path start: sample from higher length → lower length
+      dA = Math.min(len, dist + eps * 0.5);
+      dB = Math.max(0, dist - eps * 0.5);
+      if (dA <= dB) { dA = Math.min(len, eps); dB = 0; }
+    }
+    const a = pointAt(dA), b = pointAt(dB);
+    const dx = b.x - a.x, dy = b.y - a.y;
+    if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) return baseRot;
+    return Math.atan2(dy, dx) * 180 / Math.PI + baseRot;
+  }
+  function frame(now) {
+    if (stopped || !riderEl.isConnected) return;
+    const elapsed = ((now - start) / 1000) % total;
+    let op = 0, frac = inv ? 1 : 0;
+    if (elapsed <= dur) {
+      const p = elapsed / dur;
+      frac = inv ? (1 - p) : p;
+      if (p < 0.15) op = baseOp * (p / 0.15);
+      else if (p > 0.85) op = baseOp * ((1 - p) / 0.15);
+      else op = baseOp;
+    } else {
+      frac = inv ? 0 : 1;
+      op = 0;
+    }
+    const dist = frac * len;
+    const pt = pointAt(dist);
+    const ang = angleAt(dist);
+    riderEl.style.transform = 'translate(' + (pt.x - w / 2) + 'px,' + (pt.y - h / 2) + 'px) rotate(' + ang + 'deg)';
+    riderEl.style.opacity = String(op);
+    raf = requestAnimationFrame(frame);
+  }
+  raf = requestAnimationFrame(frame);
+
+  return function cancel() {
+    stopped = true;
+    if (raf) cancelAnimationFrame(raf);
+    if (holder.parentNode) holder.parentNode.removeChild(holder);
+  };
+};
+
+window.connAttachRideElement = function (kind) {
+  const connId = (typeof window._getSelConnId === 'function') ? window._getSelConnId() : null;
+  if (!connId) return;
+  window._connRideTargetId = connId;
+  if (kind === 'icon') {
+    if (typeof openIconModal === 'function') openIconModal();
+  } else {
+    if (typeof openImageModal === 'function') openImageModal();
+  }
+};
+
+/** Remove ride-along icon/image linked to a connector. */
+function _connDeleteRiders(connId) {
+  if (!connId || !slides[cur] || !slides[cur].els) return;
+  const riders = slides[cur].els.filter(e => e.rideConnId === connId);
+  if (!riders.length) return;
+  riders.forEach(d => {
+    const el = document.querySelector('.el[data-id="' + d.id + '"]');
+    if (el) {
+      if (typeof sel !== 'undefined' && sel === el) {
+        sel.classList.remove('sel');
+        sel = null;
+      }
+      if (typeof multiSel !== 'undefined' && multiSel) multiSel.delete(el);
+      el.remove();
+    }
+  });
+  slides[cur].els = slides[cur].els.filter(e => e.rideConnId !== connId);
+}
+window._connDeleteRiders = _connDeleteRiders;
+
+/** ✕ in props: delete the ride element entirely (not just unlink). */
+window.connDetachRideElement = function () {
+  const connId = (typeof window._getSelConnId === 'function') ? window._getSelConnId() : null;
+  if (!connId || !slides[cur]) return;
+  const d = slides[cur].els.find(e => e.rideConnId === connId);
+  if (!d) { _connSyncRideUI(connId); return; }
+  if (typeof pushUndo === 'function') pushUndo();
+  _connDeleteRiders(connId);
+  if (typeof save === 'function') save();
+  if (typeof saveState === 'function') saveState();
+  if (typeof drawThumbs === 'function') drawThumbs();
+  try {
+    if (typeof desel === 'function') desel();
+    _selectConn(connId);
+  } catch (e) {}
+  _connSyncRideUI(connId);
+};
+
+function _connSyncRideUI(connId) {
+  const row = document.getElementById('cp-ride-row');
+  const lbl = document.getElementById('cp-ride-label');
+  const speedInp = document.getElementById('cp-ride-speed');
+  const gapInp = document.getElementById('cp-ride-gap');
+  const attachWrap = document.getElementById('cp-ride-attach-wrap');
+  if (!row) return;
+  const conn = (connId && slides[cur]) ? (slides[cur].connectors || []).find(c => c.id === connId) : null;
+  const d = (connId && slides[cur]) ? slides[cur].els.find(e => e.rideConnId === connId) : null;
+  row.style.display = d ? 'flex' : 'none';
+  // Keep attach buttons visible so user can replace; info row sits under them
+  if (attachWrap) attachWrap.style.display = 'flex';
+  if (d && lbl) {
+    const kind = (d.type === 'icon') ? '★ Значок' : (d.type === 'svg' ? '🖼 SVG' : '🖼 Изображение');
+    lbl.textContent = kind;
+  }
+  if (conn && speedInp) speedInp.value = conn.rideDuration != null ? conn.rideDuration : 3.5;
+  if (conn && gapInp) gapInp.value = conn.rideInterval != null ? conn.rideInterval : 0;
+  const airRow = document.getElementById('cp-anim-invert-row');
+  if (airRow) airRow.style.display = (conn && (conn.animated || d)) ? 'flex' : 'none';
+}
+window._connSyncRideUI = _connSyncRideUI;
+
+window.connUpdateRideSettings = function () {
+  const connId = (typeof window._getSelConnId === 'function') ? window._getSelConnId() : null;
+  if (!connId || !slides[cur]) return;
+  const conn = (slides[cur].connectors || []).find(c => c.id === connId);
+  if (!conn) return;
+  const speedInp = document.getElementById('cp-ride-speed');
+  const gapInp = document.getElementById('cp-ride-gap');
+  if (speedInp) conn.rideDuration = Math.max(0.3, +speedInp.value || 3.5);
+  if (gapInp) conn.rideInterval = Math.max(0, +gapInp.value || 0);
+  if (typeof save === 'function') save();
+  if (typeof saveState === 'function') saveState();
+};
+
+function _connAttachNewestElement(connId) {
+  if (!slides[cur] || !connId) return;
+  const d = slides[cur].els[slides[cur].els.length - 1];
+  if (!d) return;
+  const conn = (slides[cur].connectors || []).find(c => c.id === connId);
+  if (!conn) return;
+  // Remove previous riders for this connector (replace)
+  const oldRiders = slides[cur].els.filter(e => e.rideConnId === connId && e.id !== d.id);
+  oldRiders.forEach(e => {
+    const oldEl = document.querySelector('.el[data-id="' + e.id + '"]');
+    if (oldEl) {
+      if (typeof sel !== 'undefined' && sel === oldEl) sel = null;
+      if (typeof multiSel !== 'undefined' && multiSel) multiSel.delete(oldEl);
+      oldEl.remove();
+    }
+  });
+  if (oldRiders.length) {
+    slides[cur].els = slides[cur].els.filter(e => !(e.rideConnId === connId && e.id !== d.id));
+  }
+  d.rideConnId = connId;
+  if (conn.rideDuration == null) conn.rideDuration = 3.5;
+  if (conn.rideInterval == null) conn.rideInterval = 0;
+  const el = document.querySelector('.el[data-id="' + d.id + '"]');
+  if (el) el.dataset.rideConnId = connId;
+  _connSyncRiderPosition(conn);
+  if (typeof save === 'function') save();
+  if (typeof saveState === 'function') saveState();
+  if (typeof drawThumbs === 'function') drawThumbs();
+  _connSyncRideUI(connId);
+  try {
+    if (typeof desel === 'function') desel();
+    else if (typeof sel !== 'undefined' && sel) { sel.classList.remove('sel'); sel = null; }
+    _selectConn(connId);
+  } catch (e) {}
+}
+
+function _connMaybeAttachAfterInsert() {
+  const targetConn = window._connRideTargetId;
+  if (!targetConn || !slides[cur]) return false;
+  window._connRideTargetId = null;
+  _connAttachNewestElement(targetConn);
+  return true;
+}
+window._connMaybeAttachAfterInsert = _connMaybeAttachAfterInsert;
+
+function _connWireInsertHooks() {
+  // Keep light wrappers for sync paths; async image attach is handled inside _insertAsImage
+  if (window._insertSelectedImage && !window._insertSelectedImage._connRideWrapped) {
+    const _origInsertImage = window._insertSelectedImage;
+    window._insertSelectedImage = function () {
+      const armed = !!window._connRideTargetId;
+      const before = (slides[cur] && slides[cur].els.length) || 0;
+      const ret = _origInsertImage.apply(this, arguments);
+      // Sync inserts (SVG content) — attach immediately. Async image leaves target armed.
+      if (armed && slides[cur] && slides[cur].els.length === before + 1 && window._connRideTargetId) {
+        _connMaybeAttachAfterInsert();
+      }
+      return ret;
+    };
+    window._insertSelectedImage._connRideWrapped = true;
+  }
+  if (window.insertIconSelected && !window.insertIconSelected._connRideWrapped) {
+    const _origInsertIcon = window.insertIconSelected;
+    window.insertIconSelected = function () {
+      const armed = !!window._connRideTargetId;
+      const before = (slides[cur] && slides[cur].els.length) || 0;
+      const ret = _origInsertIcon.apply(this, arguments);
+      // insertIconSelected already calls _connMaybeAttachAfterInsert; avoid double if already attached
+      if (armed && window._connRideTargetId && slides[cur] && slides[cur].els.length === before + 1) {
+        _connMaybeAttachAfterInsert();
+      } else if (!armed) {
+        /* noop */
+      }
+      return ret;
+    };
+    window.insertIconSelected._connRideWrapped = true;
+  }
+}
+_connWireInsertHooks();
+document.addEventListener('DOMContentLoaded', _connWireInsertHooks);
+setTimeout(_connWireInsertHooks, 0);
+setTimeout(_connWireInsertHooks, 500);
 
 })();

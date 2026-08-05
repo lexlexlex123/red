@@ -1,9 +1,9 @@
 // ══════════════ LOCALIZATION (i18n) ══════════════
-// Версия / Version: 6.2
+// Версия / Version: 6.3
 // Автор / Author: Некрасов Александр
 
 const APP_NAME = 'Слайды';
-const APP_VERSION = '6.2';
+const APP_VERSION = '6.3';
 const APP_AUTHOR = 'Некрасов Александр';
 
 const LANG_DATA = {
@@ -11,6 +11,8 @@ const LANG_DATA = {
     // App
     appName: 'Slides',
     newPresentation: 'New Presentation',
+    defaultPresentationTitle: 'Presentation',
+    slideTitlePrefix: 'Slide',
 
     // Tabs
     tabHome: 'Home',
@@ -19,6 +21,7 @@ const LANG_DATA = {
     tabAnim: 'Animations',
     tabTransitions: 'Transitions',
     tabSlideshow: 'Slideshow',
+    tabVoice: 'Voice',
     tabFile: 'File',
 
     // Ribbon groups
@@ -94,7 +97,7 @@ const LANG_DATA = {
 
     // Design
     btnTheme: 'Color Scheme',
-    btnLayout: 'Theme',
+    btnLayout: 'Layout',
     btnAddAnim: 'Add Animation',
     btnClearAnims: 'Clear',
     btnApplyToAll: 'Apply to All',
@@ -113,6 +116,8 @@ const LANG_DATA = {
     settingsSnapSub: 'Align elements to 10px grid',
     settingsLanguage: 'Language',
     settingsLanguageSub: 'Interface language',
+    settingsVoiceLog: 'Voice command log',
+    settingsVoiceLogSub: 'Show 📋 button to copy unrecognized commands',
     settingsVersion: 'Version',
     settingsAuthor: 'Author',
     settingsDone: 'Done',
@@ -173,8 +178,8 @@ const LANG_DATA = {
     codeThemeLight: 'Light',
     codeGlassBg: 'Frosted glass background',
     modalMd: '# Markdown Block',
-    modalLayout: '🖼 Apply Theme',
-    layoutDesc: 'Decorative style for all slides. Uses current theme colors.',
+    modalLayout: '🖼 Layout decor',
+    layoutDesc: 'Decorative style for all slides. Uses current theme colours.',
     modalTheme: '🎨 Color Scheme',
     modalIcon: '🔍 Icons',
     modalSvg: '⬡ Insert SVG',
@@ -278,6 +283,7 @@ const LANG_DATA = {
     fileTab: 'File',
 
     // Sections
+    notebookThemes: '📓 Notebook',
     darkThemes: '🌙 Dark',
     lightThemes: '☀️ Light',
 
@@ -367,6 +373,8 @@ const LANG_DATA = {
     // App
     appName: 'Слайды',
     newPresentation: 'Новая презентация',
+    defaultPresentationTitle: 'Презентация',
+    slideTitlePrefix: 'Слайд',
 
     // Tabs
     tabHome: 'Главная',
@@ -375,6 +383,7 @@ const LANG_DATA = {
     tabAnim: 'Анимации',
     tabTransitions: 'Переходы',
     tabSlideshow: 'Показ',
+    tabVoice: 'Голосовое',
     tabFile: 'Файл',
 
     // Ribbon groups
@@ -450,7 +459,7 @@ const LANG_DATA = {
 
     // Design
     btnTheme: 'Цветовая схема',
-    btnLayout: 'Тема',
+    btnLayout: 'Макет',
     btnAddAnim: 'Добавить анимацию',
     btnApplyToAll: 'Применить ко всем',
 
@@ -468,6 +477,8 @@ const LANG_DATA = {
     settingsSnapSub: 'Выравнивание элементов по сетке 10px',
     settingsLanguage: 'Язык',
     settingsLanguageSub: 'Язык интерфейса',
+    settingsVoiceLog: 'Лог голосовых команд',
+    settingsVoiceLogSub: 'Кнопка 📋 для копирования нераспознанных команд',
     settingsVersion: 'Версия',
     settingsAuthor: 'Автор',
     settingsDone: 'Готово',
@@ -528,8 +539,8 @@ const LANG_DATA = {
     codeThemeLight: 'Светлая',
     codeGlassBg: 'Полупрозрачный фон с размытием',
     modalMd: '# Markdown блок',
-    modalLayout: '🖼 Применить тему',
-    layoutDesc: 'Декоративный стиль для всех слайдов. Использует цвета текущей темы.',
+    modalLayout: '🖼 Декор макета',
+    layoutDesc: 'Декоративный стиль для всех слайдов. Использует цвета текущей схемы.',
     modalTheme: 'Цветовая схема',
     modalIcon: '🔍 Значки',
     modalSvg: '⬡ Вставить SVG',
@@ -632,6 +643,7 @@ const LANG_DATA = {
     fileTab: 'Файл',
 
     // Sections
+    notebookThemes: '📓 Тетради',
     darkThemes: '🌙 Тёмные',
     lightThemes: '☀️ Светлые',
 
@@ -763,6 +775,21 @@ function t(key) {
 
 function getLang() { return _lang; }
 
+/** «Слайд 1» / «Slide 1» — имя слайда по умолчанию. */
+function defaultSlideTitle(n) {
+  const prefix = t('slideTitlePrefix');
+  const num = (n == null || n < 1) ? 1 : n;
+  return prefix + ' ' + num;
+}
+
+/** «Презентация» / «Presentation» — имя презентации по умолчанию. */
+function defaultPresentationTitle() {
+  return t('defaultPresentationTitle');
+}
+
+window.defaultSlideTitle = defaultSlideTitle;
+window.defaultPresentationTitle = defaultPresentationTitle;
+
 // Apply translations to all data-i18n elements in DOM
 function applyI18n() {
   document.querySelectorAll('[data-i18n]').forEach(el => {
@@ -789,9 +816,12 @@ function applyI18n() {
   // Update app name in header
   const nameEl = document.getElementById('app-name-span');
   if (nameEl) nameEl.textContent = t('appName');
-  // Update pres-title placeholder
+  // Update pres-title placeholder; если поле пустое — подставить имя по умолчанию
   const presTitle = document.getElementById('pres-title');
-  if (presTitle && !presTitle.value) presTitle.placeholder = t('newPresentation');
+  if (presTitle) {
+    presTitle.placeholder = t('newPresentation');
+    if (!presTitle.value.trim()) presTitle.value = defaultPresentationTitle();
+  }
 }
 
 function syncLangButtons() {
@@ -810,4 +840,5 @@ function setLang(lang) {
   if (typeof buildThemeGrid === 'function') buildThemeGrid();
   if (typeof buildLayoutGrid === 'function') buildLayoutGrid();
   if (typeof buildTransUI === 'function') buildTransUI();
+  if (typeof window._voiceOnLangChange === 'function') window._voiceOnLangChange();
 }

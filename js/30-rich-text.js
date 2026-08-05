@@ -159,12 +159,60 @@ function _rtNormalizeTextDisplay(tel, cs, gapPx) {
     if (needsZeroStrut) {
       tel.style.fontSize = '0';
       tel.style.lineHeight = '0';
+      // Bare <br> elements (representing blank lines with no text of their
+      // own) have no span to carry a font-size, so once the container's
+      // font-size is zeroed, blank lines collapse to 0 height — Enter
+      // presses appear to do nothing. Give each bare <br> a zero-width
+      // strut span sized like the surrounding text so blank lines keep
+      // their visual height.
+      tel.querySelectorAll('br').forEach(br => {
+        const next = br.nextSibling;
+        const isBareBlankLine =
+          !next ||
+          (next.nodeType === 1 && next.tagName === 'BR') ||
+          (next.nodeType === 3 && !next.textContent.trim());
+        if (!isBareBlankLine) return;
+        if (br.previousSibling && br.previousSibling.nodeType === 1 &&
+            br.previousSibling.classList && br.previousSibling.classList.contains('_rt-blank-strut')) return;
+        let prevSpan = br.previousElementSibling;
+        while (prevSpan && (prevSpan.tagName === 'BR' || !prevSpan.style || !parseFloat(prevSpan.style.fontSize))) {
+          prevSpan = prevSpan.previousElementSibling;
+        }
+        const strutFs = (prevSpan && parseFloat(prevSpan.style.fontSize)) || baseFs;
+        const strutLh = (prevSpan && prevSpan.style.lineHeight) || '1.25';
+        const strut = document.createElement('span');
+        strut.className = '_rt-blank-strut';
+        strut.setAttribute('data-br-anchor', '');
+        strut.style.cssText = `display:inline-block;width:100%;font-size:${strutFs}px;line-height:${strutLh};vertical-align:baseline`;
+        strut.textContent = '\u200b';
+        br.parentNode.insertBefore(strut, br.nextSibling);
+      });
+    } else {
+      tel.querySelectorAll('span._rt-blank-strut').forEach(s => s.remove());
     }
   }
 
   if (hasMarkers) _rtApplyMarkerVerticalAlign(tel, baseFs, gapPx);
 }
 window._rtNormalizeTextDisplay = _rtNormalizeTextDisplay;
+
+// ─── Character counter badge (shown only while the text block is selected in the editor) ──
+function _rtUpdateCharCounter(elWrap, telOrEc) {
+  if (!elWrap) return;
+  const badge = elWrap.querySelector('.char-counter');
+  if (!badge) return;
+  const root = (typeof _rtContent === 'function' && telOrEc) ? _rtContent(telOrEc) : telOrEc;
+  if (!root) return;
+  const chars = _toCharObjs(root.innerHTML);
+  let count = 0;
+  for (const c of chars) {
+    if (c.ch === '\n' || c.ch === '\x00' || c.ch === '\u200b') continue; // breaks / markers / blank-line struts
+    if (!/[\p{L}\p{N}]/u.test(c.ch)) continue; // skip spaces, punctuation, symbols — letters & digits only
+    count++;
+  }
+  badge.textContent = count + ' с.';
+}
+window._rtUpdateCharCounter = _rtUpdateCharCounter;
 
 function _toCharObjs(html) {
   const tmp = document.createElement('div');
@@ -342,6 +390,18 @@ function _stripBrAnchors(root) {
   });
 }
 
+// Returns root's innerHTML with visual-only blank-line struts removed,
+// WITHOUT mutating root itself (struts must stay visible in the live,
+// still-being-edited DOM — only the saved copy should be clean).
+function _htmlWithoutStruts(html) {
+  if (!html || html.indexOf('_rt-blank-strut') === -1) return html;
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  _stripBrAnchors(tmp);
+  return tmp.innerHTML;
+}
+window._htmlWithoutStruts = _htmlWithoutStruts;
+
 function _toEditMode(el) {
   const root = _rtContent(el);
   if (!root.querySelector('span[data-ch]')) return;
@@ -361,6 +421,79 @@ function _toSaveMode(el) {
 
 // ─── Normalize contenteditable Enter → <br> ───────────────────────
 function _interceptEnter(e) {
+  // ── Backspace inside a blank-line strut: delete just that blank line's
+  // newline in one keystroke, not the invisible placeholder character first.
+  // Without this, the first Backspace on a blank line silently consumes the
+  // zero-width-space with no visible effect, making it look like Backspace
+  // "does nothing" — which leads users to keep pressing it and eventually
+  // delete real text once they run out of patience.
+  if (e.key === 'Backspace') {
+    const sel0 = window.getSelection();
+    if (sel0 && sel0.rangeCount > 0 && sel0.getRangeAt(0).collapsed) {
+      const r0 = sel0.getRangeAt(0);
+      const n0 = r0.startContainer;
+      const strutEl = n0.nodeType === 3 ? n0.parentElement : n0;
+      if (strutEl && strutEl.classList && strutEl.classList.contains('_rt-blank-strut')) {
+        const root = e.currentTarget;
+        e.preventDefault();
+        // Remove one <br> immediately after this strut — this is one of the
+        // blank line's closing newlines. Leaves the strut's own opening <br>
+        // (the one before it) untouched, so the remaining structure stays
+        // well-formed for any further blank lines before/after.
+        let brAfter = strutEl.nextSibling;
+        while (brAfter && brAfter.nodeType === 1 && brAfter.hasAttribute &&
+               brAfter.hasAttribute('data-br-anchor') && brAfter.tagName !== 'BR') {
+          brAfter = brAfter.nextSibling;
+        }
+        if (brAfter && brAfter.nodeName === 'BR') {
+          brAfter.remove();
+          if (typeof _rtNormalizeTextDisplay === 'function') {
+            const _dNorm = slides[cur] && slides[cur].els.find(x => x.id === _rtElId);
+            _rtNormalizeTextDisplay(_rtEl, (_dNorm && _dNorm.cs) || '', _dNorm && _dNorm.bulletGap);
+          }
+          // _rtNormalizeTextDisplay preserves already-correct strut nodes
+          // (it only adds missing ones), so strutEl is still in the DOM —
+          // just put the caret back where it was.
+          if (strutEl.isConnected && strutEl.firstChild) {
+            const r2 = document.createRange();
+            r2.setStart(strutEl.firstChild, Math.min(1, strutEl.firstChild.textContent.length));
+            r2.collapse(true);
+            const s2 = window.getSelection();
+            s2.removeAllRanges();
+            s2.addRange(r2);
+          }
+        } else {
+          // This was the only blank line here — remove the strut and its
+          // opening <br> entirely, merging the surrounding lines back together.
+          const brBefore = strutEl.previousSibling;
+          const prevNode = brBefore && brBefore.nodeName === 'BR' ? brBefore.previousSibling : strutEl.previousSibling;
+          if (brBefore && brBefore.nodeName === 'BR') brBefore.remove();
+          strutEl.remove();
+          if (typeof _rtNormalizeTextDisplay === 'function') {
+            const _dNorm = slides[cur] && slides[cur].els.find(x => x.id === _rtElId);
+            _rtNormalizeTextDisplay(_rtEl, (_dNorm && _dNorm.cs) || '', _dNorm && _dNorm.bulletGap);
+          }
+          const r2 = document.createRange();
+          if (prevNode && prevNode.nodeType === 3) {
+            r2.setStart(prevNode, prevNode.textContent.length);
+          } else if (prevNode) {
+            r2.selectNodeContents(prevNode);
+            r2.collapse(false);
+          } else {
+            r2.selectNodeContents(root);
+            r2.collapse(true);
+          }
+          r2.collapse(true);
+          const s2 = window.getSelection();
+          s2.removeAllRanges();
+          s2.addRange(r2);
+        }
+        clearTimeout(_enterCommitTimer);
+        _enterCommitTimer = setTimeout(_rtCommit, 80);
+        return;
+      }
+    }
+  }
   // ── Backspace at start of list line: remove marker, keep text on same line ──
   if (e.key === 'Backspace') {
     const sel = window.getSelection();
@@ -422,15 +555,63 @@ function _interceptEnter(e) {
   const sel = window.getSelection();
   if (!sel || sel.rangeCount === 0) return;
   const r = sel.getRangeAt(0);
+  const root = e.currentTarget;
   r.deleteContents();
+
+  // Find the inline ancestor (direct child of root) the caret is inside, and
+  // split it at the caret so the <br> we insert next lands as a direct child
+  // of root — never nested inside a text span. _rtNormalizeTextDisplay (and
+  // the blank-line Backspace/typing logic) assume <br>s are root-level
+  // siblings; a <br> buried inside a span breaks that assumption silently.
+  {
+    let node = r.startContainer, offset = r.startOffset;
+    let inlineAncestor = null;
+    let n = node;
+    while (n && n !== root) {
+      if (n.parentNode === root) { inlineAncestor = n; break; }
+      n = n.parentNode;
+    }
+    if (inlineAncestor && inlineAncestor.nodeType === 1 && node !== inlineAncestor) {
+      // Build a range from the caret to the end of inlineAncestor, extract it
+      // into a clone placed right after inlineAncestor — this is the
+      // standard "split element at caret" operation.
+      const tailRange = document.createRange();
+      tailRange.setStart(node, offset);
+      tailRange.setEndAfter(inlineAncestor.lastChild || inlineAncestor);
+      const tailFragment = tailRange.extractContents();
+      const clone = inlineAncestor.cloneNode(false); // same tag/attrs, no children
+      clone.appendChild(tailFragment);
+      if (clone.textContent.length > 0 || clone.querySelector('*')) {
+        inlineAncestor.parentNode.insertBefore(clone, inlineAncestor.nextSibling);
+      }
+      // Caret now belongs right after the (now-truncated) inlineAncestor
+      r.setStartAfter(inlineAncestor);
+      r.collapse(true);
+    }
+  }
 
   const br = document.createElement('br');
   r.insertNode(br);
 
-  // Check if br is at the very end (no meaningful content after it)
-  let next = br.nextSibling;
-  while (next && next.nodeType === 3 && next.textContent === '') next = next.nextSibling;
-  const atEnd = !next;
+  // Check if br is at the very end of the whole editable block (no meaningful
+  // content after it anywhere), not just within its immediate parent span —
+  // otherwise pressing Enter at the end of a colored span that is followed by
+  // another colored span (e.g. "FIRSTRED|SECONDBLUE") is wrongly treated as
+  // "end of text" and an extra <br> gets inserted, producing a blank line.
+  function nextMeaningful(node) {
+    let n = node;
+    while (n) {
+      let sib = n.nextSibling;
+      while (sib) {
+        if (!(sib.nodeType === 3 && sib.textContent === '')) return sib;
+        sib = sib.nextSibling;
+      }
+      n = n.parentNode;
+      if (!n || n === root) return null;
+    }
+    return null;
+  }
+  const atEnd = !nextMeaningful(br);
 
   const r2 = document.createRange();
   if (atEnd) {
@@ -444,6 +625,28 @@ function _interceptEnter(e) {
   sel.removeAllRanges();
   sel.addRange(r2);
 
+  if (typeof _rtNormalizeTextDisplay === 'function') {
+    const _dNorm = slides[cur] && slides[cur].els.find(x => x.id === _rtElId);
+    _rtNormalizeTextDisplay(root, (_dNorm && _dNorm.cs) || '', _dNorm && _dNorm.bulletGap);
+  }
+  // Re-place the caret explicitly: normalize may have inserted a strut span
+  // right after `br`, and relying on the browser to keep the old Range
+  // pointing at the right spot through that DOM mutation isn't reliable —
+  // it was landing the caret on the .tel container itself, which then made
+  // the next typed character get inserted in the wrong place entirely.
+  {
+    const r3 = document.createRange();
+    const afterBr = br.nextSibling;
+    if (afterBr && afterBr.nodeType === 1 && afterBr.classList && afterBr.classList.contains('_rt-blank-strut') && afterBr.firstChild) {
+      r3.setStart(afterBr.firstChild, 0);
+    } else {
+      r3.setStartAfter(br);
+    }
+    r3.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r3);
+  }
+
   clearTimeout(_enterCommitTimer);
   _enterCommitTimer = setTimeout(_rtCommit, 80);
 }
@@ -451,6 +654,42 @@ let _enterCommitTimer = null;
 
 // ─── Selection: char-index based ──────────────────────────────────
 function _charOffset(targetNode, targetOffset, root) {
+  // If the boundary is "inside an element, before child #targetOffset" (common
+  // when the boundary sits right before/after a contenteditable="false" marker
+  // span, rather than inside a text node), count chars in just the preceding
+  // siblings within that element instead of falling through to a full walk
+  // (which would never match targetNode itself and run to the document's end).
+  if (targetNode.nodeType === 1) {
+    let count = 0;
+    function countNode(node) {
+      if (node.nodeType === 3) { count += node.textContent.length; return; }
+      if (node.nodeType === 1) {
+        if (node.tagName === 'BR') { count += 1; return; }
+        if (node.hasAttribute && (node.hasAttribute('data-list-bullet') || node.hasAttribute('data-list-num'))) { count += 1; return; }
+        if (node.hasAttribute && node.hasAttribute('data-br-anchor')) return;
+        for (const child of node.childNodes) countNode(child);
+      }
+    }
+    // Count everything before targetNode itself (its preceding siblings, walked
+    // from root), plus the children of targetNode up to targetOffset.
+    let found = false;
+    function walkToTarget(node) {
+      for (const child of node.childNodes) {
+        if (child === targetNode) { found = true; return true; }
+        countNode(child);
+      }
+      return false;
+    }
+    if (targetNode !== root) walkToTarget(root);
+    else found = true;
+    if (found) {
+      for (let i = 0; i < targetOffset && i < targetNode.childNodes.length; i++) {
+        countNode(targetNode.childNodes[i]);
+      }
+      return count;
+    }
+    // targetNode not found under root — fall through to generic walk below.
+  }
   let count = 0;
   function walk(node) {
     if (node === targetNode && node.nodeType === 3) { count += targetOffset; return true; }
@@ -472,6 +711,16 @@ function _charOffset(targetNode, targetOffset, root) {
   return count;
 }
 
+// Single source of truth for "what range should line-targeting operations
+// (bullet/numbered list toggle, marker icon change, marker color change) use":
+// a real selection, falling back to a saved fragment selection, falling back
+// to the collapsed caret position. Without the caret fallback, simply placing
+// the cursor in a line (no highlighting) would fall through to "no selection
+// = whole block" instead of targeting just that line.
+function _getSelOrCaretIdx(root) {
+  return _readSelFromDOM(root) || _savedSelIdx || _readCollapsedCaretIdx(root);
+}
+
 function _readSelFromDOM(el) {
   const s = window.getSelection();
   if (!s || s.rangeCount === 0 || s.isCollapsed) return null;
@@ -480,6 +729,19 @@ function _readSelFromDOM(el) {
   const start = _charOffset(r.startContainer, r.startOffset, el);
   const end   = _charOffset(r.endContainer,   r.endOffset,   el);
   return start < end ? { start, end } : null;
+}
+
+// Returns a zero-width {start,end} at the caret position when the selection
+// is collapsed (just a blinking cursor, nothing highlighted) — lets
+// line-targeting logic treat "caret in line X" the same as "selection within
+// line X", instead of only handling real (non-collapsed) selections.
+function _readCollapsedCaretIdx(el) {
+  const s = window.getSelection();
+  if (!s || s.rangeCount === 0 || !s.isCollapsed) return null;
+  const r = s.getRangeAt(0);
+  if (!el.contains(r.startContainer) && r.startContainer !== el) return null;
+  const pos = _charOffset(r.startContainer, r.startOffset, el);
+  return { start: pos, end: pos };
 }
 
 function _restoreSelToDOM(idx, el) {
@@ -517,6 +779,46 @@ function _restoreSelToDOM(idx, el) {
   } catch(e) {}
 }
 
+// Places a collapsed caret at a single char-index position (counting the
+// same way _charOffset/_toCharObjs do: <br> and list markers count as 1,
+// data-br-anchor / blank-line struts are skipped entirely).
+function _restoreCaretToCharIndex(targetIdx, root) {
+  if (targetIdx < 0) targetIdx = 0;
+  let count = 0, node = null, off = 0;
+  function walk(n) {
+    if (n.nodeType === 3) {
+      const len = n.textContent.length;
+      if (count + len >= targetIdx) { node = n; off = targetIdx - count; return true; }
+      count += len; return false;
+    }
+    if (n.nodeType === 1) {
+      if (n.hasAttribute && n.hasAttribute('data-br-anchor')) return false;
+      if (n.tagName === 'BR') {
+        count += 1;
+        if (count === targetIdx) { node = n.parentNode; off = Array.prototype.indexOf.call(n.parentNode.childNodes, n) + 1; return true; }
+        return false;
+      }
+      if (n.hasAttribute && (n.hasAttribute('data-list-bullet') || n.hasAttribute('data-list-num'))) {
+        count += 1;
+        if (count === targetIdx) { node = n.parentNode; off = Array.prototype.indexOf.call(n.parentNode.childNodes, n) + 1; return true; }
+        return false;
+      }
+      for (const c of n.childNodes) { if (walk(c)) return true; }
+    }
+    return false;
+  }
+  for (const c of root.childNodes) { if (walk(c)) break; }
+  if (!node) { node = root; off = root.childNodes.length; }
+  try {
+    const r = document.createRange();
+    r.setStart(node, off);
+    r.collapse(true);
+    const s = window.getSelection();
+    s.removeAllRanges();
+    s.addRange(r);
+  } catch (e) {}
+}
+
 // ─── Panel mousedown ──────────────────────────────────────────────
 // Saved Range object for visual highlight restoration
 let _savedRange = null;
@@ -537,6 +839,14 @@ function _rtSaveRange() {
 function _rtRestoreRange() {
   if (!_savedRange || !_rtEl) return;
   try {
+    // Don't restore a range that's no longer connected to the live document
+    // (e.g. the element it pointed into was rebuilt) or that doesn't belong
+    // to the currently-focused text element.
+    if (!_savedRange.startContainer || !_savedRange.startContainer.isConnected ||
+        !_rtEl.contains(_savedRange.commonAncestorContainer)) {
+      _savedRange = null;
+      return;
+    }
     _rtEl.focus();
     const s = window.getSelection();
     s.removeAllRanges();
@@ -545,6 +855,21 @@ function _rtRestoreRange() {
 }
 
 let _rtPanelInteracting = false;
+// True for one tick when the mousedown that's about to steal focus from the
+// text editor landed inside an open modal (e.g. the bullet icon picker).
+// document.activeElement isn't usable for this inside a blur handler: clicking
+// a plain non-focusable element (like an icon-picker cell, a <div>) leaves
+// activeElement as <body>, not the modal — so we capture the click target
+// directly, in the mousedown capture phase, before focus is actually lost.
+let _rtModalInteracting = false;
+window._rtModalInteracting = false;
+document.addEventListener('mousedown', function(e) {
+  if (e.target.closest && e.target.closest('.modal-ov.open')) {
+    _rtModalInteracting = true;
+    window._rtModalInteracting = true;
+    setTimeout(() => { _rtModalInteracting = false; window._rtModalInteracting = false; }, 300);
+  }
+}, true);
 
 function _rtOnPanelMousedown(e) {
   if (!_rtEl) return;
@@ -598,8 +923,48 @@ function rtAttachSelectionTracking(wrapEl, telEl) {
 
   telEl.addEventListener('keydown', _interceptEnter);
 
+  telEl.addEventListener('beforeinput', (e) => {
+    if (e.inputType && e.inputType.indexOf('delete') === 0) return; // deletions handled by _interceptEnter
+    const s = window.getSelection();
+    if (!s || s.rangeCount === 0) return;
+    const r = s.getRangeAt(0);
+    const n0 = r.startContainer;
+    const strutEl = n0.nodeType === 3 ? n0.parentElement : (n0.nodeType === 1 ? n0 : null);
+    if (!strutEl || !strutEl.classList || !strutEl.classList.contains('_rt-blank-strut')) return;
+    // Typed text must not land inside the strut's text node (it would inherit
+    // no real style and be invisible to _toCharObjs, which skips struts
+    // entirely) — insert it as a real sibling text node right after the
+    // strut instead, then place the caret after what we inserted.
+    const text = e.data;
+    if (!text) return; // composition events etc. — let the browser handle it
+    e.preventDefault();
+    // Wrap in a span carrying real style — a bare text node here would
+    // inherit font-size:0 from the zero-strut container and stay invisible
+    // until the next full re-render rewraps it through _toCharObjs.
+    let styleSrc = strutEl.previousElementSibling;
+    while (styleSrc && (styleSrc.tagName === 'BR' ||
+           (styleSrc.hasAttribute && styleSrc.hasAttribute('data-br-anchor') && styleSrc.tagName !== 'BR' && (!styleSrc.style || !styleSrc.style.fontSize)))) {
+      styleSrc = styleSrc.previousElementSibling;
+    }
+    const baseFs = (typeof _rtFontSizeFromCs === 'function' && _rtFontSizeFromCs(telEl.getAttribute('style') || '')) || 24;
+    const fs = (styleSrc && styleSrc.style && parseFloat(styleSrc.style.fontSize)) || baseFs;
+    const lh = (styleSrc && styleSrc.style && styleSrc.style.lineHeight) || '1.25';
+    const span = document.createElement('span');
+    span.style.cssText = `display:inline;font-size:${fs}px;line-height:${lh};vertical-align:baseline`;
+    span.textContent = text;
+    if (strutEl.nextSibling) strutEl.parentNode.insertBefore(span, strutEl.nextSibling);
+    else strutEl.parentNode.appendChild(span);
+    const after = document.createRange();
+    after.setStart(span.firstChild, span.firstChild.textContent.length);
+    after.collapse(true);
+    s.removeAllRanges();
+    s.addRange(after);
+    if (typeof _rtCommit === 'function') _rtCommit();
+  });
+
   telEl.addEventListener('blur', (e) => {
     // _toSaveMode is called by 13-images.js blur handler which fires first
+    if (_rtModalInteracting) return;
     if (!_rtColorPickInProgress) _rtCommit();
     // Clear saved selection when leaving text editing without clicking props panel
     // _rtPanelInteracting is set synchronously in capture phase before this blur fires
@@ -630,6 +995,7 @@ document.addEventListener('selectionchange', () => {
     if (p) _rtElId = p.dataset.id;
     const idx = _readSelFromDOM(telEl);
     if (idx) _savedSelIdx = idx;
+    else if (s.isCollapsed) { _savedSelIdx = null; _savedRange = null; } // cursor placed with no highlight — stop using the old fragment range
     if (typeof rtUpdateToolbarState === 'function') rtUpdateToolbarState();
   }
 });
@@ -649,8 +1015,10 @@ function _rtCommit() {
     } else {
       const vw = _rtEl.querySelector('.ec-valign-wrap');
       const root = _rtContent(_rtEl);
-      d.html = vw ? vw.innerHTML : root.innerHTML;
+      const _liveHtml = vw ? vw.innerHTML : root.innerHTML;
+      d.html = _htmlWithoutStruts(_liveHtml);
     }
+    if (typeof window._fitTextHeight === 'function') window._fitTextHeight(d);
     if (typeof drawThumbs === 'function') drawThumbs();
     if (typeof saveState === 'function') saveState();
   }
@@ -706,6 +1074,10 @@ function _applyToSelection(prop, val) {
   const inEditMode = !root.querySelector('span[data-ch]');
   const newHtml = inEditMode ? _groupedHtml(chars) : _charObjsToHtml(chars);
   root.innerHTML = newHtml;
+  if (typeof _rtNormalizeTextDisplay === 'function') {
+    const _dNorm = slides[cur] && slides[cur].els.find(e => e.id === _rtElId);
+    _rtNormalizeTextDisplay(_rtEl, (_dNorm && _dNorm.cs) || (_rtEl.getAttribute('style') || ''), _dNorm && _dNorm.bulletGap);
+  }
   _rtReapplyTextShadow(_rtEl);
   // After innerHTML rebuild the browser clears the selection. We restore it,
   // but first ensure the editor has focus — without focus the browser won't
@@ -751,7 +1123,16 @@ function _setTSWhole(prop, val, skipHtmlSync) {
       _syncPropToHtml(prop, val);
     }
   }
-  save(); saveState(); drawThumbs(); syncProps();
+  const _dForFit = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
+  const _fitNow = () => {
+    if (_dForFit && typeof window._fitTextHeight === 'function' && window._fitTextHeight(_dForFit)) {
+      sel.style.height = _dForFit.h + 'px';
+    }
+    save(); saveState(); drawThumbs(); syncProps();
+  };
+  // font-size changes need a frame for the browser to relayout text before measuring
+  if (prop === 'font-size') requestAnimationFrame(_fitNow);
+  else _fitNow();
   _rtReapplyTextShadow(sel);
   // Update button highlight state after whole-element formatting
   setTimeout(() => { if (typeof rtUpdateToolbarState === 'function') rtUpdateToolbarState(); }, 0);
@@ -770,6 +1151,7 @@ function _clearCharColors() {
   const newHtml = _charObjsToHtml(chars);
   root.innerHTML = newHtml;
   d.html = newHtml;
+  if (typeof _rtNormalizeTextDisplay === 'function') _rtNormalizeTextDisplay(c, c.getAttribute('style') || '', d.bulletGap);
   _rtReapplyTextShadow(sel);
 }
 
@@ -797,6 +1179,7 @@ function _syncPropToHtml(prop, val) {
 
   root.innerHTML = newHtml;
   d.html = newHtml;
+  if (typeof _rtNormalizeTextDisplay === 'function') _rtNormalizeTextDisplay(c, c.getAttribute('style') || '', d.bulletGap);
   _rtReapplyTextShadow(sel);
 
 }
@@ -882,7 +1265,7 @@ function rtColor(color, schemeRef) {
     _savedSelIdx = null; // whole-element color — clear any saved fragment selection
     _setTSWhole('color', color);
   }
-  try { const _sw=document.getElementById('p-col-preview');if(_sw)_sw.style.background=color; document.getElementById('p-hex').value=color; } catch(e) {}
+  try { const _sw=document.getElementById('p-col-preview');if(_sw)_sw.style.background=color; document.getElementById('p-hex').value=(typeof _colorFieldDisplay==='function')?_colorFieldDisplay(color,schemeRef||null):color; } catch(e) {}
 }
 
 function rtFontSize(size) {
@@ -944,6 +1327,7 @@ function resetTextFormatting() {
   const text = _toCharObjs(root.innerHTML).map(o=>o.ch==='\n'?'\n':o.ch).join('');
   root.innerHTML = _charObjsToHtml([...text].map(ch=>({ch,style:{}})));
   d.html = root.innerHTML;
+  if (typeof _rtNormalizeTextDisplay === 'function') _rtNormalizeTextDisplay(c, c.getAttribute('style') || '', d.bulletGap);
   _rtReapplyTextShadow(sel);
   commitAll(); syncProps();
   toast((t('toastFormattingReset')),'ok');
@@ -1045,6 +1429,7 @@ function rtUpdateToolbarState() {
         setOn('ft-sub', allChars.every(c => c.style.verticalAlign === 'sub'));
         _updateListButtonState();
         _rtUpdateFontSizeInput(root);
+        _rtUpdateColorInputForCaret(s, root);
         return;
       }
       // Fallback: no spans yet — read from element style
@@ -1056,6 +1441,7 @@ function rtUpdateToolbarState() {
       setOn('ft-sub', false);
       _updateListButtonState();
       _rtUpdateFontSizeInput(root);
+      _rtUpdateColorInputForCaret(s, root);
       return;
     }
 
@@ -1073,8 +1459,21 @@ function rtUpdateToolbarState() {
     setOn('ft-sub', !!(el2.style&&el2.style.verticalAlign==='sub'));
     _updateListButtonState();
     if (hasSel) {
-      const hex = _rgbToHex(cs.color);
-      if (hex) try{document.getElementById('p-col').value=hex; document.getElementById('p-hex').value=hex;}catch(e){}
+      try {
+        const swEl = document.getElementById('p-col-preview');
+        const hexEl = document.getElementById('p-hex');
+        const colors = _rtColorsInSelection(s);
+        if (colors && colors.length === 1) {
+          if (swEl) swEl.style.background = colors[0];
+          if (hexEl) hexEl.value = colors[0];
+        } else if (colors && colors.length > 1) {
+          if (swEl) swEl.style.background = '';
+          if (hexEl) hexEl.value = '';
+        } else {
+          const hex = _rgbToHex(cs.color);
+          if (hex) { if (swEl) swEl.style.background = hex; if (hexEl) hexEl.value = hex; }
+        }
+      } catch(e) {}
       // Font size: show value only if all selected chars are same size, else blank
       try {
         const inp = document.getElementById('p-fs');
@@ -1097,6 +1496,75 @@ function rtUpdateToolbarState() {
 }
 
 // Returns array of char span elements currently selected (via browser selection in _rtEl)
+// Sync the text-color swatch/hex field to the color at the caret (collapsed
+// selection — no text highlighted). Looks at the char immediately before the
+// caret first (matches how typing/IME and most editors define "current
+// color"), falling back to the char immediately after if at the very start.
+function _rtUpdateColorInputForCaret(s, root) {
+  try {
+    if (!s || s.rangeCount === 0) return;
+    const r = s.getRangeAt(0);
+    const node = r.startContainer;
+    const offset = r.startOffset;
+    let charSpan = null;
+
+    // Find the nearest ancestor (up to root) that actually carries an
+    // explicit inline color — covers both per-character data-ch spans and
+    // plain multi-character spans produced by coloring a whole selection.
+    function nearestColoredAncestor(n) {
+      let cur = n && n.nodeType === 3 ? n.parentElement : n;
+      while (cur && cur !== root) {
+        if (cur.style && cur.style.color) return cur;
+        cur = cur.parentElement;
+      }
+      return null;
+    }
+
+    if (node.nodeType === 3) {
+      charSpan = nearestColoredAncestor(node);
+    } else if (node.nodeType === 1) {
+      // Caret between element children — pick the char right before the
+      // caret (offset-1), falling back to right after (offset) at position 0.
+      const before = node.childNodes[offset - 1];
+      const after = node.childNodes[offset];
+      charSpan = nearestColoredAncestor(before) || nearestColoredAncestor(after);
+    }
+
+    const swEl = document.getElementById('p-col-preview');
+    const hexEl = document.getElementById('p-hex');
+    if (charSpan) {
+      const hex = _rgbToHex(window.getComputedStyle(charSpan).color);
+      if (hex) { if (swEl) swEl.style.background = hex; if (hexEl) hexEl.value = hex; }
+    } else if (root) {
+      // No explicitly-colored ancestor here — fall back to the block's base color.
+      const hex = _rgbToHex(window.getComputedStyle(root).color);
+      if (hex) { if (swEl) swEl.style.background = hex; if (hexEl) hexEl.value = hex; }
+    }
+  } catch(e) {}
+}
+
+// Returns the set of distinct text colors (as hex) found among the text
+// nodes that intersect the given Selection's range. Works for both
+// per-character data-ch spans and plain multi-character colored spans.
+function _rtColorsInSelection(s) {
+  if (!s || s.rangeCount === 0) return null;
+  const range = s.getRangeAt(0);
+  const root = range.commonAncestorContainer.nodeType === 3
+    ? range.commonAncestorContainer.parentElement
+    : range.commonAncestorContainer;
+  if (!root) return null;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const colors = new Set();
+  let node;
+  while ((node = walker.nextNode())) {
+    if (!range.intersectsNode(node)) continue;
+    if (!node.textContent || !node.textContent.length) continue;
+    const hex = _rgbToHex(window.getComputedStyle(node.parentElement).color);
+    if (hex) colors.add(hex);
+  }
+  return [...colors];
+}
+
 function _getSelectionCharEls() {
   if (!_rtEl) return null;
   const root = _rtContent(_rtEl);
@@ -1157,6 +1625,65 @@ function _stripLineMarker(line) {
   return line.replace(/<span[^>]*data-list-[^>]*>[\s\S]*?<\/span>/i, '').replace(/^(&nbsp;|\s)+/, '');
 }
 
+// Returns the set of marker spans (span[data-list-bullet] or span[data-list-num])
+// that fall within the current selection on `root`, using the same line-overlap
+// logic as _applyListToElement. If there's no selection, returns ALL markers
+// (matching the "no selection = whole block" convention used elsewhere).
+function _getTargetedMarkers(root) {
+  const allMarkers = Array.from(root.querySelectorAll('span[data-list-bullet], span[data-list-num]'));
+  const selIdx = _getSelOrCaretIdx(root);
+  if (!selIdx) return allMarkers;
+
+  const html = _htmlWithoutStruts(root.innerHTML);
+  const lines = _getHtmlLines(html);
+  const lineOffsets = [];
+  {
+    let pos = 0;
+    lines.forEach((lineHtml) => {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = lineHtml;
+      let lineLen = 0;
+      function countNode(node) {
+        if (node.nodeType === 3) { lineLen += node.textContent.length; return; }
+        if (node.nodeType === 1) {
+          if (node.tagName === 'BR') { lineLen += 1; return; }
+          if (node.hasAttribute('data-list-bullet') || node.hasAttribute('data-list-num')) { lineLen += 1; return; }
+          if (node.hasAttribute('data-br-anchor')) return;
+          for (const ch of node.childNodes) countNode(ch);
+        }
+      }
+      for (const ch of tmp.childNodes) countNode(ch);
+      lineOffsets.push({ start: pos, end: pos + lineLen });
+      pos += lineLen + 1;
+    });
+  }
+  const selectedLineIndices = new Set();
+  const isCaretPoint = selIdx.start === selIdx.end;
+  lineOffsets.forEach(({ start, end }, i) => {
+    const overlaps = isCaretPoint
+      ? (selIdx.start >= start && selIdx.start < end) || (selIdx.start === end && i === lineOffsets.length - 1)
+      : (selIdx.start < end && selIdx.end > start);
+    if (overlaps) selectedLineIndices.add(i);
+  });
+  // Map each live marker span to its line index by counting <br>s before it.
+  let lineIdx = 0;
+  const targeted = [];
+  const root2 = root;
+  (function walk(node) {
+    for (const child of Array.from(node.childNodes)) {
+      if (child.nodeType === 1 && child.tagName === 'BR') { lineIdx++; continue; }
+      if (child.nodeType === 1 && child.hasAttribute && child.hasAttribute('data-br-anchor')) continue;
+      if (child.nodeType === 1 && (child.hasAttribute('data-list-bullet') || child.hasAttribute('data-list-num'))) {
+        if (selectedLineIndices.has(lineIdx)) targeted.push(child);
+        continue;
+      }
+      if (child.nodeType === 1) walk(child);
+    }
+  })(root2);
+  return targeted;
+}
+window._getTargetedMarkers = _getTargetedMarkers;
+
 function _applyListToElement(listType) {
   if (!sel || sel.dataset.type !== 'text') return;
   const d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
@@ -1179,8 +1706,8 @@ function _applyListToElement(listType) {
   const iconId = _getBulletIconId();
 
   // Determine which lines are "selected" (by char offset range)
-  const selIdx = _readSelFromDOM(root) || _savedSelIdx;
-  const html = root.innerHTML;
+  const selIdx = _getSelOrCaretIdx(root);
+  const html = _htmlWithoutStruts(root.innerHTML);
   const lines = _getHtmlLines(html);
 
   // Build cumulative char-offset ranges per line (counting markers as 1, brs as 1)
@@ -1212,9 +1739,15 @@ function _applyListToElement(listType) {
   let selectedLineIndices;
   if (selIdx) {
     selectedLineIndices = new Set();
+    const isCaretPoint = selIdx.start === selIdx.end;
     lineOffsets.forEach(({ start, end }, i) => {
-      // A line is selected if selection overlaps it
-      if (selIdx.start < end && selIdx.end > start) selectedLineIndices.add(i);
+      // A line is selected if selection overlaps it. For a collapsed caret
+      // (zero-width point), use the standard half-open [start,end) convention
+      // so a caret at a line's start unambiguously belongs to that line.
+      const overlaps = isCaretPoint
+        ? (selIdx.start >= start && selIdx.start < end) || (selIdx.start === end && i === lineOffsets.length - 1)
+        : (selIdx.start < end && selIdx.end > start);
+      if (overlaps) selectedLineIndices.add(i);
     });
   } else {
     // No selection — apply to all lines
@@ -1249,12 +1782,47 @@ function _applyListToElement(listType) {
   });
 
   const newHtml = _joinHtmlLines(newLines);
+  // Compute where the caret should land in the new HTML before we replace the
+  // DOM: same line, shifted by the cumulative length change of every line up
+  // to and including the caret's line (marker add/remove changes line length
+  // by exactly 1 char in this counting scheme).
+  let caretTargetIdx = null;
+  if (selIdx && selIdx.start === selIdx.end) {
+    let newPos = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const oldLen = lineOffsets[i].end - lineOffsets[i].start;
+      const tmp = document.createElement('div');
+      tmp.innerHTML = newLines[i];
+      let newLen = 0;
+      (function countNode(node) {
+        if (node.nodeType === 3) { newLen += node.textContent.length; return; }
+        if (node.nodeType === 1) {
+          if (node.tagName === 'BR') { newLen += 1; return; }
+          if (node.hasAttribute('data-list-bullet') || node.hasAttribute('data-list-num')) { newLen += 1; return; }
+          if (node.hasAttribute('data-br-anchor')) return;
+          for (const ch of node.childNodes) countNode(ch);
+        }
+      })(tmp);
+      if (selIdx.start >= lineOffsets[i].start && selIdx.start <= lineOffsets[i].end) {
+        const withinLine = selIdx.start - lineOffsets[i].start;
+        const shifted = Math.max(0, Math.min(newLen, withinLine + (newLen - oldLen)));
+        caretTargetIdx = newPos + shifted;
+        break;
+      }
+      newPos += newLen + 1;
+    }
+  }
   root.innerHTML = newHtml;
   d.html = newHtml;
   if (listType === 'bullet') d.bulletIconId = iconId;
   _attachBulletClickHandlers(root);
   _rtApplyMarkerVerticalAlign(root, parseFloat(fontSize));
+  if (typeof _rtNormalizeTextDisplay === 'function') _rtNormalizeTextDisplay(c, cs, d.bulletGap);
   _rtReapplyTextShadow(sel);
+  if (caretTargetIdx != null) {
+    _restoreCaretToCharIndex(caretTargetIdx, root);
+    _savedSelIdx = null;
+  }
   commitAll();
   _updateListButtonState();
 }
@@ -1277,6 +1845,29 @@ function rtChangeBulletIcon(bulletSpan) {
   if (!sel || sel.dataset.type !== 'text') return;
   const d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
   if (!d) return;
+  // Flush any pending deferred commit first — otherwise it can fire while
+  // the picker is open (after the user already chose an icon) and rebuild
+  // the whole .tel DOM from the not-yet-updated data, silently discarding
+  // the icon change. This is what made it "work on the second try": by then
+  // the stale timer had already fired and there was nothing left to race.
+  if (typeof _enterCommitTimer !== 'undefined' && _enterCommitTimer) {
+    clearTimeout(_enterCommitTimer);
+    _enterCommitTimer = null;
+    if (typeof _rtCommit === 'function') _rtCommit();
+    // Re-resolve bulletSpan: _rtCommit may have rebuilt the DOM, so the
+    // original reference passed in could now be detached.
+    if (bulletSpan && !bulletSpan.isConnected) {
+      const idx = Array.prototype.indexOf.call(
+        (bulletSpan.closest('.ec') || document).querySelectorAll?.('span[data-list-bullet]') || [],
+        bulletSpan
+      );
+      const freshContainer = sel.querySelector('.ec');
+      if (freshContainer) {
+        const freshMarkers = freshContainer.querySelectorAll('span[data-list-bullet]');
+        if (idx >= 0 && freshMarkers[idx]) bulletSpan = freshMarkers[idx];
+      }
+    }
+  }
   // Open icon picker with callback to replace icon
   if (typeof openIconPickerForList === 'function') {
     openIconPickerForList(bulletSpan, d);
@@ -1356,12 +1947,14 @@ function _getCurrentTextColor(ecEl) {
 
 // Selected lines with markers → only those; no selection or no marker on selection → all
 function _rtMarkersForColorUpdate(root) {
-  const selIdx = _readSelFromDOM(root) || _savedSelIdx;
+  const selIdx = _getSelOrCaretIdx(root);
   const lines = _getHtmlLines(root.innerHTML);
   let targetLines = null;
   if (selIdx) {
     let pos = 0;
     const indices = new Set();
+    const isCaretPoint = selIdx.start === selIdx.end;
+    const lineCount = lines.length;
     lines.forEach((lineHtml, i) => {
       const tmp = document.createElement('div');
       tmp.innerHTML = lineHtml;
@@ -1377,7 +1970,10 @@ function _rtMarkersForColorUpdate(root) {
       }
       for (const ch of tmp.childNodes) countNode(ch);
       const start = pos, end = pos + lineLen;
-      if (selIdx.start < end && selIdx.end > start) indices.add(i);
+      const overlaps = isCaretPoint
+        ? (selIdx.start >= start && selIdx.start < end) || (selIdx.start === end && i === lineCount - 1)
+        : (selIdx.start < end && selIdx.end > start);
+      if (overlaps) indices.add(i);
       pos += lineLen + 1;
     });
     const anyMarker = [...indices].some(i => _lineHasMarker(lines[i]));
@@ -1432,7 +2028,7 @@ function rtBulletColorPick(color, schemeRef) {
   });
   _rtApplyMarkerVerticalAlign(root, sz);
 
-  d.html = root.innerHTML;
+  d.html = _htmlWithoutStruts(root.innerHTML);
   commitAll();
 
   // Force swatch update AFTER commitAll (syncProps may have reset it)
@@ -1473,7 +2069,7 @@ function rtSetBulletGap(val) {
   const fsMatch = cs.match(/font-size:\s*([\d.]+)px/);
   const sz = parseFloat(fsMatch ? fsMatch[1] : '24');
   _rtApplyMarkerVerticalAlign(root, sz, g);
-  d.html = root.innerHTML;
+  d.html = _htmlWithoutStruts(root.innerHTML);
   if (g === _RT_MARKER_GAP_DEFAULT) delete d.bulletGap;
   else d.bulletGap = g;
   save(); drawThumbs(); saveState();

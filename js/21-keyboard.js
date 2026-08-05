@@ -140,7 +140,9 @@ function onKey(e){
           }catch(e){}
         });
       }
-      if(typeof startPreview==='function') startPreview(cur);
+      // F5 — с первого слайда; Shift+F5 — с текущего (как в PowerPoint)
+      const from = e.shiftKey ? cur : 0;
+      if(typeof startPreview==='function') startPreview(from);
     }
     return;
   }
@@ -199,6 +201,7 @@ function onKey(e){
       e.preventDefault();
       if(typeof pushUndo==="function")pushUndo();
       allEls.forEach(el=>{
+        if(el.dataset&&el.dataset.rideConnId)return;
         const isLego=el.dataset&&el.dataset.type==='lego';
         const LU=40,LGY=12; // лего: U и GY из 41-lego.js
         const curL=parseInt(el.style.left),curT=parseInt(el.style.top);

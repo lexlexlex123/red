@@ -75,10 +75,15 @@
   }
 
   // Compute end top-left position of element after orbitTo from (startX,startY)
+  function _orbitRadius(a){
+    const ocx = a.orbitCx || 0, ocy = a.orbitCy || 0;
+    const d = Math.sqrt(ocx * ocx + ocy * ocy);
+    return d > 0.5 ? d : (a.orbitR || 120);
+  }
   function _orbitEndPos(a, startX, startY, ow, oh){
     const ocx = a.orbitCx || 0;
     const ocy = a.orbitCy || 0;
-    const r   = a.orbitR  || 120;
+    const r   = _orbitRadius(a);
     const dir = (a.orbitDir||'cw')==='cw' ? 1 : -1;
     const deg = (a.orbitDeg != null ? a.orbitDeg : 360) * dir;
     const ecx = startX + ow/2, ecy = startY + oh/2;
@@ -91,13 +96,14 @@
   function _makeGhost(domEl, gx, gy, ow, oh, outlineColor){
     const ghost = domEl.cloneNode(true);
     ghost.className = 'motion-ghost';
+    ghost.dataset.motionUi = '1';
     ghost.removeAttribute('data-id'); ghost.removeAttribute('data-anims');
     ghost.removeAttribute('data-editing'); ghost.removeAttribute('data-type');
     const _origTransform = domEl.style.transform || '';
     ghost.style.cssText = [
       'position:absolute',
       `left:${gx}px`,`top:${gy}px`,`width:${ow}px`,`height:${oh}px`,
-      'opacity:0.28', 'pointer-events:none',
+      'opacity:0.28', 'pointer-events:auto', 'cursor:move',
       `outline:1.5px dashed ${outlineColor}`,
       'z-index:91','user-select:none',
       _origTransform ? `transform:${_origTransform}` : '',
@@ -110,6 +116,8 @@
 
   function _makeMoveHandle(gx, gy, size, bg){
     const h = document.createElement('div');
+    h.className = 'motion-handle';
+    h.dataset.motionUi = '1';
     h.style.cssText = [
       'position:absolute',`left:${gx}px`,`top:${gy}px`,
       `width:${size}px`,`height:${size}px`,
@@ -226,12 +234,15 @@
 
           // Drag handle
           const dot = document.createElement('div');
+          dot.className = 'motion-handle';
+          dot.dataset.motionUi = '1';
           dot.style.cssText = `position:absolute;left:${px}px;top:${py}px;width:14px;height:14px;border-radius:50%;background:rgba(139,92,246,0.9);border:2px solid #fff;transform:translate(-50%,-50%);cursor:grab;pointer-events:auto;box-shadow:0 1px 6px rgba(139,92,246,.6)`;
           dot.title = 'Перетащите для изменения центра качения';
 
           dot.addEventListener('mousedown', e=>{
             if(typeof window._isPreviewActive==='function'&&window._isPreviewActive()) return;
             e.preventDefault(); e.stopPropagation();
+            window._anyDragging = true;
             dot.style.cursor='grabbing';
             const sx=e.clientX, sy=e.clientY;
             const ssox=sox, ssoy=soy;
@@ -255,6 +266,7 @@
             const onUp = ev=>{
               document.removeEventListener('mousemove', onMove);
               document.removeEventListener('mouseup', onUp);
+              window._anyDragging = false;
               dot.style.cursor='grab';
               const rawSox = ssox + (ev.clientX-sx)/scale;
               const rawSoy = ssoy + (ev.clientY-sy)/scale;
@@ -302,38 +314,41 @@
           const handle = _makeMoveHandle(gx, gy, hs, 'rgba(99,102,241,0.85)');
           handle.title = 'Перетащите для изменения точки назначения';
 
-          handle.addEventListener('mousedown', e=>{
-            if(typeof window._isPreviewActive==='function'&&window._isPreviewActive()) return;
-            e.preventDefault(); e.stopPropagation();
-            const sx=e.clientX, sy=e.clientY;
-            const stx=a.tx||0, sty=a.ty||0;
-            const onMove = ev=>{
-              const nx = ox + stx + Math.round((ev.clientX-sx)/scale);
-              const ny = oy + sty + Math.round((ev.clientY-sy)/scale);
-              ghost.style.left = handle.style.left = nx+'px';
-              ghost.style.top  = handle.style.top  = ny+'px';
-              // Обновляем коннекторы чтобы следовали за ghost
-              if(typeof updateConnectorsFor==='function'){
-                const _curTx = stx + Math.round((ev.clientX-sx)/scale);
-                const _curTy = sty + Math.round((ev.clientY-sy)/scale);
-                updateConnectorsFor(d.id, _curTx, _curTy);
-              }
-            };
-            const onUp = ev=>{
-              document.removeEventListener('mousemove',onMove);
-              document.removeEventListener('mouseup',onUp);
-              a.tx = stx + Math.round((ev.clientX-sx)/scale);
-              a.ty = sty + Math.round((ev.clientY-sy)/scale);
-              const domEl2 = canvas.querySelector(`.el[data-id="${d.id}"]`);
-              if(domEl2) domEl2.dataset.anims = JSON.stringify(d.anims);
-              if(typeof save==='function') save();
-              if(typeof saveState==='function') saveState();
-              renderMotionOverlay();
-              if(typeof renderAnimPanel==='function') renderAnimPanel();
-            };
-            document.addEventListener('mousemove',onMove);
-            document.addEventListener('mouseup',onUp);
-          });
+          function bindMoveToDrag(target){
+            target.addEventListener('mousedown', e=>{
+              if(typeof window._isPreviewActive==='function'&&window._isPreviewActive()) return;
+              e.preventDefault(); e.stopPropagation();
+              window._anyDragging = true;
+              const sx=e.clientX, sy=e.clientY;
+              const stx=a.tx||0, sty=a.ty||0;
+              const onMove = ev=>{
+                const nx = ox + stx + Math.round((ev.clientX-sx)/scale);
+                const ny = oy + sty + Math.round((ev.clientY-sy)/scale);
+                ghost.style.left = handle.style.left = nx+'px';
+                ghost.style.top  = handle.style.top  = ny+'px';
+                if(typeof updateConnectorsFor==='function'){
+                  updateConnectorsFor(d.id, stx + Math.round((ev.clientX-sx)/scale), sty + Math.round((ev.clientY-sy)/scale));
+                }
+              };
+              const onUp = ev=>{
+                document.removeEventListener('mousemove',onMove);
+                document.removeEventListener('mouseup',onUp);
+                window._anyDragging = false;
+                a.tx = stx + Math.round((ev.clientX-sx)/scale);
+                a.ty = sty + Math.round((ev.clientY-sy)/scale);
+                const domEl2 = canvas.querySelector(`.el[data-id="${d.id}"]`);
+                if(domEl2) domEl2.dataset.anims = JSON.stringify(d.anims);
+                if(typeof save==='function') save();
+                if(typeof saveState==='function') saveState();
+                renderMotionOverlay();
+                if(typeof renderAnimPanel==='function') renderAnimPanel();
+              };
+              document.addEventListener('mousemove',onMove);
+              document.addEventListener('mouseup',onUp);
+            });
+          }
+          bindMoveToDrag(handle);
+          bindMoveToDrag(ghost);
           gc.appendChild(handle);
 
           prevX = gx; prevY = gy;
@@ -345,7 +360,9 @@
           const stepOx = prevX, stepOy = prevY;
           const ocx = a.orbitCx || 0;
           const ocy = a.orbitCy || 0;
-          const r   = a.orbitR  || 120;
+          // Радиус = расстояние от центра до текущей позиции объекта (старт без прыжка)
+          const r   = _orbitRadius(a);
+          if(Math.abs((a.orbitR || 0) - r) > 0.5) a.orbitR = Math.round(r);
           const dir = (a.orbitDir||'cw')==='cw' ? 1 : -1;
           const deg = (a.orbitDeg != null ? a.orbitDeg : 360) * dir;
 
@@ -387,51 +404,62 @@
           ghost.dataset.ghostMi = mi;
           gc.appendChild(ghost);
 
-          // Drag handle on orbitTo ghost — drag moves end point along circle, updates orbitDeg
+          // Drag end along circle (ghost + handle) — start stays at stepOx/stepOy
           {
             const hs = Math.min(20, ow*0.3, oh*0.3);
             const orbitHandle = _makeMoveHandle(endGx, endGy, hs, 'rgba(34,197,94,0.85)');
             orbitHandle.title = 'Перетащите конечную точку вдоль окружности';
-            orbitHandle.addEventListener('mousedown', e=>{
-              if(typeof window._isPreviewActive==='function'&&window._isPreviewActive()) return;
-              e.preventDefault(); e.stopPropagation();
-              const onMove = ev=>{
-                const mx=(ev.clientX-canvas.getBoundingClientRect().left)/scale;
-                const my=(ev.clientY-canvas.getBoundingClientRect().top)/scale;
-                // Snap mouse to circle: find angle from orbit center to mouse
-                const angle = Math.atan2(my-cy, mx-cx);
-                const snapX = cx + r*Math.cos(angle) - ow/2;
-                const snapY = cy + r*Math.sin(angle) - oh/2;
-                ghost.style.left = orbitHandle.style.left = snapX+'px';
-                ghost.style.top  = orbitHandle.style.top  = snapY+'px';
-              };
-              const onUp = ev=>{
-                document.removeEventListener('mousemove',onMove);
-                document.removeEventListener('mouseup',onUp);
-                const mx=(ev.clientX-canvas.getBoundingClientRect().left)/scale;
-                const my=(ev.clientY-canvas.getBoundingClientRect().top)/scale;
-                const newEndAngle = Math.atan2(my-cy, mx-cx);
-                // Compute new degrees: signed angle from startAngle to newEndAngle in orbit direction
-                let rawDiff = newEndAngle - startAngle;
-                // Normalize to [-2PI, 2PI]
-                while(rawDiff >  2*Math.PI) rawDiff -= 2*Math.PI;
-                while(rawDiff < -2*Math.PI) rawDiff += 2*Math.PI;
-                // Pick the value matching original direction sign
-                const origDir = (a.orbitDir||'cw')==='cw' ? 1 : -1;
-                if(origDir > 0 && rawDiff < 0) rawDiff += 2*Math.PI;
-                if(origDir < 0 && rawDiff > 0) rawDiff -= 2*Math.PI;
-                // Store as unsigned — direction is encoded in orbitDir, not sign of orbitDeg
-                a.orbitDeg = Math.round(Math.abs(rawDiff) * 180/Math.PI);
-                const domEl2 = canvas.querySelector(`.el[data-id="${d.id}"]`);
-                if(domEl2) domEl2.dataset.anims = JSON.stringify(d.anims);
-                if(typeof save==='function') save();
-                if(typeof saveState==='function') saveState();
-                renderMotionOverlay();
-                if(typeof renderAnimPanel==='function') renderAnimPanel();
-              };
-              document.addEventListener('mousemove',onMove);
-              document.addEventListener('mouseup',onUp);
-            });
+            function bindOrbitEndDrag(target){
+              target.addEventListener('mousedown', e=>{
+                if(typeof window._isPreviewActive==='function'&&window._isPreviewActive()) return;
+                e.preventDefault(); e.stopPropagation();
+                window._anyDragging = true;
+                const rect0 = canvas.getBoundingClientRect();
+                const mx0 = (e.clientX - rect0.left) / scale;
+                const my0 = (e.clientY - rect0.top) / scale;
+                // Дельта от угла клика — призрак не прыгает к курсору
+                const mouseAng0 = Math.atan2(my0 - cy, mx0 - cx);
+                let lastAng = endAngle;
+                const onMove = ev=>{
+                  const rect = canvas.getBoundingClientRect();
+                  const mx = (ev.clientX - rect.left) / scale;
+                  const my = (ev.clientY - rect.top) / scale;
+                  const dx = mx - cx, dy = my - cy;
+                  if(dx * dx + dy * dy < 4) return;
+                  let delta = Math.atan2(dy, dx) - mouseAng0;
+                  while(delta >  Math.PI) delta -= 2 * Math.PI;
+                  while(delta < -Math.PI) delta += 2 * Math.PI;
+                  lastAng = endAngle + delta;
+                  const snapX = cx + r * Math.cos(lastAng) - ow / 2;
+                  const snapY = cy + r * Math.sin(lastAng) - oh / 2;
+                  ghost.style.left = orbitHandle.style.left = snapX + 'px';
+                  ghost.style.top  = orbitHandle.style.top  = snapY + 'px';
+                };
+                const onUp = ()=>{
+                  document.removeEventListener('mousemove',onMove);
+                  document.removeEventListener('mouseup',onUp);
+                  window._anyDragging = false;
+                  let rawDiff = lastAng - startAngle;
+                  while(rawDiff >  2*Math.PI) rawDiff -= 2*Math.PI;
+                  while(rawDiff < -2*Math.PI) rawDiff += 2*Math.PI;
+                  const origDir = (a.orbitDir||'cw')==='cw' ? 1 : -1;
+                  if(origDir > 0 && rawDiff < 0) rawDiff += 2*Math.PI;
+                  if(origDir < 0 && rawDiff > 0) rawDiff -= 2*Math.PI;
+                  a.orbitDeg = Math.round(Math.abs(rawDiff) * 180/Math.PI);
+                  a.orbitR = Math.round(r);
+                  const domEl2 = canvas.querySelector(`.el[data-id="${d.id}"]`);
+                  if(domEl2) domEl2.dataset.anims = JSON.stringify(d.anims);
+                  if(typeof save==='function') save();
+                  if(typeof saveState==='function') saveState();
+                  renderMotionOverlay();
+                  if(typeof renderAnimPanel==='function') renderAnimPanel();
+                };
+                document.addEventListener('mousemove',onMove);
+                document.addEventListener('mouseup',onUp);
+              });
+            }
+            bindOrbitEndDrag(orbitHandle);
+            bindOrbitEndDrag(ghost);
             gc.appendChild(orbitHandle);
           }
 
@@ -447,6 +475,8 @@
 
           // ── Center dot — drag to reposition orbit (object stays at stepOx/stepOy) ──
           const centerDot = document.createElement('div');
+          centerDot.className = 'motion-handle';
+          centerDot.dataset.motionUi = '1';
           centerDot.style.cssText = [
             'position:absolute',`left:${cx-8}px`,`top:${cy-8}px`,
             'width:16px','height:16px','border-radius:50%',
@@ -463,6 +493,7 @@
           centerDot.addEventListener('mousedown', e=>{
             if(typeof window._isPreviewActive==='function'&&window._isPreviewActive()) return;
             e.preventDefault(); e.stopPropagation();
+            window._anyDragging = true;
             const sx=e.clientX, sy=e.clientY;
             const scx=a.orbitCx||0, scy=a.orbitCy||0;
             const onMove = ev=>{
@@ -470,6 +501,7 @@
               const ddy=Math.round((ev.clientY-sy)/scale);
               const newOcx=scx+ddx, newOcy=scy+ddy;
               const newCx=elCx+newOcx, newCy=elCy+newOcy;
+              // Радиус от текущего положения объекта — старт орбиты не прыгает
               const newR=Math.max(10, Math.round(Math.sqrt((elCx-newCx)**2+(elCy-newCy)**2)));
               circleEl.setAttribute('cx', newCx.toFixed(1));
               circleEl.setAttribute('cy', newCy.toFixed(1));
@@ -485,6 +517,7 @@
             const onUp = ev=>{
               document.removeEventListener('mousemove',onMove);
               document.removeEventListener('mouseup',onUp);
+              window._anyDragging = false;
               a.orbitCx=scx+Math.round((ev.clientX-sx)/scale);
               a.orbitCy=scy+Math.round((ev.clientY-sy)/scale);
               const nc={x:elCx+a.orbitCx, y:elCy+a.orbitCy};
@@ -504,6 +537,8 @@
           // ── Radius handle — on circle at startAngle, drag to resize ──
           const rhx=cx+r*Math.cos(startAngle), rhy=cy+r*Math.sin(startAngle);
           radiusHandle = document.createElement('div');
+          radiusHandle.className = 'motion-handle';
+          radiusHandle.dataset.motionUi = '1';
           radiusHandle.style.cssText = [
             'position:absolute',`left:${rhx-7}px`,`top:${rhy-7}px`,
             'width:14px','height:14px','border-radius:50%',
@@ -529,12 +564,13 @@
           radiusHandle.addEventListener('mousedown', e=>{
             if(typeof window._isPreviewActive==='function'&&window._isPreviewActive()) return;
             e.preventDefault(); e.stopPropagation();
+            window._anyDragging = true;
             const angleToEl=Math.atan2(elCy-cy, elCx-cx);
             const onMove = ev=>{
               const mx=(ev.clientX-canvas.getBoundingClientRect().left)/scale;
               const my=(ev.clientY-canvas.getBoundingClientRect().top)/scale;
               const newR=Math.max(10, Math.round(Math.sqrt((mx-cx)**2+(my-cy)**2)));
-              // Shift center to keep object on circle
+              // Сдвигаем центр так, чтобы объект остался на окружности (старт без прыжка)
               const newCx=elCx-newR*Math.cos(angleToEl);
               const newCy=elCy-newR*Math.sin(angleToEl);
               circleEl.setAttribute('r',newR.toFixed(1));
@@ -554,6 +590,7 @@
             const onUp = ev=>{
               document.removeEventListener('mousemove',onMove);
               document.removeEventListener('mouseup',onUp);
+              window._anyDragging = false;
               const mx=(ev.clientX-canvas.getBoundingClientRect().left)/scale;
               const my=(ev.clientY-canvas.getBoundingClientRect().top)/scale;
               const newR=Math.max(10, Math.round(Math.sqrt((mx-cx)**2+(my-cy)**2)));

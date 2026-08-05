@@ -245,12 +245,14 @@ function _insertSelectedImage(){
   const slideBgMode = _imgSlideBgMode;
   closeImageModal();
   if(slideBgMode){
+    window._connRideTargetId = null;
     const entry=IMAGE_REGISTRY.find(x=>x.path===srcPath);
     const name=entry?entry.name:(typeof _imgDisplayName==='function'?_imgDisplayName(srcPath):srcPath.split('/').pop());
     if(typeof setSlideBgImage==='function')setSlideBgImage(srcPath,name);
     return;
   }
   if(replaceMode && typeof sel !== 'undefined' && sel){
+    window._connRideTargetId = null;
     // Заменяем src выбранного элемента
     const d = slides[cur].els.find(e => e.id === sel.dataset.id);
     if(d && (d.type === 'image' || d.type === 'svg')){
@@ -297,6 +299,7 @@ function _insertAsSvg(code){
   const el = document.getElementById('canvas').querySelector('[data-id="' + d.id + '"]');
   if(el) pick(el);
   save(); drawThumbs(); saveState();
+  if(typeof window._connMaybeAttachAfterInsert === 'function') window._connMaybeAttachAfterInsert();
 }
 
 // Вставка изображения — точно как handleImg в 11-elements.js
@@ -331,6 +334,7 @@ function _insertAsImage(src){
     const el = document.getElementById('canvas').querySelector('[data-id="' + d.id + '"]');
     if(el) pick(el);
     save(); drawThumbs(); saveState();
+    if(typeof window._connMaybeAttachAfterInsert === 'function') window._connMaybeAttachAfterInsert();
   };
   tmp.onerror = () => {
     // Изображение не загрузилось (например CORS при file://)
@@ -352,6 +356,7 @@ function _insertAsImage(src){
     const el = document.getElementById('canvas').querySelector('[data-id="' + d.id + '"]');
     if(el) pick(el);
     save(); drawThumbs(); saveState();
+    if(typeof window._connMaybeAttachAfterInsert === 'function') window._connMaybeAttachAfterInsert();
   };
   tmp.src = typeof assetUrl==='function' ? assetUrl(src) : src;
 }

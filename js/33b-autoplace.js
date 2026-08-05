@@ -213,8 +213,9 @@ function _apGentleReset(el){
 // ── Проход 2: размещение с глобальным шрифтом ─────────────────────
 function _apSlide_layout(s,isTitle,headAlign){
   const W=canvasW,H=canvasH,PAD=66,GAP=24;
+  _apCurrentSlide = s;
   const els=(s.els||[]).filter(e=>!e._isDecor);
-  if(!els.length) return;
+  if(!els.length){ _apCurrentSlide = null; return; }
   const head=s._apHead||null;
   const bodies=s._apBodies||[];
   const images=s._apImages||els.filter(e=>e.type==='image'||e.type==='svg'||e.type==='icon');
@@ -224,6 +225,7 @@ function _apSlide_layout(s,isTitle,headAlign){
   else _apContent(head,bodies,images,pairs,tables,W,H,PAD,GAP,headAlign);
   if(head) _apHStyle(head,isTitle?50:40,isTitle);
   delete s._apHead; delete s._apBodies; delete s._apPairs; delete s._apImages; delete s._apTables;
+  _apCurrentSlide = null;
 }
 
 function _apPickScenario(ctx){
@@ -261,7 +263,7 @@ function _apReset(el){
       .replace(/flex\s*:\s*[^;]+;?/gi,'')
       .replace(/width\s*:\s*[^;]+;?/gi,'')
       // Убираем цвет — будет заменён цветом из схемы
-      .replace(/color\s*:\s*[^;]+;?/gi,'')
+      .replace(/\bcolor\s*:\s*[^;]+;?/gi,'')
       .replace(/;;+/g,';').replace(/^;+|;+$/g,'').trim();
   }
   // Сбрасываем схемные ссылки — пересчитаются из темы
@@ -424,17 +426,45 @@ function _apMakeEl(srcEl,text,slide){
 }
 
 
-// Получить цвет текста из активной темы (белый/чёрный в зависимости от dark/light)
-function _apThemeColor(){
+// Получить контрастный цвет текста с учётом фона слайда
+let _apCurrentSlide = null;
+function _apHexIsLight(hex){
+  const h = String(hex||'').replace('#','');
+  if(h.length < 6) return true;
+  const r = parseInt(h.slice(0,2),16), g = parseInt(h.slice(2,4),16), b = parseInt(h.slice(4,6),16);
+  if(isNaN(r)||isNaN(g)||isNaN(b)) return true;
+  return (0.299*r + 0.587*g + 0.114*b) > 160;
+}
+function _apSlideIsLight(s){
+  if(!s) return false;
+  if(s.bg === 'custom' && s.bgc) return _apHexIsLight(s.bgc);
+  if(s.bgc && (s.bg === 'solid' || !s.bg)) return _apHexIsLight(s.bgc);
   try{
     const ti = (typeof appliedThemeIdx!=='undefined'&&appliedThemeIdx>=0)
       ? appliedThemeIdx
       : (typeof selTheme!=='undefined'&&selTheme>=0?selTheme:0);
     const theme = THEMES[ti];
-    if(!theme) return '#ffffff';
+    if(theme){
+      if(theme.dark === false) return true;
+      if(theme.dark === true) return false;
+      if(theme.bg) return _apHexIsLight(theme.bg);
+    }
+  }catch(e){}
+  return false;
+}
+function _apThemeColor(){
+  // Светлый фон слайда (импорт PPT и т.п.) — тёмный текст, иначе из темы
+  if(_apSlideIsLight(_apCurrentSlide)) return '#1e293b';
+  try{
+    const ti = (typeof appliedThemeIdx!=='undefined'&&appliedThemeIdx>=0)
+      ? appliedThemeIdx
+      : (typeof selTheme!=='undefined'&&selTheme>=0?selTheme:0);
+    const theme = THEMES[ti];
+    if(!theme) return _apSlideIsLight(_apCurrentSlide) ? '#1e293b' : '#ffffff';
+    if(theme.dark === false) return '#1e293b';
     const color = typeof _resolveSchemeColor==='function'
       ? _resolveSchemeColor({col:7,row:0}, theme)
-      : (theme.dark?'#ffffff':'#000000');
+      : (theme.dark?'#ffffff':'#1e293b');
     return color||'#ffffff';
   }catch(e){ return '#ffffff'; }
 }
@@ -449,7 +479,8 @@ function _apHStyle(el,fs,noUppercase){
   el.cs=(el.cs?el.cs.replace(/;$/,'')+';':'')
     +'font-size:'+fs+'px;font-weight:700;'+(noUppercase?'':'text-transform:uppercase;')+'color:'+_tc;
   el.textRole='heading';
-  el.textColorScheme={col:7,row:0};
+  // null = зафиксировать цвет (не перебивать белым из тёмной темы)
+  el.textColorScheme = null;
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -781,7 +812,8 @@ function _apSetColor(el,color){
   el.cs=el.cs.match(/\bcolor\s*:/i)
     ? el.cs.replace(/\bcolor\s*:\s*[^;]+/i,'color:'+color)
     : (el.cs?el.cs.replace(/;$/,'')+';':'')+'color:'+color;
-  el.textColorScheme={col:7,row:0};
+  // null — не давать тёмной теме вернуть белый текст на светлом фоне
+  el.textColorScheme = null;
 }
 function _apAlign(el,a){
   if(!el.cs) el.cs='';

@@ -1,25 +1,12 @@
 
 // Resolve a scheme-pinned color in the given theme.
-// Returns null if no schemeRef (custom color — keep as-is).
+// Returns null if no schemeRef (custom #hex — keep as-is on theme change).
 function _resolveSchemeColor(schemeRef, theme) {
-  if (!schemeRef) return null;
-  const base8 = _themeColors(theme);
-  const isLastCol = schemeRef.col === base8.length - 1;
-  const isLightTheme = !theme.dark;
-  const tintLevels = [0, 0.22, 0.44, 0.66, 0.88];
-  const tint = tintLevels[schemeRef.row] || 0;
-  if (isLastCol) {
-    // Dark theme: row 0=white → row 4=black
-    // Light theme: row 0=black → row 4=white
-    if (isLightTheme) {
-      const isLastRow = schemeRef.row === tintLevels.length - 1;
-      return isLastRow ? '#ffffff' : (tint === 0 ? '#000000' : _blendToWhite('#000000', tint));
-    } else {
-      return tint === 0 ? '#ffffff' : _blendToBlack('#ffffff', tint);
-    }
-  }
-  const hex = _solidColor(base8[schemeRef.col] || '#888888');
-  return tint === 0 ? hex : _blendToWhite(hex, tint);
+  if (!schemeRef || !theme) return null;
+  if (schemeRef.col == null || schemeRef.row == null) return null;
+  return typeof _schemeSwatchColor === 'function'
+    ? _schemeSwatchColor(theme, schemeRef.col, schemeRef.row)
+    : null;
 }
 // ══════════════ THEMES ══════════════
 function openThemeModal(){selTheme=-1;buildThemeGrid();document.getElementById('theme-modal').classList.add('open');}
@@ -65,7 +52,13 @@ function applyTheme(){
       const resolved = _resolveSchemeColor(s.bgScheme, theme);
       s.bg='custom'; s.bgc = resolved || theme.bg;
     } else if(s.bgScheme === null){
-      // Custom bg — leave unchanged
+      // Custom bg — leave unchanged, unless notebook decor needs scheme bg
+      const hasNb=(s.els||[]).some(d=>{
+        if(!d||!d._isDecor) return false;
+        const L=typeof LAYOUTS!=='undefined'?LAYOUTS[d._layoutIdx]:null;
+        return !!(L&&L.paper);
+      });
+      if(hasNb){ s.bg='custom'; s.bgc=theme.bg; delete s.bgScheme; }
     } else {
       s.bg='custom'; s.bgc=theme.bg;
     }
@@ -243,16 +236,22 @@ function applyTheme(){
         }
       }
       if(el.type==='icon'){
-        if(!el.iconColorCustom){
-          const newColor=theme.shapeFill||theme.tc||'#3b82f6';
-          el.iconColor=newColor;
-          if(el.shadow){
-            if(el.shadowColorScheme !== null && el.shadowColorScheme !== undefined){
-              const resolvedSh = _resolveSchemeColor(el.shadowColorScheme, theme);
-              if(resolvedSh) el.shadowColor = resolvedSh;
-            }
-            // shadowColorScheme===null: custom shadow — leave unchanged
+        let newColor = null;
+        if(el.iconColorScheme != null && el.iconColorScheme !== undefined){
+          const resolved = _resolveSchemeColor(el.iconColorScheme, theme);
+          if(resolved){ newColor = resolved; el.iconColor = resolved; el.iconColorCustom = false; }
+        } else if(!el.iconColorCustom){
+          newColor = theme.shapeFill||theme.tc||'#3b82f6';
+          el.iconColor = newColor;
+        }
+        if(el.shadow){
+          if(el.shadowColorScheme !== null && el.shadowColorScheme !== undefined){
+            const resolvedSh = _resolveSchemeColor(el.shadowColorScheme, theme);
+            if(resolvedSh) el.shadowColor = resolvedSh;
           }
+          // shadowColorScheme===null: custom shadow — leave unchanged
+        }
+        if(newColor){
           const ic=ICONS.find(function(x){return x.id===el.iconId;});
           if(ic){
             const _newSvg=_buildIconSVG(ic,newColor,el.iconSw!=null?el.iconSw:1.8,el.iconStyle||'stroke',el.shadow,el.shadowBlur,el.shadowColor,el.shadowSize,el.id);
@@ -401,6 +400,14 @@ function applyTheme(){
     domEl.dataset.formulaColor=d.formulaColor;
     const ec=domEl.querySelector('.ec');
     if(ec) ec.style.color=d.formulaColor;
+  });
+  // Chem structure text color already re-rendered via refreshAllGraphs + renderAll
+  slides[cur].els.forEach(d=>{
+    if(d.type!=='graph' || d.graphKind!=='chem') return;
+    const domEl=document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
+    if(!domEl) return;
+    if(d.graphColor) domEl.dataset.graphColor=d.graphColor;
+    if(typeof window._applyChemGraphStyle==='function') window._applyChemGraphStyle(domEl, d);
   });
   invalidateThumbCache();
   saveState();

@@ -1424,6 +1424,49 @@ function _shapeClipPath(d, w, h) {
     const _gp = _gearPath(w/2, h/2, (w-m*2)/2, (h-m*2)/2, _gTeeth, _gDepth);
     return `path('${_gp}')`;
   }
+  if (sh.special === 'polygon') {
+    // Regular N-gon (triangle = 3 sides, pentagon = 5, etc.) — same geometry
+    // used by the actual fill path in buildShapeSVG's shapeEl().
+    const _sides = Math.max(3, Math.min(16, +(d.polySides||3)));
+    const _cx = w/2, _cy = h/2, _rx = (w-m*2)/2, _ry = (h-m*2)/2;
+    const _pts = [];
+    for (let _i = 0; _i < _sides; _i++) {
+      const _a = (_i/_sides*Math.PI*2) - (Math.PI/2);
+      _pts.push(`${(_cx+_rx*Math.cos(_a)).toFixed(1)}px ${(_cy+_ry*Math.sin(_a)).toFixed(1)}px`);
+    }
+    return `polygon(${_pts.join(', ')})`;
+  }
+  if (sh.special === 'star') {
+    const _nRays = Math.max(4, Math.min(32, +(d.starRays||5)));
+    const _innerR = Math.max(0.1, Math.min(0.9, +(d.starInner!=null?d.starInner:0.45)));
+    const _srx = (w-m*2)/2, _sry = (h-m*2)/2;
+    const _pts = [];
+    for (let _i = 0; _i < _nRays*2; _i++) {
+      const _ang = (_i/(_nRays*2))*Math.PI*2 - Math.PI/2;
+      const _r = _i % 2 === 0 ? 1 : _innerR;
+      _pts.push(`${(w/2 + _srx*_r*Math.cos(_ang)).toFixed(1)}px ${(h/2 + _sry*_r*Math.sin(_ang)).toFixed(1)}px`);
+    }
+    return `polygon(${_pts.join(', ')})`;
+  }
+  if (sh.special === 'parallelogram') {
+    const _ew = w - m*2, _eh = h - m*2;
+    const _skew = Math.max(-45, Math.min(45, +(d.paraSkew!=null?d.paraSkew:20)));
+    const _off = Math.round((_eh/2) * Math.tan(_skew*Math.PI/180));
+    return `polygon(${(m+_off)}px ${m}px, ${(m+_ew)}px ${m}px, ${(m+_ew-_off)}px ${(m+_eh)}px, ${m}px ${(m+_eh)}px)`;
+  }
+  if (sh.special === 'chevron') {
+    const _ew = w - m*2, _eh = h - m*2;
+    const _csk = Math.max(0, Math.min(45, d.chevSkew  != null ? +d.chevSkew  : 25));
+    const _cin = Math.max(0, Math.min(45, d.chevInner != null ? +d.chevInner : _csk));
+    const _tip = Math.round(_ew * _csk / 100);
+    const _ind = Math.round(_ew * _cin / 100);
+    const _mid = m + Math.round(_eh / 2);
+    const _isL = sh.id === 'chevronLeft';
+    const _pts = _isL
+      ? [{x:m+_ew,y:m},{x:m+_tip,y:m},{x:m,y:_mid},{x:m+_tip,y:m+_eh},{x:m+_ew,y:m+_eh},{x:m+_ew-_ind,y:_mid}]
+      : [{x:m,y:m},{x:m+_ew-_tip,y:m},{x:m+_ew,y:_mid},{x:m+_ew-_tip,y:m+_eh},{x:m,y:m+_eh},{x:m+_ind,y:_mid}];
+    return `polygon(${_pts.map(p=>`${p.x}px ${p.y}px`).join(', ')})`;
+  }
   // Polygon shapes — scale path points from 0-100 space to actual px
   if (sh.path) {
     const ew = Math.max(1, w - m * 2), eh = Math.max(1, h - m * 2);
@@ -2448,7 +2491,8 @@ function updateShapeTextColor(v, schemeRef){
   }
   try{
     const pr=document.getElementById('sh-tc-preview');if(pr)pr.style.background=v;
-    const hx=document.getElementById('sh-tc-hex');if(hx)hx.value=v.replace('#','');
+    const hx=document.getElementById('sh-tc-hex');
+    if(hx) hx.value=(typeof _colorFieldDisplay==='function')?_colorFieldDisplay(v,d&&d.shapeTextColorScheme):v;
   }catch(e){}
   save();drawThumbs();saveState();
 }

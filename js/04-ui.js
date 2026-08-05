@@ -16,6 +16,19 @@ function toggleRibbonCollapse(){
   }catch(e){}
 })();
 
+// #ribbon-right is absolutely positioned over the ribbon body's right edge
+// (so it aligns vertically with the body's buttons instead of spanning the
+// taller tabs+body height). Keep the body's right padding matched to its
+// actual width so button groups never render underneath it.
+(function(){
+  const right = document.getElementById('ribbon-right');
+  const body = document.getElementById('ribbon-body');
+  if (!right || !body || typeof ResizeObserver === 'undefined') return;
+  const sync = () => { body.style.paddingRight = right.getBoundingClientRect().width + 12 + 'px'; };
+  new ResizeObserver(sync).observe(right);
+  sync();
+})();
+
 // ══════════════ GRID ══════════════
 function drawGrid(){
   const gc=document.getElementById('grid-canvas');const wrap=document.getElementById('cwrap');
@@ -199,11 +212,13 @@ function setAR(ratio,btn){
       if(d._isDecor){d.w=canvasW;d.h=canvasH;return;}
       d.x=Math.round(d.x*sx);
       d.y=Math.round(d.y*sy);
-      if(!noStretch.has(d.type)){
-        // Text, code, markdown, applets scale with canvas
-        d.w=Math.round(d.w*sx);
-        d.h=Math.round(d.h*sy);
+      if(noStretch.has(d.type) || (d.type==='graph' && d.graphKind==='chem')){
+        // Keep size (chem structures must not stretch text/formula)
+        return;
       }
+      // Text, code, markdown, applets, function graphs scale with canvas
+      d.w=Math.round(d.w*sx);
+      d.h=Math.round(d.h*sy);
     });
   });
   clampEls(canvasW,canvasH);
@@ -954,6 +969,7 @@ function _updateHandlesOverlay(){
   _clearStaleHandleHoverFlags();
   overlay.innerHTML = '';
   overlay.style.pointerEvents = 'none'; // container passes through, only handles have pointer-events:auto
+  if(typeof _updateSelFrames==='function') _updateSelFrames();
 
   const el = typeof sel !== 'undefined' ? sel : null;
   if (!el) {
