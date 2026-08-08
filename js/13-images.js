@@ -1084,6 +1084,16 @@ function mkEl(d){
     c.addEventListener('input',()=>{
       if(typeof _rtCommit==='function') _rtCommit(); else save();
       if (typeof _rtUpdateCharCounter==='function') _rtUpdateCharCounter(el, c);
+      // Перенос по ширине / вставка — тоже расширяем рамку
+      requestAnimationFrame(()=>{
+        if(typeof window._fitTextHeight==='function'){
+          const _d=slides[cur]&&slides[cur].els.find(x=>x.id===el.dataset.id);
+          if(_d&&window._fitTextHeight(_d)){
+            el.style.height=_d.h+'px';
+            if(typeof _updateHandlesOverlay==='function') _updateHandlesOverlay();
+          }
+        }
+      });
     });
     c.addEventListener('keydown',e=>{
       if(e.key==='Escape'){
@@ -1328,19 +1338,19 @@ function mkEl(d){
       const _gi=document.createElement('img');
       _gi.src=d.graphImg;
       // Chem: contain keeps formula unstretched if size drifts; fn graphs fill axes area
-      _gi.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:'+(d.graphKind==='chem'?'contain':'fill')+';display:block;pointer-events:none;user-select:none;';
+      _gi.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:'+(d.graphKind==='chem'||d.graphKind==='logic'?'contain':'fill')+';display:block;pointer-events:none;user-select:none;';
       c.appendChild(_gi);
     } else {
       const _gph=document.createElement('div');
       _gph.style.cssText='position:absolute;inset:0;display:flex;align-items:center;justify-content:center;opacity:.4;font-size:13px;pointer-events:none;';
-      _gph.textContent='📈';
+      _gph.textContent=d.graphKind==='logic'?'⚡':(d.graphKind==='chem'?'🧪':'📈');
       c.appendChild(_gph);
     }
     // Transparent hit-area on top so mousedown always reaches el through mkDrag
     const _ghit=document.createElement('div');
     _ghit.style.cssText='position:absolute;inset:0;z-index:1;';
     c.appendChild(_ghit);
-    if(d.graphKind==='chem' && typeof window._applyChemGraphStyle==='function'){
+    if((d.graphKind==='chem'||d.graphKind==='logic') && typeof window._applyChemGraphStyle==='function'){
       if(d.graphBg) el.dataset.graphBg = d.graphBg;
       if(d.graphBgOp!=null) el.dataset.graphBgOp = String(d.graphBgOp);
       if(d.graphBgBlur!=null) el.dataset.graphBgBlur = String(d.graphBgBlur);
@@ -1354,6 +1364,11 @@ function mkEl(d){
     // Use DOMParser so SVG SMIL animations (<animate>, <animateTransform>) work correctly.
     // innerHTML uses the HTML parser which drops unknown SVG animation elements.
     const _svgRaw=d.svgContent||'';
+    if(!_svgRaw.trim()){
+      // Пустой SVG (например после lite-импорта до refreshDecor) — не парсить,
+      // иначе браузер вставит страницу «Document is empty».
+      c.innerHTML='';
+    } else {
     // Isolate SVG IDs to prevent conflicts between multiple SVGs in DOM
     const _svgUid = 'svg_' + (d.id||('u'+Math.random().toString(36).slice(2)));
     const _svgStr = _isolateSvgIds(_svgRaw, _svgUid);
@@ -1361,10 +1376,13 @@ function mkEl(d){
       const _dp=new DOMParser();
       const _doc=_dp.parseFromString(_svgStr,'image/svg+xml');
       const _parsed=_doc.documentElement;
-      if(_parsed && _parsed.tagName!=='parsererror'){
+      const _bad=!_parsed || _parsed.tagName==='parsererror' || (_parsed.localName||'').toLowerCase()==='html'
+        || !!_doc.querySelector('parsererror');
+      if(!_bad){
         c.appendChild(document.adoptNode(_parsed));
-      } else { c.innerHTML=_svgStr; }
-    }catch(e){ c.innerHTML=_svgStr; }
+      } else { c.innerHTML=''; }
+    }catch(e){ c.innerHTML=''; }
+    }
     const svgEl=c.querySelector('svg');
     if(svgEl){svgEl.style.width='100%';svgEl.style.height='100%';}
     // Decor elements: fully locked, not interactive
@@ -1431,7 +1449,16 @@ function mkEl(d){
     const iframe=document.createElement('iframe');iframe.srcdoc=d.appletHtml||'<p>Applet</p>';
     iframe.style.cssText='width:100%;height:100%;border:none;background:transparent;';
     iframe.setAttribute('allowtransparency','true');
-    iframe.sandbox = 'allow-scripts'; // allow-same-origin removed — postMessage works with '*' targetOrigin
+    // flip нужен allow-same-origin — иначе картинки из галереи не грузятся в srcdoc
+    iframe.sandbox = d.appletId==='flip' ? 'allow-scripts allow-same-origin' : 'allow-scripts';
+    if(d.appletId==='flip'){
+      clip.style.overflow='visible';
+      clip.style.background='transparent';
+      clip.style.borderRadius='0';
+      wrap.style.background='transparent';
+      wrap.style.overflow='visible';
+      iframe.style.background='transparent';
+    }
     if(d.appletId==='generator'||d.appletId==='counter'||d.appletId==='timer'||d.appletId==='clock'){
       iframe.addEventListener('load', function(){
         if(d.appletId==='generator'&&typeof refreshGeneratorEl==='function') refreshGeneratorEl(d.id, {domOnly:true});
@@ -1554,6 +1581,42 @@ function mkEl(d){
     if(d.appletId==='notes'){
       el.dataset.notesText = encodeURIComponent(d.notesText || '');
       el.dataset.notesBg = d.notesBg || '';
+    }
+    if(d.appletId==='periodic'){
+      el.dataset.pteSymbol = d.pteSymbol || 'Fe';
+      el.dataset.pteIcon = d.pteIcon ? 'true' : 'false';
+      el.dataset.genColor = d.genColor || '';
+      el.dataset.genBg = d.genBg || '';
+      el.dataset.genBgOp = d.genBgOp != null ? d.genBgOp : 0.92;
+      el.dataset.genBgBlur = d.genBgBlur != null ? d.genBgBlur : 0;
+      el.dataset.genColorScheme = d.genColorScheme ? JSON.stringify(d.genColorScheme) : '';
+      el.dataset.genBgScheme = d.genBgScheme ? JSON.stringify(d.genBgScheme) : '';
+      el.addEventListener('dblclick', function(e){
+        e.stopPropagation();
+        if(typeof pick==='function') pick(el);
+        if(typeof openPeriodicModal==='function') openPeriodicModal({mode:'reselect', elId:el.dataset.id||d.id});
+      });
+    }
+    if(d.appletId==='flip'){
+      el.dataset.flipFace = d.flipFace === 'back' ? 'back' : 'front';
+      el.dataset.flipFrontText = encodeURIComponent(d.flipFrontText || '');
+      el.dataset.flipBackText = encodeURIComponent(d.flipBackText || '');
+      el.dataset.flipFrontImg = d.flipFrontImg || '';
+      el.dataset.flipBackImg = d.flipBackImg || '';
+      el.dataset.genColor = d.genColor || '';
+      el.dataset.genBg = d.genBg || '';
+      el.dataset.genBgOp = d.genBgOp != null ? d.genBgOp : 0.92;
+      el.dataset.genBgBlur = d.genBgBlur != null ? d.genBgBlur : 0;
+      el.dataset.genColorScheme = d.genColorScheme ? JSON.stringify(d.genColorScheme) : '';
+      el.dataset.genBgScheme = d.genBgScheme ? JSON.stringify(d.genBgScheme) : '';
+      el.style.overflow = 'visible';
+      el.style.cursor = 'pointer';
+      const iframe = el.querySelector('iframe');
+      if(iframe){
+        iframe.style.pointerEvents = 'none';
+        iframe.style.background = 'transparent';
+      }
+      if(typeof _layoutFlipIframe==='function') _layoutFlipIframe(el, d);
     }
   }else if(d.type==='pagenum'){
     c.style.cssText='width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:visible;pointer-events:none;';
@@ -1904,6 +1967,9 @@ function pick(el){
   if(typeof window._hideElCtxMenu==='function') window._hideElCtxMenu();
   // Refresh lego z-order so selected element appears on top
   if(typeof _refreshAllLegoZ==='function') _refreshAllLegoZ();
-  if(document.getElementById('props-anim-wrap')?.style.display==='flex'||document.getElementById('anim-panel')?.classList.contains('open'))renderAnimPanel();
+  if(document.getElementById('props-anim-wrap')?.style.display==='flex'||document.getElementById('anim-panel')?.classList.contains('open')){
+    // Keep anim trigger picker alive — rebuilding the list cancels the pick mode
+    if(!window._animPickerCtx && typeof renderAnimPanel==='function') renderAnimPanel();
+  }
 }
 function desel(){if(window._curveEditMode)return;clearGuides();pick(null);}

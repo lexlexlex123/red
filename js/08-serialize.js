@@ -36,5 +36,22 @@ window._serializeAppletFromDom = function(el, d){
     if(el.dataset.notesBg !== undefined) d.notesBg = el.dataset.notesBg;
   }
 
+  if(d.appletId === 'periodic'){
+    if(el.dataset.pteSymbol) d.pteSymbol = el.dataset.pteSymbol;
+    if(el.dataset.pteIcon !== undefined) d.pteIcon = el.dataset.pteIcon === 'true';
+  }
+
+  if(d.appletId === 'flip'){
+    if(el.dataset.flipFace) d.flipFace = el.dataset.flipFace === 'back' ? 'back' : 'front';
+    if(el.dataset.flipFrontText !== undefined){
+      try{ d.flipFrontText = decodeURIComponent(el.dataset.flipFrontText); }catch(e){ d.flipFrontText = el.dataset.flipFrontText; }
+    }
+    if(el.dataset.flipBackText !== undefined){
+      try{ d.flipBackText = decodeURIComponent(el.dataset.flipBackText); }catch(e){ d.flipBackText = el.dataset.flipBackText; }
+    }
+    if(el.dataset.flipFrontImg !== undefined) d.flipFrontImg = el.dataset.flipFrontImg;
+    if(el.dataset.flipBackImg !== undefined) d.flipBackImg = el.dataset.flipBackImg;
+  }
+
   if(el.dataset.genRx !== undefined) d.rx = +el.dataset.genRx;
 };

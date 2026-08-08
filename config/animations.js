@@ -21,6 +21,7 @@ window.CFG_ANIMATIONS = {
     { id: 'pulse',        label: 'Пульсация',     category: 'emphasis', enabled: true },
     { id: 'shake',        label: 'Дрожание',      category: 'emphasis', enabled: true },
     { id: 'flash',        label: 'Мигание',       category: 'emphasis', enabled: true },
+    { id: 'recolor',      label: 'Цвет',          category: 'emphasis', enabled: true },
     { id: 'rotate',       label: 'Вращение',      category: 'emphasis', enabled: true },
     { id: 'fadeOut',      label: 'Исчезновение',  category: 'exit',     enabled: true },
     { id: 'slideOut',     label: 'Выезд',         category: 'exit',     enabled: true },

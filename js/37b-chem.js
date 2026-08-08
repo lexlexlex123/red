@@ -713,14 +713,129 @@
     }
     const chem = _looksLikeChem(norm);
     if (!chem && !info) return null;
+    let atoms = info ? info.atoms : null;
+    let bonds = info ? info.bonds : null;
+    // Unknown compound: synthesize a structural sketch from the formula
+    if ((!atoms || !atoms.length) && chem) {
+      const synth = _synthesizeStructure(key);
+      if (synth) { atoms = synth.atoms; bonds = synth.bonds; }
+    }
     return {
       key: key,
       pretty: _prettyFormula(key),
       name: (info && info.name) || _nameFromMap(key) || 'химическое соединение',
-      atoms: info ? info.atoms : null,
-      bonds: info ? info.bonds : null,
-      known: !!info
+      atoms: atoms,
+      bonds: bonds,
+      known: !!info,
+      synthesized: !!(chem && !info)
     };
+  }
+
+  /** Parse H2SO4 / Ca(OH)2 → {H:2,S:1,O:4} */
+  function _countAtoms(formula) {
+    let s = String(formula || '').replace(/·/g, '').replace(/\^[^A-Z(]*/g, '');
+    if (!s) return null;
+    // Expand parentheses: Ca(OH)2 → CaOH OH, then recount (simple one-level + nested)
+    for (let guard = 0; guard < 8; guard++) {
+      const m = s.match(/\(([A-Za-z0-9]+)\)(\d*)/);
+      if (!m) break;
+      const inner = m[1];
+      const mult = m[2] ? +m[2] : 1;
+      s = s.slice(0, m.index) + inner.repeat(Math.min(mult, 12)) + s.slice(m.index + m[0].length);
+    }
+    const counts = {};
+    const re = /([A-Z][a-z]?)(\d*)/g;
+    let mm;
+    while ((mm = re.exec(s)) !== null) {
+      const el = mm[1];
+      if (!_ELEMENTS.has(el)) continue;
+      const n = mm[2] ? +mm[2] : 1;
+      counts[el] = (counts[el] || 0) + Math.min(n, 48);
+    }
+    return Object.keys(counts).length ? counts : null;
+  }
+
+  /**
+   * Build a schematic molecule for unknown formulas:
+   * heavy atoms form a backbone; hydrogens attach around them.
+   */
+  function _synthesizeStructure(key) {
+    const counts = _countAtoms(key);
+    if (!counts) return null;
+    const heavyOrder = ['C','Si','B','P','N','S','Se','As','I','Br','Cl','F','O','Na','K','Ca','Mg','Al','Fe','Cu','Zn','Ag','Mn','Cr','Ti','Ba','Li','Be'];
+    const heavies = [];
+    const hydrogens = [];
+    Object.keys(counts).forEach(el => {
+      for (let i = 0; i < counts[el]; i++) {
+        if (el === 'H') hydrogens.push(el);
+        else heavies.push(el);
+      }
+    });
+    // Prefer typical center atoms first
+    heavies.sort((a, b) => {
+      const ia = heavyOrder.indexOf(a); const ib = heavyOrder.indexOf(b);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    });
+    if (!heavies.length && !hydrogens.length) return null;
+
+    const atoms = [];
+    const bonds = [];
+    let uid = 0;
+    const mk = (el, x, y) => {
+      const id = 's' + (uid++);
+      atoms.push({ id, el, x, y });
+      return id;
+    };
+
+    if (!heavies.length) {
+      // Only H — small cluster
+      const n = Math.min(hydrogens.length, 8);
+      for (let i = 0; i < n; i++) {
+        const ang = -Math.PI / 2 + (2 * Math.PI * i) / n;
+        mk('H', Math.cos(ang) * 0.9, Math.sin(ang) * 0.9);
+      }
+      for (let i = 1; i < atoms.length; i++) bonds.push({ a: atoms[0].id, b: atoms[i].id, order: 1 });
+      return { atoms, bonds };
+    }
+
+    // Backbone: place heavy atoms along a zigzag / ring
+    const nH = heavies.length;
+    const backboneIds = [];
+    if (nH === 1) {
+      backboneIds.push(mk(heavies[0], 0, 0));
+    } else if (nH <= 6) {
+      const R = Math.max(1.1, 0.55 * nH);
+      for (let i = 0; i < nH; i++) {
+        const ang = -Math.PI / 2 + (2 * Math.PI * i) / nH;
+        backboneIds.push(mk(heavies[i], Math.cos(ang) * R, Math.sin(ang) * R));
+      }
+      for (let i = 0; i < nH; i++) {
+        bonds.push({ a: backboneIds[i], b: backboneIds[(i + 1) % nH], order: 1 });
+      }
+    } else {
+      // Zigzag chain for larger formulas
+      for (let i = 0; i < nH; i++) {
+        const x = (i - (nH - 1) / 2) * 1.15;
+        const y = (i % 2 === 0) ? 0 : 0.7;
+        backboneIds.push(mk(heavies[i], x, y));
+        if (i > 0) bonds.push({ a: backboneIds[i - 1], b: backboneIds[i], order: 1 });
+      }
+    }
+
+    // Attach hydrogens around backbone atoms
+    const hCount = Math.min(hydrogens.length, 36);
+    for (let i = 0; i < hCount; i++) {
+      const bi = i % backboneIds.length;
+      const parent = atoms.find(a => a.id === backboneIds[bi]);
+      if (!parent) continue;
+      const around = 1 + Math.floor(i / backboneIds.length);
+      const ang = -Math.PI / 2 + (2 * Math.PI * (i + around * 0.37)) / Math.max(3, Math.ceil(hCount / backboneIds.length) + 1);
+      const hx = parent.x + Math.cos(ang) * 0.95;
+      const hy = parent.y + Math.sin(ang) * 0.95;
+      const hid = mk('H', hx, hy);
+      bonds.push({ a: parent.id, b: hid, order: 1 });
+    }
+    return { atoms, bonds };
   }
 
   function isChemFormula(raw) {
@@ -729,6 +844,8 @@
 
   // ── Draw structural diagram onto canvas ───────────────────────────────────
   // Canvas is always transparent; background/blur/opacity live on the DOM element.
+  // opts.showFormula (default true) — draw formula text at top
+  // opts.showName (default true) — draw compound name
   function renderChemStructure(raw, opts) {
     opts = opts || {};
     const info = lookupChem(raw);
@@ -738,6 +855,8 @@
     const H = opts.h || 640;
     const fg = opts.fg || '#111111';
     const isDark = !!opts.isDark;
+    const showFormula = opts.showFormula !== false;
+    const showName = opts.showName !== false;
 
     const cv = document.createElement('canvas');
     cv.width = W; cv.height = H;
@@ -747,22 +866,29 @@
     const formulaFs = Math.round(W * 0.11);
     const nameFs = Math.round(W * 0.055);
     const padTop = Math.round(H * 0.08);
+    let headerH = padTop;
 
-    // Formula
     ctx.fillStyle = fg;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.font = '700 ' + formulaFs + 'px "Times New Roman", "Liberation Serif", Georgia, serif';
-    ctx.fillText(info.pretty, W / 2, padTop);
 
-    // Name
-    ctx.font = '600 ' + nameFs + 'px "Times New Roman", "Liberation Serif", Georgia, serif';
-    ctx.fillText(info.name, W / 2, padTop + formulaFs * 1.15);
+    if (showFormula) {
+      ctx.font = '700 ' + formulaFs + 'px "Times New Roman", "Liberation Serif", Georgia, serif';
+      ctx.fillText(info.pretty, W / 2, padTop);
+      headerH = padTop + formulaFs * 1.15;
+    }
+    if (showName) {
+      ctx.font = '600 ' + nameFs + 'px "Times New Roman", "Liberation Serif", Georgia, serif';
+      ctx.fillText(info.name, W / 2, headerH);
+      headerH += nameFs * 1.6;
+    } else if (showFormula) {
+      headerH += nameFs * 0.4;
+    }
 
     // Structure area
-    const structTop = padTop + formulaFs * 1.15 + nameFs * 1.6;
+    const structTop = Math.max(headerH, Math.round(H * 0.04));
     const structBottom = H - Math.round(H * 0.06);
-    const structH = structBottom - structTop;
+    const structH = Math.max(40, structBottom - structTop);
     const structMidY = structTop + structH / 2;
 
     if (info.atoms && info.atoms.length) {
@@ -780,6 +906,8 @@
       chemKey: info.key,
       chemName: info.name,
       pretty: info.pretty,
+      known: !!info.known,
+      synthesized: !!info.synthesized,
       error: null
     };
   }

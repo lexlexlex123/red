@@ -274,7 +274,7 @@ function _toCharObjs(html) {
     });
     if (tag==='b'||tag==='strong') m.fontWeight='700';
     if (tag==='i'||tag==='em')     m.fontStyle='italic';
-    if (tag==='u')                 m.textDecoration='underline';
+    if (tag==='u')                 m._ul = 'underline';
     if (tag==='sup')               m.verticalAlign='super';
     if (tag==='sub')               m.verticalAlign='sub';
     // Restore per-char schemeRef from data-scheme attribute
@@ -282,6 +282,31 @@ function _toCharObjs(html) {
       try{ m._schemeRef=JSON.parse(node.dataset.scheme); }catch(e){}
     } else {
       delete m._schemeRef;
+    }
+    if (node.dataset && node.dataset.ul) {
+      m._ul = _rtParseUnderline(node.dataset.ul);
+      _rtClearUlPaint(m);
+    } else if (m.textDecoration) {
+      const ul = _rtParseUnderline(m.textDecoration);
+      if (ul !== 'none') m._ul = ul;
+      _rtClearUlPaint(m);
+    } else if (/repeating-linear-gradient|radial-gradient/i.test(m.backgroundImage || '')) {
+      // Legacy dash-dot stored only as background paint
+      m._ul = 'underline dash-dot';
+      _rtClearUlPaint(m);
+    }
+    // Stress on letter wrap (accent via CSS text-emphasis). Legacy mark-only sibling also OK.
+    if (node.dataset && (node.dataset.stress === '1' || node.dataset.stress === 'true')) {
+      const raw = node.textContent || '';
+      const markOnly = !/\p{L}/u.test(raw) && /[\u00B4\u02CA\u02B9\u0301]/.test(raw);
+      if (markOnly) {
+        if (out.length) {
+          const prev = out[out.length - 1];
+          prev.style = Object.assign({}, prev.style, { _stress: true });
+        }
+        return;
+      }
+      m._stress = true;
     }
     // Block elements: inject leading \n (except for first/only child)
     const isBlock = _block.has(tag);
@@ -294,46 +319,178 @@ function _toCharObjs(html) {
     // (handled by next sibling's leading \n above)
   }
   Array.from(tmp.childNodes).forEach((child, ci2) => walk(child, {}, ci2 === 0));
+  return _rtFoldCombiningStress(out);
+}
+
+/** Merge legacy combining acute (U+0301) into style._stress on the base letter.
+ *  Keeps decorative fonts intact (combining marks force system-font fallback). */
+function _rtFoldCombiningStress(chars) {
+  if (!chars || !chars.length) return chars || [];
+  const out = [];
+  for (let i = 0; i < chars.length; i++) {
+    const c = chars[i];
+    if (c.ch === '\u0301' && out.length) {
+      const prev = out[out.length - 1];
+      if (prev && !prev._listMarker && prev.ch && /\p{L}/u.test(prev.ch) && !/[\u0300-\u036f]/.test(prev.ch)) {
+        prev.style = Object.assign({}, prev.style, { _stress: true });
+        continue;
+      }
+    }
+    out.push(c);
+  }
   return out;
 }
 
-function _charObjsToHtml(chars) {
-  return chars.map(({ ch, style, _listMarker }) => {
-    if (_listMarker) return _rebuildMarkerHtml(_listMarker);
-    if (ch === '\n') return '<br>';
-    const schemeRef = style._schemeRef;
-    const css = _rtAppendInlineMetrics(Object.entries(style)
-      .filter(([k]) => k !== 'display' && k !== '_schemeRef')
-      .map(([k, v]) => k.replace(/([A-Z])/g, '-$1').toLowerCase() + ':' + v)
-      .join(';'), style);
-    const esc = ch.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    const schemeAttr = schemeRef ? ` data-scheme='${JSON.stringify(schemeRef)}'` : '';
-    return `<span data-ch${schemeAttr} style="display:inline${css?';'+css:''}">${esc}</span>`;
-  }).join('');
+function _rtUlDataValue(kind) {
+  const k = _rtParseUnderline(kind);
+  if (!k || k === 'none') return '';
+  if (k === 'underline') return 'single';
+  if (k === 'underline double') return 'double';
+  if (k === 'underline wavy') return 'wavy';
+  if (k === 'underline dashed') return 'dashed';
+  if (k === 'underline dash-dot') return 'dash-dot';
+  return '';
 }
 
-function _groupedHtml(chars) {
+/** Inline CSS for underline kinds. Wavy/dashed use thin native decoration;
+ *  dash-dot uses dash + circular dot backgrounds (no CSS dash-dot style). */
+function _rtUlCss(kind) {
+  const k = _rtParseUnderline(kind);
+  const thin = 'text-decoration-thickness:1.25px;text-underline-offset:0.12em;text-decoration-skip-ink:none;';
+  const clearBg = 'background-image:none;background-size:auto;background-position:0 0;background-repeat:no-repeat;padding-bottom:0;';
+  if (!k || k === 'none') return 'text-decoration:none;' + clearBg;
+  if (k === 'underline') return 'text-decoration:underline;' + thin + clearBg;
+  if (k === 'underline double') return 'text-decoration:underline double;' + thin + clearBg;
+  if (k === 'underline wavy') return 'text-decoration:underline wavy;' + thin + clearBg;
+  // Dashed tends to sit a hair higher than solid in some browsers; keep same offset as solid
+  if (k === 'underline dashed') {
+    return 'text-decoration:underline dashed;text-decoration-thickness:1.25px;' +
+      'text-underline-offset:0.12em;text-decoration-skip-ink:none;' + clearBg;
+  }
+  if (k === 'underline dash-dot') {
+    // Paint is in css/styles.css ([data-ul="dash-dot"] + box-decoration-break).
+    // Do not set background here — it would fight the stylesheet and break clone-per-line.
+    return 'text-decoration:none;';
+  }
+  return '';
+}
+
+function _rtClearUlPaint(style) {
+  if (!style) return;
+  delete style.textDecoration;
+  delete style.textDecorationLine;
+  delete style.textDecorationStyle;
+  delete style.textDecorationThickness;
+  delete style.textDecorationColor;
+  delete style.textUnderlineOffset;
+  delete style.backgroundImage;
+  delete style.backgroundSize;
+  delete style.backgroundRepeat;
+  delete style.backgroundPosition;
+  delete style.backgroundOrigin;
+  delete style.paddingBottom;
+}
+
+function _rtSetCharUl(style, kind) {
+  if (!style) return;
+  const k = _rtParseUnderline(kind);
+  // Strip previous underline paint (esp. dash-dot backgrounds) so "none"
+  // does not keep looking like dash-dot and stall the cycle.
+  _rtClearUlPaint(style);
+  if (!k || k === 'none') delete style._ul;
+  else style._ul = k;
+}
+
+function _rtCharUl(style) {
+  if (!style) return 'none';
+  if (style._ul) return _rtParseUnderline(style._ul);
+  return _rtParseUnderline(style.textDecoration || '');
+}
+
+function _rtStyleToCssText(style) {
+  if (!style) return '';
+  let css = Object.entries(style)
+    .filter(([k]) => k !== 'display' && k !== '_schemeRef' && k !== '_ul' && k !== '_stress'
+      && k !== 'textDecoration' && k !== 'textDecorationLine' && k !== 'textDecorationStyle'
+      && k !== 'textDecorationThickness' && k !== 'textDecorationColor' && k !== 'textUnderlineOffset'
+      && k !== 'backgroundImage' && k !== 'backgroundSize' && k !== 'backgroundRepeat'
+      && k !== 'backgroundPosition' && k !== 'backgroundOrigin' && k !== 'paddingBottom')
+    .map(([k, v]) => k.replace(/([A-Z])/g, '-$1').toLowerCase() + ':' + v)
+    .join(';');
+  const ulKind = _rtCharUl(style);
+  if (ulKind !== 'none') {
+    const ulCss = _rtUlCss(ulKind);
+    if (ulCss) css = css ? (css + ';' + ulCss) : ulCss;
+  }
+  return css;
+}
+
+/** Group key ignores _stress so underline runs stay one continuous span;
+ *  accents are nested as inner [data-stress] spans. */
+function _rtStyleGroupKey(style) {
+  if (!style) return '{}';
+  const o = Object.assign({}, style);
+  delete o._stress;
+  return JSON.stringify(o);
+}
+
+function _rtEscText(ch) {
+  return String(ch).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/** Render char objects as HTML spans. Groups consecutive identical styles so
+ *  wavy / dash-dot underlines stay continuous (not one jagged segment per glyph).
+ *  Stress marks nest inside the underline span (do not split the run). */
+function _renderCharSpans(chars, withDataCh) {
   const groups = [];
   let cur = null;
   for (const c of chars) {
     if (c._listMarker) { groups.push({ markerData: c._listMarker }); cur = null; continue; }
     if (c.ch === '\n') { groups.push({ br: true }); cur = null; continue; }
-    const key = JSON.stringify(c.style);
-    if (!cur || cur.key !== key) { cur = { key, style: c.style, text: c.ch }; groups.push(cur); }
-    else cur.text += c.ch;
+    const key = _rtStyleGroupKey(c.style);
+    const stress = !!(c.style && c.style._stress);
+    if (!cur || cur.key !== key) {
+      const baseStyle = c.style ? Object.assign({}, c.style) : {};
+      delete baseStyle._stress;
+      cur = { key, style: baseStyle, parts: [{ ch: c.ch, stress }] };
+      groups.push(cur);
+    } else {
+      cur.parts.push({ ch: c.ch, stress });
+    }
   }
   return groups.map(g => {
     if (g.markerData) return _rebuildMarkerHtml(g.markerData);
     if (g.br) return '<br>';
-    const schemeRef = g.style._schemeRef;
-    const css = _rtAppendInlineMetrics(Object.entries(g.style)
-      .filter(([k]) => k !== 'display' && k !== '_schemeRef')
-      .map(([k, v]) => k.replace(/([A-Z])/g, '-$1').toLowerCase() + ':' + v)
-      .join(';'), g.style);
-    const esc = g.text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const schemeRef = g.style && g.style._schemeRef;
+    const ulKind = _rtCharUl(g.style);
+    const ulData = _rtUlDataValue(ulKind);
+    const css = _rtAppendInlineMetrics(_rtStyleToCssText(g.style), g.style);
     const schemeAttr = schemeRef ? ` data-scheme='${JSON.stringify(schemeRef)}'` : '';
-    return css ? `<span${schemeAttr} style="display:inline;${css}">${esc}</span>` : esc;
+    const ulAttr = ulData ? ` data-ul="${ulData}"` : '';
+    const chAttr = withDataCh ? ' data-ch' : '';
+    let inner = '';
+    for (const p of g.parts) {
+      const esc = _rtEscText(p.ch);
+      if (p.stress) {
+        // Wrap letter only; accent is absolute ::after (does not shift following text)
+        inner += `<span data-stress="1" data-stress-case="${_rtStressCase(p.ch)}">${esc}</span>`;
+      } else {
+        inner += esc;
+      }
+    }
+    if (css || ulAttr || schemeAttr || withDataCh) {
+      return `<span${chAttr}${schemeAttr}${ulAttr} style="display:inline;${css}">${inner}</span>`;
+    }
+    return inner;
   }).join('');
+}
+
+function _charObjsToHtml(chars) {
+  return _renderCharSpans(chars, true);
+}
+
+function _groupedHtml(chars) {
+  return _renderCharSpans(chars, false);
 }
 
 function rtMigrateHtml(html, fontSizePx) {
@@ -342,8 +499,10 @@ function rtMigrateHtml(html, fontSizePx) {
   // Always run through _toCharObjs/_charObjsToHtml to rebuild list marker SVGs
   // (they may have been stripped during saveState to reduce localStorage size)
   if (html.includes('data-ch')) {
-    // Already in char format — only re-process if markers have empty innerHTML
-    if (html.includes('data-list-bullet') || html.includes('data-list-num')) {
+    // Re-process when markers need rebuild, or when underlines need regrouping
+    // (old per-char wavy/dotted looked jagged — regroup into continuous runs).
+    if (html.includes('data-list-bullet') || html.includes('data-list-num')
+        || /data-ul=|data-stress=|text-decoration[^;]*(wavy|dotted|dashed|double)|repeating-linear-gradient|radial-gradient|\u0301/i.test(html)) {
       return _charObjsToHtml(_toCharObjs(html));
     }
     return html;
@@ -649,8 +808,26 @@ function _interceptEnter(e) {
 
   clearTimeout(_enterCommitTimer);
   _enterCommitTimer = setTimeout(_rtCommit, 80);
+  // Сразу расширить рамку под новую строку (Enter не даёт input → без этого высота не растёт)
+  requestAnimationFrame(() => {
+    _rtGrowEditBox();
+    requestAnimationFrame(_rtGrowEditBox);
+  });
 }
 let _enterCommitTimer = null;
+
+/** Подгонка высоты текстового блока во время редактирования (Enter / ввод). */
+function _rtGrowEditBox(){
+  if(!_rtEl || !_rtElId) return;
+  const d = slides[cur] && slides[cur].els.find(e => e.id === _rtElId);
+  if(!d || d.type !== 'text') return;
+  if(typeof window._fitTextHeight !== 'function') return;
+  if(window._fitTextHeight(d)){
+    const wrap = _rtEl.closest('.el');
+    if(wrap) wrap.style.height = d.h + 'px';
+    if(typeof _updateHandlesOverlay === 'function') _updateHandlesOverlay();
+  }
+}
 
 // ─── Selection: char-index based ──────────────────────────────────
 function _charOffset(targetNode, targetOffset, root) {
@@ -1018,7 +1195,10 @@ function _rtCommit() {
       const _liveHtml = vw ? vw.innerHTML : root.innerHTML;
       d.html = _htmlWithoutStruts(_liveHtml);
     }
-    if (typeof window._fitTextHeight === 'function') window._fitTextHeight(d);
+    if (typeof window._fitTextHeight === 'function' && window._fitTextHeight(d)) {
+      if (wrapEl) wrapEl.style.height = d.h + 'px';
+      if (typeof _updateHandlesOverlay === 'function') _updateHandlesOverlay();
+    }
     if (typeof drawThumbs === 'function') drawThumbs();
     if (typeof saveState === 'function') saveState();
   }
@@ -1046,8 +1226,10 @@ function _applyToSelection(prop, val) {
     const allItalic = selected.every(c => c.style.fontStyle === 'italic');
     selected.forEach(c => { c.style.fontStyle = allItalic ? 'normal' : 'italic'; });
   } else if (prop === 'text-decoration') {
-    const allUnder = selected.every(c => (c.style.textDecoration||'').includes('underline'));
-    selected.forEach(c => { c.style.textDecoration = allUnder ? 'none' : 'underline'; });
+    const styles = selected.map(c => _rtCharUl(c.style));
+    const allSame = styles.every(s => s === styles[0]);
+    const next = allSame ? _rtNextUnderline(styles[0]) : 'underline';
+    selected.forEach(c => { _rtSetCharUl(c.style, next); });
   } else if (prop === 'vertical-align') {
     const allSuper = selected.every(c => c.style.verticalAlign === 'super');
     const allSub   = selected.every(c => c.style.verticalAlign === 'sub');
@@ -1101,6 +1283,23 @@ function _setTSWhole(prop, val, skipHtmlSync) {
   if (!sel || sel.dataset.type !== 'text') return;
   debouncedPushUndo();
   const c = sel.querySelector('.ec'); if (!c) return;
+  // Underlines live on grouped char spans (continuous wavy / dash-dot).
+  // Do not also put text-decoration on .ec — that doubles the line.
+  if (prop === 'text-decoration') {
+    c.setAttribute('style', _rtStripUlFromEcStyle(c.getAttribute('style') || ''));
+    if (!skipHtmlSync) _syncUlToHtml(val);
+    const _dUl = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
+    const _fitUl = () => {
+      if (_dUl && typeof window._fitTextHeight === 'function' && window._fitTextHeight(_dUl)) {
+        sel.style.height = _dUl.h + 'px';
+      }
+      save(); saveState(); drawThumbs(); syncProps();
+    };
+    _fitUl();
+    _rtReapplyTextShadow(sel);
+    setTimeout(() => { if (typeof rtUpdateToolbarState === 'function') rtUpdateToolbarState(); }, 0);
+    return;
+  }
   let cs = c.getAttribute('style') || '';
   // Don't overwrite padding-top (managed by applyTextVAlign)
   if (prop === 'padding-top') return;
@@ -1108,9 +1307,6 @@ function _setTSWhole(prop, val, skipHtmlSync) {
   cs = re.test(cs) ? cs.replace(re, prop+':'+val+';') : cs+prop+':'+val+';';
   c.setAttribute('style', cs);
   // Recalculate valign padding if font-size changed (text height changes)
-  if(prop==='font-size'&&sel.dataset.valign&&typeof applyTextVAlign==='function'){
-    requestAnimationFrame(()=>applyTextVAlign(sel,sel.dataset.valign));
-  }
   // Sync prop into d.html char-objects so the value survives preview round-trip.
   // Skip when called after a partial selection apply (rtColor with selection)
   // to avoid overwriting per-character colors.
@@ -1125,14 +1321,25 @@ function _setTSWhole(prop, val, skipHtmlSync) {
   }
   const _dForFit = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
   const _fitNow = () => {
-    if (_dForFit && typeof window._fitTextHeight === 'function' && window._fitTextHeight(_dForFit)) {
+    // After whole-block font-size change, shrink or grow the box to the text
+    const fitOpts = prop === 'font-size' ? { shrink: true } : undefined;
+    if (_dForFit && typeof window._fitTextHeight === 'function' && window._fitTextHeight(_dForFit, fitOpts)) {
       sel.style.height = _dForFit.h + 'px';
+      if (typeof _updateHandlesOverlay === 'function') _updateHandlesOverlay();
     }
     save(); saveState(); drawThumbs(); syncProps();
   };
-  // font-size changes need a frame for the browser to relayout text before measuring
-  if (prop === 'font-size') requestAnimationFrame(_fitNow);
-  else _fitNow();
+  // font-size: wait a frame, re-apply valign, then measure (so shrink sees real height)
+  if (prop === 'font-size') {
+    requestAnimationFrame(() => {
+      if (sel && sel.dataset.valign && typeof applyTextVAlign === 'function') {
+        applyTextVAlign(sel, sel.dataset.valign);
+      }
+      _fitNow();
+    });
+  } else {
+    _fitNow();
+  }
   _rtReapplyTextShadow(sel);
   // Update button highlight state after whole-element formatting
   setTimeout(() => { if (typeof rtUpdateToolbarState === 'function') rtUpdateToolbarState(); }, 0);
@@ -1174,7 +1381,11 @@ function _syncPropToHtml(prop, val) {
   // Never overwrite per-char colors via _syncPropToHtml —
   // partial selections would be wiped out.
   if (camel === 'color') return;
-  chars.forEach(ch => { ch.style[camel] = val; });
+  if (camel === 'textDecoration') {
+    chars.forEach(ch => { _rtSetCharUl(ch.style, val); });
+  } else {
+    chars.forEach(ch => { ch.style[camel] = val; });
+  }
   const newHtml = _charObjsToHtml(chars);
 
   root.innerHTML = newHtml;
@@ -1207,15 +1418,253 @@ function rtItalic() {
   rtUpdateToolbarState();
 }
 
+// Cycle: none → single → double → wavy → dashed → dash-dot → none
+const _RT_UL_CYCLE = [
+  'underline',
+  'underline double',
+  'underline wavy',
+  'underline dashed',
+  'underline dash-dot',
+  'none'
+];
+const _RT_UL_TITLES = {
+  'underline': 'одинарное',
+  'underline double': 'двойное',
+  'underline wavy': 'волнистая',
+  'underline dashed': 'пунктирная',
+  'underline dash-dot': 'штрихпунктирная',
+  'none': 'нет'
+};
+
+function _rtParseUnderline(dec) {
+  const d = String(dec || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!d || d === 'none') return 'none';
+  // data-ul short values
+  if (d === 'single') return 'underline';
+  if (d === 'double') return 'underline double';
+  if (d === 'wavy') return 'underline wavy';
+  if (d === 'dashed') return 'underline dashed';
+  if (d === 'dash-dot' || d === 'dashdot') return 'underline dash-dot';
+  if (d.indexOf('underline') < 0 && d !== 'dotted') return 'none';
+  if (/\bdouble\b/.test(d)) return 'underline double';
+  if (/\bwavy\b/.test(d)) return 'underline wavy';
+  // Old "dotted" → dash-dot (штрих-точка)
+  if (/\bdotted\b/.test(d) || /\bdash-dot\b/.test(d) || /\bdashdot\b/.test(d)) return 'underline dash-dot';
+  if (/\bdashed\b/.test(d)) return 'underline dashed';
+  return 'underline';
+}
+
+function _rtNextUnderline(cur) {
+  const i = _RT_UL_CYCLE.indexOf(cur);
+  return _RT_UL_CYCLE[(i < 0 ? 0 : i + 1) % _RT_UL_CYCLE.length];
+}
+
+function _rtUnderlineFromStyleAttr(styleAttr) {
+  const s = styleAttr || '';
+  if (/repeating-linear-gradient/i.test(s) && (/radial-gradient/i.test(s) || /0\.4em|5\.5px/i.test(s))) {
+    return 'underline dash-dot';
+  }
+  if (/data-ul\s*=\s*["']?dash-dot/i.test(s)) return 'underline dash-dot';
+  const m = /text-decoration(?:-line|-style)?\s*:\s*([^;]+)/i.exec(s);
+  return _rtParseUnderline(m ? m[1] : '');
+}
+
+function _rtUlFromNode(n) {
+  if (!n) return 'none';
+  if (n.getAttribute) {
+    const du = n.getAttribute('data-ul');
+    if (du) return _rtParseUnderline(du);
+  }
+  const inline = n.style && (n.style.textDecoration || n.style.textDecorationLine);
+  if (inline) {
+    const parsed = _rtParseUnderline(inline + ' ' + (n.style.textDecorationStyle || ''));
+    if (parsed !== 'none') return parsed;
+  }
+  return _rtUnderlineFromStyleAttr(n.getAttribute && n.getAttribute('style') || '');
+}
+
+function _rtCurrentUnderline(el) {
+  if (!el) return 'none';
+  const ec = el.querySelector ? el.querySelector('.ec') : null;
+  if (!ec) return 'none';
+  const root = _rtContent(ec);
+  const nodes = root ? Array.from(root.querySelectorAll('span[data-ch], span[data-ul]')) : [];
+  const styled = nodes.length ? nodes : (root ? Array.from(root.querySelectorAll('span[style]')) : []);
+  if (styled.length) {
+    const styles = styled.map(_rtUlFromNode);
+    if (styles.every(s => s === styles[0])) {
+      if (styles[0] !== 'none') return styles[0];
+      return _rtUnderlineFromStyleAttr(ec.getAttribute('style') || '');
+    }
+    return styles.find(s => s !== 'none') || styles[0];
+  }
+  return _rtUnderlineFromStyleAttr(ec.getAttribute('style') || '');
+}
+
+function _rtUpdateUnderlineBtn(activeVal) {
+  const b = document.getElementById('ft-u');
+  if (!b) return;
+  const on = !!(activeVal && activeVal !== 'none');
+  b.classList.toggle('on', on);
+  const label = _RT_UL_TITLES[activeVal] || _RT_UL_TITLES.none;
+  b.title = 'Подчёркивание: ' + label + ' → следующее (Ctrl+U)';
+}
+
+function _rtStripUlFromEcStyle(cs) {
+  return String(cs || '')
+    .replace(/text-decoration(?:-line|-style|-thickness|-color)?\s*:[^;]+;?/gi, '')
+    .replace(/text-underline-offset\s*:[^;]+;?/gi, '')
+    .replace(/;;+/g, ';')
+    .replace(/^;|;$/g, '');
+}
+
 function rtUnderline() {
-  if (!_applyToSelection('text-decoration','underline')) {
-    if (!sel||sel.dataset.type!=='text') return;
-    const cs = sel.querySelector('.ec').getAttribute('style')||'';
-    _setTSWhole('text-decoration', cs.includes('text-decoration:underline')?'none':'underline');
+  if (!_applyToSelection('text-decoration', 'cycle')) {
+    if (!sel || sel.dataset.type !== 'text') return;
+    const next = _rtNextUnderline(_rtCurrentUnderline(sel));
+    _setTSWhole('text-decoration', next);
   } else {
     _rtCommit();
   }
   rtUpdateToolbarState();
+}
+
+const _RT_STRESS = '\u0301'; // combining acute — legacy only; UI uses data-stress
+
+/** upper | lower — for CSS accent height (capitals need more lift). */
+function _rtStressCase(ch) {
+  if (!ch) return 'lower';
+  const c = [...String(ch)][0];
+  if (!c) return 'lower';
+  return (c.toUpperCase() === c && c.toLowerCase() !== c) ? 'upper' : 'lower';
+}
+
+function _rtIsStressableLetter(ch) {
+  return !!ch && /\p{L}/u.test(ch) && !/[\u0300-\u036f]/.test(ch);
+}
+
+function _rtLetterHasStress(chars, i) {
+  const c = chars[i];
+  if (!c || !_rtIsStressableLetter(c.ch)) return false;
+  if (c.style && c.style._stress) return true;
+  return !!(chars[i + 1] && chars[i + 1].ch === _RT_STRESS);
+}
+
+/** Collect indices of base letters inside [start, end). */
+function _rtStressTargets(chars, start, end) {
+  const targets = [];
+  for (let i = start; i < end && i < chars.length; i++) {
+    if (_rtIsStressableLetter(chars[i].ch)) targets.push(i);
+  }
+  return targets;
+}
+
+function _rtSelectionHasStress(chars, start, end) {
+  const targets = _rtStressTargets(chars, start, end);
+  if (!targets.length) return false;
+  return targets.every(i => _rtLetterHasStress(chars, i));
+}
+
+function rtStress() {
+  // Prefer live editor; fall back to selected text block
+  let root = null;
+  if (_rtEl) root = _rtContent(_rtEl);
+  else if (sel && sel.dataset.type === 'text') {
+    const ec = sel.querySelector('.ec');
+    root = ec ? _rtContent(ec) : null;
+  }
+  if (!root) return;
+
+  let idx = _readSelFromDOM(root) || _savedSelIdx;
+  if (!idx) {
+    // Collapsed caret: toggle the letter immediately before the caret
+    const caret = typeof _readCollapsedCaretIdx === 'function' ? _readCollapsedCaretIdx(root) : null;
+    if (!caret) return;
+    let i = caret.start;
+    const chars0 = _toCharObjs(root.innerHTML);
+    if (i > 0 && chars0[i - 1] && chars0[i - 1].ch === _RT_STRESS) i--;
+    if (i > 0 && _rtIsStressableLetter(chars0[i - 1].ch)) {
+      idx = { start: i - 1, end: i };
+    } else if (i < chars0.length && _rtIsStressableLetter(chars0[i].ch)) {
+      idx = { start: i, end: i + 1 };
+    } else {
+      return;
+    }
+  }
+
+  if (typeof pushUndo === 'function') pushUndo();
+  else if (typeof debouncedPushUndo === 'function') debouncedPushUndo();
+
+  const chars = _toCharObjs(root.innerHTML);
+  if (!chars.length) return;
+  const start = Math.max(0, idx.start);
+  const end = Math.min(idx.end, chars.length);
+  const targets = _rtStressTargets(chars, start, end);
+  if (!targets.length) return;
+
+  const remove = targets.every(i => _rtLetterHasStress(chars, i));
+  // Toggle style._stress (CSS paints the mark). Drop any leftover combining accents.
+  for (let t = targets.length - 1; t >= 0; t--) {
+    const i = targets[t];
+    if (!chars[i].style) chars[i].style = {};
+    if (remove) delete chars[i].style._stress;
+    else chars[i].style._stress = true;
+    if (chars[i + 1] && chars[i + 1].ch === _RT_STRESS) chars.splice(i + 1, 1);
+  }
+
+  const inEditMode = !root.querySelector('span[data-ch]');
+  const newHtml = inEditMode ? _groupedHtml(chars) : _charObjsToHtml(chars);
+  root.innerHTML = newHtml;
+
+  // Persist into slide data
+  const wrap = (_rtEl && _rtEl.closest('.el')) || sel;
+  const id = (_rtElId) || (wrap && wrap.dataset && wrap.dataset.id);
+  const d = id && slides[cur] && slides[cur].els.find(e => e.id === id);
+  if (d) d.html = typeof _htmlWithoutStruts === 'function' ? _htmlWithoutStruts(newHtml) : newHtml;
+
+  if (typeof _rtNormalizeTextDisplay === 'function') {
+    const tel = wrap && wrap.querySelector ? wrap.querySelector('.ec') : null;
+    _rtNormalizeTextDisplay(tel || root, (d && d.cs) || '', d && d.bulletGap);
+  }
+  if (wrap && typeof _rtReapplyTextShadow === 'function') _rtReapplyTextShadow(wrap);
+  if (wrap && typeof window._rtUpdateCharCounter === 'function') {
+    window._rtUpdateCharCounter(wrap, wrap.querySelector('.ec') || root);
+  }
+
+  const _idxToRestore = { start, end: Math.min(end, chars.length) };
+  const _rootToRestore = root;
+  requestAnimationFrame(() => {
+    if (_rtEl && _rtEl.contentEditable === 'true' && document.activeElement !== _rtEl) {
+      _rtEl.focus({ preventScroll: true });
+    }
+    if (typeof _restoreSelToDOM === 'function') _restoreSelToDOM(_idxToRestore, _rootToRestore);
+    if (typeof rtUpdateToolbarState === 'function') rtUpdateToolbarState();
+  });
+  _savedSelIdx = _idxToRestore;
+
+  if (typeof _rtCommit === 'function') _rtCommit();
+  if (typeof save === 'function') save();
+  if (typeof saveState === 'function') saveState();
+  if (typeof drawThumbs === 'function') drawThumbs();
+  rtUpdateToolbarState();
+}
+window.rtStress = rtStress;
+
+function _syncUlToHtml(kind) {
+  if (!sel || sel.dataset.type !== 'text') return;
+  const d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (!d) return;
+  const c = sel.querySelector('.ec'); if (!c) return;
+  const root = _rtContent(c);
+  const chars = _toCharObjs(root.innerHTML);
+  if (!chars.length) return;
+  chars.forEach(ch => { _rtSetCharUl(ch.style, kind); });
+  // Prefer grouped spans so underlines are continuous
+  const newHtml = _charObjsToHtml(chars);
+  root.innerHTML = newHtml;
+  d.html = newHtml;
+  if (typeof _rtNormalizeTextDisplay === 'function') _rtNormalizeTextDisplay(c, c.getAttribute('style') || '', d.bulletGap);
+  _rtReapplyTextShadow(sel);
 }
 
 function rtSuperscript() {
@@ -1416,17 +1865,25 @@ function rtUpdateToolbarState() {
     const hasSel = s && s.rangeCount > 0 && !s.isCollapsed;
     if (hint) hint.style.display = hasSel ? 'inline' : 'none';
     const setOn = (id,on) => { const b=document.getElementById(id); if(b) b.classList.toggle('on',!!on); };
+    const ulOf = (dec) => _rtParseUnderline(dec);
 
     // When no text is selected, reflect the state of ALL chars in the active editor
     if (!hasSel && _rtEl) {
       const root = _rtContent(_rtEl);
-      const allChars = Array.from(root.querySelectorAll('span[data-ch]'));
+      const allChars = Array.from(root.querySelectorAll('span[data-ch], span[data-ul]'));
       if (allChars.length > 0) {
         setOn('ft-b',   allChars.every(c => parseInt(window.getComputedStyle(c).fontWeight||'400') >= 600));
         setOn('ft-i',   allChars.every(c => window.getComputedStyle(c).fontStyle === 'italic'));
-        setOn('ft-u',   allChars.every(c => window.getComputedStyle(c).textDecoration.includes('underline')));
+        {
+          const uls = allChars.map(_rtUlFromNode);
+          const ul = uls.every(s => s === uls[0]) ? uls[0] : (uls.find(s => s !== 'none') || 'none');
+          _rtUpdateUnderlineBtn(ul);
+        }
         setOn('ft-sup', allChars.every(c => c.style.verticalAlign === 'super'));
         setOn('ft-sub', allChars.every(c => c.style.verticalAlign === 'sub'));
+        {
+          setOn('ft-stress', !!root.querySelector('[data-stress]'));
+        }
         _updateListButtonState();
         _rtUpdateFontSizeInput(root);
         _rtUpdateColorInputForCaret(s, root);
@@ -1436,9 +1893,10 @@ function rtUpdateToolbarState() {
       const cs0 = window.getComputedStyle(root);
       setOn('ft-b',   parseInt(cs0.fontWeight||'400') >= 600);
       setOn('ft-i',   cs0.fontStyle === 'italic');
-      setOn('ft-u',   cs0.textDecoration.includes('underline'));
+      _rtUpdateUnderlineBtn(ulOf(cs0.textDecoration));
       setOn('ft-sup', false);
       setOn('ft-sub', false);
+      setOn('ft-stress', false);
       _updateListButtonState();
       _rtUpdateFontSizeInput(root);
       _rtUpdateColorInputForCaret(s, root);
@@ -1454,9 +1912,23 @@ function rtUpdateToolbarState() {
     const cs = window.getComputedStyle(el2);
     setOn('ft-b',   parseInt(cs.fontWeight)>=600);
     setOn('ft-i',   cs.fontStyle==='italic');
-    setOn('ft-u',   cs.textDecoration.includes('underline'));
+    _rtUpdateUnderlineBtn(_rtUlFromNode(el2));
     setOn('ft-sup', !!(el2.style&&el2.style.verticalAlign==='super'));
     setOn('ft-sub', !!(el2.style&&el2.style.verticalAlign==='sub'));
+    if (hasSel && _rtEl) {
+      try {
+        const root = _rtContent(_rtEl);
+        const idx = _readSelFromDOM(root) || _savedSelIdx;
+        if (idx) {
+          const chars = _toCharObjs(root.innerHTML);
+          setOn('ft-stress', _rtSelectionHasStress(chars, idx.start, idx.end));
+        } else {
+          setOn('ft-stress', (s.toString() || '').indexOf(_RT_STRESS) >= 0);
+        }
+      } catch (e) { setOn('ft-stress', false); }
+    } else {
+      setOn('ft-stress', false);
+    }
     _updateListButtonState();
     if (hasSel) {
       try {

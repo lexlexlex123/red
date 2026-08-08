@@ -904,6 +904,10 @@ function _commitFormula(existingEl, latex, lines, svg, color, scheme){
     _applyFormulaSvg(liveEl, svg, color);
     save(); drawThumbs(); saveState();
     syncProps();
+    // Live-update linked structure / graph already on the slide
+    if(d && typeof window._syncLinkedGraphsFromFormula === 'function'){
+      Promise.resolve(window._syncLinkedGraphsFromFormula(d)).catch(()=>{});
+    }
     toast('Формула обновлена','ok');
   } else {
     pushUndo();
@@ -959,8 +963,12 @@ function syncFormulaProps(){
 
   const graphBtn = document.getElementById('fp-graph-btn');
   if(graphBtn){
-    const isChem = typeof window._chemIsFormula === 'function' && window._chemIsFormula(d.formulaRaw || '');
-    graphBtn.textContent = isChem ? '🧪 Построить структуру' : '📈 Построить график';
+    const raw = d.formulaRaw || '';
+    const isChem = typeof window._chemIsFormula === 'function' && window._chemIsFormula(raw);
+    const isLogic = !isChem && typeof window._logicIsFormula === 'function' && window._logicIsFormula(raw);
+    graphBtn.textContent = isChem ? '🧪 Построить структуру'
+      : isLogic ? '⚡ Построить схему'
+      : '📈 Построить график';
   }
 }
 

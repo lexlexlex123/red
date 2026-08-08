@@ -76,11 +76,18 @@ function _parseColorField(str){
 
 function _setColorFieldValue(inputId, previewId, color, schemeRef){
   try{
+    let c=color;
+    // Если цвет из схемы — всегда резолвим актуальный hex (после смены темы)
+    if(schemeRef&&typeof _resolveSchemeColor==='function'){
+      const th=typeof _activeThemeForScheme==='function'?_activeThemeForScheme():null;
+      const resolved=th?_resolveSchemeColor(schemeRef,th):null;
+      if(resolved) c=resolved;
+    }
     const inp=document.getElementById(inputId);
-    if(inp) inp.value=_colorFieldDisplay(color, schemeRef);
+    if(inp) inp.value=_colorFieldDisplay(c, schemeRef);
     if(previewId){
       const prev=document.getElementById(previewId);
-      if(prev&&color) prev.style.background=color;
+      if(prev&&c) prev.style.background=c;
     }
   }catch(e){}
 }
@@ -183,6 +190,8 @@ function _schemeSwatchColor(theme, col, row){
     // Pure extremes for primary text / inverse ({col:7,row:0} stays contrast-safe)
     if(row===0) return isLightTheme?'#000000':'#ffffff';
     if(row===n-1) return isLightTheme?'#ffffff':'#000000';
+    // Позиция «88»: чуть светлее стандартного gray(0.8)=#ccc — лучше для карточек/фонов
+    if(row===7 && isLightTheme) return '#dddddd';
     return _grayHex(L);
   }
   let hex=base8[col]||'#888888';

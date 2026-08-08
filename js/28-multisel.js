@@ -49,8 +49,13 @@ function _updateSelFrames(){
     frame.style.top = t + 'px';
     frame.style.width = w + 'px';
     frame.style.height = h + 'px';
-    if(rot) frame.style.transform = 'rotate(' + rot + 'deg)';
     frame.style.transformOrigin = 'center center';
+    frame.style.transform = rot ? ('rotate(' + rot + 'deg)') : 'none';
+    if(el.dataset && el.dataset.appletId==='flip'){
+      const rx=(typeof FLIP_RX==='number'?FLIP_RX:14)+'px';
+      frame.style.borderRadius = rx;
+      frame.classList.add('flip-rx');
+    }
     layer.appendChild(frame);
   });
 }
@@ -145,6 +150,8 @@ function pickMulti(el,shiftKey){
     if(t.closest('.conn-hit')) return false;
     if(t.closest('#conn-handles')) return false;
     if(t.closest('#handles-overlay [data-cls]')) return false;
+    if(t.closest('#pivot-handle')) return false;
+    if(t.closest('#_anim-picker-ov')) return false;
     if(t.closest('#motion-ghosts') || t.closest('#motion-svg') || t.closest('.motion-ghost') || t.closest('.motion-handle') || t.closest('[data-motion-ui]')) return false;
     if(t.closest('.arc-handle,.star-handle,.para-handle,.chev-handle,.moon-handle,.trap-handle,.curve-handle')) return false;
     // Empty slide / overlays / outside-slide chrome — OK to rubber-band
@@ -163,6 +170,9 @@ function pickMulti(el,shiftKey){
     if(e.button!==0)return;
     if(typeof window._isPreviewActive==='function'&&window._isPreviewActive())return;
     if(window._anyDragging)return;
+    if(window._pivotDragging || window._overPivotHandle)return;
+    if(window._animPickerCtx)return;
+    if(e.target&&e.target.closest&&e.target.closest('#_anim-picker-ov'))return;
     if(typeof _rotDragging!=='undefined'&&_rotDragging)return;
     if(window._resizeDragging)return;
     if(typeof _rotEl!=='undefined'&&_rotEl&&typeof _nearCorner==='function'){
@@ -227,7 +237,7 @@ function pickMulti(el,shiftKey){
 
   document.addEventListener('mousemove',e=>{
     if(!rbStart)return;
-    if(window._anyDragging || (typeof _rotDragging!=='undefined'&&_rotDragging)){
+    if(window._anyDragging || window._pivotDragging || (typeof _rotDragging!=='undefined'&&_rotDragging)){
       rbStart=null;
       const rb=document.getElementById('rubberband');
       if(rb) rb.style.display='none';
@@ -357,6 +367,11 @@ function deleteSelected(){
     if(typeof pushUndo==="function")pushUndo();
     multiSel.forEach(domEl=>{
       const s=slides[cur];if(!s)return;
+      // Keep linked structure/graph when deleting a formula — only unlink
+      if(domEl.dataset.type==='formula'){
+        if(typeof _unlinkLinkedGraphs==='function') _unlinkLinkedGraphs(domEl.dataset.id);
+        else if(typeof _deleteLinkedGraphs==='function') _deleteLinkedGraphs(domEl.dataset.id);
+      }
       const idx2=s.els.findIndex(x=>x.id===domEl.dataset.id);
       if(typeof _hfOnDelete==='function'){ const _d=s.els[idx2]; if(_d)_hfOnDelete(_d); }
       if(idx2>=0)s.els.splice(idx2,1);
@@ -371,8 +386,10 @@ function deleteSelected(){
     const s=slides[cur];if(!s)return;
     if(typeof pushUndo==="function")pushUndo();
     const idx2=s.els.findIndex(x=>x.id===sel.dataset.id);
-    // If deleting a formula, also delete linked graphs
-    if(sel.dataset.type==='formula' && typeof _deleteLinkedGraphs==='function'){
+    // If deleting a formula, keep linked structure/graph — only unlink
+    if(sel.dataset.type==='formula' && typeof _unlinkLinkedGraphs==='function'){
+      _unlinkLinkedGraphs(sel.dataset.id);
+    } else if(sel.dataset.type==='formula' && typeof _deleteLinkedGraphs==='function'){
       _deleteLinkedGraphs(sel.dataset.id);
     }
     // htmlframe: delete linked code; code: unlink parent

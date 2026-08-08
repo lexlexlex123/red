@@ -515,8 +515,8 @@
         var newY = Math.round(originY + relY * scaleY);
         var newElW = Math.max(20, Math.round(st.w * scaleX));
         var newElH = Math.max(10, Math.round(st.h * scaleY));
-        // Chem structures keep aspect ratio so formula/text don't stretch
-        if (ge.dataset.graphKind === 'chem') {
+        // Chem / logic diagrams keep aspect ratio so content doesn't stretch
+        if (ge.dataset.graphKind === 'chem' || ge.dataset.graphKind === 'logic') {
           var uni = (Math.abs(scaleX - 1) >= Math.abs(scaleY - 1)) ? scaleX : scaleY;
           newElW = Math.max(80, Math.round(st.w * uni));
           newElH = Math.max(80, Math.round(st.h * uni));

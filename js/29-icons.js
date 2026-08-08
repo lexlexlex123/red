@@ -45,7 +45,7 @@ function buildIconGridFiltered(q){
   const grid=document.getElementById('icon-grid');
   if(!grid)return;
   grid.innerHTML='';
-  const icons=ICONS.filter(ic=>ic.name.toLowerCase().includes(q)||ic.cat.includes(q));
+  const icons=ICONS.filter(ic=>ic.name.toLowerCase().includes(q)||ic.id.toLowerCase().includes(q)||ic.cat.includes(q));
   _renderIconCells(grid,icons);
   const info=document.getElementById('icon-count');
   if(info)info.textContent=icons.length+' иконок';
@@ -61,26 +61,41 @@ function buildIconGrid(catId){
   if(info)info.textContent=icons.length+' иконок';
 }
 
-function _buildOlympShapeEls(paths, color, sw) {
-  const limbSw = Math.max(+sw || 1.8, 2.4);
+function _buildMixedIconEls(paths, color, sw) {
+  const limbSw = Math.max(+sw || 1.8, 1.6);
   return paths.map(p => {
     if (p.startsWith('h:') || p.startsWith('c:')) {
       const [cx, cy, r] = p.slice(2).split(',').map(Number);
       return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${color}" stroke="none"/>`;
     }
+    if (p.startsWith('cs:')) {
+      const [cx, cy, r] = p.slice(3).split(',').map(Number);
+      return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="${limbSw}"/>`;
+    }
+    if (p.startsWith('fe:')) {
+      return `<path d="${p.slice(3)}" fill="${color}" fill-rule="evenodd" stroke="none"/>`;
+    }
     if (p.startsWith('f:')) {
       return `<path d="${p.slice(2)}" fill="${color}" stroke="none"/>`;
     }
+    if (p.startsWith('s:')) {
+      return `<path d="${p.slice(2)}" fill="none" stroke="${color}" stroke-width="${limbSw}" stroke-linecap="round" stroke-linejoin="round"/>`;
+    }
     return `<path d="${p}" fill="none" stroke="${color}" stroke-width="${limbSw}" stroke-linecap="round" stroke-linejoin="round"/>`;
   }).join('');
+}
+
+function _iconUsesMixedPaths(ic, paths) {
+  if (ic.mixed || ic.cat === 'olymp') return true;
+  return paths.some(p => /^(f:|s:|c:|h:|cs:|fe:)/.test(p));
 }
 
 function _buildIconSVG(ic, color, sw, style, shadow, shadowBlur, shadowColor, shadowSize, filterUid){
   const paths=ic.p.split('||').map(p=>p.trim()).filter(Boolean);
   const vb=ic.vb||'0 0 24 24';
   let pathEls, attrs;
-  if (ic.cat === 'olymp') {
-    pathEls = _buildOlympShapeEls(paths, color, sw);
+  if (_iconUsesMixedPaths(ic, paths)) {
+    pathEls = _buildMixedIconEls(paths, color, sw);
     attrs = 'fill="none"';
   } else {
     pathEls = paths.map(p => `<path d="${p}"/>`).join('');

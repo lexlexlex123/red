@@ -390,9 +390,9 @@
         origPick.call(this, el);
         const sec = document.getElementById('objects-panel-section');
         if (sec && sec.style.display !== 'none') renderObjectsPanel();
-        // Refresh anim panel if open
+        // Refresh anim panel if open (skip while picking a trigger object)
         const animPanel = document.getElementById('anim-panel');
-        if (animPanel && animPanel.classList.contains('open') && typeof renderAnimPanel === 'function') {
+        if (animPanel && animPanel.classList.contains('open') && typeof renderAnimPanel === 'function' && !window._animPickerCtx) {
           renderAnimPanel();
         }
       };

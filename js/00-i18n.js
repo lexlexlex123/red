@@ -1,9 +1,9 @@
 // ══════════════ LOCALIZATION (i18n) ══════════════
-// Версия / Version: 6.3
+// Версия / Version: 6.4
 // Автор / Author: Некрасов Александр
 
 const APP_NAME = 'Слайды';
-const APP_VERSION = '6.3';
+const APP_VERSION = '6.4';
 const APP_AUTHOR = 'Некрасов Александр';
 
 const LANG_DATA = {
@@ -38,6 +38,7 @@ const LANG_DATA = {
     grpPresent: 'Present',
     grpAutoAdvance: 'Auto Advance',
     grpPlayback: 'Playback',
+    grpDisplay: 'Display',
     grpFile: 'File',
 
     // Slide buttons
@@ -48,7 +49,8 @@ const LANG_DATA = {
     btnRedo: 'Redo',
     btnImport: 'Import',
     btnExport: 'Export',
-    exportFmtHtml: 'HTML presentation',
+    exportFmtHtml: 'HTML full (standalone)',
+    exportFmtHtmlLite: 'Project (compact JSON)',
     exportFmtPdf: 'PDF document',
     exportFmtOdp: 'OpenDocument',
     exportRendering: 'Rendering slides…',
@@ -124,6 +126,7 @@ const LANG_DATA = {
 
     // Props panel
     propRole: 'Role',
+    btnFillQuote: 'Quote',
     propSize: 'Size',
     propWeight: 'Weight',
     propTextColor: 'Text Color',
@@ -177,6 +180,8 @@ const LANG_DATA = {
     codeThemeDark: 'Dark',
     codeThemeLight: 'Light',
     codeGlassBg: 'Frosted glass background',
+    propHfChrome: 'Window chrome',
+    propHfChromeHint: 'Show title bar',
     modalMd: '# Markdown Block',
     modalLayout: '🖼 Layout decor',
     layoutDesc: 'Decorative style for all slides. Uses current theme colours.',
@@ -206,6 +211,9 @@ const LANG_DATA = {
     slideAutoAdvance: 'Auto (sec)',
     presLoop: 'Loop',
     presShuffle: 'Shuffle',
+    presFooter: 'Footer',
+    presSideNav: 'Arrows',
+    presEscBtn: 'Esc',
     presBlack: 'Black screen',
     presAuto: '▶ Auto',
     previewExit: '✕ Esc',
@@ -225,6 +233,8 @@ const LANG_DATA = {
     toastNeedSlide: 'Need at least one slide',
     toastSaveFailed: 'Could not save — storage may be full',
     confirmAutoPlace: 'Auto-layout all slides? Theme and decor are preserved. Long text may split across slides; images get captions.',
+    confirmAutoPlaceOne: 'Auto-layout the current slide? Theme and decor are preserved. Long text may split; images get captions.',
+    confirmAutoPlaceSel: 'Auto-layout {n} selected slides? Theme and decor are preserved. Long text may split; images get captions.',
     toastAutoPlaceDone: '✨ Objects placed',
     btnAutoPlace: 'Auto layout',
     grpLayout: 'Layout',
@@ -264,6 +274,8 @@ const LANG_DATA = {
     sbgAnchorBL: 'Bottom left',
     sbgAnchorBR: 'Bottom right',
     exportEmbedding: 'Embedding images…',
+    exportPreparingLite: 'Preparing compact project…',
+    exportLiteSaved: 'Compact project saved',
     exportImgFailed: 'Some images were not embedded into the export',
     toastAnimAdded: 'Animation added',
     toastSelectIcon: 'Select an icon',
@@ -400,6 +412,7 @@ const LANG_DATA = {
     grpPresent: 'Показ',
     grpAutoAdvance: 'Авто-переход',
     grpPlayback: 'Воспроизведение',
+    grpDisplay: 'Отображение',
     grpFile: 'Файл',
 
     // Slide buttons
@@ -410,7 +423,8 @@ const LANG_DATA = {
     btnRedo: 'Повторить',
     btnImport: 'Импорт',
     btnExport: 'Экспорт',
-    exportFmtHtml: 'HTML-презентация',
+    exportFmtHtml: 'HTML полный',
+    exportFmtHtmlLite: 'Проект (компактный)',
     exportFmtPdf: 'PDF-документ',
     exportFmtOdp: 'OpenDocument',
     exportRendering: 'Рендер слайдов…',
@@ -485,6 +499,7 @@ const LANG_DATA = {
 
     // Props panel
     propRole: 'Роль',
+    btnFillQuote: 'Цитата',
     propSize: 'Размер',
     propWeight: 'Насыщенность',
     propTextColor: 'Цвет текста',
@@ -538,6 +553,8 @@ const LANG_DATA = {
     codeThemeDark: 'Тёмная',
     codeThemeLight: 'Светлая',
     codeGlassBg: 'Полупрозрачный фон с размытием',
+    propHfChrome: 'Шапка окна',
+    propHfChromeHint: 'Показывать шапку',
     modalMd: '# Markdown блок',
     modalLayout: '🖼 Декор макета',
     layoutDesc: 'Декоративный стиль для всех слайдов. Использует цвета текущей схемы.',
@@ -567,6 +584,9 @@ const LANG_DATA = {
     slideAutoAdvance: 'Авто (сек)',
     presLoop: 'Цикл',
     presShuffle: 'Случайно',
+    presFooter: 'Футер',
+    presSideNav: 'Стрелки',
+    presEscBtn: 'Esc',
     presBlack: 'Чёрный экран',
     presAuto: '▶ Авто',
     previewExit: '✕ Esc',
@@ -586,6 +606,8 @@ const LANG_DATA = {
     toastNeedSlide: 'Нужен хотя бы один слайд',
     toastSaveFailed: 'Не удалось сохранить — возможно, переполнено хранилище',
     confirmAutoPlace: 'Разместить объекты на всех слайдах? Тема и декор сохранятся. Длинный текст может разбиться на 2–3 слайда, к картинкам — подписи.',
+    confirmAutoPlaceOne: 'Разместить объекты на текущем слайде? Тема и декор сохранятся. Длинный текст может разбиться, к картинкам — подписи.',
+    confirmAutoPlaceSel: 'Разместить объекты на выделенных слайдах ({n})? Тема и декор сохранятся. Длинный текст может разбиться, к картинкам — подписи.',
     toastAutoPlaceDone: '✨ Объекты размещены',
     btnAutoPlace: 'Разместить объекты',
     grpLayout: 'Компоновка',
@@ -624,6 +646,8 @@ const LANG_DATA = {
     sbgAnchorBL: 'Нижний левый',
     sbgAnchorBR: 'Нижний правый',
     exportEmbedding: 'Встраивание изображений…',
+    exportPreparingLite: 'Подготовка компактного проекта…',
+    exportLiteSaved: 'Компактный проект сохранён',
     exportImgFailed: 'Не все изображения удалось встроить в экспорт',
     toastAnimAdded: 'Анимация добавлена',
     toastSelectIcon: 'Выберите значок',

@@ -88,6 +88,32 @@ window._pvCancelEditorPointer = function() {
   try {
     document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window, button: 0, buttons: 0 }));
   } catch (e) {}
+  // Сброс курсора ресайза/перетаскивания — иначе «сдвоенная стрелка» залипает в показе
+  try {
+    document.body.style.cursor = 'default';
+    document.documentElement.style.cursor = 'default';
+    const cw = document.getElementById('cwrap'); if (cw) cw.style.cursor = 'default';
+    const cv = document.getElementById('canvas'); if (cv) cv.style.cursor = 'default';
+    const ov = document.getElementById('handles-overlay');
+    if (ov) {
+      ov.style.cursor = 'default';
+      ov.querySelectorAll('*').forEach(function(n){ if (n.style) n.style.cursor = 'default'; });
+    }
+    const po = document.getElementById('preview-ov'); if (po) po.style.cursor = 'default';
+    // Браузер иногда держит курсор от display:none хендла — форсируем пересчёт
+    requestAnimationFrame(function(){
+      try {
+        document.body.style.cursor = '';
+        document.documentElement.style.cursor = '';
+        if (cw) cw.style.cursor = '';
+        if (cv) cv.style.cursor = '';
+        if (po) {
+          po.style.cursor = 'default';
+          po.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 0, clientY: 0 }));
+        }
+      } catch (e3) {}
+    });
+  } catch (e2) {}
 };
 
 // Лего-блоки: вспомогательная функция SVG для превью/экспорта
@@ -272,7 +298,7 @@ function startPreview(startIdx){
       : null)||e.target.closest('.psel');
     if(psel&&psel._hasLink)return;
     if(psel&&psel._isTrigger)return;
-    if(psel&&(psel.dataset.appletId==='counter'||psel.dataset.appletId==='generator'))return;
+    if(psel&&(psel.dataset.appletId==='counter'||psel.dataset.appletId==='generator'||psel.dataset.appletId==='flip'))return;
     // Check per-slide clickNav (default true)
     if(slides[pidx]&&slides[pidx].clickNav===false){
       // Still fire click-triggered animations, just don't advance to next slide
@@ -329,7 +355,7 @@ function startPreview(startIdx){
   document.getElementById('psb').innerHTML='';
   document.getElementById('psa').style.cssText='position:absolute;inset:0;width:'+canvasW+'px;height:'+canvasH+'px;transform:scale('+sc+');transform-origin:top left;';
   document.getElementById('psb').style.cssText='position:absolute;inset:0;opacity:0;pointer-events:none;width:'+canvasW+'px;height:'+canvasH+'px;transform:scale('+sc+');transform-origin:top left;';
-  updatePUI();scheduleAuto();_syncPreviewPlaybackBtns();
+  updatePUI();scheduleAuto();_syncPreviewPlaybackBtns();_applyPresDisplayUI();
   po.requestFullscreen&&po.requestFullscreen().then(()=>resizePStage()).catch(()=>{
     // Голос / async: браузер блокирует Fullscreen без жеста пользователя
     if(po._fsArm) return;
@@ -345,10 +371,44 @@ function startPreview(startIdx){
   });
 }
 function _syncPreviewPlaybackBtns(){
-  [['p-loop-btn',presLoop],['p-shuffle-btn',presShuffle]].forEach(([id,on])=>{
+  [
+    ['p-loop-btn',presLoop],
+    ['p-shuffle-btn',presShuffle],
+    ['p-footer-btn',presShowFooter],
+    ['p-sidenav-btn',presShowSideNav],
+    ['p-esc-btn',presShowEsc],
+  ].forEach(([id,on])=>{
     const el=document.getElementById(id);
     if(el){ el.classList.toggle('on',!!on); el.classList.toggle('active',!!on); }
   });
+}
+function _applyPresDisplayUI(){
+  const info=document.getElementById('p-info');
+  if(info) info.style.display=presShowFooter?'':'none';
+  const prev=document.getElementById('p-prev');
+  const next=document.getElementById('p-next');
+  if(prev) prev.style.display=presShowSideNav?'':'none';
+  if(next) next.style.display=presShowSideNav?'':'none';
+  const esc=document.getElementById('p-exit');
+  if(esc) esc.style.display=presShowEsc?'':'none';
+}
+function togglePresFooter(){
+  presShowFooter=!presShowFooter;
+  _syncPreviewPlaybackBtns();
+  _applyPresDisplayUI();
+  _savePresDisplayPrefs();
+}
+function togglePresSideNav(){
+  presShowSideNav=!presShowSideNav;
+  _syncPreviewPlaybackBtns();
+  _applyPresDisplayUI();
+  _savePresDisplayPrefs();
+}
+function togglePresEscBtn(){
+  presShowEsc=!presShowEsc;
+  _syncPreviewPlaybackBtns();
+  _applyPresDisplayUI();
+  _savePresDisplayPrefs();
 }
 function togglePreviewBlack(){
   pBlackScreen=!pBlackScreen;
@@ -1141,6 +1201,28 @@ function doMorphTransition(a,b,to,cb,durMs){
   _previewTransLater(cb,dur+80);
 }
 let presShuffle=false,presLoop=false,_shuffleHistory=[];
+let presShowFooter=true,presShowSideNav=true,presShowEsc=true;
+
+function _loadPresDisplayPrefs(){
+  try{
+    const raw=localStorage.getItem('sf_pres_display');
+    if(!raw) return;
+    const o=JSON.parse(raw);
+    if(typeof o.footer==='boolean') presShowFooter=o.footer;
+    if(typeof o.sidenav==='boolean') presShowSideNav=o.sidenav;
+    if(typeof o.esc==='boolean') presShowEsc=o.esc;
+  }catch(e){}
+}
+function _savePresDisplayPrefs(){
+  try{
+    localStorage.setItem('sf_pres_display', JSON.stringify({
+      footer:!!presShowFooter,
+      sidenav:!!presShowSideNav,
+      esc:!!presShowEsc
+    }));
+  }catch(e){}
+}
+_loadPresDisplayPrefs();
 
 function togglePresShuffle(){
   presShuffle=!presShuffle;
@@ -1211,8 +1293,9 @@ function clearAutoTimer(){clearTimeout(autoTimer);autoTimer=null;}
 function updatePUI(){
   const total=slides.length;
   document.getElementById('p-counter').textContent=(pidx+1)+' / '+total;
-  document.getElementById('p-prev').style.opacity=(pidx>0||presLoop||presShuffle)?'1':'0.2';
-  document.getElementById('p-next').style.opacity=(pidx<total-1||presLoop||presShuffle)?'1':'0.2';
+  // Не гасим стрелки до 0.2 — на светлом слайде они пропадают; 0.55 достаточно как «неактивно»
+  document.getElementById('p-prev').style.opacity=(pidx>0||presLoop||presShuffle)?'1':'0.55';
+  document.getElementById('p-next').style.opacity=(pidx<total-1||presLoop||presShuffle)?'1':'0.55';
   const dn=document.getElementById('p-dot-nav');dn.innerHTML='';
   const max=Math.min(total,25);
   for(let i=0;i<max;i++){
@@ -1573,6 +1656,7 @@ function _pvRevealForEntrance(el, d, idx) {
   _pvCancelExitHide(el);
   if (typeof window._resetCaptionSlide === 'function') window._resetCaptionSlide(el, true);
   if (typeof window._resetSplitHalf === 'function') window._resetSplitHalf(el, true);
+  if (typeof window._resetRecolor === 'function') window._resetRecolor(el);
   if (!(typeof window._particlesHasAnim === 'function' && window._particlesHasAnim(d))) {
     el.style.visibility = 'visible';
     el.style.pointerEvents = '';
@@ -1746,7 +1830,7 @@ function buildPSlide(container,idx,transOffset,noScale){
       rxStr='border-radius:'+(d.rx_tl||0)+u+' '+(d.rx_tr||0)+u+' '+(d.rx_br||0)+u+' '+(d.rx_bl||0)+u+';';
     }
     // Determine cursor
-    const hasCursor=(d.link||( d.hoverFx&&d.hoverFx.enabled));
+    const hasCursor=(d.link||( d.hoverFx&&d.hoverFx.enabled)||(d.type==='applet'&&d.appletId==='flip')||(d.type==='applet'&&d.appletId==='counter')||(d.type==='applet'&&d.appletId==='generator'));
     const elOp=d.elOpacity!=null?d.elOpacity:1;
     const _previewBdBlur=(d.type==='text'&&d.textBgBlur>0)?'backdrop-filter:blur('+d.textBgBlur+'px);-webkit-backdrop-filter:blur('+d.textBgBlur+'px);':'';
     const _hasSwing = (d.anims||[]).some(a=>a.name==='swing');
@@ -1923,7 +2007,7 @@ function buildPSlide(container,idx,transOffset,noScale){
       if(d.formulaSvg){el.innerHTML=d.formulaSvg;var _fsvgP=el.querySelector('svg');if(_fsvgP){_fsvgP.style.width='100%';_fsvgP.style.height='100%';}}
     }else if(d.type==='graph'){
       el.style.overflow='hidden';el.style.borderRadius='6px';el.style.position='absolute';
-      if(d.graphKind==='chem'){
+      if(d.graphKind==='chem'||d.graphKind==='logic'){
         var _cbg=d.graphBg;
         var _hasCbg=_cbg && _cbg!=='none' && _cbg!=='transparent' && _cbg!=='';
         var _cop=d.graphBgOp!=null?+d.graphBgOp:1;
@@ -1954,10 +2038,17 @@ function buildPSlide(container,idx,transOffset,noScale){
       if(typeof ensureAppletHtmlFromData==='function') ensureAppletHtmlFromData(d);
       var _mountHtml = (d.appletId==='counter' && typeof window._counterMountHTML==='function') ? window._counterMountHTML(d) : (d.appletHtml||'');
       var iframe=document.createElement('iframe');iframe.srcdoc=_mountHtml;
-      var _pvPE = (d.appletId==='timer'||d.appletId==='counter'||d.appletId==='generator') ? 'none' : 'auto';
-      iframe.style.cssText='width:100%;height:100%;border:none;background:transparent;pointer-events:'+_pvPE+';user-select:none;';
+      var _pvPE = (d.appletId==='timer'||d.appletId==='counter'||d.appletId==='generator'||d.appletId==='flip') ? 'none' : 'auto';
+      iframe.style.cssText='width:100%;height:100%;border:none;background:transparent;pointer-events:'+_pvPE+';user-select:none;'+(d.appletId==='flip'?'cursor:pointer;':'');
       iframe.setAttribute('allowtransparency','true');
-      iframe.sandbox = 'allow-scripts';
+      iframe.sandbox = d.appletId==='flip' ? 'allow-scripts allow-same-origin' : 'allow-scripts';
+      if(d.appletId==='flip'){
+        el.style.overflow='visible';
+        _aClip.style.overflow='visible';
+        _aClip.style.background='transparent';
+        _aClip.style.borderRadius='0';
+        iframe.style.background='transparent';
+      }
       if(d.appletId==='timer'){
         iframe.addEventListener('load', function(){
           try{ iframe.contentWindow.postMessage({type:'timerStart'}, '*'); }catch(e){}
@@ -1969,7 +2060,8 @@ function buildPSlide(container,idx,transOffset,noScale){
       }
       _aClip.appendChild(iframe);
       el.appendChild(_aClip);
-      if(d.appletId==='counter'||d.appletId==='generator') el.style.cursor = 'pointer';
+      if(d.appletId==='flip'&&typeof _layoutFlipIframe==='function') _layoutFlipIframe(el, d);
+      if(d.appletId==='counter'||d.appletId==='generator'||d.appletId==='flip') el.style.cursor = 'pointer';
       // Layer 2: border overlay — after clip in DOM, not clipped by anything
       if(d.appletId==='generator'||d.appletId==='timer'||d.appletId==='counter'){
         var _bw=d.genBorderWidth!==undefined?+d.genBorderWidth:0;
@@ -2104,12 +2196,13 @@ function buildPSlide(container,idx,transOffset,noScale){
       return trig !== 'click' && trig !== 'element' && trig !== 'nav' && trig !== 'counter' && trig !== 'timer';
     });
     if(autoTimed.length>0){
-      const cssAnims    = autoTimed.filter(({anim:a})=>a.name!=='moveTo'&&a.name!=='orbitTo'&&a.name!=='rotate'&&a.name!=='captionSlide'&&a.name!=='splitHalf'&&a.name!=='typewriter'&&(typeof ANIM_INFO==='undefined'||!ANIM_INFO[a.name]||ANIM_INFO[a.name].cat!=='live'));
+      const cssAnims    = autoTimed.filter(({anim:a})=>a.name!=='moveTo'&&a.name!=='orbitTo'&&a.name!=='rotate'&&a.name!=='recolor'&&a.name!=='captionSlide'&&a.name!=='splitHalf'&&a.name!=='typewriter'&&(typeof ANIM_INFO==='undefined'||!ANIM_INFO[a.name]||ANIM_INFO[a.name].cat!=='live'));
       const captionAnims = autoTimed.filter(({anim:a})=>a.name==='captionSlide');
       const liveAnims   = autoTimed.filter(({anim:a})=>typeof ANIM_INFO!=='undefined'&&ANIM_INFO[a.name]&&ANIM_INFO[a.name].cat==='live'&&a.name!=='typewriter'&&a.name!=='captionSlide');
       const twAnims     = autoTimed.filter(({anim:a})=>a.name==='typewriter');
       const motionAnims = autoTimed.filter(({anim:a})=>a.name==='moveTo'||a.name==='orbitTo');
       const rotateAnims = autoTimed.filter(({anim:a})=>a.name==='rotate');
+      const recolorAnims = autoTimed.filter(({anim:a})=>a.name==='recolor');
 
       // Титр в сторону — скрыть до запуска (если это первая авто-анимация)
       if(captionAnims.length&&autoTimed[0]&&autoTimed[0].anim.name==='captionSlide'){
@@ -2198,6 +2291,7 @@ function buildPSlide(container,idx,transOffset,noScale){
         el._finalTx = cumTx; el._finalTy = cumTy;
       }
       rotateAnims.forEach(({anim:a,absDelay})=>fireAnim(el,d,a,idx,absDelay + transOffset));
+      recolorAnims.forEach(({anim:a,absDelay})=>fireAnim(el,d,a,idx,absDelay + transOffset));
       const splitAnims = autoTimed.filter(({anim:a})=>a.name==='splitHalf');
       splitAnims.forEach(({anim:a,absDelay})=>fireAnim(el,d,a,idx,absDelay + transOffset));
       el._pendingCaptionAnims = captionAnims;
@@ -2284,11 +2378,13 @@ function buildPSlide(container,idx,transOffset,noScale){
     if (particlesHideSet.has(d.id) && typeof window._particlesEnsureHiddenIfNeeded === 'function') {
       window._particlesEnsureHiddenIfNeeded(el, d);
     }
+    if (typeof window._recolorPrepareEl === 'function') window._recolorPrepareEl(el, d);
 
     container.appendChild(el);
     if(d.type==='applet'){
       if(d.appletId==='counter'&&typeof window._wireCounterAppletClick==='function') window._wireCounterAppletClick(el);
       if(d.appletId==='generator'&&typeof window._wireGeneratorAppletClick==='function') window._wireGeneratorAppletClick(el);
+      if(d.appletId==='flip'&&typeof window._wireFlipAppletClick==='function') window._wireFlipAppletClick(el);
     }
     // Запускаем live-анимации сразу после добавления в DOM
     if(el._pendingLiveAnims && el._pendingLiveAnims.length){
@@ -2874,6 +2970,7 @@ function fireAnim(el,d,a,idx,overrideDelay,_cumTx,_cumTy){
     const ecEl = el.querySelector('.ec') || null;
     const rotTarget = ecEl || el;
     const rotComposite = ecEl ? 'replace' : 'add';
+    if (typeof window._applyRotPivotOrigin === 'function') window._applyRotPivotOrigin(rotTarget, d);
     window._pvStageLater(stage, ()=>{
       if(rotTarget.animate){
         const anim = rotTarget.animate(
@@ -2883,6 +2980,13 @@ function fireAnim(el,d,a,idx,overrideDelay,_cumTx,_cumTy){
         anim.onfinish = ()=>{ try{ anim.commitStyles(); }catch(e){} anim.cancel(); };
       }
     }, delay);
+    return;
+  }
+  if(a.name==='recolor'){
+    const delay = typeof overrideDelay==='number' ? overrideDelay : (a.delay||0);
+    if(typeof window._fireRecolorAnim==='function'){
+      window._fireRecolorAnim(el, d, a, delay, {});
+    }
     return;
   }
   // ── LIVE (infinite) анимации — через Web Animations API с iterations:Infinity ──

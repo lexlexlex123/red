@@ -1,0 +1,6 @@
+# CORS для статики (Apache + mod_headers). Залейте рядом с презентациями.
+<IfModule mod_headers.c>
+  Header set Access-Control-Allow-Origin "*"
+  Header set Access-Control-Allow-Methods "GET, OPTIONS"
+  Header set Access-Control-Allow-Headers "*"
+</IfModule>

@@ -98,38 +98,33 @@ function pnRemoveAll() {
   if(typeof renderAll==="function")renderAll(); if(typeof drawThumbs==="function")drawThumbs(); if(typeof saveState==="function")saveState();
 }
 
-// Called from UI controls — reads all settings from DOM except .enabled
-// (.enabled is already written directly to pnSettings by the checkbox onchange)
+// Optional legacy DOM sync (controls live in config UI / CFG_PAGENUM now)
 function pnOnChange() {
-  if (_pnLocked) return; // don't run during preview
+  if (_pnLocked) return;
   const s = pnGetSettings();
-  // NOTE: s.enabled is already set by the onchange handler in HTML — don't re-read from DOM
-  s.style       = document.getElementById('pn-style').value;
-  s.showTotal   = document.getElementById('pn-show-total').checked;
-  s.fontSize    = +document.getElementById('pn-fontsize').value || 14;
-  s.opacity     = +document.getElementById('pn-opacity').value || 1;
-  s.customColor = document.getElementById('pn-custom-color').checked;
-  s.color       = document.getElementById('pn-color').value;
-  s.textColor   = document.getElementById('pn-text-color').value;
-
-  const opLabel = document.getElementById('pn-opacity-val');
-  if (opLabel) opLabel.textContent = Math.round(s.opacity * 100) + '%';
-  const customPanel = document.getElementById('pn-custom-color-panel');
-  if (customPanel) customPanel.style.display = s.customColor ? 'flex' : 'none';
-  const panel = document.getElementById('pn-settings-panel');
-  if (panel) panel.style.display = s.enabled ? 'flex' : 'none';
-
+  const styleEl = document.getElementById('pn-style');
+  if (styleEl) s.style = styleEl.value;
+  const totalChk = document.getElementById('pn-show-total');
+  if (totalChk) s.showTotal = totalChk.checked;
+  const fsEl = document.getElementById('pn-fontsize');
+  if (fsEl) s.fontSize = +fsEl.value || 14;
+  const opEl = document.getElementById('pn-opacity');
+  if (opEl) s.opacity = +opEl.value || 1;
+  const customChk = document.getElementById('pn-custom-color');
+  if (customChk) s.customColor = customChk.checked;
+  const colorEl = document.getElementById('pn-color');
+  if (colorEl) s.color = colorEl.value;
+  const tcEl = document.getElementById('pn-text-color');
+  if (tcEl) s.textColor = tcEl.value;
   pnApplyAll();
 }
 
-// Preset button clicked — clears any manual position
 function pnSetPos(pos) {
   if (_pnLocked) return;
-  document.querySelectorAll('.pn-pos-btn').forEach(b => b.classList.toggle('active', b.dataset.pos === pos));
   const s = pnGetSettings();
   s.position = pos;
   s.customXY = null;
-  pnOnChange();
+  pnApplyAll();
 }
 
 // Called after user drags a pagenum element — propagate coords to all slides
@@ -156,32 +151,5 @@ function pnOnDragEnd(x, y) {
 function pnLock()   { _pnLocked = true; }
 function pnUnlock() { _pnLocked = false; if (typeof pnSyncUI === 'function') pnSyncUI(); }
 
-// Restore UI from pnSettings object (called after preview, load, or loadState)
-function pnSyncUI() {
-  const s = pnGetSettings();
-  const chk = document.getElementById('pn-enabled');
-  if (chk) chk.checked = s.enabled;
-  const styleEl = document.getElementById('pn-style');
-  if (styleEl) styleEl.value = s.style;
-  document.querySelectorAll('.pn-pos-btn').forEach(b =>
-    b.classList.toggle('active', !s.customXY && b.dataset.pos === s.position)
-  );
-  const totalChk = document.getElementById('pn-show-total');
-  if (totalChk) totalChk.checked = s.showTotal;
-  const fsEl = document.getElementById('pn-fontsize');
-  if (fsEl) fsEl.value = s.fontSize;
-  const opEl = document.getElementById('pn-opacity');
-  if (opEl) opEl.value = s.opacity;
-  const opLabel = document.getElementById('pn-opacity-val');
-  if (opLabel) opLabel.textContent = Math.round(s.opacity * 100) + '%';
-  const customChk = document.getElementById('pn-custom-color');
-  if (customChk) customChk.checked = s.customColor;
-  const colorEl = document.getElementById('pn-color');
-  if (colorEl) colorEl.value = s.color;
-  const tcEl = document.getElementById('pn-text-color');
-  if (tcEl) tcEl.value = s.textColor;
-  const customPanel = document.getElementById('pn-custom-color-panel');
-  if (customPanel) customPanel.style.display = s.customColor ? 'flex' : 'none';
-  const panel = document.getElementById('pn-settings-panel');
-  if (panel) panel.style.display = s.enabled ? 'flex' : 'none';
-}
+// No slide-props UI anymore — settings via config/pagenum.js and Config panel
+function pnSyncUI() {}

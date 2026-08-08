@@ -5,38 +5,70 @@
 window.autoPlaceAll = function(options){
   if(!slides||!slides.length) return;
   const gentle = !options || options.gentle !== false;
-  const msg = typeof t==='function' ? t('confirmAutoPlace') : 'Auto-layout all slides? Theme and decor are preserved.';
+  // Selected thumbs, or just the current slide if nothing multi-selected
+  const indices = (typeof getSlideSelection === 'function')
+    ? getSlideSelection()
+    : [typeof cur === 'number' ? cur : 0];
+  const uniq = [...new Set(indices)].filter(i => i >= 0 && i < slides.length).sort((a, b) => a - b);
+  if(!uniq.length) uniq.push(typeof cur === 'number' ? cur : 0);
+
+  const n = uniq.length;
+  let msg;
+  if(typeof t === 'function'){
+    msg = n === 1
+      ? (t('confirmAutoPlaceOne') || t('confirmAutoPlace'))
+      : (t('confirmAutoPlaceSel') || t('confirmAutoPlace')).replace(/\{n\}/g, String(n));
+  } else {
+    msg = n === 1
+      ? 'Auto-layout the current slide? Theme and decor are preserved.'
+      : 'Auto-layout ' + n + ' selected slides? Theme and decor are preserved.';
+  }
   if(!confirm(msg)) return;
   pushUndo();
+
+  // Mark targets (survives split that inserts continuation slides)
+  slides.forEach((s, i) => { s._apTarget = uniq.indexOf(i) >= 0; });
+
   if(!gentle){
     if(typeof THEMES!=='undefined'&&THEMES.length){ selTheme=Math.floor(Math.random()*THEMES.length); applyTheme(); pushUndo(); }
     if(typeof LAYOUTS!=='undefined'&&LAYOUTS.length&&typeof applyLayout==='function'){
-      if(Math.random()<0.3){ slides.forEach(s=>{s.els=s.els.filter(e=>!e._isDecor);}); selLayout=-1; }
+      if(Math.random()<0.3){
+        slides.forEach(s=>{ if(s._apTarget) s.els=s.els.filter(e=>!e._isDecor); });
+        selLayout=-1;
+      }
       else applyLayout(Math.floor(Math.random()*LAYOUTS.length),null);
     }
   }
-  const headAlign = gentle ? _apDetectAlign() : ['center','left','right'][Math.floor(Math.random()*3)];
+  const targetSlides = () => slides.filter(s => s && s._apTarget);
+  const headAlign = gentle
+    ? _apDetectAlign(targetSlides())
+    : ['center','left','right'][Math.floor(Math.random()*3)];
   const W=canvasW, H=canvasH, PAD=66, GAP=24;
 
-  // Проход 0: длинный текст → несколько слайдов
-  _apSplitOverflowSlides(280, 200);
+  // Проход 0: длинный текст → несколько слайдов (только целевые)
+  _apSplitOverflowSlides(280, 200, true);
 
   // Проход 1: классификация + сброс форматирования
-  slides.forEach((s,si)=>_apSlide_prep(s,si===0,gentle));
+  slides.forEach((s,si)=>{ if(s._apTarget) _apSlide_prep(s,si===0,gentle); });
 
-  // Проход 2: единый font-size по всей презентации
-  _apGlobalBodyFs = _apCalcGlobalFs(slides, W, H, PAD, GAP);
+  // Проход 2: единый font-size среди целевых слайдов
+  _apGlobalBodyFs = _apCalcGlobalFs(targetSlides(), W, H, PAD, GAP);
 
   // Проход 3: сценарии размещения
-  slides.forEach((s,si)=>_apSlide_layout(s,si===0,headAlign));
-  // Сохраняем данные в localStorage до рендера (все слайды уже изменены в памяти)
+  slides.forEach((s,si)=>{ if(s._apTarget) _apSlide_layout(s,si===0,headAlign); });
+
+  const fitIdx = [];
+  slides.forEach((s, i) => { if(s._apTarget) fitIdx.push(i); delete s._apTarget; });
+
+  // Сохраняем данные в localStorage до рендера
   if(typeof saveState==='function') saveState();
   renderAll();
-  // drawThumbs уже вызван в renderAll, но вызовем ещё раз после save
   if(typeof drawThumbs==='function') setTimeout(drawThumbs, 50);
   if(typeof saveState==='function') saveState();
-  // Подгоняем высоты текстов по реальному содержимому
-  if(typeof _fitAllTextsAllSlides==='function'){
+  // Подгоняем высоты текстов только на затронутых слайдах
+  if(typeof _fitTextsOnSlideIndices==='function'){
+    _fitTextsOnSlideIndices(fitIdx, ()=>toast(typeof t==='function'?t('toastAutoPlaceDone'):'✨ Objects placed'));
+  } else if(typeof _fitAllTextsAllSlides==='function'){
     _fitAllTextsAllSlides(()=>toast(typeof t==='function'?t('toastAutoPlaceDone'):'✨ Objects placed'));
   } else {
     toast(typeof t==='function'?t('toastAutoPlaceDone'):'✨ Objects placed');
@@ -44,9 +76,10 @@ window.autoPlaceAll = function(options){
 };
 
 // ── Доминирующее выравнивание заголовков (сохраняет стиль шаблона) ──
-function _apDetectAlign(){
+function _apDetectAlign(slideList){
+  const list = slideList || slides;
   const counts={center:0,left:0,right:0};
-  slides.forEach(s=>{
+  list.forEach(s=>{
     (s.els||[]).filter(e=>!e._isDecor&&e.type==='text').forEach(el=>{
       const m=(el.cs||'').match(/text-align\s*:\s*(\w+)/i);
       if(m&&counts[m[1]]!=null) counts[m[1]]++;
@@ -57,10 +90,12 @@ function _apDetectAlign(){
 }
 
 // ── Разбиение переполненного текста на 2–3 слайда ───────────────────
-function _apSplitOverflowSlides(limit, chunk){
+// onlyMarked: if true, only process slides with s._apTarget
+function _apSplitOverflowSlides(limit, chunk, onlyMarked){
   const out=[];
   for(let i=0;i<slides.length;i++){
     const s=slides[i];
+    if(onlyMarked && !s._apTarget){ out.push(s); continue; }
     const decor=(s.els||[]).filter(e=>e._isDecor);
     const content=(s.els||[]).filter(e=>!e._isDecor);
     const texts=content.filter(e=>e.type==='text');
@@ -78,6 +113,7 @@ function _apSplitOverflowSlides(limit, chunk){
     for(let c=1;c<chunks.length;c++){
       const ns={title:s.title,bg:s.bg,bgc:s.bgc,ar:s.ar,trans:s.trans||'',auto:s.auto||0,els:decor.map(d=>JSON.parse(JSON.stringify(d)))};
       if(s.bgImg) ns.bgImg=JSON.parse(JSON.stringify(s.bgImg));
+      if(s._apTarget) ns._apTarget=true;
       const uid='sp'+(Date.now()%1e7)+c;
       if(head){
         const nh=JSON.parse(JSON.stringify(head));
@@ -169,13 +205,52 @@ function _apPairCaptions(images,captions){
   return {pairs,orphanCaptions:captions.filter(c=>!used.has(c))};
 }
 
+/** Визуальные блоки для сетки: картинки, формулы, графики, логические/хим. схемы */
+function _apIsVisual(el){
+  if(!el||el._isDecor) return false;
+  const t=el.type;
+  return t==='image'||t==='svg'||t==='icon'||t==='formula'||t==='graph';
+}
+function _apCollectVisuals(els){
+  const list=(els||[]).filter(_apIsVisual);
+  // Формула и связанный график/схема — рядом в сетке
+  const byId=new Map(list.map(e=>[e.id,e]));
+  const used=new Set();
+  const ordered=[];
+  list.forEach(el=>{
+    if(used.has(el.id)) return;
+    if(el.type==='graph'&&el.linkedFormulaId&&byId.has(el.linkedFormulaId)&&!used.has(el.linkedFormulaId)){
+      ordered.push(byId.get(el.linkedFormulaId));
+      used.add(el.linkedFormulaId);
+    }
+    ordered.push(el);
+    used.add(el.id);
+    if(el.type==='formula'){
+      list.forEach(g=>{
+        if(g.type==='graph'&&g.linkedFormulaId===el.id&&!used.has(g.id)){
+          ordered.push(g); used.add(g.id);
+        }
+      });
+    }
+  });
+  return ordered;
+}
+/** chem/logic и формулы — дефолтные пропорции при отсутствии размера */
+function _apVisualDefaults(el,zw,zh){
+  if(el.type==='formula') return {w:Math.min(zw,420), h:Math.min(zh,Math.round(Math.min(zw,420)*0.35))};
+  if(el.type==='graph'&&el.graphKind==='logic') return {w:Math.min(zw,520), h:Math.min(zh,Math.round(Math.min(zw,520)*0.62))};
+  if(el.type==='graph'&&el.graphKind==='chem') return {w:Math.min(zw,360), h:Math.min(zh,Math.round(Math.min(zw,360)*0.95))};
+  if(el.type==='graph') return {w:Math.min(zw,480), h:Math.min(zh,Math.round(Math.min(zw,480)*0.7))};
+  return {w:zw, h:zh};
+}
+
 // ── Проход 1: классификация + сброс ─────────────────────────────────
 function _apSlide_prep(s,isTitle,gentle){
   const H=canvasH;
   const els=(s.els||[]).filter(e=>!e._isDecor);
   if(!els.length) return;
   const texts=els.filter(e=>e.type==='text');
-  const images=els.filter(e=>e.type==='image'||e.type==='svg'||e.type==='icon');
+  const images=_apCollectVisuals(els);
   const presetCaps=texts.filter(e=>e.textRole==='caption');
   const forHead=texts.filter(e=>e.textRole!=='caption');
   const {head,bodies}=_apHeading(forHead,s,H,isTitle);
@@ -218,7 +293,7 @@ function _apSlide_layout(s,isTitle,headAlign){
   if(!els.length){ _apCurrentSlide = null; return; }
   const head=s._apHead||null;
   const bodies=s._apBodies||[];
-  const images=s._apImages||els.filter(e=>e.type==='image'||e.type==='svg'||e.type==='icon');
+  const images=s._apImages||_apCollectVisuals(els);
   const tables=s._apTables||els.filter(e=>e.type==='table');
   const pairs=s._apPairs||images.map(img=>({img,caption:null}));
   if(isTitle) _apTitle(head,bodies,images,pairs,W,H,PAD,GAP,headAlign);
@@ -232,6 +307,7 @@ function _apPickScenario(ctx){
   const {isTitle,head,bodies,images,pairs,tables,txtLen}=ctx;
   const nImg=images.length;
   const nCap=pairs.filter(p=>p.caption).length;
+  // Таблица + визуалы — всё равно 'table' (раскладка учитывает images)
   if(tables.length) return 'table';
   if(isTitle) return 'title';
   if(nImg===0) return bodies.length>1?'text-columns':'text-only';
@@ -428,17 +504,35 @@ function _apMakeEl(srcEl,text,slide){
 
 // Получить контрастный цвет текста с учётом фона слайда
 let _apCurrentSlide = null;
+/** Извлечь #hex из solid/gradient; null если не разобрать. */
+function _apExtractBgHex(val){
+  if(!val) return null;
+  const s=String(val).trim();
+  if(/^#[0-9a-fA-F]{3,8}$/.test(s)) return s;
+  // градиенты темы: linear-gradient(...,#0a2010,#1a4a2a) — берём первый цвет
+  const m=s.match(/#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/);
+  return m ? '#'+m[1] : null;
+}
+/** true/false или null если яркость неизвестна (не hex). */
 function _apHexIsLight(hex){
-  const h = String(hex||'').replace('#','');
-  if(h.length < 6) return true;
-  const r = parseInt(h.slice(0,2),16), g = parseInt(h.slice(2,4),16), b = parseInt(h.slice(4,6),16);
-  if(isNaN(r)||isNaN(g)||isNaN(b)) return true;
+  const raw=_apExtractBgHex(hex);
+  if(!raw) return null;
+  let h=raw.replace('#','');
+  if(h.length===3) h=h.split('').map(c=>c+c).join('');
+  if(h.length<6) return null;
+  const r=parseInt(h.slice(0,2),16), g=parseInt(h.slice(2,4),16), b=parseInt(h.slice(4,6),16);
+  if(isNaN(r)||isNaN(g)||isNaN(b)) return null;
   return (0.299*r + 0.587*g + 0.114*b) > 160;
 }
 function _apSlideIsLight(s){
   if(!s) return false;
-  if(s.bg === 'custom' && s.bgc) return _apHexIsLight(s.bgc);
-  if(s.bgc && (s.bg === 'solid' || !s.bg)) return _apHexIsLight(s.bgc);
+  if(s.bg === 'custom' && s.bgc){
+    const light=_apHexIsLight(s.bgc);
+    if(light!==null) return light;
+  } else if(s.bgc && (s.bg === 'solid' || !s.bg)){
+    const light=_apHexIsLight(s.bgc);
+    if(light!==null) return light;
+  }
   try{
     const ti = (typeof appliedThemeIdx!=='undefined'&&appliedThemeIdx>=0)
       ? appliedThemeIdx
@@ -447,7 +541,10 @@ function _apSlideIsLight(s){
     if(theme){
       if(theme.dark === false) return true;
       if(theme.dark === true) return false;
-      if(theme.bg) return _apHexIsLight(theme.bg);
+      if(theme.bg){
+        const light=_apHexIsLight(theme.bg);
+        if(light!==null) return light;
+      }
     }
   }catch(e){}
   return false;
@@ -468,6 +565,31 @@ function _apThemeColor(){
     return color||'#ffffff';
   }catch(e){ return '#ffffff'; }
 }
+/** Убрать inline color у span — иначе они перекрывают color из cs. */
+function _apClearHtmlColors(el){
+  if(!el||!el.html) return;
+  const tmp=document.createElement('div');
+  tmp.innerHTML=el.html;
+  let changed=false;
+  tmp.querySelectorAll('[style], [color], [data-scheme]').forEach(node=>{
+    if(node.hasAttribute('color')){ node.removeAttribute('color'); changed=true; }
+    if(node.hasAttribute('data-scheme')){ node.removeAttribute('data-scheme'); changed=true; }
+    const st=node.getAttribute('style');
+    if(!st||!/\bcolor\s*:/i.test(st)) return;
+    let cleaned=st
+      .replace(/\bcolor\s*:\s*[^;]+;?/gi,'')
+      .replace(/-webkit-text-fill-color\s*:\s*[^;]+;?/gi,'')
+      .replace(/;;+/g,';').replace(/^;+|;+$/g,'').trim();
+    if(node.hasAttribute('data-ch') && cleaned && !/display\s*:/i.test(cleaned)){
+      cleaned=(cleaned?cleaned+';':'')+'display:inline';
+    }
+    if(cleaned) node.setAttribute('style', cleaned);
+    else if(node.hasAttribute('data-ch')) node.setAttribute('style','display:inline');
+    else node.removeAttribute('style');
+    changed=true;
+  });
+  if(changed) el.html=tmp.innerHTML;
+}
 function _apHStyle(el,fs,noUppercase){
   if(!el.cs) el.cs='';
   el.cs=el.cs
@@ -481,6 +603,8 @@ function _apHStyle(el,fs,noUppercase){
   el.textRole='heading';
   // null = зафиксировать цвет (не перебивать белым из тёмной темы)
   el.textColorScheme = null;
+  delete el.textColorGrad; delete el.textColorGrad1; delete el.textColorGrad2; delete el.textColorGradDir;
+  _apClearHtmlColors(el);
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -591,8 +715,17 @@ function _apContent(head,bodies,images,pairs,tables,W,H,PAD,GAP,align){
   const scenario=_apPickScenario({isTitle:false,head,bodies,images,pairs,tables,txtLen});
 
   if(scenario==='table'){
-    const tH=Math.max(40,Math.floor((aH-GAP*(tables.length-1))/tables.length));
-    tables.forEach((t,i)=>{t.x=PAD;t.y=curY+i*(tH+GAP);t.w=aW;t.h=tH;});
+    if(images.length){
+      const tZone=Math.max(80, Math.round(aH*0.45));
+      const tH=Math.max(40,Math.floor((tZone-GAP*(tables.length-1))/Math.max(1,tables.length)));
+      tables.forEach((t,i)=>{t.x=PAD;t.y=curY+i*(tH+GAP);t.w=aW;t.h=tH;});
+      const vY=curY+tZone+GAP;
+      if(pairs.some(p=>p.caption)) _apGridWithCaptions(pairs,PAD,vY,aW,aH-tZone-GAP,GAP);
+      else _apImgs(images,PAD,vY,aW,Math.max(60,aH-tZone-GAP),GAP);
+    } else {
+      const tH=Math.max(40,Math.floor((aH-GAP*(tables.length-1))/tables.length));
+      tables.forEach((t,i)=>{t.x=PAD;t.y=curY+i*(tH+GAP);t.w=aW;t.h=tH;});
+    }
     return;
   }
   if(scenario==='text-only'){ _apTexts(bodies,PAD,curY,aW,aH,GAP); return; }
@@ -767,26 +900,38 @@ function _apImgs(imgs,ax,ay,aw,ah,gap){
   imgs.forEach((img,i)=>{
     const col=i%cols,row=Math.floor(i/cols);
     const zx=ax+col*(cW+gap),zy=ay+row*(cH+gap);
-    const ow=img.w||cW,oh=img.h||cH;
-    if(ow<=cW&&oh<=cH){
-      img.x=Math.round(zx+(cW-ow)/2);
-      img.y=Math.round(zy+(cH-oh)/2);
-    } else {
-      const sc=Math.min(cW/ow,cH/oh);
-      img.w=Math.round(ow*sc); img.h=Math.round(oh*sc);
-      img.x=Math.round(zx+(cW-img.w)/2);
-      img.y=Math.round(zy+(cH-img.h)/2);
-    }
+    _apFitVisual(img,zx,zy,cW,cH);
   });
 }
 
+/** Укладывает визуал в ячейку с сохранением пропорций */
+function _apFitVisual(el,zx,zy,zw,zh){
+  let ow=el.w||0, oh=el.h||0;
+  if(ow<20||oh<20){
+    const d=_apVisualDefaults(el,zw,zh);
+    ow=d.w; oh=d.h;
+  }
+  if(ow<=zw&&oh<=zh){
+    el.w=Math.round(ow); el.h=Math.round(oh);
+    el.x=Math.round(zx+(zw-el.w)/2);
+    el.y=Math.round(zy+(zh-el.h)/2);
+  } else {
+    const sc=Math.min(zw/ow,zh/oh);
+    el.w=Math.round(ow*sc); el.h=Math.round(oh*sc);
+    el.x=Math.round(zx+(zw-el.w)/2);
+    el.y=Math.round(zy+(zh-el.h)/2);
+  }
+}
+
 function _apPut(el,zx,zy,zw,zh,scaleText){
-  const ow=el.w||200,oh=el.h||100;
   if(el.type==='text'&&scaleText){
     const fs=_apFit(el,zw,zh,30,12);
     _apSetFs(el,fs);
     el.x=Math.round(zx); el.y=Math.round(zy); el.w=Math.round(zw); el.h=Math.round(zh);
+  } else if(_apIsVisual(el)){
+    _apFitVisual(el,zx,zy,zw,zh);
   } else {
+    const ow=el.w||200,oh=el.h||100;
     if(ow<=zw&&oh<=zh){
       el.x=Math.round(zx+(zw-ow)/2); el.y=Math.round(zy+(zh-oh)/2);
     } else {
@@ -814,6 +959,9 @@ function _apSetColor(el,color){
     : (el.cs?el.cs.replace(/;$/,'')+';':'')+'color:'+color;
   // null — не давать тёмной теме вернуть белый текст на светлом фоне
   el.textColorScheme = null;
+  // Сплошной цвет темы: убрать градиент заливки текста и цвета в span
+  delete el.textColorGrad; delete el.textColorGrad1; delete el.textColorGrad2; delete el.textColorGradDir;
+  _apClearHtmlColors(el);
 }
 function _apAlign(el,a){
   if(!el.cs) el.cs='';

@@ -169,24 +169,38 @@ window.applyCodeModalChrome = applyCodeModalChrome;
 window.codeBlockSurfaceCss = codeBlockSurfaceCss;
 
 function refreshAllCodeBlocks(){
-  slides.forEach(s=>{
-    s.els.forEach(d=>{
-      if(d.type==='code' && d.codeRaw){
-        const theme = getCodeBlockTheme(d);
-        const T = CODE_THEMES[theme] || CODE_THEMES.dark;
-        d.codeTheme = theme;
-        d.codeBg = T.bg;
-        d.codeHtml = syntaxHighlight(d.codeRaw, d.codeLang||'js', theme);
-      }
+  // При смене цветовой схемы презентации — тёмная/светлая тема кода
+  const theme = getCodeThemeForPresTheme();
+  const T = CODE_THEMES[theme] || CODE_THEMES.dark;
+  (slides||[]).forEach(s=>{
+    (s.els||[]).forEach(d=>{
+      if(d.type!=='code' || !d.codeRaw) return;
+      d.codeTheme = theme;
+      d.codeBg = T.bg;
+      d.codeHtml = syntaxHighlight(d.codeRaw, d.codeLang||'js', theme);
     });
   });
 }
 
 function getCodeThemeForPresTheme(){
   const ti=typeof appliedThemeIdx!=='undefined'?appliedThemeIdx:-1;
-  const t=ti>=0?THEMES[ti]:null;
+  const t=(ti>=0&&typeof THEMES!=='undefined')?THEMES[ti]:null;
   if(!t)return 'dark';
   return t.dark?'dark':'light';
+}
+
+function _openCodeModalReady(){
+  const modal=document.getElementById('code-modal');
+  if(modal) modal.classList.add('open');
+  applyCodeModalChrome();
+  // Refresh после открытия: при display:none scrollHeight=0 → textarea height:0 и клик не работает
+  requestAnimationFrame(function(){
+    if(typeof _cmRefreshHL==='function') _cmRefreshHL();
+    const ta=document.getElementById('cm-code');
+    if(ta){
+      try{ ta.focus(); }catch(e){}
+    }
+  });
 }
 
 function addCodeBlock(){
@@ -197,9 +211,7 @@ function addCodeBlock(){
   if(thEl) thEl.value=getCodeThemeForPresTheme();
   const gEl=document.getElementById('cm-glass');
   if(gEl) gEl.checked=false;
-  if(typeof _cmRefreshHL==='function') _cmRefreshHL();
-  applyCodeModalChrome();
-  document.getElementById('code-modal').classList.add('open');
+  _openCodeModalReady();
 }
 
 function openCodeEditor(){
@@ -212,9 +224,7 @@ function openCodeEditor(){
   if(thEl) thEl.value=d.codeTheme||getCodeThemeForPresTheme();
   const gEl=document.getElementById('cm-glass');
   if(gEl) gEl.checked=!!d.codeGlass;
-  if(typeof _cmRefreshHL==='function') _cmRefreshHL();
-  applyCodeModalChrome();
-  document.getElementById('code-modal').classList.add('open');
+  _openCodeModalReady();
 }
 
 function insertCodeBlock(){

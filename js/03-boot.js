@@ -91,6 +91,8 @@ function boot(){
   const aEl=document.getElementById('settings-author');
   if(vEl)vEl.textContent=APP_VERSION;
   if(aEl)aEl.textContent=APP_AUTHOR;
+  const logoVer=document.getElementById('app-logo-ver');
+  if(logoVer) logoVer.textContent='v '+APP_VERSION;
 
   // Close any open modal when clicking the overlay (outside .modal content)
   document.addEventListener('mousedown', e => {
@@ -203,6 +205,8 @@ function boot(){
   // Restore page numbering UI after everything is rendered
   if(typeof pnSyncUI==='function') pnSyncUI();
   if(typeof pnApplyAll==='function') pnApplyAll();
+  // Кнопки «Отображение» на вкладке Показ — из localStorage
+  if(typeof _syncPreviewPlaybackBtns==='function') _syncPreviewPlaybackBtns();
   window._propsScrollMem && window._propsScrollMem.wire();
   toast(APP_NAME+' v'+APP_VERSION+' · Ctrl+Z · F5','ok');
 }
@@ -257,10 +261,10 @@ function _applyThemeByIdx(idx){
     });
   });
   if(typeof refreshDecorColors==='function')refreshDecorColors(theme.ac1||'#6366f1',theme.ac2||'#818cf8',true);
+  if(typeof refreshAllCodeBlocks==='function')refreshAllCodeBlocks();
   if(typeof renderAll==='function') renderAll();
   else if(typeof refreshDecorOnCanvas==='function') refreshDecorOnCanvas();
   if(typeof refreshAppletThemes==='function')refreshAppletThemes();
-  if(typeof refreshAllCodeBlocks==='function')refreshAllCodeBlocks();
 }
 
 function buildSwatches(id){
@@ -477,7 +481,10 @@ function buildAppletGallery(){
     const card=document.createElement('div');card.className='applet-card';
     card.innerHTML='<div class="ac-icon">'+a.icon+'</div><div class="ac-name">'+(isRu&&a.nameRu?a.nameRu:a.name)+'</div>';
     card.title=isRu&&a.descRu?a.descRu:a.desc;
-    card.onclick=()=>{insertApplet(a);document.getElementById('applet-modal').classList.remove('open');};
+    card.onclick=()=>{
+      document.getElementById('applet-modal').classList.remove('open');
+      insertApplet(a);
+    };
     g.appendChild(card);
   });
 }

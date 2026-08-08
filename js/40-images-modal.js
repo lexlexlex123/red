@@ -48,6 +48,7 @@ let _imgSearchVal = '';
 let _imgSelectedPath = null;
 let _imgReplaceMode = false;
 let _imgSlideBgMode = false;
+let _imgPickCallback = null;
 
 function _refreshRegistry(){
   const raw = (typeof IMAGE_INDEX !== 'undefined') ? IMAGE_INDEX : [];
@@ -73,6 +74,10 @@ function _syncImgModalOkLabel(){
   const ok=document.getElementById('img-modal-ok');
   const lbl=ok&&ok.querySelector('span');
   if(!lbl)return;
+  if(_imgPickCallback){
+    lbl.textContent=typeof t==='function'?t('btnSelect'):'Выбрать';
+    return;
+  }
   lbl.textContent=_imgSlideBgMode
     ?(typeof t==='function'?t('btnSetSlideBg'):'Установить фон')
     :(typeof t==='function'?t('btnInsert'):'Вставить');
@@ -81,6 +86,7 @@ function _syncImgModalOkLabel(){
 function openImageModal(replaceMode,mode){
   _imgReplaceMode=!!replaceMode;
   _imgSlideBgMode=mode==='slideBg';
+  if(mode!=='pick') _imgPickCallback=null;
   _imgSelectedPath=null;
   _imgSearchVal = '';
   const si = document.getElementById('img-search');
@@ -107,10 +113,18 @@ function openImageModalForSlideBg(){
   openImageModal(false,'slideBg');
 }
 
+/** Выбор изображения из галереи с колбэком (без вставки на слайд). */
+function openImageModalPick(cb){
+  _imgPickCallback=typeof cb==='function'?cb:null;
+  openImageModal(false,'pick');
+}
+window.openImageModalPick=openImageModalPick;
+
 function closeImageModal(){
   document.getElementById('img-modal').classList.remove('open');
   _imgSelectedPath = null;
   _imgSlideBgMode = false;
+  _imgPickCallback = null;
   _syncImgModalOkLabel();
 }
 
@@ -243,7 +257,13 @@ function _insertSelectedImage(){
   const isSvg = _imgSelectedIsSvg;
   const replaceMode = _imgReplaceMode;
   const slideBgMode = _imgSlideBgMode;
+  const pickCb = _imgPickCallback;
+  _imgPickCallback = null;
   closeImageModal();
+  if(pickCb){
+    try{ pickCb(srcPath); }catch(e){ console.error(e); }
+    return;
+  }
   if(slideBgMode){
     window._connRideTargetId = null;
     const entry=IMAGE_REGISTRY.find(x=>x.path===srcPath);

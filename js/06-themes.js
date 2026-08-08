@@ -320,7 +320,7 @@ function applyTheme(){
           }
         }
       }
-      if(el.type==='applet' && (el.appletId==='generator'||el.appletId==='counter'||el.appletId==='timer'||el.appletId==='clock')){
+      if(el.type==='applet' && (el.appletId==='generator'||el.appletId==='counter'||el.appletId==='timer'||el.appletId==='clock'||el.appletId==='periodic')){
         // Remap scheme-pinned colors; leave custom (null) unchanged
         if(el.genColorScheme){
           const r=_resolveSchemeColor(el.genColorScheme,theme);
@@ -342,7 +342,7 @@ function applyTheme(){
   // Refresh decor SVGs with new accent colors (updates d.svgContent in data)
   refreshDecorColors(theme.ac1||'#6366f1', theme.ac2||'#818cf8', true);
   if(typeof refreshAllCodeBlocks==='function')refreshAllCodeBlocks();
-  if(typeof refreshAllGraphs==='function')refreshAllGraphs(theme);
+  if(typeof refreshAllGraphs==='function')refreshAllGraphs(theme, {skipRender:true});
   // Render slide DOM first, then refresh applets (iframe postMessage needs loaded srcdoc)
   if(typeof rebuildAppletHtmlForTheme==='function') rebuildAppletHtmlForTheme();
   renderAll();
@@ -403,7 +403,7 @@ function applyTheme(){
   });
   // Chem structure text color already re-rendered via refreshAllGraphs + renderAll
   slides[cur].els.forEach(d=>{
-    if(d.type!=='graph' || d.graphKind!=='chem') return;
+    if(d.type!=='graph' || (d.graphKind!=='chem' && d.graphKind!=='logic')) return;
     const domEl=document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
     if(!domEl) return;
     if(d.graphColor) domEl.dataset.graphColor=d.graphColor;
@@ -412,5 +412,7 @@ function applyTheme(){
   invalidateThumbCache();
   saveState();
   drawThumbs(true);
+  // Обновить квадратики цветов в панели, если элемент уже снова выбран
+  if(typeof syncProps==='function') syncProps();
   toast(t('toastThemeApplied')+': '+theme.name,'ok');
 }

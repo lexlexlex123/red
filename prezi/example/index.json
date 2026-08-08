@@ -1,0 +1,10 @@
+{
+  "items": [
+    {
+      "type": "pres",
+      "name": "Вложенная презентация",
+      "file": "nested.html",
+      "thumb": "nested.png"
+    }
+  ]
+}

@@ -28,6 +28,7 @@ const ANIM_CATS = [
       {name:'pulse',  label:'Пульсация', icon:'💓'},
       {name:'shake',  label:'Дрожание',  icon:'〰'},
       {name:'flash',  label:'Мигание',   icon:'🔦'},
+      {name:'recolor', label:'Цвет',     icon:'🎨'},
       {name:'rotate', label:'Вращение',  icon:'🔁'},
     ]
   },
@@ -327,6 +328,7 @@ window._clearAnimHoverPreview = function(el) {
   window._animGroupDomEls(el).forEach(e => {
     if (typeof window._resetCaptionSlide === 'function') window._resetCaptionSlide(e, true);
     if (typeof window._resetSplitHalf === 'function') window._resetSplitHalf(e, true);
+    if (typeof window._resetRecolor === 'function') window._resetRecolor(e);
     e.style.visibility = '';
     [e, e.querySelector('._text_body'), e.querySelector('.ec'), e.querySelector('.tel'), e.querySelector('.iel'), e.querySelector('.shape-text'), e.querySelector('._dance_wrap')].forEach(t => {
       if (!t) return;
@@ -543,6 +545,7 @@ window._selectedAnimCat  = null;
     if (animName === 'moveTo') { anim.tx = 100; anim.ty = 0; }
     if (animName === 'orbitTo') { anim.orbitR = 120; anim.orbitDir = 'cw'; anim.orbitDeg = 360; anim.orbitCx = 0; anim.orbitCy = -120; }
     if (animName === 'rotate') { anim.rotateDir = 'cw'; anim.rotateDeg = 360; }
+    if (animName === 'recolor') { anim.recolorColor = '#000000'; anim.recolorInvert = false; }
     if (animName === 'dance') { anim.swingCount = 1; anim.duration = 1200; }
     if (animName === 'float') { anim.swingCount = 10; anim.duration = 5000; }
     if (animName === 'particles') {
@@ -657,28 +660,46 @@ window._selectedAnimCat  = null;
     const row = document.querySelector('.anim-row[data-el-id="' + ownerElId + '"][data-ai="' + animIdx + '"]');
     const hint = row && row.querySelector('.anim-trig-pick-hint');
     if (hint) hint.style.display = 'block';
-    const cv = document.getElementById('canvas');
-    if (!cv) return;
+    const host = document.getElementById('cwrap') || document.getElementById('canvas');
+    if (!host) return;
     let ov = document.getElementById('_anim-picker-ov');
     if (ov) ov.remove();
     ov = document.createElement('div');
     ov.id = '_anim-picker-ov';
-    ov.style.cssText = 'position:absolute;inset:0;z-index:99999;cursor:crosshair;';
+    ov.style.cssText = 'position:absolute;inset:0;z-index:100000;cursor:crosshair;background:transparent;';
+    function _hitAnimTriggerEl(clientX, clientY) {
+      const allEls = document.elementsFromPoint(clientX, clientY);
+      for (const el2 of allEls) {
+        if (el2.id === '_anim-picker-ov') continue;
+        const found = (el2.matches && el2.matches('.el[data-id]'))
+          ? el2
+          : (el2.closest ? el2.closest('.el[data-id]') : null);
+        if (found && !found.classList.contains('decor-el') && found.dataset.objHidden !== '1') return found;
+      }
+      // Fallback: AABB under cursor (handles / SVG layers can steal hit-testing)
+      const cv = document.getElementById('canvas');
+      if (!cv) return null;
+      let best = null, bestArea = Infinity;
+      cv.querySelectorAll('.el[data-id]').forEach(el => {
+        if (el.classList.contains('decor-el') || el.dataset.objHidden === '1') return;
+        const r = el.getBoundingClientRect();
+        if (clientX < r.left || clientX > r.right || clientY < r.top || clientY > r.bottom) return;
+        const area = Math.max(1, r.width * r.height);
+        if (area < bestArea) { bestArea = area; best = el; }
+      });
+      return best;
+    }
     ov.addEventListener('mousedown', function(e) {
       e.stopPropagation();
       e.preventDefault();
-      ov.remove();
-      const allEls = document.elementsFromPoint(e.clientX, e.clientY);
-      let target = null;
-      for (const el2 of allEls) {
-        const found = el2.matches && el2.matches('.el[data-id]') ? el2 : (el2.closest ? el2.closest('.el[data-id]') : null);
-        if (found && !found.classList.contains('decor-el')) { target = found; break; }
-      }
-      if (target && window._animPickerCtx) {
-        const { ownerElId, animIdx } = window._animPickerCtx;
+      if (e.button !== 0) return;
+      const ctx = window._animPickerCtx;
+      const target = _hitAnimTriggerEl(e.clientX, e.clientY);
+      if (target && ctx) {
+        const { ownerElId: oid, animIdx: aidx } = ctx;
         const s = _slides()[_cur()];
-        const dd = s && s.els.find(x => x.id === ownerElId);
-        const anim = dd && dd.anims && dd.anims[animIdx];
+        const dd = s && s.els.find(x => x.id === oid);
+        const anim = dd && dd.anims && dd.anims[aidx];
         const needApplet = anim && (anim.trigger === 'counter' ? 'counter' : anim.trigger === 'timer' ? 'timer' : null);
         if (needApplet) {
           const td = s.els.find(x => x.id === target.dataset.id);
@@ -691,15 +712,21 @@ window._selectedAnimCat  = null;
           anim.preNavTrigger = anim.trigger || 'element';
           anim.preNavTriggerElId = target.dataset.id;
         }
-        updateAnimProp(ownerElId, animIdx, 'triggerElId', target.dataset.id);
+        updateAnimProp(oid, aidx, 'triggerElId', target.dataset.id);
         window._animPickerCtx = null;
-        _refreshAnimTrigPickRow(ownerElId, animIdx);
+        if (ov.parentNode) ov.remove();
+        _refreshAnimTrigPickRow(oid, aidx);
+        // Rebuild row UI if pick wrap missing (e.g. trigger just switched)
+        const row2 = document.querySelector('.anim-row[data-el-id="' + oid + '"][data-ai="' + aidx + '"]');
+        if (row2 && !row2.querySelector('.anim-trig-pick-wrap') && typeof renderAnimPanel === 'function') {
+          renderAnimPanel();
+        }
         window._animTriggerPickCancel();
       } else {
         window._animTriggerPickCancel();
       }
     });
-    cv.appendChild(ov);
+    host.appendChild(ov);
     if (_animPickEscHandler) document.removeEventListener('keydown', _animPickEscHandler);
     _animPickEscHandler = function(e) {
       if (e.key === 'Escape') window._animTriggerPickCancel();
@@ -1092,6 +1119,7 @@ window._selectedAnimCat  = null;
           a.orbitDir = val;
         }
         else if (prop === 'duration' || prop === 'delay' || prop === 'navTarget' || prop === 'charDelay' || prop === 'holdDuration' || prop === 'tx' || prop === 'ty' || prop === 'orbitDeg' || prop === 'rotateDeg') d.anims[animIdx][prop] = +val;
+        else if (prop === 'recolorInvert') d.anims[animIdx][prop] = !!val;
         else d.anims[animIdx][prop] = val;
       });
       _syncDomAnims(targets);
@@ -1314,11 +1342,24 @@ window._selectedAnimCat  = null;
       return;
     }
     const runOn = (oneEl) => {
+      if(animName === 'recolor'){
+        const ra = Object.assign({ duration: 600, recolorColor: '#000000', recolorInvert: false }, animData || {});
+        const d2 = (typeof slides !== 'undefined' && typeof cur !== 'undefined') ?
+          slides[cur] && slides[cur].els.find(x => oneEl.dataset && x.id === oneEl.dataset.id) : null;
+        if (typeof window._fireRecolorAnim === 'function') {
+          window._fireRecolorAnim(oneEl, d2, ra, 0, { preview: true });
+        }
+        return;
+      }
       if(animName === 'rotate'){
         const dir = (animData && animData.rotateDir||'cw')==='cw' ? 1 : -1;
         const deg = (animData && animData.rotateDeg!=null ? animData.rotateDeg : 360) * dir;
         const dur = (animData && animData.duration) || 600;
-        oneEl.animate([{transform:'rotate(0deg)'},{transform:`rotate(${deg}deg)`}],
+        const d2 = (typeof slides !== 'undefined' && typeof cur !== 'undefined') ?
+          slides[cur] && slides[cur].els.find(x => oneEl.dataset && x.id === oneEl.dataset.id) : null;
+        const rotTarget = oneEl.querySelector('.ec') || oneEl;
+        if (typeof window._applyRotPivotOrigin === 'function') window._applyRotPivotOrigin(rotTarget, d2 || oneEl);
+        rotTarget.animate([{transform:'rotate(0deg)'},{transform:`rotate(${deg}deg)`}],
           {duration:dur, easing:'ease-in-out', fill:'none'});
         return;
       }
@@ -1506,7 +1547,11 @@ window._selectedAnimCat  = null;
   }
 
   function renderAssignedAnims(){
-    if (typeof window._animTriggerPickCancel === 'function') window._animTriggerPickCancel();
+    // Don't cancel active "pick trigger object" mode — pick(null)/panel refresh
+    // used to wipe _animPickerCtx before the click could register the target.
+    if (typeof window._animTriggerPickCancel === 'function' && !window._animPickerCtx) {
+      window._animTriggerPickCancel();
+    }
     const container = document.getElementById('anim-assigned-list');
     if(!container) return;
 
@@ -1967,6 +2012,37 @@ window._selectedAnimCat  = null;
         props.appendChild(rotDirWrap);
       }
 
+      // recolor («Цвет»): силуэт + цвет + инверсия
+      if(a.name === 'recolor'){
+        const col = a.recolorColor || '#000000';
+        const inv = !!a.recolorInvert;
+        const reRow = document.createElement('div');
+        reRow.className = 'anim-row-props';
+        reRow.style.marginTop = '4px';
+        reRow.style.alignItems = 'center';
+        reRow.innerHTML =
+          '<label style="display:flex;align-items:center;gap:6px">Цвет'+
+            '<input type="color" value="'+col+'" style="width:28px;height:22px;padding:0;border:1px solid var(--border2);border-radius:3px;background:transparent;cursor:pointer" '+
+              'oninput="updateAnimProp(\''+d.id+'\','+ai+',\'recolorColor\',this.value)" '+
+              'onchange="updateAnimProp(\''+d.id+'\','+ai+',\'recolorColor\',this.value)">'+
+          '</label>';
+        props.appendChild(reRow);
+        const invLab = document.createElement('label');
+        invLab.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:10px;color:var(--text2);margin-top:6px;cursor:pointer;user-select:none';
+        invLab.innerHTML =
+          '<label class="tog"><input type="checkbox" '+(inv?'checked':'')+
+            ' onchange="updateAnimProp(\''+d.id+'\','+ai+',\'recolorInvert\',this.checked)">'+
+            '<span class="tog-track"></span><span class="tog-thumb"></span></label>'+
+          '<span>Инверсия (уходит в цвет)</span>';
+        props.appendChild(invLab);
+        const reHint = document.createElement('div');
+        reHint.style.cssText = 'font-size:8px;color:var(--text3);margin-top:5px;line-height:1.4;';
+        reHint.textContent = inv
+          ? '🎨 При показе обычный вид; плавно уходит в силуэт за время длительности'
+          : '🎨 При показе сразу силуэт; после задержки плавно проявляется цвет';
+        props.appendChild(reHint);
+      }
+
       // Trigger select for all anims
       {
         const trigSel = document.createElement('select');
@@ -2088,6 +2164,7 @@ window._selectedAnimCat  = null;
   }
 
 })();
+
 
 window._isInsideAnimBlock = function(t) {
   if (!t || !t.closest) return false;

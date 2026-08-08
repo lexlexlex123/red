@@ -975,7 +975,6 @@ function _deselectConn(restorePanel = true) {
     const ep = document.getElementById('elprops'); if (ep) ep.style.display = 'none';
     const ns = document.getElementById('nosel'); if (ns) ns.style.display = 'block';
     const sp = document.getElementById('slide-props'); if (sp) sp.style.display = 'block';
-    const spn = document.getElementById('slide-props-pn'); if (spn) spn.style.display = 'block';
   }
   if (typeof renderObjectsPanel === 'function') renderObjectsPanel();
 }
@@ -1007,7 +1006,6 @@ function _showConnProps(id) {
   document.getElementById('elprops').style.display = 'none';
   document.getElementById('nosel').style.display = 'none';
   const sp = document.getElementById('slide-props'); if (sp) sp.style.display = 'none';
-  const spn = document.getElementById('slide-props-pn'); if (spn) spn.style.display = 'none';
   const panel = document.getElementById('connprops');
   if (!panel) return;
   panel.style.display = 'flex'; panel.style.flexDirection = 'column';

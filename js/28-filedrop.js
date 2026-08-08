@@ -22,7 +22,7 @@
       '<div style="font-size:15px;font-weight:700;color:#a5b4fc;text-shadow:0 2px 8px rgba(0,0,0,.6)">' +
         'Перетащите файл для импорта' +
       '</div>' +
-      '<div id="filedrop-hint" style="font-size:11px;color:rgba(165,180,252,.7)">PPTX · PPT · HTML · JSON · Изображения</div>';
+      '<div id="filedrop-hint" style="font-size:11px;color:rgba(165,180,252,.7)">PPTX · HTML · JSON · Изображения · Видео · Аудио · Markdown · Код</div>';
     document.body.appendChild(_overlay);
     return _overlay;
   }
@@ -30,7 +30,7 @@
   function _show(fileType){
     const ov = _getOverlay();
     const hint = document.getElementById('filedrop-hint');
-    if(hint) hint.textContent = fileType || 'PPTX · JSON · Изображения';
+    if(hint) hint.textContent = fileType || 'PPTX · HTML · JSON · Медиа · Markdown · Код';
     ov.style.display = 'flex';
     requestAnimationFrame(()=>{ ov.style.opacity = '1'; });
   }
@@ -40,6 +40,10 @@
     setTimeout(()=>{ ov.style.display = 'none'; }, 150);
   }
 
+  function _extOf(name){
+    return String(name||'').split('.').pop().toLowerCase();
+  }
+
   // Guess hint label from dragged items
   function _hintFromItems(items){
     if(!items || !items.length) return null;
@@ -47,22 +51,54 @@
       if(item.kind !== 'file') continue;
       const t = item.type || '';
       const name = (item.name||'').toLowerCase();
+      const ext = _extOf(name);
       if(t.includes('presentationml') || name.endsWith('.pptx') || name.endsWith('.ppt') || name.endsWith('.odp'))
         return 'PPTX / PPT — импорт презентации';
       if(t === 'text/html' || name.endsWith('.html') || name.endsWith('.htm'))
         return 'HTML — импорт экспортированной презентации';
-      if(t === 'application/json' || name.endsWith('.json'))
+      if(name.endsWith('.slides.json'))
         return 'JSON — восстановить состояние';
-      if(t.startsWith('image/'))
+      if(t === 'application/json' || name.endsWith('.json'))
+        return 'JSON — проект или блок кода';
+      if(t.startsWith('image/') || ext === 'svg')
         return 'Изображение — вставить на слайд';
+      if(t.startsWith('video/') || ['mp4','webm','mov','m4v','avi','mkv','ogv'].includes(ext))
+        return 'Видео — вставить на слайд';
+      if(t.startsWith('audio/') || ['mp3','wav','m4a','aac','flac','ogg','opus','wma'].includes(ext))
+        return 'Аудио — вставить на слайд';
+      if(['md','markdown','mdown','mkd'].includes(ext))
+        return 'Markdown — вставить блок';
+      if(typeof _codeLangFromFilename==='function' && _codeLangFromFilename(name) && !['html','htm'].includes(ext))
+        return 'Код — вставить блок';
     }
     return null;
+  }
+
+  function _isVideoFile(f){
+    const ext=_extOf(f.name);
+    return (f.type||'').startsWith('video/') || ['mp4','webm','mov','m4v','avi','mkv','ogv'].includes(ext);
+  }
+  function _isAudioFile(f){
+    const ext=_extOf(f.name);
+    const mime=f.type||'';
+    return mime.startsWith('audio/') || ['mp3','wav','m4a','aac','flac','opus','wma'].includes(ext) || (ext==='ogg'&&!mime.startsWith('video/'));
+  }
+  function _isMdFile(f){
+    return ['md','markdown','mdown','mkd'].includes(_extOf(f.name));
+  }
+  function _isCodeFile(f){
+    const name=String(f.name||'').toLowerCase();
+    const ext=_extOf(name);
+    if(['html','htm','pptx','ppt','odp'].includes(ext)) return false;
+    if(name.endsWith('.slides.json')) return false;
+    return typeof _codeLangFromFilename==='function' && !!_codeLangFromFilename(name);
   }
 
   // Handle a single dropped File
   function _handleFile(file){
     if(!file) return;
-    const ext = file.name.split('.').pop().toLowerCase();
+    const ext = _extOf(file.name);
+    const name = String(file.name||'').toLowerCase();
 
     // Presentation formats — PPTX / PPT / ODP
     if(['pptx','ppt','odp'].includes(ext)){
@@ -84,55 +120,15 @@
       return;
     }
 
-    // JSON state snapshot
-    if(ext === 'json'){
-      const reader = new FileReader();
-      reader.onload = ev => {
-        try{
-          const raw = ev.target.result;
-          const parsed = JSON.parse(raw);
-          if(!parsed.slides) throw new Error('Нет поля slides');
-          localStorage.setItem('sf_v4', raw);
-          if(typeof loadState === 'function') loadState();
-          if(typeof renderAll === 'function') renderAll();
-          if(typeof syncProps === 'function') syncProps();
-          if(typeof toast === 'function') toast('JSON состояния загружен','ok');
-        }catch(err){
-          if(typeof toast === 'function') toast('Ошибка импорта JSON: '+err.message,'err');
-        }
-      };
-      reader.readAsText(file);
+    // Явный снимок проекта
+    if(name.endsWith('.slides.json') || ext === 'slides'){
+      if(typeof importLiteFile === 'function') importLiteFile(file);
+      else if(typeof toast === 'function') toast('importLiteFile недоступен','err');
       return;
     }
 
-    // SVG — вставляем как вектор, не как растр
-    if(ext === 'svg' || file.type === 'image/svg+xml'){
-      const reader = new FileReader();
-      reader.onload = ev => {
-        const svgCode = ev.target.result;
-        if(!svgCode.includes('<svg')) return;
-        pushUndo();
-        const d = {id:'e'+(++ec),type:'svg',x:snapV(80),y:snapV(80),w:snapV(300),h:snapV(300),svgContent:svgCode,rot:0,anims:[]};
-        slides[cur].els.push(d); mkEl(d);
-        if(typeof _svgRecentAdd === 'function') _svgRecentAdd(file.name.replace(/\.svg$/i,''), svgCode);
-        save(); drawThumbs(); saveState();
-        if(typeof toast === 'function') toast('SVG вставлен','ok');
-      };
-      reader.readAsText(file);
-      return;
-    }
-    // Image
-    if(file.type.startsWith('image/')){
-      const reader = new FileReader();
-      reader.onload = ev => {
-        if(typeof _addImageToCanvas === 'function'){
-          _addImageToCanvas(ev.target.result);
-          if(typeof toast === 'function') toast('Изображение добавлено','ok');
-        }
-      };
-      reader.readAsDataURL(file);
-      return;
-    }
+    // Графика / видео / аудио / markdown / код / json
+    if(typeof importAssetFile === 'function' && importAssetFile(file)) return;
 
     if(typeof toast === 'function') toast('Неподдерживаемый формат: .'+ext,'err');
   }
@@ -173,10 +169,15 @@
 
     // Process first supported file by priority
     const order = [
-      f => ['pptx','ppt','odp'].includes(f.name.split('.').pop().toLowerCase()),
-      f => ['html','htm'].includes(f.name.split('.').pop().toLowerCase()),
-      f => f.name.toLowerCase().endsWith('.json'),
-      f => f.type.startsWith('image/'),
+      f => ['pptx','ppt','odp'].includes(_extOf(f.name)),
+      f => ['html','htm'].includes(_extOf(f.name)),
+      f => String(f.name||'').toLowerCase().endsWith('.slides.json'),
+      f => _extOf(f.name)==='json',
+      f => (f.type||'').startsWith('image/') || _extOf(f.name)==='svg',
+      f => _isVideoFile(f),
+      f => _isAudioFile(f),
+      f => _isMdFile(f),
+      f => _isCodeFile(f),
     ];
     for(const test of order){
       const f = files.find(test);

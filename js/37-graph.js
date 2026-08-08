@@ -359,48 +359,59 @@ function _renderGraph(exprsOrExpr, latexLabelOrLines, opts){
   });
 
   // ── Collect per-curve label info ────────────────────────────────────────
+  const showLabels = opts.showLabels !== false;
   const labelFs = Math.round(W * 0.022); // smaller font
   const margin  = W * 0.08;
 
-  // Compute candidate label position for one pts array
+  // Подпись ПОД кривой, вдоль касательной (не горизонтально у вершины)
   function _labelCandidate(ptArr, fi){
+    if(!showLabels) return null;
     const valid = ptArr.filter(Boolean);
     if(valid.length <= 10) return null;
-    // Sample positions spread across curve, pick one with good margin
-    const fractions = [0.25, 0.35, 0.50, 0.60, 0.75, 0.85];
-    let base = null, angle = 0;
+    const fractions = [0.18,0.28,0.38,0.48,0.58,0.68,0.78,0.88];
+    let best = null, bestScore = -Infinity;
     for(const frac of fractions){
       const idx = Math.floor(valid.length * frac);
       const b = valid[idx];
       if(!b) continue;
       if(b.cx < margin || b.cx > W-margin || b.cy < margin+labelFs*2 || b.cy > H-margin-labelFs*2) continue;
-      // Compute tangent angle
-      const behind = valid.slice(Math.max(0,idx-8), idx);
-      const ahead  = valid.slice(idx+1, idx+9);
+      const win = Math.max(6, Math.min(14, Math.floor(valid.length*0.02)));
+      const behind = valid.slice(Math.max(0,idx-win), idx);
+      const ahead  = valid.slice(idx+1, idx+1+win);
       let a = 0;
       if(behind.length && ahead.length){
-        const bk=behind[behind.length-1], ah=ahead[0];
+        const bk=behind[0], ah=ahead[ahead.length-1];
         a = Math.atan2(ah.cy-bk.cy, ah.cx-bk.cx);
       }
-      if(a > Math.PI/2 || a < -Math.PI/2) a += Math.PI;
-      base = b; angle = a; break;
+      // Читаемый угол: не вверх ногами
+      let drawAngle = a;
+      if(drawAngle > Math.PI/2 || drawAngle < -Math.PI/2) drawAngle += Math.PI;
+      // Нормаль «под» кривой при обходе слева направо (canvas Y вниз)
+      const perpAngle = a + Math.PI/2;
+      const offset = labelFs * 3.4;
+      const lx = b.cx + Math.cos(perpAngle)*offset;
+      const ly = b.cy + Math.sin(perpAngle)*offset;
+      if(lx < margin*0.5 || lx > W-margin*0.5 || ly < labelFs || ly > H-labelFs) continue;
+      // Предпочитаем заметный наклон + центр кадра + зазор от кривой
+      const slopeScore = Math.min(1, Math.abs(Math.sin(a)) * 1.4 + Math.abs(Math.sin(drawAngle))*0.3);
+      const centerScore = 1 - Math.abs(frac-0.55)*1.2;
+      const edgePad = Math.min(b.cx, W-b.cx, b.cy, H-b.cy) / (W*0.2);
+      const score = slopeScore*2.2 + centerScore + Math.min(1, edgePad);
+      if(score > bestScore){
+        bestScore = score;
+        best = { lx, ly, angle: drawAngle, labelFs,
+          color: lineColors[fi % lineColors.length],
+          latex: labelList[fi] || exprList[fi] || '',
+          bg, isDark };
+      }
     }
-    if(!base) return null;
-    // Place label above the curve (perpendicular offset)
-    const perpAngle = angle - Math.PI/2;
-    const offset = labelFs * 2.5;
-    return {
-      lx: base.cx + Math.cos(perpAngle)*offset,
-      ly: base.cy + Math.sin(perpAngle)*offset,
-      angle, labelFs,
-      color: lineColors[fi % lineColors.length],
-      latex: labelList[fi] || exprList[fi] || '',
-      bg, isDark
-    };
+    return best;
   }
 
   // Build initial candidates
-  let labelInfos = allPtsArrays.map((arr, fi) => _labelCandidate(arr, fi)).filter(Boolean);
+  let labelInfos = showLabels
+    ? allPtsArrays.map((arr, fi) => _labelCandidate(arr, fi)).filter(Boolean)
+    : [];
 
   // Push apart overlapping labels (simple iterative repulsion)
   const minDist = labelFs * 3.5;
@@ -520,7 +531,8 @@ async function _drawOneLabel(cv, info, mjOk){
 }
 
 // ── Refresh all graphs on theme change ─────────────────────────────────────
-async function refreshAllGraphs(theme){
+async function refreshAllGraphs(theme, opts){
+  opts=opts||{};
   if(!theme) return;
   const isDark   = theme.dark !== false;
   const newBg    = isDark ? '#16161e' : '#f0f0f5';
@@ -529,15 +541,16 @@ async function refreshAllGraphs(theme){
   if(!newLineColors.length) newLineColors.push(newColor);
   const chemColors = (typeof window._chemThemeColors==='function')
     ? window._chemThemeColors(theme) : null;
+  const pendingLabels = [];
   for(const s of slides){
     for(const el of s.els){
       if(el.type !== 'graph') continue;
+      try{
       if(el.graphKind === 'chem' && typeof window._chemRender === 'function'){
         const cc = chemColors || { bg:'', fg:'#ffffff', isDark:true };
         const _defScheme = {col:7, row:0};
         const _defColor = (typeof _resolveSchemeColor==='function'
           ? _resolveSchemeColor(_defScheme, theme) : null) || cc.fg;
-        // Same rules as text/formula: scheme-pinned remaps, undefined→pin default, null→custom keep
         if(el.graphColorScheme !== null && el.graphColorScheme !== undefined){
           el.graphColor = (typeof _resolveSchemeColor==='function'
             ? _resolveSchemeColor(el.graphColorScheme, theme) : null) || _defColor;
@@ -545,7 +558,6 @@ async function refreshAllGraphs(theme){
           el.graphColorScheme = _defScheme;
           el.graphColor = _defColor;
         }
-        // graphColorScheme===null: custom — leave graphColor as-is
         if(el.graphBgScheme !== null && el.graphBgScheme !== undefined
            && typeof _resolveSchemeColor==='function'){
           const resolved = _resolveSchemeColor(el.graphBgScheme, theme);
@@ -557,31 +569,98 @@ async function refreshAllGraphs(theme){
         if(result && result.dataUrl) el.graphImg = result.dataUrl;
         continue;
       }
+      if(el.graphKind === 'logic' && typeof window._logicRender === 'function'){
+        const lc = (typeof window._logicThemeColors==='function')
+          ? window._logicThemeColors(theme)
+          : (chemColors || { bg:'', fg:'#ffffff', isDark:true });
+        const _defScheme = {col:7, row:0};
+        const _defColor = (typeof _resolveSchemeColor==='function'
+          ? _resolveSchemeColor(_defScheme, theme) : null) || lc.fg;
+        if(el.graphColorScheme !== null && el.graphColorScheme !== undefined){
+          el.graphColor = (typeof _resolveSchemeColor==='function'
+            ? _resolveSchemeColor(el.graphColorScheme, theme) : null) || _defColor;
+        } else if(el.graphColorScheme === undefined){
+          el.graphColorScheme = _defScheme;
+          el.graphColor = _defColor;
+        }
+        if(el.graphBgScheme !== null && el.graphBgScheme !== undefined
+           && typeof _resolveSchemeColor==='function'){
+          const resolved = _resolveSchemeColor(el.graphBgScheme, theme);
+          if(resolved) el.graphBg = resolved;
+        }
+        el.graphDark = lc.isDark;
+        const raw = el.graphLatex || '';
+        const showF = el.logicShowFormula !== undefined ? el.logicShowFormula !== false : true;
+        const result = window._logicRender(raw, {
+          w:900, h:560, fg:el.graphColor||_defColor, isDark:lc.isDark, showFormula:showF
+        });
+        if(result && result.dataUrl) el.graphImg = result.dataUrl;
+        continue;
+      }
       el.graphBg = newBg; el.graphColor = newColor; el.graphDark = isDark;
       el.graphLineColors = newLineColors;
       const exprs = el.graphExprs || (el.graphExpr ? [el.graphExpr] : []);
       const lines = el.graphLines || (el.graphLatex ? [el.graphLatex] : exprs);
       const raw = _renderGraph(exprs, lines, {w:800,h:560,color:newColor,lineColors:newLineColors,bg:newBg,isDark,
         xMin:el.graphXMin??-10, xMax:el.graphXMax??10, step:el.graphStep??1,
-        yMin:el.graphYMin??null, yMax:el.graphYMax??null});
-      const result = await _addMathLabel(raw);
-      if(!result.error) el.graphImg = result.dataUrl;
+        yMin:el.graphYMin??null, yMax:el.graphYMax??null,
+        showLabels: el.graphShowLabel !== false});
+      // Синхронно — новый цвет кривой до await (applyTheme → renderAll увидит его)
+      el.graphImg = raw.cv.toDataURL('image/png');
+      if(raw._labelInfos && raw._labelInfos.length) pendingLabels.push({el, raw});
+      }catch(_e){ /* keep previous graphImg */ }
     }
+  }
+  // Подписи MathJax — после того как кривые уже с новым цветом
+  for(const item of pendingLabels){
+    try{
+      const result = await _addMathLabel(item.raw);
+      if(!result.error){
+        item.el.graphImg = result.dataUrl;
+        _patchGraphImg(item.el);
+      }
+    }catch(_e){}
+  }
+  // applyTheme сам делает renderAll — повторный вызов гоняет iframe-апплеты и «съедает» карточки
+  if(!opts.skipRender){
+    if(typeof renderAll==='function') renderAll();
+    else if(typeof load==='function') load();
+    if(typeof drawThumbs==='function') drawThumbs();
+    if(typeof saveState==='function') saveState();
+  } else {
+    // Точечно обновить картинки графиков на текущем слайде без полного rebuild
+    (slides[cur]?.els||[]).forEach(function(el){
+      if(el.type==='graph' && el.graphImg) _patchGraphImg(el);
+    });
   }
 }
 window.refreshAllGraphs = refreshAllGraphs;
 
-// ── Delete linked graphs ────────────────────────────────────────────────────
-function _deleteLinkedGraphs(formulaId){
+function _patchGraphImg(el){
+  if(!el||!el.id||!el.graphImg) return;
+  try{
+    const root = document.getElementById('canvas');
+    if(!root) return;
+    const domEl = root.querySelector('[data-id="'+el.id+'"]');
+    if(!domEl) return;
+    const img = domEl.querySelector('img');
+    if(img) img.src = el.graphImg;
+  }catch(e){}
+}
+
+// ── Unlink linked graphs (keep structure/graph on canvas when formula deleted) ─
+function _unlinkLinkedGraphs(formulaId){
   const s = slides[cur]; if(!s) return;
-  const toDelete = s.els.filter(x => x.type==='graph' && x.linkedFormulaId===formulaId);
-  toDelete.forEach(gd => {
-    const domEl = document.getElementById('canvas').querySelector('[data-id="'+gd.id+'"]');
-    if(domEl) domEl.remove();
-    const idx = s.els.indexOf(gd);
-    if(idx>=0) s.els.splice(idx,1);
+  s.els.forEach(gd => {
+    if(gd.type==='graph' && gd.linkedFormulaId===formulaId){
+      gd.linkedFormulaId = null;
+      // Snapshot latex/chemKey already stored — graph stays independent
+    }
   });
 }
+/** @deprecated use _unlinkLinkedGraphs — graphs are kept on screen */
+function _deleteLinkedGraphs(formulaId){ _unlinkLinkedGraphs(formulaId); }
+window._unlinkLinkedGraphs = _unlinkLinkedGraphs;
 window._deleteLinkedGraphs = _deleteLinkedGraphs;
 
 // ── Place / update linked graph element on canvas ───────────────────────────
@@ -601,9 +680,9 @@ function _upsertLinkedGraph(formulaData, payload){
   const fy=_fDom?parseInt(_fDom.style.top):formulaData.y;
   const fh=_fDom?parseInt(_fDom.style.height):formulaData.h;
   const fw=_fDom?parseInt(_fDom.style.width):formulaData.w;
-  const isChem = payload.graphKind === 'chem';
-  const W=Math.max(fw, isChem ? 320 : 380);
-  const H=Math.round(W * (isChem ? 0.95 : 0.7));
+  const isDiag = payload.graphKind === 'chem' || payload.graphKind === 'logic';
+  const W=Math.max(fw, isDiag ? (payload.graphKind==='logic' ? 420 : 320) : 380);
+  const H=Math.round(W * (payload.graphKind==='chem' ? 0.95 : (payload.graphKind==='logic' ? 0.62 : 0.7)));
   const gd={
     id:'e'+(++ec), type:'graph',
     x:snapV(fx), y:snapV(fy+fh+16),
@@ -632,7 +711,7 @@ function _chemHexRgba(hex, a){
 }
 
 function _applyChemGraphStyle(el, d){
-  if(!el || !d || d.graphKind!=='chem') return;
+  if(!el || !d || (d.graphKind!=='chem' && d.graphKind!=='logic')) return;
   const host = el.querySelector('.ec') || el;
   // Same corner radius as function graphs
   host.style.borderRadius = '6px';
@@ -686,14 +765,18 @@ function _rerenderChemGraph(d, opts){
     const f = slides[cur].els.find(x => x.id===d.linkedFormulaId);
     if(f && f.formulaRaw) raw = f.formulaRaw;
   }
+  if(!raw) return false;
   const fg = d.graphColor || '#111111';
   const result = window._chemRender(raw, {
     w:720, h:680,
     fg: fg,
-    isDark: !!d.graphDark
+    isDark: !!d.graphDark,
+    showFormula: d.chemShowFormula !== false,
+    showName: d.chemShowName !== false
   });
   if(!result || !result.dataUrl) return false;
   d.graphImg = result.dataUrl;
+  d.graphLatex = raw;
   if(result.chemName) d.chemName = result.chemName;
   if(result.chemKey) d.chemKey = result.chemKey;
   const domEl = document.getElementById('canvas')?.querySelector('[data-id="'+d.id+'"]');
@@ -712,18 +795,53 @@ function _rerenderChemGraph(d, opts){
 window._applyChemGraphStyle = _applyChemGraphStyle;
 window._rerenderChemGraph = _rerenderChemGraph;
 
+function _rerenderLogicGraph(d, opts){
+  opts = opts || {};
+  if(!d || d.graphKind!=='logic' || typeof window._logicRender!=='function') return false;
+  let raw = d.graphLatex || '';
+  if(d.linkedFormulaId && slides[cur]){
+    const f = slides[cur].els.find(x => x.id===d.linkedFormulaId);
+    if(f && f.formulaRaw) raw = f.formulaRaw;
+  }
+  if(!raw) return false;
+  const fg = d.graphColor || '#111111';
+  const showF = d.logicShowFormula !== undefined ? d.logicShowFormula !== false : (d.chemShowFormula !== false);
+  const result = window._logicRender(raw, {
+    w:900, h:560,
+    fg: fg,
+    isDark: !!d.graphDark,
+    showFormula: showF
+  });
+  if(!result || !result.dataUrl) return false;
+  d.graphImg = result.dataUrl;
+  d.graphLatex = raw;
+  const domEl = document.getElementById('canvas')?.querySelector('[data-id="'+d.id+'"]');
+  if(domEl){
+    const img = domEl.querySelector('img');
+    if(img) img.src = result.dataUrl;
+    _applyChemGraphStyle(domEl, d);
+  }
+  if(!opts.silent){
+    if(typeof save==='function') save();
+    if(typeof drawThumbs==='function') drawThumbs();
+    if(typeof saveState==='function') saveState();
+  }
+  return true;
+}
+window._rerenderLogicGraph = _rerenderLogicGraph;
+
 function setChemGraphColor(color, schemeRef){
   if(!sel) return;
   let d = slides[cur]?.els?.find(x => x.id===sel.dataset.id);
-  if(!d || d.graphKind!=='chem') return;
+  if(!d || (d.graphKind!=='chem' && d.graphKind!=='logic')) return;
   if(typeof pushUndo==='function') pushUndo();
   // pushUndo/save rebuilds slides[cur].els — re-fetch live object
   d = slides[cur]?.els?.find(x => x.id===sel.dataset.id);
-  if(!d || d.graphKind!=='chem') return;
+  if(!d || (d.graphKind!=='chem' && d.graphKind!=='logic')) return;
   d.graphColor = color;
   d.graphColorScheme = (schemeRef!==undefined) ? schemeRef : null;
   sel.dataset.graphColor = color;
-  _rerenderChemGraph(d);
+  if(d.graphKind==='logic') _rerenderLogicGraph(d); else _rerenderChemGraph(d);
   const sw = document.getElementById('gp-chem-fg-preview');
   const hx = document.getElementById('gp-chem-fg-hex');
   if(sw) sw.style.background = color;
@@ -736,10 +854,10 @@ window.setChemGraphColor = setChemGraphColor;
 function setChemGraphBg(color, schemeRef){
   if(!sel) return;
   let d = slides[cur]?.els?.find(x => x.id===sel.dataset.id);
-  if(!d || d.graphKind!=='chem') return;
+  if(!d || (d.graphKind!=='chem' && d.graphKind!=='logic')) return;
   if(typeof pushUndo==='function') pushUndo();
   d = slides[cur]?.els?.find(x => x.id===sel.dataset.id);
-  if(!d || d.graphKind!=='chem') return;
+  if(!d || (d.graphKind!=='chem' && d.graphKind!=='logic')) return;
   d.graphBg = (color && color!=='none') ? color : '';
   d.graphBgScheme = (schemeRef!==undefined) ? schemeRef : null;
   if(d.graphBg) sel.dataset.graphBg = d.graphBg; else delete sel.dataset.graphBg;
@@ -762,7 +880,7 @@ window.setChemGraphBg = setChemGraphBg;
 function setChemGraphBgOp(v){
   if(!sel) return;
   const d = slides[cur]?.els?.find(x => x.id===sel.dataset.id);
-  if(!d || d.graphKind!=='chem') return;
+  if(!d || (d.graphKind!=='chem' && d.graphKind!=='logic')) return;
   d.graphBgOp = Math.max(0, Math.min(1, +v));
   sel.dataset.graphBgOp = String(d.graphBgOp);
   _applyChemGraphStyle(sel, d);
@@ -774,7 +892,7 @@ window.setChemGraphBgOp = setChemGraphBgOp;
 function setChemGraphBgBlur(v){
   if(!sel) return;
   const d = slides[cur]?.els?.find(x => x.id===sel.dataset.id);
-  if(!d || d.graphKind!=='chem') return;
+  if(!d || (d.graphKind!=='chem' && d.graphKind!=='logic')) return;
   d.graphBgBlur = Math.max(0, +v||0);
   sel.dataset.graphBgBlur = String(d.graphBgBlur);
   _applyChemGraphStyle(sel, d);
@@ -782,6 +900,118 @@ function setChemGraphBgBlur(v){
   if(typeof drawThumbs==='function') drawThumbs();
 }
 window.setChemGraphBgBlur = setChemGraphBgBlur;
+
+function setChemShowFormula(on){
+  if(!sel) return;
+  let d = slides[cur]?.els?.find(x => x.id===sel.dataset.id);
+  if(!d || (d.graphKind!=='chem' && d.graphKind!=='logic')) return;
+  if(typeof pushUndo==='function') pushUndo();
+  d = slides[cur]?.els?.find(x => x.id===sel.dataset.id);
+  if(!d || (d.graphKind!=='chem' && d.graphKind!=='logic')) return;
+  if(d.graphKind==='logic'){
+    d.logicShowFormula = !!on;
+    _rerenderLogicGraph(d);
+  } else {
+    d.chemShowFormula = !!on;
+    _rerenderChemGraph(d);
+  }
+  const tog = document.getElementById('gp-chem-show-formula');
+  if(tog){
+    tog.checked = d.graphKind==='logic'
+      ? (d.logicShowFormula !== false)
+      : (d.chemShowFormula !== false);
+  }
+}
+window.setChemShowFormula = setChemShowFormula;
+
+/** When formula text changes — rebuild already-linked structure/graph on canvas. */
+async function _syncLinkedGraphsFromFormula(formulaData){
+  if(!formulaData || !slides[cur]) return;
+  const linked = slides[cur].els.filter(x => x.type==='graph' && x.linkedFormulaId===formulaData.id);
+  if(!linked.length) return;
+  const raw = formulaData.formulaRaw || '';
+  const isChem = typeof window._chemIsFormula==='function' && window._chemIsFormula(raw);
+  const isLogic = !isChem && typeof window._logicIsFormula==='function' && window._logicIsFormula(raw);
+
+  if(isChem){
+    linked.forEach(g => {
+      g.graphKind = 'chem';
+      g.graphLatex = raw;
+      g.graphLines = [raw];
+      _rerenderChemGraph(g, {silent:true});
+    });
+    if(typeof save==='function') save();
+    if(typeof drawThumbs==='function') drawThumbs();
+    if(typeof saveState==='function') saveState();
+    return;
+  }
+
+  if(isLogic){
+    linked.forEach(g => {
+      g.graphKind = 'logic';
+      g.graphLatex = raw;
+      g.graphLines = [raw];
+      _rerenderLogicGraph(g, {silent:true});
+    });
+    if(typeof save==='function') save();
+    if(typeof drawThumbs==='function') drawThumbs();
+    if(typeof saveState==='function') saveState();
+    return;
+  }
+
+  // Math / function graph — re-parse latex into expressions
+  let lines = (Array.isArray(formulaData.formulaLines) && formulaData.formulaLines.length)
+    ? formulaData.formulaLines.filter(l => l && l.trim())
+    : [raw];
+  if(lines.length === 1){
+    const casesMatch = lines[0].match(/\\begin\s*\{cases\}([\s\S]+?)\\end\s*\{cases\}/);
+    if(casesMatch){
+      lines = casesMatch[1].split(/\\\\/).map(l => l.replace(/&/g,'').trim()).filter(Boolean);
+    }
+  }
+  if(lines.length === 1 && lines[0].includes('\\\\')){
+    const parts = lines[0].split('\\\\').map(l=>l.trim()).filter(Boolean);
+    if(parts.length > 1) lines = parts;
+  }
+  const parsedLines = lines.map(l => typeof _splitCondition==='function' ? _splitCondition(l) : {expr:l, cond:null});
+  const exprs = parsedLines.map(p => typeof _latexToExpr==='function' ? _latexToExpr(p.expr) : null).filter(Boolean);
+  if(!exprs.length) return;
+  const conditions = parsedLines.map(p => p.cond);
+
+  for(const g of linked){
+    const _ti=typeof appliedThemeIdx!=='undefined'?appliedThemeIdx:-1;
+    const _theme=_ti>=0?THEMES[_ti]:null;
+    const isDark = g.graphDark != null ? g.graphDark : (_theme ? _theme.dark !== false : true);
+    const bg = g.graphBg || (isDark?'#16161e':'#f0f0f5');
+    const color = g.graphColor || ((_theme&&_theme.colors&&_theme.colors[0])||(isDark?'#6366f1':'#4f46e5'));
+    const lineColors = g.graphLineColors || ((_theme&&_theme.colors) ? _theme.colors.slice(0,7) : [color]);
+    const xMin = g.graphXMin ?? -10, xMax = g.graphXMax ?? 10, step = g.graphStep ?? 1;
+    const yMin = g.graphYMin ?? null, yMax = g.graphYMax ?? null;
+    const raw_result = _renderGraph(exprs, lines, {w:800, h:560, color, lineColors, bg, isDark, xMin, xMax, step, yMin, yMax, conditions,
+      showLabels: g.graphShowLabel !== false});
+    const result = await _addMathLabel(raw_result);
+    if(!result || !result.dataUrl) continue;
+    g.graphKind = 'fn';
+    g.graphExprs = exprs;
+    g.graphLines = lines;
+    g.graphExpr = exprs[0];
+    g.graphLatex = lines[0];
+    g.graphImg = result.dataUrl;
+    g.graphColor = color;
+    g.graphLineColors = lineColors;
+    g.graphBg = bg;
+    g.graphDark = isDark;
+    const domEl = document.getElementById('canvas')?.querySelector('[data-id="'+g.id+'"]');
+    if(domEl){
+      const img = domEl.querySelector('img');
+      if(img) img.src = result.dataUrl;
+    }
+  }
+  if(typeof save==='function') save();
+  if(typeof drawThumbs==='function') drawThumbs();
+  if(typeof saveState==='function') saveState();
+}
+window._syncLinkedGraphsFromFormula = _syncLinkedGraphsFromFormula;
 
 function _buildChemFromFormula(d){
   if(typeof window._chemLookup !== 'function' || typeof window._chemRender !== 'function') return null;
@@ -821,7 +1051,9 @@ function _buildChemFromFormula(d){
   const result = window._chemRender(raw, {
     w:720, h:680,
     fg: fg,
-    isDark: colors.isDark
+    isDark: colors.isDark,
+    showFormula: (existing && existing.chemShowFormula !== undefined) ? existing.chemShowFormula !== false : true,
+    showName: (existing && existing.chemShowName !== undefined) ? existing.chemShowName !== false : true
   });
   if(!result || result.error || !result.dataUrl) return null;
 
@@ -840,7 +1072,9 @@ function _buildChemFromFormula(d){
     graphBgScheme: bgScheme,
     graphDark: colors.isDark,
     chemKey: result.chemKey,
-    chemName: result.chemName
+    chemName: result.chemName,
+    chemShowFormula: existing && existing.chemShowFormula !== undefined ? existing.chemShowFormula !== false : true,
+    chemShowName: existing && existing.chemShowName !== undefined ? existing.chemShowName !== false : true
   });
   const domEl = document.getElementById('canvas')?.querySelector('[data-id="'+out.el.id+'"]');
   if(domEl){
@@ -851,6 +1085,79 @@ function _buildChemFromFormula(d){
     toast(out.existing
       ? ('Структура обновлена: ' + (result.chemName || result.pretty))
       : ('Структура: ' + (result.chemName || result.pretty)), 'ok');
+  }
+  return out;
+}
+
+function _buildLogicFromFormula(d){
+  if(typeof window._logicIsFormula !== 'function' || typeof window._logicRender !== 'function') return null;
+  const raw = d.formulaRaw || '';
+  if(!window._logicIsFormula(raw)) return null;
+
+  const existing = slides[cur].els.find(x => x.type==='graph' && x.linkedFormulaId===d.id && x.graphKind==='logic')
+    || slides[cur].els.find(x => x.type==='graph' && x.linkedFormulaId===d.id);
+
+  const _ti=typeof appliedThemeIdx!=='undefined'?appliedThemeIdx:-1;
+  const _theme=_ti>=0?THEMES[_ti]:null;
+  const colors = (typeof window._logicThemeColors==='function')
+    ? window._logicThemeColors(_theme)
+    : { bg:'', fg:'#ffffff', isDark:true };
+
+  const _defScheme = {col:7, row:0};
+  let fgScheme;
+  if(existing && existing.graphColorScheme !== undefined){
+    fgScheme = existing.graphColorScheme;
+  } else {
+    fgScheme = _defScheme;
+  }
+  let fg;
+  if(fgScheme !== null && typeof _resolveSchemeColor==='function' && _theme){
+    fg = _resolveSchemeColor(fgScheme, _theme) || colors.fg;
+  } else if(fgScheme === null){
+    fg = existing?.graphColor || colors.fg;
+  } else {
+    fg = colors.fg;
+  }
+
+  const bg = existing ? (existing.graphBg ?? '') : '';
+  const bgOp = existing?.graphBgOp != null ? existing.graphBgOp : 1;
+  const bgBlur = existing?.graphBgBlur != null ? existing.graphBgBlur : 0;
+  const bgScheme = existing ? (existing.graphBgScheme !== undefined ? existing.graphBgScheme : null) : null;
+  const showF = existing && existing.logicShowFormula !== undefined
+    ? existing.logicShowFormula !== false
+    : (existing && existing.chemShowFormula !== undefined ? existing.chemShowFormula !== false : true);
+
+  const result = window._logicRender(raw, {
+    w:900, h:560,
+    fg: fg,
+    isDark: colors.isDark,
+    showFormula: showF
+  });
+  if(!result || result.error || !result.dataUrl) return null;
+
+  const out = _upsertLinkedGraph(d, {
+    graphKind:'logic',
+    graphLatex: raw,
+    graphLines:[raw],
+    graphExprs:[],
+    graphExpr:'',
+    graphImg: result.dataUrl,
+    graphColor: fg,
+    graphColorScheme: fgScheme,
+    graphBg: bg,
+    graphBgOp: bgOp,
+    graphBgBlur: bgBlur,
+    graphBgScheme: bgScheme,
+    graphDark: colors.isDark,
+    logicShowFormula: showF
+  });
+  const domEl = document.getElementById('canvas')?.querySelector('[data-id="'+out.el.id+'"]');
+  if(domEl){
+    if(fg) domEl.dataset.graphColor = fg;
+    _applyChemGraphStyle(domEl, out.el);
+  }
+  if(typeof toast==='function'){
+    toast(out.existing ? 'Схема обновлена' : 'Логическая схема построена', 'ok');
   }
   return out;
 }
@@ -867,6 +1174,12 @@ async function buildFormulaGraph(formulaEl){
   if(typeof window._chemIsFormula==='function' && window._chemIsFormula(raw)){
     const chem = _buildChemFromFormula(d);
     if(chem) return;
+  }
+
+  // Boolean / logic formula → IEC gate schematic
+  if(typeof window._logicIsFormula==='function' && window._logicIsFormula(raw)){
+    const logic = _buildLogicFromFormula(d);
+    if(logic) return;
   }
 
   // Support multi-line system: formulaLines array or single raw
@@ -916,7 +1229,9 @@ async function buildFormulaGraph(formulaEl){
 
   const lineColors = (_theme&&_theme.colors) ? _theme.colors.slice(0,7) : ['#6366f1','#34d399','#f472b6','#fbbf24','#67e8f9','#fb923c','#a78bfa'];
 
-  const raw_result = _renderGraph(exprs, lines, {w:800, h:560, color, lineColors, bg, isDark, xMin, xMax, step, yMin, yMax, conditions});
+  const showLab = existing ? (existing.graphShowLabel !== false) : true;
+  const raw_result = _renderGraph(exprs, lines, {w:800, h:560, color, lineColors, bg, isDark, xMin, xMax, step, yMin, yMax, conditions,
+    showLabels: showLab});
   const result = await _addMathLabel(raw_result);
 
   const out = _upsertLinkedGraph(d, {
@@ -928,6 +1243,7 @@ async function buildFormulaGraph(formulaEl){
     graphBg:bg, graphDark:isDark,
     graphXMin:xMin, graphXMax:xMax, graphStep:step,
     graphYMin:yMin, graphYMax:yMax,
+    graphShowLabel: showLab,
   });
   if(typeof toast==='function') toast(out.existing ? 'График обновлён' : 'График построен','ok');
 }
@@ -940,15 +1256,19 @@ function syncGraphProps(){
   if(!d || d.type !== 'graph') return;
   const get = id => document.getElementById(id);
   const isChem = d.graphKind === 'chem';
+  const isLogic = d.graphKind === 'logic';
+  const isDiag = isChem || isLogic;
   const ph = document.querySelector('#graphprops .ph');
-  if(ph) ph.textContent = isChem ? '🧪 Структура' : '📈 График';
+  if(ph) ph.textContent = isChem ? '🧪 Структура' : isLogic ? '⚡ Логическая схема' : '📈 График';
   const rangeBlock = document.getElementById('gp-range-block');
-  if(rangeBlock) rangeBlock.style.display = isChem ? 'none' : '';
+  if(rangeBlock) rangeBlock.style.display = isDiag ? 'none' : '';
   const chemBlock = document.getElementById('gp-chem-block');
-  if(chemBlock) chemBlock.style.display = isChem ? 'flex' : 'none';
+  if(chemBlock) chemBlock.style.display = isDiag ? 'flex' : 'none';
   const rebuildBtn = document.querySelector('#graphprops button.mbtn-sm');
-  if(rebuildBtn) rebuildBtn.textContent = isChem ? '🔄 Перестроить структуру' : '🔄 Перестроить';
-  if(isChem){
+  if(rebuildBtn) rebuildBtn.textContent = isChem ? '🔄 Перестроить структуру'
+    : isLogic ? '🔄 Перестроить схему'
+    : '🔄 Перестроить';
+  if(isDiag){
     const fg = d.graphColor || '#ffffff';
     const bg = d.graphBg || '';
     if(get('gp-chem-fg-preview')) get('gp-chem-fg-preview').style.background = fg;
@@ -964,14 +1284,36 @@ function syncGraphProps(){
       : '';
     if(get('gp-chem-bg-op')) get('gp-chem-bg-op').value = d.graphBgOp != null ? d.graphBgOp : 1;
     if(get('gp-chem-bg-blur')) get('gp-chem-bg-blur').value = d.graphBgBlur != null ? d.graphBgBlur : 0;
+    const showF = document.getElementById('gp-chem-show-formula');
+    if(showF){
+      showF.checked = isLogic
+        ? (d.logicShowFormula !== false)
+        : (d.chemShowFormula !== false);
+    }
   }
   if(get('gp-xmin')) get('gp-xmin').value = d.graphXMin != null ? d.graphXMin : -10;
   if(get('gp-xmax')) get('gp-xmax').value = d.graphXMax != null ? d.graphXMax :  10;
   if(get('gp-ymin')) get('gp-ymin').value = d.graphYMin != null ? d.graphYMin : '';
   if(get('gp-ymax')) get('gp-ymax').value = d.graphYMax != null ? d.graphYMax : '';
   if(get('gp-step')) get('gp-step').value = d.graphStep != null ? d.graphStep :   1;
+  const showLbl = document.getElementById('gp-show-label');
+  if(showLbl) showLbl.checked = d.graphShowLabel !== false;
 }
 window.syncGraphProps = syncGraphProps;
+
+function setGraphShowLabel(on){
+  if(!sel) return;
+  let d = slides[cur] && slides[cur].els.find(x => x.id === sel.dataset.id);
+  if(!d || d.type !== 'graph' || d.graphKind === 'chem' || d.graphKind === 'logic') return;
+  if(typeof pushUndo==='function') pushUndo();
+  d = slides[cur] && slides[cur].els.find(x => x.id === sel.dataset.id);
+  if(!d || d.type !== 'graph') return;
+  d.graphShowLabel = !!on;
+  const tog = document.getElementById('gp-show-label');
+  if(tog) tog.checked = d.graphShowLabel !== false;
+  rebuildGraphFromProps();
+}
+window.setGraphShowLabel = setGraphShowLabel;
 
 let _graphRangeTimer = null;
 function updateGraphRange(){
@@ -988,6 +1330,10 @@ async function rebuildGraphFromProps(){
   // Chemistry structure — re-render from linked formula / stored latex
   if(d.graphKind === 'chem' && typeof _rerenderChemGraph === 'function'){
     _rerenderChemGraph(d);
+    return;
+  }
+  if(d.graphKind === 'logic' && typeof _rerenderLogicGraph === 'function'){
+    _rerenderLogicGraph(d);
     return;
   }
 
@@ -1015,6 +1361,7 @@ async function rebuildGraphFromProps(){
     w:800, h:560, color:d.graphColor, lineColors:lColors, bg:d.graphBg, isDark:d.graphDark,
     xMin:xMinV, xMax:xMaxV, step:stepV,
     yMin:d.graphYMin, yMax:d.graphYMax,
+    showLabels: d.graphShowLabel !== false,
   });
   const result = await _addMathLabel(raw_result);
   if(!result.error){

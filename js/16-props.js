@@ -13,7 +13,6 @@ function syncProps(){
   const ep=document.getElementById('elprops'),ns=document.getElementById('nosel');
   const tp=document.getElementById('tprops'),shp=document.getElementById('shprops'),ap=document.getElementById('animprops');
   const sp=document.getElementById('slide-props');
-  const spn=document.getElementById('slide-props-pn');
   const hp=document.getElementById('hoverprops');
   const imp=document.getElementById('imgprops');
   const cdp=document.getElementById('codeprops');
@@ -21,6 +20,8 @@ function syncProps(){
   const icp=document.getElementById('iconprops');
   const tblp=document.getElementById('tableprops');
   const genp=document.getElementById('genprops');
+  const ptep=document.getElementById('pteprops');
+  const flipp=document.getElementById('flipprops');
   const qrp=document.getElementById('qrprops');
   const fmp=document.getElementById('formulaprops');
   if(!sel || multiSel.size > 1){
@@ -48,6 +49,8 @@ function syncProps(){
   const isGen   = t==='applet' && sel.dataset.appletId==='generator';
   const isCounter = t==='applet' && sel.dataset.appletId==='counter';
   const isTimer = t==='applet' && (sel.dataset.appletId==='timer'||sel.dataset.appletId==='clock');
+  const isPeriodic = t==='applet' && sel.dataset.appletId==='periodic';
+  const isFlip = t==='applet' && sel.dataset.appletId==='flip';
   // Проверяем isQR через dataset И через данные slides (на случай если dataset не обновился)
   const _qrD = (t==='image') ? (slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id)) : null;
   const isQR = t==='image' && (sel.dataset.isQR==='true' || !!(_qrD&&_qrD._isQR));
@@ -71,13 +74,16 @@ function syncProps(){
   if(cdp){cdp.style.display=t==='code'?'flex':'none';cdp.style.flexDirection='column';}
   const hfp=document.getElementById('hfprops');
   if(hfp){hfp.style.display=t==='htmlframe'?'flex':'none';
-    if(t==='htmlframe'&&typeof _hfSyncCodeBtn==='function')_hfSyncCodeBtn();}
+    if(t==='htmlframe'&&typeof syncHfProps==='function')syncHfProps();
+    else if(t==='htmlframe'&&typeof _hfSyncCodeBtn==='function')_hfSyncCodeBtn();}
   if(mdp){mdp.style.display=t==='markdown'?'flex':'none';mdp.style.flexDirection='column';}
   if(fmp){fmp.style.display=t==='formula'?'flex':'none';fmp.style.flexDirection='column';if(t==='formula'&&typeof syncFormulaProps==='function')syncFormulaProps();}
   const gmp=document.getElementById('graphprops');
   if(gmp){gmp.style.display=t==='graph'?'block':'none';if(t==='graph'&&typeof syncGraphProps==='function')syncGraphProps();}
   if(tblp){tblp.style.display=t==='table'?'flex':'none';tblp.style.flexDirection='column';if(t==='table')syncTableProps();}
   if(genp){genp.style.display=(isGen||isCounter||isTimer)?'flex':'none';genp.style.flexDirection='column';if(isGen)syncGenProps();if(isCounter&&typeof syncCounterProps==='function')syncCounterProps();if(isTimer&&sel.dataset.appletId==='clock'&&typeof syncClockProps==='function')syncClockProps();else if(isTimer&&typeof syncTimerProps==='function')syncTimerProps();}
+  if(ptep){ptep.style.display=isPeriodic?'flex':'none';ptep.style.flexDirection='column';if(isPeriodic&&typeof syncPeriodicProps==='function')syncPeriodicProps();}
+  if(flipp){flipp.style.display=isFlip?'flex':'none';flipp.style.flexDirection='column';if(isFlip&&typeof syncFlipProps==='function')syncFlipProps();}
   if(qrp){qrp.style.display=isQR?'flex':'none';qrp.style.flexDirection='column';if(isQR)syncQRProps();}
   if(icp){
     icp.style.display=t==='icon'?'flex':'none';icp.style.flexDirection='column';
@@ -114,11 +120,19 @@ function syncProps(){
         else if (_fsVals.length === 0 && _fsFromCs) { _inp.value = _pxToPt(_fsFromCs); _inp.placeholder = ''; } // cs fallback
       }
     } catch(e){}
-    const col=m(/(?:^|;|\s)color:(#[0-9a-fA-F]{3,8})/,'#ffffff');
+    const colFromCs=m(/(?:^|;|\s)color:(#[0-9a-fA-F]{3,8})/,'#ffffff');
     try{
-      const _sw=document.getElementById('p-col-preview');if(_sw)_sw.style.background=col;
       const _dCol=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
       const _sr=_dCol&&_dCol.textColorScheme;
+      // При scheme-цвете квадратик должен брать актуальный цвет из текущей темы,
+      // а не устаревший hex из cs (после смены схемы номер «11» верный, а swatch — нет).
+      let col=colFromCs;
+      if(_sr&&typeof _resolveSchemeColor==='function'){
+        const _th=typeof _activeThemeForScheme==='function'?_activeThemeForScheme():null;
+        const _resolved=_th?_resolveSchemeColor(_sr,_th):null;
+        if(_resolved) col=_resolved;
+      }
+      const _sw=document.getElementById('p-col-preview');if(_sw)_sw.style.background=col;
       document.getElementById('p-hex').value=(typeof _colorFieldDisplay==='function')?_colorFieldDisplay(col,_sr):col;
     }catch(e){}
     // Sync text color gradient UI
@@ -163,18 +177,30 @@ function syncProps(){
     }catch(e){}
     document.getElementById('ft-b').classList.toggle('on',/font-weight:(700|800|900)/.test(cs));
     document.getElementById('ft-i').classList.toggle('on',cs.includes('font-style:italic'));
-    document.getElementById('ft-u').classList.toggle('on',cs.includes('text-decoration:underline'));
+    if (typeof _rtUpdateUnderlineBtn === 'function' && typeof _rtCurrentUnderline === 'function') {
+      _rtUpdateUnderlineBtn(_rtCurrentUnderline(sel));
+    } else if (typeof _rtUpdateUnderlineBtn === 'function' && typeof _rtUnderlineFromStyleAttr === 'function') {
+      _rtUpdateUnderlineBtn(_rtUnderlineFromStyleAttr(cs));
+    } else {
+      document.getElementById('ft-u').classList.toggle('on',/text-decoration\s*:[^;]*underline/i.test(cs));
+    }
     const aln=m(/text-align:(\w+)/,'left');
     ['al','ac','ar'].forEach((id,i)=>document.getElementById('ft-'+id).classList.toggle('on',['left','center','right'][i]===aln));
     // Vertical align
     const va=sel.dataset.valign||'top';
     ['vt','vm','vb'].forEach((id,i)=>document.getElementById('ft-'+id).classList.toggle('on',['top','middle','bottom'][i]===va));
     // Background color
-    const bgCol=sel.dataset.textBg||'';
+    const bgColRaw=sel.dataset.textBg||'';
     const bgOp=parseFloat(sel.dataset.textBgOp!=null?sel.dataset.textBgOp:1);
     try{
-      const _bgsw=document.getElementById('p-bg-swatch-inner');if(_bgsw)_bgsw.style.background=bgCol||'';
       const _dBg=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+      let bgCol=bgColRaw;
+      if(bgCol&&_dBg&&_dBg.textBgScheme&&typeof _resolveSchemeColor==='function'){
+        const _th=typeof _activeThemeForScheme==='function'?_activeThemeForScheme():null;
+        const _resolved=_th?_resolveSchemeColor(_dBg.textBgScheme,_th):null;
+        if(_resolved) bgCol=_resolved;
+      }
+      const _bgsw=document.getElementById('p-bg-swatch-inner');if(_bgsw)_bgsw.style.background=bgCol||'';
       document.getElementById('p-bg-hex').value=bgCol
         ? ((typeof _colorFieldDisplay==='function')?_colorFieldDisplay(bgCol,_dBg&&_dBg.textBgScheme):bgCol)
         : '';

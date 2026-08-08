@@ -1337,6 +1337,7 @@ window.ANIM_ENGINE_META = {
   shake: { engine: 'css', export: 'css' },
   flash: { engine: 'css', export: 'css' },
   rotate: { engine: 'waapi', export: 'waapi' },
+  recolor: { engine: 'custom', export: 'custom' },
   splitHalf: { engine: 'custom', export: 'splitHalf' },
   moveTo: { engine: 'waapi', export: 'waapi' },
   orbitTo: { engine: 'waapi', export: 'waapi' },
@@ -1678,6 +1679,7 @@ window._resetSlideAnimEl = function(el, d) {
   el.style.pointerEvents = '';
   if (typeof window._resetCaptionSlide === 'function') window._resetCaptionSlide(el, true);
   if (typeof window._resetSplitHalf === 'function') window._resetSplitHalf(el, true);
+  if (typeof window._resetRecolor === 'function') window._resetRecolor(el);
   if (typeof window._resetLiveAnimPreview === 'function') window._resetLiveAnimPreview(el, true);
   if (typeof window._resetParticles === 'function') window._resetParticles(el);
   el.classList.remove('has-particles');
@@ -2657,4 +2659,213 @@ window.renderAnimTimelineBar = function(slide) {
   if (typeof CFG_ANIMATIONS !== 'undefined') window.applyAnimConfig(CFG_ANIMATIONS);
   if (typeof window.verifyAnimParity === 'function') window.verifyAnimParity();
 
+})();
+
+// ══════════════ RECOLOR («Цвет») — силуэт по контуру ══════════════
+(function(){
+  function _recolorNormHex(c){
+    var h=String(c||'#000000').trim();
+    if(/^#[0-9a-fA-F]{3}$/.test(h)) h='#'+h[1]+h[1]+h[2]+h[2]+h[3]+h[3];
+    if(!/^#[0-9a-fA-F]{6}$/.test(h)) h='#000000';
+    return h.toLowerCase();
+  }
+  function _recolorRgb(hex){
+    hex=_recolorNormHex(hex);
+    return {
+      r:parseInt(hex.slice(1,3),16)/255,
+      g:parseInt(hex.slice(3,5),16)/255,
+      b:parseInt(hex.slice(5,7),16)/255
+    };
+  }
+  function _recolorSvgRoot(){
+    var svg=document.getElementById('_recolor-svg-filters');
+    if(!svg){
+      svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+      svg.id='_recolor-svg-filters';
+      svg.setAttribute('aria-hidden','true');
+      svg.style.cssText='position:absolute;width:0;height:0;overflow:hidden;pointer-events:none';
+      document.body.appendChild(svg);
+    }
+    return svg;
+  }
+  // t=0 — сплошной цвет (силуэт), t=1 — исходные цвета
+  function _recolorMatrixValues(r,g,b,t){
+    var d=t, o=1-t;
+    return d.toFixed(4)+' 0 0 0 '+(r*o).toFixed(4)+' 0 '+d.toFixed(4)+' 0 0 '+(g*o).toFixed(4)+' 0 0 '+d.toFixed(4)+' 0 '+(b*o).toFixed(4)+' 0 0 0 1 0';
+  }
+  function _recolorEase(p){
+    return p<0.5 ? 2*p*p : 1-Math.pow(-2*p+2,2)/2;
+  }
+  function _recolorFilterId(el){
+    if(!el._recolorUid){
+      el._recolorUid=(el.dataset&&el.dataset.id) ? String(el.dataset.id) : ('r'+Math.random().toString(36).slice(2,9));
+    }
+    return '_recolor_live_'+el._recolorUid;
+  }
+  function _recolorGetMat(el){
+    var id=_recolorFilterId(el);
+    var svg=_recolorSvgRoot();
+    var filter=document.getElementById(id);
+    var mat;
+    if(!filter){
+      filter=document.createElementNS('http://www.w3.org/2000/svg','filter');
+      filter.setAttribute('id',id);
+      filter.setAttribute('color-interpolation-filters','sRGB');
+      mat=document.createElementNS('http://www.w3.org/2000/svg','feColorMatrix');
+      mat.setAttribute('type','matrix');
+      filter.appendChild(mat);
+      svg.appendChild(filter);
+    } else {
+      mat=filter.querySelector('feColorMatrix');
+    }
+    return { id:id, mat:mat, filter:filter };
+  }
+  function _recolorVisualTargets(el,d){
+    var type=(d&&d.type)||(el&&el.dataset&&el.dataset.type)||'';
+    if(type==='text'){
+      var tel=el.querySelector('.tel')||el.querySelector('.ec');
+      return tel ? [tel] : [];
+    }
+    var img=el.querySelector('img');
+    if(img) return [img];
+    var svgEl=el.querySelector('svg');
+    if(svgEl) return [svgEl];
+    var ec=el.querySelector('.ec')||el;
+    return [ec];
+  }
+  function _recolorApplyT(el,nodes,hex,t){
+    var rgb=_recolorRgb(hex);
+    var pack=_recolorGetMat(el);
+    pack.mat.setAttribute('values',_recolorMatrixValues(rgb.r,rgb.g,rgb.b,t));
+    var url='url(#'+pack.id+')';
+    nodes.forEach(function(node){
+      if(node._recolorSavedFilter==null) node._recolorSavedFilter=node.style.filter||'';
+      node.style.filter=url;
+    });
+    el._recolorT=t;
+    el._recolorHex=hex;
+  }
+  function _recolorClearNodes(el,nodes){
+    (nodes||[]).forEach(function(node){
+      node.style.filter=node._recolorSavedFilter!=null?node._recolorSavedFilter:'';
+      node._recolorSavedFilter=null;
+    });
+    var id=el&&el._recolorUid ? '_recolor_live_'+el._recolorUid : null;
+    var filter=id ? document.getElementById(id) : null;
+    if(filter&&filter.parentNode) filter.parentNode.removeChild(filter);
+    if(el){ el._recolorT=null; el._recolorHex=null; }
+  }
+  function _recolorCancelAnim(el){
+    if(!el) return;
+    if(el._recolorRaf){ cancelAnimationFrame(el._recolorRaf); el._recolorRaf=null; }
+    if(el._recolorTimers){ el._recolorTimers.forEach(clearTimeout); el._recolorTimers=[]; }
+  }
+  function _recolorAnimate(el,nodes,hex,fromT,toT,dur,onDone){
+    _recolorCancelAnim(el);
+    el._recolorTimers=[];
+    _recolorApplyT(el,nodes,hex,fromT);
+    var rgb=_recolorRgb(hex);
+    var pack=_recolorGetMat(el);
+    var t0=performance.now();
+    var durMs=Math.max(1,dur||600);
+    function frame(now){
+      var p=Math.min(1,(now-t0)/durMs);
+      var t=fromT+(toT-fromT)*_recolorEase(p);
+      pack.mat.setAttribute('values',_recolorMatrixValues(rgb.r,rgb.g,rgb.b,t));
+      el._recolorT=t;
+      if(p<1){
+        el._recolorRaf=requestAnimationFrame(frame);
+      } else {
+        el._recolorRaf=null;
+        if(toT>=0.999){
+          _recolorClearNodes(el,nodes);
+          el._recolorTargets=null;
+          el._recolorPrepared=false;
+        } else {
+          _recolorApplyT(el,nodes,hex,toT);
+        }
+        if(onDone) onDone();
+      }
+    }
+    el._recolorRaf=requestAnimationFrame(frame);
+  }
+  function _recolorRestore(el,nodes){
+    _recolorCancelAnim(el);
+    _recolorClearNodes(el,nodes||el._recolorTargets||[]);
+    el._recolorTargets=null;
+    el._recolorPrepared=false;
+  }
+  function _recolorFirstAnim(d){
+    var anims=(d&&d.anims)||[];
+    for(var i=0;i<anims.length;i++){
+      if(anims[i]&&anims[i].name==='recolor') return anims[i];
+    }
+    return null;
+  }
+  function _recolorNeedsPrepare(d){
+    var anims=(d&&d.anims)||[];
+    for(var i=0;i<anims.length;i++){
+      var a=anims[i];
+      if(a&&a.name==='recolor'&&!a.recolorInvert) return a;
+    }
+    return null;
+  }
+  function _recolorPrepareEl(el,d){
+    if(!el||!d) return;
+    var a=_recolorNeedsPrepare(d);
+    if(!a) return;
+    _recolorCancelAnim(el);
+    if(el._recolorTargets) _recolorClearNodes(el,el._recolorTargets);
+    var hex=_recolorNormHex(a.recolorColor||'#000000');
+    var nodes=_recolorVisualTargets(el,d);
+    if(!nodes.length) return;
+    _recolorApplyT(el,nodes,hex,0);
+    el._recolorTargets=nodes;
+    el._recolorPrepared=true;
+  }
+  function _fireRecolorAnim(el,d,a,delayMs,opts){
+    opts=opts||{};
+    if(!el||!a) return;
+    var delay=typeof delayMs==='number'?delayMs:(a.delay||0);
+    var dur=Math.max(50,a.duration||600);
+    var hex=_recolorNormHex(a.recolorColor||'#000000');
+    var invert=!!a.recolorInvert;
+    _recolorCancelAnim(el);
+    el._recolorTimers=[];
+    var nodes=el._recolorTargets;
+    var already=!!el._recolorPrepared&&!!nodes&&!invert;
+    if(!already){
+      if(el._recolorTargets) _recolorClearNodes(el,el._recolorTargets);
+      nodes=_recolorVisualTargets(el,d);
+      if(!nodes.length) return;
+      el._recolorTargets=nodes;
+    }
+    if(!invert){
+      if(!already) _recolorApplyT(el,nodes,hex,0);
+      el._recolorPrepared=true;
+      el._recolorTimers.push(setTimeout(function(){
+        _recolorAnimate(el,nodes,hex,0,1,dur,null);
+      }, delay));
+    } else {
+      el._recolorPrepared=false;
+      el._recolorTimers.push(setTimeout(function(){
+        _recolorAnimate(el,nodes,hex,1,0,dur,function(){
+          if(opts.preview){
+            el._recolorTimers.push(setTimeout(function(){
+              _recolorAnimate(el,nodes,hex,0,1,Math.min(400,dur),null);
+            }, 200));
+          }
+        });
+      }, delay));
+    }
+  }
+  function _resetRecolor(el){
+    if(!el) return;
+    _recolorRestore(el,el._recolorTargets);
+  }
+  window._recolorHasAnim=function(d){ return !!_recolorFirstAnim(d); };
+  window._recolorNeedsPrepare=_recolorNeedsPrepare;
+  window._recolorPrepareEl=_recolorPrepareEl;
+  window._fireRecolorAnim=_fireRecolorAnim;
+  window._resetRecolor=_resetRecolor;
 })();

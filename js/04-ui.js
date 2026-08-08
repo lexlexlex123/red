@@ -212,8 +212,8 @@ function setAR(ratio,btn){
       if(d._isDecor){d.w=canvasW;d.h=canvasH;return;}
       d.x=Math.round(d.x*sx);
       d.y=Math.round(d.y*sy);
-      if(noStretch.has(d.type) || (d.type==='graph' && d.graphKind==='chem')){
-        // Keep size (chem structures must not stretch text/formula)
+      if(noStretch.has(d.type) || (d.type==='graph' && (d.graphKind==='chem'||d.graphKind==='logic'))){
+        // Keep size (chem/logic diagrams must not stretch)
         return;
       }
       // Text, code, markdown, applets, function graphs scale with canvas
@@ -548,7 +548,36 @@ function _repositionHandlesOverlay(el) {
     const pos = positions[rh.dataset.cls];
     if (pos) { rh.style.left = pos.x + 'px'; rh.style.top = pos.y + 'px'; }
   });
-  // Pivot handle is inside element — rotates automatically with CSS, no reposition needed
+  // Keep selection rectangle in sync with rotation (handles already track corners)
+  const layer = document.getElementById('sel-frames-layer');
+  if (layer) {
+    const frames = layer.querySelectorAll('.sel-frame');
+    // Single selection: one frame; multi: match by position/size of this el
+    if (frames.length === 1 || (typeof multiSel === 'undefined' || !multiSel || multiSel.size <= 1)) {
+      const frame = frames[0];
+      if (frame) {
+        frame.style.left = elL + 'px';
+        frame.style.top = elT + 'px';
+        frame.style.width = elW + 'px';
+        frame.style.height = elH + 'px';
+        frame.style.transformOrigin = 'center center';
+        frame.style.transform = elDeg ? ('rotate(' + elDeg + 'deg)') : '';
+        if (el.dataset && el.dataset.appletId === 'flip') {
+          frame.style.borderRadius = ((typeof FLIP_RX === 'number' ? FLIP_RX : 14) + 'px');
+        }
+      }
+    } else if (typeof _updateSelFrames === 'function') {
+      _updateSelFrames();
+    }
+  }
+  // Reposition pivot handle (stays on pivot point in canvas space)
+  const _pvh = document.getElementById('pivot-handle');
+  if (_pvh && typeof _getPivotCanvas === 'function') {
+    const pv = _getPivotCanvas(el);
+    const hs = 10;
+    _pvh.style.left = (pv.x - hs / 2) + 'px';
+    _pvh.style.top = (pv.y - hs / 2) + 'px';
+  }
   // Reposition arc handles
   const d2 = typeof slides!=='undefined' && slides[cur] && slides[cur].els.find(e=>e.id===el.dataset.id);
   document.querySelectorAll('.arc-handle').forEach(h => {
@@ -1274,6 +1303,26 @@ let _rotEl = null; // currently selected element for rotation
 
 // ── Pivot handle ──────────────────────────────────────────────────────
 // Stored as d.rotPivotX/Y = offset from element center in px (0,0=center)
+/** Set CSS transform-origin so rotate animations pivot around rotPivot (offset from center). */
+window._applyRotPivotOrigin = function (el, d) {
+  if (!el) return;
+  const w = (d && d.w != null) ? +d.w : (parseFloat(el.style.width) || el.offsetWidth || 0);
+  const h = (d && d.h != null) ? +d.h : (parseFloat(el.style.height) || el.offsetHeight || 0);
+  let px = 0, py = 0;
+  if (d) {
+    px = d.rotPivotX != null ? +d.rotPivotX : 0;
+    py = d.rotPivotY != null ? +d.rotPivotY : 0;
+  } else {
+    px = +el.dataset.rotPivotX || 0;
+    py = +el.dataset.rotPivotY || 0;
+  }
+  if (!px && !py) {
+    el.style.transformOrigin = '';
+    return;
+  }
+  el.style.transformOrigin = (w / 2 + px) + 'px ' + (h / 2 + py) + 'px';
+};
+
 function _getPivotCanvas(el) {
   const L=parseInt(el.style.left)||0, T=parseInt(el.style.top)||0;
   const W=parseInt(el.style.width)||0, H=parseInt(el.style.height)||0;
@@ -1308,6 +1357,10 @@ function _buildPivotHandle(overlay, el) {
   ph.addEventListener('mousedown', e => {
     e.stopPropagation(); e.preventDefault();
     window._pivotDragging = true;
+    window._anyDragging = true;
+    // Cancel rubber-band if capture-phase already started it
+    const _rb = document.getElementById('rubberband');
+    if (_rb) _rb.style.display = 'none';
     ph.style.cursor = 'grabbing';
     const deg = parseFloat(el.dataset.rot||0)*Math.PI/180;
     const cosr = Math.cos(-deg), sinr = Math.sin(-deg); // inverse rot for canvas→local
@@ -1354,6 +1407,7 @@ function _buildPivotHandle(overlay, el) {
     };
     const onUp = () => {
       window._pivotDragging = false;
+      window._anyDragging = false;
       ph.style.cursor = 'grab';
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);

@@ -633,6 +633,9 @@ const APPLETS=[
   {id:'qr',         name:'QR Code',    nameRu:'QR-код',       desc:'Generate QR code',   descRu:'Сгенерировать QR-код', icon:'▦', hasProps:true,        aspectRatio:1},
   {id:'generator',  name:'Generator',  nameRu:'Генератор', desc:'Random number',      descRu:'Случайное число', icon:'🎲', htmlFn:(p,cfg)=>getGeneratorHTML(cfg), aspectRatio:null, hasProps:true},
   {id:'counter',    name:'Counter',    nameRu:'Счётчик',   desc:'Click counter',      descRu:'Счётчик по клику', icon:'🔢', htmlFn:(p,cfg)=>getCounterHTML(cfg), aspectRatio:null, hasProps:true},
+  {id:'periodic',   name:'Periodic table', nameRu:'Таблица Менделеева', desc:'Element card', descRu:'Карточка химического элемента', icon:'🧪', htmlFn:(p,cfg)=>typeof getPeriodicHTML==='function'?getPeriodicHTML(p,cfg):'', aspectRatio:280/320, hasProps:true},
+  {id:'flip',       name:'Flip card',  nameRu:'Перевертыш',  desc:'Two-sided flip card', descRu:'Двусторонняя карточка', icon:'⇆', htmlFn:(p,cfg)=>typeof getFlipHTML==='function'?getFlipHTML(p,cfg):'', aspectRatio:300/400, hasProps:true},
+  {id:'quote',      name:'Quote',      nameRu:'Цитата',      desc:'Random famous quote', descRu:'Случайная цитата из банка', icon:'❝', insertFn:()=>typeof insertQuoteText==='function'&&insertQuoteText()},
 ];
 
 // Get rendered HTML for an applet (theme-aware if htmlFn exists)
@@ -720,6 +723,21 @@ function insertQRAppletAt(text, clientX, clientY){
 // Insert applet onto current slide
 function insertApplet(a, opts){
   opts=opts||{};
+  // Таблица Менделеева — сначала выбор элемента
+  if(a.id==='periodic' && !opts.pteSymbol){
+    if(typeof openPeriodicModal==='function') openPeriodicModal({mode:'insert'});
+    return;
+  }
+  // Цитата — обычный текстовый блок со случайной цитатой
+  if(a.id==='quote'){
+    if(typeof insertQuoteText==='function') insertQuoteText();
+    return;
+  }
+  // Перевертыш — двусторонняя карточка
+  if(a.id==='flip'){
+    if(typeof insertFlipApplet==='function') insertFlipApplet();
+    return;
+  }
   if(typeof pushUndo==="function")pushUndo();
   const aspect=a.aspectRatio||null;
   const w=300, h=aspect?Math.round(w/aspect):320;
@@ -1185,6 +1203,28 @@ window.ensureAppletHtmlFromData = function(d){
   else if(d.appletId==='clock') d.appletHtml=getClockHTML(_genAppletCfg(d, p));
   else if(d.appletId==='generator') d.appletHtml=getGeneratorHTML(_genAppletCfg(d, p));
   else if(d.appletId==='counter') d.appletHtml=getCounterHTML(_counterAppletCfg(d, p));
+  else if(d.appletId==='periodic' && typeof getPeriodicHTML==='function'){
+    d.appletHtml=getPeriodicHTML(p,{
+      pteSymbol:d.pteSymbol,pteIcon:!!d.pteIcon,
+      genBg:d.genBg,genColor:d.genColor,genBgOp:d.genBgOp,genBgBlur:d.genBgBlur,
+      genBgScheme:d.genBgScheme,genColorScheme:d.genColorScheme
+    });
+  }
+  else if(d.appletId==='flip' && typeof getFlipHTML==='function'){
+    d.appletHtml=getFlipHTML(p,{
+      flipFace:d.flipFace,flipFrontText:d.flipFrontText,flipFrontImg:d.flipFrontImg,
+      flipBackText:d.flipBackText,flipBackImg:d.flipBackImg,
+      genBg:d.genBg,genColor:d.genColor,genBgOp:d.genBgOp,genBgBlur:d.genBgBlur,
+      genBgScheme:d.genBgScheme,genColorScheme:d.genColorScheme
+    });
+  }
+  else if(d.appletId==='notes' && typeof getNotesHTML==='function'){
+    d.appletHtml=getNotesHTML(p,{notesText:d.notesText,notesBg:d.notesBg});
+  }
+  else if(!d.appletHtml){
+    const a=(typeof APPLETS!=='undefined')?APPLETS.find(x=>x.id===d.appletId):null;
+    if(a&&typeof a.htmlFn==='function') d.appletHtml=a.htmlFn(p);
+  }
 };
 
 window.syncAllAppletHtmlFromData = function(){
@@ -1234,6 +1274,25 @@ function _rebuildThemedAppletHtml(d, p){
     else d.appletHtml=getClockHTML(cfg);
     return;
   }
+  if(d.appletId==='periodic' && typeof getPeriodicHTML==='function'){
+    _remapSchemeColors(d, p);
+    d.appletHtml=getPeriodicHTML(p,{
+      pteSymbol:d.pteSymbol,pteIcon:!!d.pteIcon,
+      genBg:d.genBg,genColor:d.genColor,genBgOp:d.genBgOp,genBgBlur:d.genBgBlur,
+      genBgScheme:d.genBgScheme,genColorScheme:d.genColorScheme
+    });
+    return;
+  }
+  if(d.appletId==='flip' && typeof getFlipHTML==='function'){
+    _remapSchemeColors(d, p);
+    d.appletHtml=getFlipHTML(p,{
+      flipFace:d.flipFace,flipFrontText:d.flipFrontText,flipFrontImg:d.flipFrontImg,
+      flipBackText:d.flipBackText,flipBackImg:d.flipBackImg,
+      genBg:d.genBg,genColor:d.genColor,genBgOp:d.genBgOp,genBgBlur:d.genBgBlur,
+      genBgScheme:d.genBgScheme,genColorScheme:d.genColorScheme
+    });
+    return;
+  }
   if(d.appletId==='notes'){
     d.appletHtml=getNotesHTML(p, {notesText:d.notesText, notesBg:d.notesBg});
     return;
@@ -1270,6 +1329,8 @@ function _syncThemedAppletDom(d){
   else if(d.appletId==='timer'&&typeof refreshTimerEl==='function') refreshTimerEl(d.id, {domOnly:true});
   else if(d.appletId==='clock'&&typeof refreshClockEl==='function') refreshClockEl(d.id, {domOnly:true});
   else if(d.appletId==='notes'&&typeof refreshNotesEl==='function') refreshNotesEl(d.id, {domOnly:true});
+  else if(d.appletId==='periodic'&&typeof refreshPeriodicEl==='function') refreshPeriodicEl(d.id, {silent:true});
+  else if(d.appletId==='flip'&&typeof refreshFlipEl==='function') refreshFlipEl(d.id, {silent:true});
 }
 
 function _syncAppletPropsPanel(){
@@ -1279,6 +1340,8 @@ function _syncAppletPropsPanel(){
   if(d&&d.appletId==='generator'&&typeof syncGenProps==='function') syncGenProps();
   if(d&&d.appletId==='counter'&&typeof syncCounterProps==='function') syncCounterProps();
   if(d&&d.appletId==='timer'&&typeof syncTimerProps==='function') syncTimerProps();
+  if(d&&d.appletId==='periodic'&&typeof syncPeriodicProps==='function') syncPeriodicProps();
+  if(d&&d.appletId==='flip'&&typeof syncFlipProps==='function') syncFlipProps();
 }
 
 window.rebuildAppletHtmlForTheme = function(){
@@ -1295,9 +1358,23 @@ window.syncAppletDomAfterTheme = function(){
   if(!canvas) return;
   (slides[cur]?.els||[]).forEach(d=>{
     if(d.type!=='applet') return;
-    if(d.appletId!=='generator'&&d.appletId!=='counter'&&d.appletId!=='timer'&&d.appletId!=='clock'&&d.appletId!=='notes') return;
     const domEl=canvas.querySelector('[data-id="'+d.id+'"]');
     if(!domEl) return;
+    // periodic/flip: appletHtml уже пересобран + renderAll выставил srcdoc.
+    // Повторный немедленный srcdoc (sandbox без same-origin → contentDocument=null)
+    // даёт гонку и пустой iframe — только дописываем dataset.
+    if(d.appletId==='periodic'||d.appletId==='flip'){
+      if(d.appletHtml) domEl.dataset.appletHtml=d.appletHtml;
+      if(d.appletId==='periodic'){
+        if(d.pteSymbol) domEl.dataset.pteSymbol=d.pteSymbol;
+        if(d.genColor!=null) domEl.dataset.genColor=d.genColor||'';
+        if(d.genBg!=null) domEl.dataset.genBg=d.genBg||'';
+        domEl.dataset.genColorScheme=d.genColorScheme?JSON.stringify(d.genColorScheme):'';
+        domEl.dataset.genBgScheme=d.genBgScheme?JSON.stringify(d.genBgScheme):'';
+      }
+      return;
+    }
+    if(d.appletId!=='generator'&&d.appletId!=='counter'&&d.appletId!=='timer'&&d.appletId!=='clock'&&d.appletId!=='notes') return;
     _whenIframeReady(domEl.querySelector('iframe'), function(){ _syncThemedAppletDom(d); });
   });
   _syncAppletPropsPanel();

@@ -224,10 +224,10 @@ function mkResize(el,rh,cfg){
     // Applets with stored aspect ratio always resize proportionally from corners
     const _appletD=el.dataset.type==='applet'&&slides[cur]?slides[cur].els.find(x=>x.id===el.dataset.id):null;
     const appletAspect=_appletD&&_appletD._appletAspect||null;
-    // Chemistry structures: always keep aspect so formula/text don't stretch
+    // Chemistry / logic diagrams: always keep aspect so content doesn't stretch
     const isChemGraph=el.dataset.type==='graph'&&(
-      el.dataset.graphKind==='chem' ||
-      (slides[cur]&&(slides[cur].els.find(x=>x.id===el.dataset.id)||{}).graphKind==='chem')
+      el.dataset.graphKind==='chem' || el.dataset.graphKind==='logic' ||
+      (slides[cur]&&['chem','logic'].includes((slides[cur].els.find(x=>x.id===el.dataset.id)||{}).graphKind))
     );
     const mm=e2=>{
       if(typeof window._isPreviewActive==='function'&&window._isPreviewActive()){mu();return;}

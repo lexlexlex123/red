@@ -16,14 +16,17 @@
 <link rel="stylesheet" href="fonts/fonts.css">
 <script src="fonts/fonts-list.js"></script>
 <script src="fonts/fonts-data.js"></script>
-  <link rel="stylesheet" href="css/styles.css?v=13">
+  <link rel="stylesheet" href="css/styles.css?v=38">
 </head>
 <body>
 <div id="ribbon">
   <div id="ribbon-top">
     <div class="app-logo">
       <img class="app-logo-icon" src="icons/icon.svg" alt="" width="18" height="18">
-      <span id="app-name-span" data-i18n="appName">Слайды</span>
+      <span class="app-logo-title">
+        <span id="app-name-span" data-i18n="appName">Слайды</span>
+        <span class="app-logo-ver" id="app-logo-ver">v 6.4</span>
+      </span>
     </div>
     <input id="pres-title" type="text" value="" data-i18n-placeholder="newPresentation" placeholder="Новая презентация" spellcheck="false">
     <button id="new-pres-btn" onclick="newPresentation()" title="Новая презентация" style="background:transparent;border:1px solid var(--border2);color:var(--text2);width:24px;height:24px;border-radius:4px;cursor:pointer;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:.15s;margin-left:2px;" onmouseover="this.style.background='var(--surface3)';this.style.color='var(--text)'" onmouseout="this.style.background='transparent';this.style.color='var(--text2)'">+</button>
@@ -202,14 +205,31 @@
       </button>
       <div class="rglbl"><span data-i18n="grpPlayback">Воспроизведение</span></div>
     </div>
+    <!-- DISPLAY DURING PREVIEW -->
+    <div class="rg" data-tab="slideshow" style="display:none">
+      <button id="p-footer-btn" class="rb" onclick="togglePresFooter()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 17h18"/></svg>
+        <span class="rbl" data-i18n="presFooter">Футер</span>
+      </button>
+      <button id="p-sidenav-btn" class="rb" onclick="togglePresSideNav()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="11 17 6 12 11 7"/><polyline points="13 7 18 12 13 17"/></svg>
+        <span class="rbl" data-i18n="presSideNav">Стрелки</span>
+      </button>
+      <button id="p-esc-btn" class="rb" onclick="togglePresEscBtn()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        <span class="rbl" data-i18n="presEscBtn">Esc</span>
+      </button>
+      <div class="rglbl"><span data-i18n="grpDisplay">Отображение</span></div>
+    </div>
   </div>
   </div><!-- /ribbon-left -->
   <div id="ribbon-right">
-    <button class="rb" onclick="document.getElementById('fileup').click()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span class="rbl" data-i18n="btnImport">Импорт</span></button>
+    <button class="rb" onclick="openImportGallery()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span class="rbl" data-i18n="btnImport">Импорт</span></button>
     <div id="export-wrap" class="export-wrap">
       <button class="rb pri" id="export-btn" type="button" onclick="toggleExportMenu(event)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span class="rbl" data-i18n="btnExport">Экспорт</span></button>
       <div id="export-menu" class="export-menu" style="display:none">
-        <button type="button" class="export-menu-item" onclick="doExport('html')"><span class="export-menu-ext">.html</span><span data-i18n="exportFmtHtml">HTML-презентация</span></button>
+        <button type="button" class="export-menu-item" onclick="doExport('lite')"><span class="export-menu-ext">.json</span><span data-i18n="exportFmtHtmlLite">Проект (компактный)</span></button>
+        <button type="button" class="export-menu-item" onclick="doExport('html')"><span class="export-menu-ext">.html</span><span data-i18n="exportFmtHtml">HTML полный</span></button>
         <button type="button" class="export-menu-item" onclick="doExport('pdf')"><span class="export-menu-ext">.pdf</span><span data-i18n="exportFmtPdf">PDF-документ</span></button>
         <button type="button" class="export-menu-item" onclick="doExport('odp')"><span class="export-menu-ext">.odp</span><span data-i18n="exportFmtOdp">OpenDocument</span></button>
       </div>
@@ -218,7 +238,7 @@
   </div><!-- /ribbon-bottom -->
 </div>
 <input type="file" id="imgup" accept="image/*" style="display:none" onchange="handleImg(event)">
-<input type="file" id="fileup" accept=".html,.pptx,.ppt,.odp" style="display:none" onchange="handleFileImport(event)">
+<input type="file" id="fileup" accept=".html,.htm,.json,.slides.json,.pptx,.ppt,.odp,image/*,.svg,video/*,audio/*,.md,.markdown,.js,.mjs,.ts,.tsx,.py,.rs,.go,.java,.cpp,.c,.h,.cs,.css,.sql,.sh,.bash,.yml,.yaml,.txt,.xml" style="display:none" onchange="handleFileImport(event)">
 <div id="app">
   <div id="sidebar" role="complementary" aria-label="Slides">
     <div id="sb-hdr"><span data-i18n="grpSlides">Слайды</span><span id="sb-count">0</span></div>
@@ -259,7 +279,7 @@
       <div class="ctl-sep"></div>
       <label class="sntog"><label class="tog"><input type="checkbox" id="snap-chk" checked onchange=""><span class="tog-track"></span><span class="tog-thumb"></span></label><label for="snap-chk">Snap</label></label>
       <div class="ctl-sep"></div>
-      <div style="display:flex;align-items:center;gap:2px;margin-left:auto">
+      <div class="zoom-group">
         <button class="albtn" title="Уменьшить (−)" onclick="zoomCanvas(0.909)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/><line x1="8" y1="11" x2="14" y2="11"/></svg></button>
         <button class="albtn" id="zoom-label-btn" title="Сбросить масштаб (100%)" onclick="resetZoom()" style="font-size:10px;font-weight:600;min-width:36px;padding:0 4px;color:var(--text2)">100%</button>
         <button class="albtn" title="Увеличить (+)" onclick="zoomCanvas(1.1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg></button>
@@ -360,26 +380,6 @@
 
 
 
-      <!-- PAGE NUMBERING (hidden - functional module kept for JS) -->
-      <div id="slide-props-pn" style="display:none">
-        <div class="ph" style="display:flex;align-items:center;justify-content:space-between;padding-right:10px">
-          <span>Нумерация страниц</span>
-          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:10px;font-weight:400;color:var(--text2)">
-            <label class="tog"><input type="checkbox" id="pn-enabled" onchange="if(typeof _pnLocked!=='undefined'&&_pnLocked)return;pnGetSettings().enabled=this.checked;document.getElementById('pn-settings-panel').style.display=this.checked?'flex':'none';pnOnChange()"><span class="tog-track"></span><span class="tog-thumb"></span></label>
-          </label>
-        </div>
-        <div id="pn-settings-panel" style="display:none;flex-direction:column;gap:6px;padding:8px 12px">
-          <div style="display:flex;align-items:center;gap:6px;font-size:11px">
-            <label class="tog"><input type="checkbox" id="pn-show-total" onchange="pnOnChange()"><span class="tog-track"></span><span class="tog-thumb"></span></label>
-            <span>Показывать итого</span>
-          </div>
-          <div style="display:flex;align-items:center;gap:6px;font-size:11px">
-            <label class="tog"><input type="checkbox" id="pn-custom-color" onchange="pnOnChange()"><span class="tog-track"></span><span class="tog-thumb"></span></label>
-            <span>Свой цвет</span>
-            <input type="color" id="pn-color" value="#ffffff" oninput="pnOnChange()" style="width:28px;height:22px;padding:1px;border-radius:3px;border:1px solid var(--border);cursor:pointer">
-          </div>
-        </div>
-      </div>
       <div id="elprops" style="display:none">
         <div class="ph" data-i18n="phElement">Element</div>
         <div class="psec" id="lego-hide-dims">
@@ -394,6 +394,12 @@
         <!-- TEXT PROPS -->
         <div id="tprops" style="display:none" onmousedown="_rtOnPanelMousedown(event)">
           <div class="ph" data-i18n="phText">Text</div>
+          <div class="pr" style="margin-bottom:8px">
+            <button type="button" class="mbtn-sm" id="btn-fill-quote" onclick="fillSelectedWithQuote()" onmousedown="event.preventDefault()" style="display:flex;align-items:center;justify-content:center;gap:6px">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V21z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3z"/></svg>
+              <span data-i18n="btnFillQuote">Цитата</span>
+            </button>
+          </div>
           <!-- Text role selector -->
           <div class="pr" style="margin-bottom:6px">
             <label data-i18n="propRole">Role</label>
@@ -404,49 +410,47 @@
 
           </div>
           <div class="fmt-block">
-            <div style="display:flex;gap:4px;align-items:center">
-              <!-- Left: B I U sup sub + reset, then Size -->
-              <div style="display:flex;flex-direction:column;gap:3px;flex-shrink:0">
-                <div class="fmt-row">
-                  <button class="ftbtn" id="ft-b" onclick="rtBold()" title="Bold (Ctrl+B)" onmousedown="event.preventDefault()"><b>B</b></button>
-                  <button class="ftbtn" id="ft-i" onclick="rtItalic()" title="Italic (Ctrl+I)" onmousedown="event.preventDefault()"><i>I</i></button>
-                  <button class="ftbtn" id="ft-u" onclick="rtUnderline()" title="Underline (Ctrl+U)" onmousedown="event.preventDefault()"><u>U</u></button>
-                  <button class="ftbtn" id="ft-sup" onclick="rtSuperscript()" title="Superscript" style="font-size:9px;letter-spacing:-0.5px" onmousedown="event.preventDefault()">X<sup style="font-size:7px;line-height:1">²</sup></button>
-                  <button class="ftbtn" id="ft-sub" onclick="rtSubscript()" title="Subscript" style="font-size:9px;letter-spacing:-0.5px" onmousedown="event.preventDefault()">X<sub style="font-size:7px;line-height:1">₂</sub></button>
-                  <span style="width:1px;background:var(--border2);margin:0 2px;align-self:stretch;flex-shrink:0"></span>
-                  <button class="ftbtn" onclick="resetTextFormatting()" onmousedown="event.preventDefault()" data-i18n-title="resetFormat" title="Сбросить форматирование" style="color:var(--text3)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="1" y="12" font-family="serif" font-size="12" font-weight="700" fill="currentColor">A</text><line x1="10" y1="4" x2="15" y2="9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="15" y1="4" x2="10" y2="9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
-                </div>
-                <div style="display:flex;align-items:center;gap:5px;margin:0 0 3px">
-                  <label style="font-size:11px;color:var(--text2);white-space:nowrap;flex-shrink:0;min-width:36px">Шрифт</label>
-                  <select id="p-ff" onmousedown="_rtOnPanelMousedown(event)" onchange="rtFontFamily(this.value)" style="min-width:0;max-width:120px;width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;font-family:inherit;box-sizing:border-box;cursor:pointer">
-                    <option value="">— по умолчанию —</option>
-                  </select>
-                </div>
-                <div style="display:flex;align-items:center;gap:5px;margin:0">
-                  <label style="font-size:11px;color:var(--text2);white-space:nowrap;flex-shrink:0">Размер, пт</label>
-                  <input type="number" id="p-fs" min="1" max="400" step="1" placeholder="—" onmousedown="_rtOnPanelMousedown(event)" oninput="if(+this.value>0)rtFontSize(+this.value)" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 8px;font-size:11px;font-family:inherit;box-sizing:border-box;-moz-appearance:textfield;transition:.12s">
-                </div>
+            <!-- Format buttons — full width -->
+            <div class="fmt-row" style="width:100%;justify-content:space-between">
+              <div style="display:flex;gap:2px;align-items:center;flex-wrap:wrap">
+                <button class="ftbtn" id="ft-b" onclick="rtBold()" title="Bold (Ctrl+B)" onmousedown="event.preventDefault()"><b>B</b></button>
+                <button class="ftbtn" id="ft-i" onclick="rtItalic()" title="Italic (Ctrl+I)" onmousedown="event.preventDefault()"><i>I</i></button>
+                <button class="ftbtn" id="ft-u" onclick="rtUnderline()" title="Подчёркивание: цикл стилей (Ctrl+U)" onmousedown="event.preventDefault()"><u>U</u></button>
+                <button class="ftbtn" id="ft-stress" onclick="rtStress()" title="Ударение (а́)" onmousedown="event.preventDefault()" style="font-size:12px;font-weight:600;min-width:22px">а́</button>
+                <button class="ftbtn" id="ft-sup" onclick="rtSuperscript()" title="Superscript" style="font-size:9px;letter-spacing:-0.5px" onmousedown="event.preventDefault()">X<sup style="font-size:7px;line-height:1">²</sup></button>
+                <button class="ftbtn" id="ft-sub" onclick="rtSubscript()" title="Subscript" style="font-size:9px;letter-spacing:-0.5px" onmousedown="event.preventDefault()">X<sub style="font-size:7px;line-height:1">₂</sub></button>
               </div>
-              <!-- Divider -->
-              <span style="width:1px;background:var(--border2);align-self:stretch;flex-shrink:0"></span>
-              <!-- Right: H-align row 1, V-align row 2 -->
-              <div style="display:flex;flex-direction:column;gap:3px;flex-shrink:0">
-                <div style="display:flex;gap:2px">
-                  <button class="ftbtn" id="ft-al" onclick="setTS('text-align','left')" title="Align Left" onmousedown="event.preventDefault()"><svg width="14" height="12" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="5" x2="9" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="9" x2="12" y2="9" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="13" x2="7" y2="13" stroke="currentColor" stroke-width="1.5"/></svg></button>
-                  <button class="ftbtn" id="ft-ac" onclick="setTS('text-align','center')" title="Center" onmousedown="event.preventDefault()"><svg width="14" height="12" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="2.5" y1="5" x2="11.5" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="1" y1="9" x2="13" y2="9" stroke="currentColor" stroke-width="1.5"/><line x1="3.5" y1="13" x2="10.5" y2="13" stroke="currentColor" stroke-width="1.5"/></svg></button>
-                  <button class="ftbtn" id="ft-ar" onclick="setTS('text-align','right')" title="Align Right" onmousedown="event.preventDefault()"><svg width="14" height="12" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="5" y1="5" x2="14" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="2" y1="9" x2="14" y2="9" stroke="currentColor" stroke-width="1.5"/><line x1="7" y1="13" x2="14" y2="13" stroke="currentColor" stroke-width="1.5"/></svg></button>
-                  <button class="ftbtn" id="ft-aj" onclick="setTS('text-align','justify')" title="Justify" onmousedown="event.preventDefault()"><svg width="14" height="12" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="5" x2="14" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="9" x2="14" y2="9" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="13" x2="10" y2="13" stroke="currentColor" stroke-width="1.5"/></svg></button>
-                </div>
-                <div style="display:flex;gap:2px">
-                  <button class="ftbtn" id="ft-vt" onclick="setTextVAlign('top')" title="Top" onmousedown="event.preventDefault()"><svg width="12" height="14" viewBox="0 0 12 14"><line x1="0" y1="0" x2="12" y2="0" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="2" width="6" height="9" rx="1" fill="currentColor" opacity=".4"/><path d="M6 2 L6 11" stroke="currentColor" stroke-width="1.5"/></svg></button>
-                  <button class="ftbtn" id="ft-vm" onclick="setTextVAlign('middle')" title="Middle" onmousedown="event.preventDefault()"><svg width="12" height="14" viewBox="0 0 12 14"><line x1="0" y1="7" x2="12" y2="7" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="1" width="6" height="5" rx="1" fill="currentColor" opacity=".4"/><rect x="3" y="8" width="6" height="5" rx="1" fill="currentColor" opacity=".4"/></svg></button>
-                  <button class="ftbtn" id="ft-vb" onclick="setTextVAlign('bottom')" title="Bottom" onmousedown="event.preventDefault()"><svg width="12" height="14" viewBox="0 0 12 14"><line x1="0" y1="14" x2="12" y2="14" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="3" width="6" height="9" rx="1" fill="currentColor" opacity=".4"/><path d="M6 3 L6 12" stroke="currentColor" stroke-width="1.5"/></svg></button>
-                </div>
+              <button class="ftbtn" onclick="resetTextFormatting()" onmousedown="event.preventDefault()" data-i18n-title="resetFormat" title="Сбросить форматирование" style="color:var(--text3);flex-shrink:0"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="1" y="12" font-family="serif" font-size="12" font-weight="700" fill="currentColor">A</text><line x1="10" y1="4" x2="15" y2="9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><line x1="15" y1="4" x2="10" y2="9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
+            </div>
+            <!-- Font + size -->
+            <div style="display:flex;align-items:center;gap:6px;width:100%">
+              <div style="display:flex;align-items:center;gap:4px;flex:1;min-width:0">
+                <label style="font-size:11px;color:var(--text2);white-space:nowrap;flex-shrink:0">Шрифт</label>
+                <select id="p-ff" onmousedown="_rtOnPanelMousedown(event)" onchange="rtFontFamily(this.value)" style="min-width:0;flex:1;width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;font-family:inherit;box-sizing:border-box;cursor:pointer">
+                  <option value="">— по умолчанию —</option>
+                </select>
               </div>
-              <!-- Separator -->
-              <span style="width:1px;background:var(--border2);align-self:stretch;flex-shrink:0"></span>
-              <!-- Lists -->
-              <div style="display:flex;flex-direction:column;gap:3px;flex-shrink:0;justify-content:center">
+              <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">
+                <label style="font-size:11px;color:var(--text2);white-space:nowrap">пт</label>
+                <input type="number" id="p-fs" min="1" max="400" step="1" placeholder="—" onmousedown="_rtOnPanelMousedown(event)" oninput="if(+this.value>0)rtFontSize(+this.value)" style="width:52px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:11px;font-family:inherit;box-sizing:border-box;-moz-appearance:textfield">
+              </div>
+            </div>
+            <!-- Align + lists -->
+            <div class="fmt-row" style="width:100%;gap:4px">
+              <div style="display:flex;gap:2px">
+                <button class="ftbtn" id="ft-al" onclick="setTS('text-align','left')" title="Align Left" onmousedown="event.preventDefault()"><svg width="14" height="12" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="5" x2="9" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="9" x2="12" y2="9" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="13" x2="7" y2="13" stroke="currentColor" stroke-width="1.5"/></svg></button>
+                <button class="ftbtn" id="ft-ac" onclick="setTS('text-align','center')" title="Center" onmousedown="event.preventDefault()"><svg width="14" height="12" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="2.5" y1="5" x2="11.5" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="1" y1="9" x2="13" y2="9" stroke="currentColor" stroke-width="1.5"/><line x1="3.5" y1="13" x2="10.5" y2="13" stroke="currentColor" stroke-width="1.5"/></svg></button>
+                <button class="ftbtn" id="ft-ar" onclick="setTS('text-align','right')" title="Align Right" onmousedown="event.preventDefault()"><svg width="14" height="12" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="5" y1="5" x2="14" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="2" y1="9" x2="14" y2="9" stroke="currentColor" stroke-width="1.5"/><line x1="7" y1="13" x2="14" y2="13" stroke="currentColor" stroke-width="1.5"/></svg></button>
+                <button class="ftbtn" id="ft-aj" onclick="setTS('text-align','justify')" title="Justify" onmousedown="event.preventDefault()"><svg width="14" height="12" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="5" x2="14" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="9" x2="14" y2="9" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="13" x2="10" y2="13" stroke="currentColor" stroke-width="1.5"/></svg></button>
+              </div>
+              <span style="width:1px;background:var(--border2);align-self:stretch;flex-shrink:0;margin:0 2px"></span>
+              <div style="display:flex;gap:2px">
+                <button class="ftbtn" id="ft-vt" onclick="setTextVAlign('top')" title="Top" onmousedown="event.preventDefault()"><svg width="12" height="14" viewBox="0 0 12 14"><line x1="0" y1="0" x2="12" y2="0" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="2" width="6" height="9" rx="1" fill="currentColor" opacity=".4"/><path d="M6 2 L6 11" stroke="currentColor" stroke-width="1.5"/></svg></button>
+                <button class="ftbtn" id="ft-vm" onclick="setTextVAlign('middle')" title="Middle" onmousedown="event.preventDefault()"><svg width="12" height="14" viewBox="0 0 12 14"><line x1="0" y1="7" x2="12" y2="7" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="1" width="6" height="5" rx="1" fill="currentColor" opacity=".4"/><rect x="3" y="8" width="6" height="5" rx="1" fill="currentColor" opacity=".4"/></svg></button>
+                <button class="ftbtn" id="ft-vb" onclick="setTextVAlign('bottom')" title="Bottom" onmousedown="event.preventDefault()"><svg width="12" height="14" viewBox="0 0 12 14"><line x1="0" y1="14" x2="12" y2="14" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="3" width="6" height="9" rx="1" fill="currentColor" opacity=".4"/><path d="M6 3 L6 12" stroke="currentColor" stroke-width="1.5"/></svg></button>
+              </div>
+              <span style="width:1px;background:var(--border2);align-self:stretch;flex-shrink:0;margin:0 2px"></span>
+              <div style="display:flex;gap:2px">
                 <button class="ftbtn" id="ft-ul" onclick="rtBulletList()" title="Маркированный список" onmousedown="event.preventDefault()"><svg width="15" height="13" viewBox="0 0 15 13" fill="none"><circle cx="1.5" cy="2" r="1.5" fill="currentColor"/><line x1="5" y1="2" x2="15" y2="2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="1.5" cy="6.5" r="1.5" fill="currentColor"/><line x1="5" y1="6.5" x2="15" y2="6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="1.5" cy="11" r="1.5" fill="currentColor"/><line x1="5" y1="11" x2="15" y2="11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
                 <button class="ftbtn" id="ft-ol" onclick="rtNumberedList()" title="Нумерованный список" onmousedown="event.preventDefault()"><svg width="15" height="13" viewBox="0 0 15 13" fill="none"><text x="0" y="3.5" font-size="4" fill="currentColor" font-family="monospace">1.</text><line x1="5" y1="2" x2="15" y2="2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><text x="0" y="8" font-size="4" fill="currentColor" font-family="monospace">2.</text><line x1="5" y1="6.5" x2="15" y2="6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><text x="0" y="12.5" font-size="4" fill="currentColor" font-family="monospace">3.</text><line x1="5" y1="11" x2="15" y2="11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
               </div>
@@ -751,6 +755,81 @@
             <div class="pr" style="margin:0"><label data-i18n="propCornerRadius">Скругление</label><input type="number" id="gen-rx" min="0" max="500" value="0" oninput="setGenElRadius(+this.value)"></div>
           </div>
         </div><!-- end genprops -->
+
+        <!-- PERIODIC TABLE PROPS -->
+        <div id="pteprops" style="display:none">
+          <div class="ph">🧪 Элемент</div>
+          <div class="psec" style="display:flex;flex-direction:column;gap:8px">
+            <div style="font-size:13px;font-weight:600;color:var(--text)" id="pte-props-name">—</div>
+            <button class="mbtn-sm" style="width:100%" onclick="reselectPeriodicElement()">Сменить элемент</button>
+            <label class="tog-wrap sntog" style="display:flex;align-items:center;gap:8px;margin:2px 0 0;cursor:pointer" for="pte-icon-mode">
+              <span class="tog"><input type="checkbox" id="pte-icon-mode" onchange="setPeriodicProp('pteIcon',this.checked)"><span class="tog-track"></span><span class="tog-thumb"></span></span>
+              <span style="font-size:11px;color:var(--text2)" id="pte-icon-label">Карточка</span>
+            </label>
+            <div class="pr" style="margin:0"><label style="font-size:11px;color:var(--text2)">Цвет текста</label>
+              <div style="display:flex;gap:4px;align-items:center">
+                <div class="tprops-swatch" onmousedown="openColorPanel('cp-pte-fg-slot','formula-color',colorPickHandler('pte-fg-hex','pte-fg-preview',function(c,sr){setPeriodicProp('genColor',c,sr);}))" title="Цвет текста"><div id="pte-fg-preview" class="tprops-swatch-inner" style="background:#ffffff;"></div></div>
+                <input type="text" id="pte-fg-hex" maxlength="7" placeholder="11 или #hex" style="flex:1;min-width:0;height:28px;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:0 6px;font-size:11px;font-family:monospace" oninput="colorFieldOnInput(this.value,'pte-fg-preview',function(c,sr){setPeriodicProp('genColor',c,sr);})">
+              </div>
+              <div id="cp-pte-fg-slot" class="cp-slot" style="display:none;margin-top:4px" onmousedown="event.preventDefault()"></div>
+            </div>
+            <div class="pr" style="margin:0"><label style="font-size:11px;color:var(--text2)">Цвет фона</label>
+              <div style="display:flex;gap:4px;align-items:center">
+                <div class="tprops-swatch" style="background:repeating-conic-gradient(#aaa 0% 25%,transparent 0% 50%) 0 0/8px 8px;" onmousedown="openColorPanel('cp-pte-bg-slot','fill',colorPickHandler('pte-bg-hex','pte-bg-preview',function(c,sr){setPeriodicProp('genBg',c,sr);}))" title="Цвет фона"><div id="pte-bg-preview" class="tprops-swatch-inner" style="background:transparent;"></div></div>
+                <input type="text" id="pte-bg-hex" maxlength="7" placeholder="11 или #hex" style="flex:1;min-width:0;height:28px;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:0 6px;font-size:11px;font-family:monospace" oninput="colorFieldOnInput(this.value,'pte-bg-preview',function(c,sr){setPeriodicProp('genBg',c,sr);})">
+              </div>
+              <div id="cp-pte-bg-slot" class="cp-slot" style="display:none;margin-top:4px" onmousedown="event.preventDefault()"></div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+              <div class="pr" style="margin:0"><label style="font-size:11px;color:var(--text2)">Прозрачность фона</label>
+                <input type="number" id="pte-bg-op" min="0" max="1" step="0.05" value="0.92" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:12px;width:100%;box-sizing:border-box" oninput="setPeriodicProp('genBgOp',+this.value)">
+              </div>
+              <div class="pr" style="margin:0"><label style="font-size:11px;color:var(--text2)">Размытие фона</label>
+                <input type="number" id="pte-bg-blur" min="0" max="40" step="1" value="0" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:12px;width:100%;box-sizing:border-box" oninput="setPeriodicProp('genBgBlur',+this.value)">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- FLIP CARD PROPS -->
+        <div id="flipprops" style="display:none">
+          <div class="ph">⇆ Перевертыш</div>
+          <div class="psec" style="display:flex;flex-direction:column;gap:8px">
+            <label class="tog-wrap sntog" style="display:flex;align-items:center;gap:8px;margin:2px 0 0;cursor:pointer" for="flip-side-tog">
+              <span class="tog"><input type="checkbox" id="flip-side-tog" onchange="setFlipProp('flipFace',this.checked?'back':'front')"><span class="tog-track"></span><span class="tog-thumb"></span></span>
+              <span style="font-size:11px;color:var(--text2)" id="flip-side-label">Лицевая сторона</span>
+            </label>
+            <div class="pr" style="margin:0"><label style="font-size:11px;color:var(--text2)">Текст</label>
+              <textarea id="flip-text" rows="3" placeholder="Текст на стороне…" style="width:100%;box-sizing:border-box;resize:vertical;min-height:64px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:6px 8px;font-size:12px;font-family:inherit;line-height:1.35" oninput="setFlipSideText(this.value)"></textarea>
+            </div>
+            <div class="pr" style="margin:0"><label style="font-size:11px;color:var(--text2)">Изображение</label>
+              <div style="display:flex;gap:6px;align-items:stretch">
+                <div id="flip-img-preview" style="width:52px;height:52px;flex-shrink:0;border-radius:6px;border:1px solid var(--border);background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--text3);overflow:hidden">нет</div>
+                <div style="flex:1;display:flex;flex-direction:column;gap:4px;min-width:0">
+                  <button type="button" class="mbtn-sm" style="width:100%" onclick="pickFlipImage()">Выбрать…</button>
+                  <button type="button" class="mbtn-sm" style="width:100%" onclick="clearFlipImage()">Убрать</button>
+                </div>
+              </div>
+            </div>
+            <div class="pr" style="margin:0"><label style="font-size:11px;color:var(--text2)">Цвет текста</label>
+              <div style="display:flex;gap:4px;align-items:center">
+                <div class="tprops-swatch" onmousedown="openColorPanel('cp-flip-fg-slot','formula-color',colorPickHandler('flip-fg-hex','flip-fg-preview',function(c,sr){setFlipProp('genColor',c,sr);}))" title="Цвет текста"><div id="flip-fg-preview" class="tprops-swatch-inner" style="background:#ffffff;"></div></div>
+                <input type="text" id="flip-fg-hex" maxlength="7" placeholder="11 или #hex" style="flex:1;min-width:0;height:28px;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:0 6px;font-size:11px;font-family:monospace" oninput="colorFieldOnInput(this.value,'flip-fg-preview',function(c,sr){setFlipProp('genColor',c,sr);})">
+              </div>
+              <div id="cp-flip-fg-slot" class="cp-slot" style="display:none;margin-top:4px" onmousedown="event.preventDefault()"></div>
+            </div>
+            <div class="pr" style="margin:0"><label style="font-size:11px;color:var(--text2)">Цвет фона</label>
+              <div style="display:flex;gap:4px;align-items:center">
+                <div class="tprops-swatch" style="background:repeating-conic-gradient(#aaa 0% 25%,transparent 0% 50%) 0 0/8px 8px;" onmousedown="openColorPanel('cp-flip-bg-slot','fill',colorPickHandler('flip-bg-hex','flip-bg-preview',function(c,sr){setFlipProp('genBg',c,sr);}))" title="Цвет фона"><div id="flip-bg-preview" class="tprops-swatch-inner" style="background:transparent;"></div></div>
+                <input type="text" id="flip-bg-hex" maxlength="7" placeholder="11 или #hex" style="flex:1;min-width:0;height:28px;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:0 6px;font-size:11px;font-family:monospace" oninput="colorFieldOnInput(this.value,'flip-bg-preview',function(c,sr){setFlipProp('genBg',c,sr);})">
+              </div>
+              <div id="cp-flip-bg-slot" class="cp-slot" style="display:none;margin-top:4px" onmousedown="event.preventDefault()"></div>
+            </div>
+            <div class="pr" style="margin:0"><label style="font-size:11px;color:var(--text2)">Прозрачность фона</label>
+              <input type="number" id="flip-bg-op" min="0" max="1" step="0.05" value="0.92" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:12px;width:100%;box-sizing:border-box" oninput="setFlipProp('genBgOp',+this.value)">
+            </div>
+          </div>
+        </div>
 
         <!-- SHAPE PROPS -->
         <div id="shprops" style="display:none">
@@ -1086,6 +1165,13 @@
           <div class="ph">🌐 HTML / Веб</div>
           <button class="mbtn" style="width:100%;margin-bottom:4px;font-size:11px" onclick="openHtmlFrameEditor()">✏️ Редактировать источник</button>
           <button id="hf-codebtn" class="mbtn" style="width:100%;margin-bottom:6px;font-size:11px" onclick="hfToggleLinkedCode()">📄 Показать код</button>
+          <div class="pr" style="margin:0 0 6px">
+            <label data-i18n="propHfChrome">Шапка окна</label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text2);cursor:pointer;user-select:none">
+              <label class="tog"><input type="checkbox" id="hf-chrome" checked onchange="updateHfChrome(this.checked)"><span class="tog-track"></span><span class="tog-thumb"></span></label>
+              <span data-i18n="propHfChromeHint">Показывать шапку</span>
+            </label>
+          </div>
         </div>
         <!-- VIDEO PROPS -->
         <div id="mediavidprops" style="display:none;flex-direction:column">
@@ -1302,6 +1388,10 @@
             <div class="pr" style="margin:0"><label style="font-size:11px;color:var(--text2)">Шаг сетки</label>
               <input type="number" id="gp-step" value="1" min="0.1" step="0.5" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:12px;width:100%;box-sizing:border-box" oninput="updateGraphRange()">
             </div>
+            <label class="tog-wrap sntog" style="display:flex;align-items:center;gap:8px;margin:2px 0 0;cursor:pointer">
+              <label class="tog"><input type="checkbox" id="gp-show-label" checked onchange="setGraphShowLabel(this.checked)"><span class="tog-track"></span><span class="tog-thumb"></span></label>
+              <span style="font-size:11px;color:var(--text2)">Название функции</span>
+            </label>
             </div>
             <!-- Chemistry style controls -->
             <div id="gp-chem-block" style="display:none;flex-direction:column;gap:8px">
@@ -1328,6 +1418,10 @@
                   <input type="number" id="gp-chem-bg-blur" min="0" max="40" step="1" value="0" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;font-size:12px;width:100%;box-sizing:border-box" oninput="setChemGraphBgBlur(+this.value)">
                 </div>
               </div>
+              <label class="tog-wrap sntog" style="display:flex;align-items:center;gap:8px;margin:2px 0 0;cursor:pointer">
+                <label class="tog"><input type="checkbox" id="gp-chem-show-formula" checked onchange="setChemShowFormula(this.checked)"><span class="tog-track"></span><span class="tog-thumb"></span></label>
+                <span style="font-size:11px;color:var(--text2)">Показать формулу</span>
+              </label>
             </div>
             <!-- Rebuild button -->
             <button class="mbtn-sm" onclick="rebuildGraphFromProps()" style="width:100%">🔄 Перестроить</button>
@@ -2270,6 +2364,10 @@
   <script src="js/00-guard.js"></script>
   <script src="js/01-state.js"></script>
   <script src="js/02-applets.js"></script>
+  <script src="js/02b-periodic.js"></script>
+  <script src="js/02b-flip.js"></script>
+  <script src="js/02b-quotes-data.js"></script>
+  <script src="js/02b-quotes.js"></script>
   <script src="js/02b-icons.js"></script>
   <script src="js/03-boot.js"></script>
   <script src="js/04-ui.js"></script>
@@ -2307,6 +2405,7 @@
   <script src="js/25-links.js"></script>
   <script src="js/26-export.js"></script>
   <script src="js/26b-ppt-binary.js"></script>
+  <script src="js/26c-import-gallery.js"></script>
   <script src="js/27-persist.js"></script>
   <script src="js/31-table.js"></script>
   <script src="js/28-multisel.js"></script>
@@ -2330,6 +2429,7 @@
   <script src="js/28-filedrop.js"></script>
   <script src="js/36-formula.js"></script>
   <script src="js/37b-chem.js"></script>
+  <script src="js/37c-logic.js"></script>
   <script src="js/37-graph.js"></script>
   <script src="js/38-connectors.js"></script>
   <script src="js/41-lego.js"></script>
@@ -2355,21 +2455,33 @@
     var el=document.getElementById('cm-theme');
     return el&&el.value==='light'?'light':'dark';
   }
-  function _cmLineColor(){
-    return _cmEditorTheme()==='light'?'#8c959f':'#4a5568';
+  function _hfEditorTheme(){
+    var wrap=document.getElementById('hf-editor-wrap');
+    if(wrap&&wrap.dataset.theme) return wrap.dataset.theme==='light'?'light':'dark';
+    if(typeof getCodeThemeForPresTheme==='function') return getCodeThemeForPresTheme();
+    return document.documentElement.classList.contains('light')?'light':'dark';
+  }
+  function _lineColorFor(theme){
+    return theme==='light'?'#8c959f':'#4a5568';
   }
   // Build highlighted HTML from raw code + lang
-  function _highlight(code, lang){
-    if(!lang || lang==='plain' || lang==='url') return _esc(code);
-    if(typeof syntaxHighlight === 'function') return syntaxHighlight(code, lang, _cmEditorTheme());
+  function _highlight(code, lang, theme){
+    theme=theme||'dark';
+    if(!lang || lang==='plain' || lang==='url'){
+      // Без подсветки — видимый цвет текста (textarea прозрачный)
+      var T=(typeof CODE_THEMES!=='undefined'&&CODE_THEMES[theme])||null;
+      var col=T?T.text:(theme==='light'?'#24292e':'#e6edf3');
+      return '<span style="color:'+col+'">'+_esc(code)+'</span>';
+    }
+    if(typeof syntaxHighlight === 'function') return syntaxHighlight(code, lang, theme);
     return _esc(code);
   }
 
   // Update line numbers column
-  function _updateLines(linesEl, code, countEl){
+  function _updateLines(linesEl, code, countEl, theme){
     const n = (code.match(/\n/g)||[]).length + 1;
     if(countEl) countEl.textContent = n + ' line' + (n===1?'':'s');
-    const lc=_cmLineColor();
+    const lc=_lineColorFor(theme||'dark');
     linesEl.innerHTML = Array.from({length:n},(_,i)=>
       '<div style="padding:0 8px 0 4px;color:'+lc+';font-size:13px;line-height:1.65">'+(i+1)+'</div>'
     ).join('');
@@ -2383,7 +2495,7 @@
     linesEl.scrollTop = top;
   }
 
-  // Setup one editor pair: {taId, preId, linesId, countId, getLang}
+  // Setup one editor pair: {taId, preId, linesId, countId, getLang, getTheme}
   function setupEditor(cfg){
     const ta   = document.getElementById(cfg.taId);
     const pre  = document.getElementById(cfg.preId);
@@ -2394,10 +2506,14 @@
     function refresh(){
       const code = ta.value;
       const lang = cfg.getLang ? cfg.getLang() : 'html';
-      pre.innerHTML = _highlight(code, lang) + '\n'; // trailing \n prevents last-line clipping
-      _updateLines(lines, code, cnt);
-      // Sync textarea height to pre so scroll area is correct
-      ta.style.height = pre.scrollHeight + 'px';
+      const theme = cfg.getTheme ? cfg.getTheme() : _cmEditorTheme();
+      pre.innerHTML = _highlight(code, lang, theme) + '\n'; // trailing \n prevents last-line clipping
+      _updateLines(lines, code, cnt, theme);
+      // Sync textarea height to pre so scroll area is correct.
+      // При display:none у модалки scrollHeight=0 — не затираем высоту нулём.
+      const h = pre.scrollHeight;
+      if(h > 0) ta.style.height = h + 'px';
+      else if(!ta.style.height || ta.style.height === '0px') ta.style.height = '100%';
     }
 
     ta.addEventListener('input', refresh);
@@ -2432,6 +2548,7 @@
     setupEditor({
       taId:'cm-code', preId:'cm-highlight', linesId:'cm-lines', countId:'cm-linecount',
       getLang: function(){ var s=document.getElementById('cm-lang'); return s?s.value:'js'; },
+      getTheme: _cmEditorTheme,
       refreshFn:'_cmRefreshHL',
       setFn:'_cmSetValue'
     });
@@ -2442,6 +2559,7 @@
         var v=(document.getElementById('hf-src')||{}).value||'';
         return /^https?:\/\//.test(v.trim())?'plain':'html';
       },
+      getTheme: _hfEditorTheme,
       refreshFn:'_hfRefreshHL',
       setFn:'_hfSetValue'
     });
