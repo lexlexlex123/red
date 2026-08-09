@@ -33,6 +33,35 @@ function mkDrag(el,c){
     if(el.dataset.type==='table'&&(e.target.tagName==='TD'||e.target.tagName==='TH'))return;
     // Clicking on table border/frame (not a cell) — clear cell selection
     if(el.dataset.type==='table'&&typeof tblClearSel==='function') tblClearSel();
+    // Angle markers: prefer line under the cursor; only select angle if nothing else hits
+    if(el.dataset.type==='lineangle'){
+      e.preventDefault();
+      e.stopPropagation();
+      const below = (typeof _findElUnderLineAngle==='function')
+        ? _findElUnderLineAngle(e.clientX, e.clientY, el)
+        : null;
+      if(below){
+        // Prefer the line's stroke hit-path so mkDrag sees a real shape target
+        let dispatchTarget = below.querySelector('svg.shape-hit-area path')
+          || below.querySelector('.shape-hit-area')
+          || below;
+        if(typeof pickMulti==='function') pickMulti(below, !!e.shiftKey);
+        else if(typeof pick==='function') pick(below);
+        const fwd = new MouseEvent('mousedown', {
+          bubbles:true, cancelable:true,
+          clientX:e.clientX, clientY:e.clientY,
+          button:0, buttons:1,
+          shiftKey:!!e.shiftKey, ctrlKey:!!e.ctrlKey, metaKey:!!e.metaKey
+        });
+        fwd._fromLineAnglePassthrough = true;
+        dispatchTarget.dispatchEvent(fwd);
+        return;
+      }
+      if(e.shiftKey && typeof pickMulti==='function') pickMulti(el, true);
+      else if(typeof pickMulti==='function') pickMulti(el, false);
+      else if(typeof pick==='function') pick(el);
+      return;
+    }
     // For shapes: allow drag on SVG fill, shape-text, or the transparent hit-area overlay
     if(el.dataset.type==='shape'){
       if(el.dataset.shape==='curve'){
@@ -99,10 +128,12 @@ function mkDrag(el,c){
         const isSvgPart=e.target.tagName==='path'||e.target.tagName==='rect'||
           e.target.tagName==='ellipse'||e.target.tagName==='circle'||
           e.target.tagName==='polygon'||e.target.tagName==='polyline';
-        const isHitArea=e.target.classList&&e.target.classList.contains('shape-hit-area');
+        const isHitArea=(e.target.classList&&e.target.classList.contains('shape-hit-area'))||
+          !!(e.target.closest&&e.target.closest('.shape-hit-area'));
         const _sh = typeof SHAPES!=='undefined' ? SHAPES.find(s=>s.id===el.dataset.shape) : null;
         const isNoFillSelf = e.target===el && _sh && _sh.noFill;
-        if(!isSvgPart&&!e.target.closest('.shape-text')&&!isHitArea&&!isNoFillSelf)return;
+        const isLineStroke = el.dataset.shape==='line' && e.target.tagName==='path';
+        if(!isSvgPart&&!e.target.closest('.shape-text')&&!isHitArea&&!isNoFillSelf&&!isLineStroke)return;
       }
     }
     // PNG/SVG alpha hit test: pass click/drag through transparent regions
@@ -177,6 +208,27 @@ function mkDrag(el,c){
     } else {
       groupStart=null;
     }
+    // Connected line junctions move together as one rigid group
+    if(typeof _lineConnectedComponentIds==='function'){
+      const canvas=document.getElementById('canvas');
+      const base=groupStart||new Map([[el,{x:ol,y:ot}]]);
+      const ids=new Set();
+      base.forEach((_,mEl)=>{
+        if(mEl.dataset.shape==='line'&&mEl.dataset.id){
+          _lineConnectedComponentIds(mEl.dataset.id).forEach(id=>ids.add(id));
+        } else if(mEl.dataset.id){
+          ids.add(mEl.dataset.id);
+        }
+      });
+      if(ids.size>1){
+        groupStart=new Map();
+        ids.forEach(id=>{
+          const mEl=canvas&&canvas.querySelector('.el[data-id="'+id+'"]');
+          if(mEl) groupStart.set(mEl,{x:parseInt(mEl.style.left)||0,y:parseInt(mEl.style.top)||0});
+        });
+        base.forEach((pos,mEl)=>{ if(!groupStart.has(mEl)) groupStart.set(mEl,pos); });
+      }
+    }
     const mm=e2=>{
       if(!on)return;
       if(typeof window._isPreviewActive==='function'&&window._isPreviewActive()){mu();return;}
@@ -185,11 +237,19 @@ function mkDrag(el,c){
       const _z=typeof _canvasZoom==='number'?_canvasZoom:1;
       let dx=(e2.clientX-ox)/_z,dy=(e2.clientY-oy)/_z;
       if(groupStart){
+        // Rigid translate: one snapped delta for the whole group (keeps junctions / triangle intact).
+        // Do NOT call _syncLineJoinsAfterMove here — it rebuilds geometry and makes markers jump.
+        let moveDx=dx, moveDy=dy;
+        if(document.getElementById('snap-chk').checked){
+          let nx=ol+dx, ny=ot+dy;
+          nx=snapV(nx); ny=snapV(ny);
+          moveDx=nx-ol; moveDy=ny-ot;
+        }
         groupStart.forEach((pos,mEl)=>{
-          let nx=pos.x+dx,ny=pos.y+dy;
-          if(document.getElementById('snap-chk').checked){nx=snapV(nx);ny=snapV(ny);}
-          mEl.style.left=nx+'px';mEl.style.top=ny+'px';
+          mEl.style.left=(pos.x+moveDx)+'px';
+          mEl.style.top=(pos.y+moveDy)+'px';
         });
+        if(typeof refreshAllLineAngles==='function') refreshAllLineAngles();
         if(typeof renderMotionOverlay==='function') renderMotionOverlay();
         if(typeof _scheduleHandlesOverlayUpdate==='function') _scheduleHandlesOverlayUpdate();
         else if(typeof _updateHandlesOverlay==='function' && !window._curveDragging)_updateHandlesOverlay();
@@ -197,12 +257,20 @@ function mkDrag(el,c){
         let nx=ol+dx,ny=ot+dy;
         if(document.getElementById('snap-chk').checked){nx=snapV(nx);ny=snapV(ny);}
         el.style.left=nx+'px';el.style.top=ny+'px';showGuides(el);syncPos();
+        // Only stretch partners when this line alone moved (partners not in the drag group)
+        if(el.dataset.shape==='line'&&typeof _syncLineJoinsAfterMove==='function') _syncLineJoinsAfterMove(el);
+        if(typeof refreshAllLineAngles==='function') refreshAllLineAngles();
         if(typeof renderMotionOverlay==='function') renderMotionOverlay();
         if(typeof _scheduleHandlesOverlayUpdate==='function') _scheduleHandlesOverlayUpdate();
         else if(typeof _updateHandlesOverlay==='function' && !window._curveDragging)_updateHandlesOverlay();
       }
     };
-    const mu=()=>{on=false;window._anyDragging=false;groupStart=null;clearGuides();document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);commitAll();};
+    const mu=()=>{
+      on=false;window._anyDragging=false;groupStart=null;clearGuides();
+      document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);
+      if(typeof refreshAllLineAngles==='function') refreshAllLineAngles();
+      commitAll();
+    };
     document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
   });
 

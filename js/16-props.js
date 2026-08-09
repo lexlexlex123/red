@@ -24,17 +24,34 @@ function syncProps(){
   const flipp=document.getElementById('flipprops');
   const qrp=document.getElementById('qrprops');
   const fmp=document.getElementById('formulaprops');
+  const mp=document.getElementById('multiprops');
+  const lap=document.getElementById('lineangleprops');
+  if(mp) mp.style.display='none';
+  if(lap) lap.style.display='none';
   if(!sel || multiSel.size > 1){
     ep.style.display='none';
     if(hp)hp.style.display='none';
     if(multiSel.size > 1 || (typeof _justClearedMulti!=='undefined' && _justClearedMulti)){
       ns.style.display='none';
       if(sp)sp.style.display='none';
+      if(multiSel.size > 1 && mp){
+        mp.style.display='flex';
+        const canAngle = typeof _canDrawAngleBetweenMulti === 'function' && _canDrawAngleBetweenMulti();
+        const aw = document.getElementById('multiprops-angle-wrap');
+        if(aw) aw.style.display = canAngle ? 'block' : 'none';
+        const hint = document.getElementById('multiprops-hint');
+        if(hint){
+          hint.textContent = canAngle
+            ? ((typeof getLang==='function'&&getLang()==='en') ? 'Two joined lines selected' : 'Выбраны два связанных отрезка')
+            : (multiSel.size + ((typeof getLang==='function'&&getLang()==='en') ? ' selected' : ' выбрано'));
+        }
+      }
       return;
     }
     ns.style.display='block';
     if(sp)sp.style.display='block';
     if(typeof _syncSlidePropsAnimRow==='function')_syncSlidePropsAnimRow();
+    if(typeof buildSlideTplGrid==='function')buildSlideTplGrid();
     return;
   }
   if(sp)sp.style.display='none';
@@ -62,6 +79,69 @@ function syncProps(){
   const _dictWrap=document.getElementById('dictation-btn-wrap');
   if(_dictWrap) _dictWrap.style.display=t==='text'?'flex':'none';
   shp.style.display=t==='shape'?'flex':'none';shp.style.flexDirection='column';
+  if(lap){
+    lap.style.display=t==='lineangle'?'flex':'none';
+    if(t==='lineangle'){
+      const _lad=slides[cur]&&slides[cur].els.find(e=>e&&e.id===sel.dataset.id);
+      const _degInp=document.getElementById('p-lineangle-deg');
+      if(_degInp && document.activeElement!==_degInp){
+        const v=_lad&&_lad.displayDeg!=null?_lad.displayDeg:(_lad&&_lad.deg!=null?_lad.deg:90);
+        _degInp.value=Math.round(v*10)/10;
+        if(typeof refreshNumScrubber==='function') refreshNumScrubber(_degInp);
+      }
+      if(typeof _syncLineAngleLabelBtns==='function'){
+        _syncLineAngleLabelBtns(_lad&&_lad.labelStyle?_lad.labelStyle:'deg', _lad&&_lad.markCount!=null?_lad.markCount:1);
+      }
+      const _fsInp=document.getElementById('p-lineangle-fs');
+      if(_fsInp && document.activeElement!==_fsInp){
+        _fsInp.value=(_lad&&_lad.labelFs!=null)?Math.round(+_lad.labelFs):18;
+        if(typeof refreshNumScrubber==='function') refreshNumScrubber(_fsInp);
+      }
+      const _laCol=(_lad&&_lad.color)||(typeof _defaultLineColor==='function'?_defaultLineColor().color:'#64748b');
+      const _laSr=_lad&&_lad.colorScheme!==undefined?_lad.colorScheme:null;
+      if(typeof _setColorFieldValue==='function'){
+        if(document.activeElement!==document.getElementById('p-lineangle-hex'))
+          _setColorFieldValue('p-lineangle-hex','p-lineangle-preview',_laCol,_laSr);
+        else {
+          const _laPrev=document.getElementById('p-lineangle-preview');
+          if(_laPrev){
+            let _c=_laCol;
+            if(_laSr&&typeof _resolveSchemeColor==='function'){
+              const _th=typeof _activeThemeForScheme==='function'?_activeThemeForScheme():null;
+              const _r=_th?_resolveSchemeColor(_laSr,_th):null;
+              if(_r) _c=_r;
+            }
+            _laPrev.style.background=_c;
+          }
+        }
+      } else {
+        const _laPrev=document.getElementById('p-lineangle-preview');
+        if(_laPrev) _laPrev.style.background=_laCol;
+        const _laHex=document.getElementById('p-lineangle-hex');
+        if(_laHex && document.activeElement!==_laHex)
+          _laHex.value=(typeof _colorFieldDisplay==='function')?_colorFieldDisplay(_laCol,_laSr):_laCol;
+      }
+      // Only angle settings — hide geometry / link / hover chrome
+      const _dims=document.getElementById('lego-hide-dims');
+      if(_dims) _dims.style.display='none';
+      const _elPh=document.querySelector('#elprops > .ph');
+      if(_elPh) _elPh.style.display='none';
+      const _linkPh=document.getElementById('lego-hide-link-ph');
+      if(_linkPh) _linkPh.style.display='none';
+      const _linkBody=document.getElementById('lego-hide-link-body');
+      if(_linkBody) _linkBody.style.display='none';
+      if(hp) hp.style.display='none';
+    } else {
+      const _dims=document.getElementById('lego-hide-dims');
+      if(_dims && t!=='lego') _dims.style.display='';
+      const _elPh=document.querySelector('#elprops > .ph');
+      if(_elPh && t!=='lego') _elPh.style.display='';
+      const _linkPh=document.getElementById('lego-hide-link-ph');
+      if(_linkPh && t!=='lego') _linkPh.style.display='';
+      const _linkBody=document.getElementById('lego-hide-link-body');
+      if(_linkBody && t!=='lego') _linkBody.style.display='';
+    }
+  }
   if(imp){imp.style.display=(t==='image'&&!isQR)?'flex':'none';imp.style.flexDirection='column';}
   const svgp=document.getElementById('svgprops');
   if(svgp){
@@ -220,6 +300,7 @@ function syncProps(){
     // Text role
     const role=sel.dataset.textRole||'body';
     try{document.getElementById('role-body').classList.toggle('active',role==='body');document.getElementById('role-heading').classList.toggle('active',role==='heading');}catch(e){}
+    try{if(typeof syncTranslateBtn==='function') syncTranslateBtn();}catch(e){}
     // Border
     try{const _brd=document.getElementById('p-border-preview');if(_brd)_brd.style.background=sel.dataset.textBorderColor||'#ffffff';document.getElementById('p-border-w').value=sel.dataset.textBorderW||0;}catch(e){}
     try{const _tbs=sel.dataset.textBorderStyle||'solid';document.querySelectorAll('.txt-border-style-btn').forEach(b=>b.classList.toggle('active',b.dataset.style===_tbs));}catch(e){}
@@ -229,23 +310,25 @@ function syncProps(){
     try{const op=parseFloat(sel.dataset.elOpacity!=null?sel.dataset.elOpacity:1);document.getElementById('p-el-op').value=op;}catch(e){}
     // Padding - use new pad_t/r/b/l dataset or parse from style
     try{
-      if(sel.dataset.pad_t!==undefined){
-        if(typeof syncTextPadUI==='function') syncTextPadUI();
-      } else {
+      if(typeof syncTextPadUI==='function'&&sel.dataset.pad_t!==undefined){
+        syncTextPadUI();
+      } else if(sel.dataset.pad_t===undefined){
         const padMatch=cs.match(/\bpadding:([\d.\s]+(?:px|%)(?:\s[\d.\s]+(?:px|%)){0,3})/);
         if(padMatch){
           const parts=padMatch[1].trim().split(/\s+/).map(p=>parseFloat(p));
           const t=parts[0]||0,r=parts.length>1?parts[1]:t,b=parts.length>2?parts[2]:t,l=parts.length>3?parts[3]:r;
-          document.getElementById('p-pad-t').value=t;
-          document.getElementById('p-pad-r').value=r;
-          document.getElementById('p-pad-b').value=b;
           document.getElementById('p-pad-l').value=l;
+          document.getElementById('p-pad-t').value=t;
+          document.getElementById('p-pad-b').value=b;
+          document.getElementById('p-pad-r').value=r;
         } else {
-          document.getElementById('p-pad-t').value=6;
-          document.getElementById('p-pad-r').value=8;
-          document.getElementById('p-pad-b').value=6;
-          document.getElementById('p-pad-l').value=8;
+          document.getElementById('p-pad-l').value=0;
+          document.getElementById('p-pad-t').value=0;
+          document.getElementById('p-pad-b').value=0;
+          document.getElementById('p-pad-r').value=0;
         }
+        if(typeof _initPadBoxHandles==='function') _initPadBoxHandles();
+        if(typeof _syncPadBoxPreview==='function') _syncPadBoxPreview();
       }
     }catch(e){}
   } // end if(t==='text')
@@ -258,16 +341,28 @@ function syncProps(){
   }
   if(sel.dataset.type==='shape'){
     try{
-      const _fsw=document.getElementById('sh-fill-preview');if(_fsw)_fsw.style.background=sel.dataset.fill||'#3b82f6';
       const _dFill=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
-      const _fill=sel.dataset.fill||'#3b82f6';
-      document.getElementById('sh-fill-hex').value=(typeof _colorFieldDisplay==='function')?_colorFieldDisplay(_fill,_dFill&&_dFill.fillScheme):_fill;
+      let _fill=sel.dataset.fill||'#3b82f6';
+      const _fillSr=_dFill&&_dFill.fillScheme;
+      if(_fillSr&&typeof _resolveSchemeColor==='function'){
+        const _th=typeof _activeThemeForScheme==='function'?_activeThemeForScheme():null;
+        const _resolved=_th?_resolveSchemeColor(_fillSr,_th):null;
+        if(_resolved)_fill=_resolved;
+      }
+      const _fsw=document.getElementById('sh-fill-preview');if(_fsw)_fsw.style.background=_fill;
+      document.getElementById('sh-fill-hex').value=(typeof _colorFieldDisplay==='function')?_colorFieldDisplay(_fill,_fillSr):_fill;
     }catch(e){}
     try{
-      const _strk=document.getElementById('sh-stroke-preview');if(_strk)_strk.style.background=sel.dataset.stroke||'#1d4ed8';
       const _dStr=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
-      const _stroke=sel.dataset.stroke||'#1d4ed8';
-      document.getElementById('sh-stroke-hex').value=(typeof _colorFieldDisplay==='function')?_colorFieldDisplay(_stroke,_dStr&&_dStr.strokeScheme):_stroke;
+      let _stroke=sel.dataset.stroke||'#1d4ed8';
+      const _strSr=_dStr&&_dStr.strokeScheme;
+      if(_strSr&&typeof _resolveSchemeColor==='function'){
+        const _th=typeof _activeThemeForScheme==='function'?_activeThemeForScheme():null;
+        const _resolved=_th?_resolveSchemeColor(_strSr,_th):null;
+        if(_resolved)_stroke=_resolved;
+      }
+      const _strk=document.getElementById('sh-stroke-preview');if(_strk)_strk.style.background=_stroke;
+      document.getElementById('sh-stroke-hex').value=(typeof _colorFieldDisplay==='function')?_colorFieldDisplay(_stroke,_strSr):_stroke;
     }catch(e){}
     // For curve with selected nodes: show node's sw if uniform, else show global sw
     let _dispSw = sel.dataset.sw!=null ? sel.dataset.sw : 2;
@@ -304,6 +399,18 @@ function syncProps(){
       if(_fillSec) _fillSec.style.display = (_sh&&_sh.noFill) ? 'none' : '';
       // Show arc controls only for ellipse
       const _d2 = slides[cur] && slides[cur].els.find(e=>e.id===sel.dataset.id);
+      // Geometry marks — only for line segments
+      const _geomSec = document.getElementById('sh-line-geom');
+      if(_geomSec){
+        const _isLine = _shapeId === 'line';
+        _geomSec.style.display = _isLine ? '' : 'none';
+        if(_isLine){
+          const _mark = sel.dataset.lineMark || (_d2 && _d2.lineMark) || 'none';
+          document.querySelectorAll('#sh-line-mark-btns .la-label-btn').forEach(b=>{
+            b.classList.toggle('active', b.dataset.mark === _mark);
+          });
+        }
+      }
       if(typeof _syncArcUI==='function') _syncArcUI(_d2);
       if(typeof _syncPolyUI==='function') _syncPolyUI(_d2);
       if(typeof _syncStarUI==='function') _syncStarUI(_d2);
@@ -352,11 +459,18 @@ function syncProps(){
       document.getElementById('sh-fw').value=m(/font-weight:(\d+)/,'700');
       const tc=m(/(?:^|;)\s*color:\s*(#[0-9a-fA-F]{3,8})/,'#ffffff');
       try{
-        const _tcPr=document.getElementById('sh-tc-preview');
-        if(_tcPr)_tcPr.style.background=tc;
-        const _tcHx=document.getElementById('sh-tc-hex');
         const _dTc=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
-        if(_tcHx)_tcHx.value=(typeof _colorFieldDisplay==='function')?_colorFieldDisplay(tc,_dTc&&_dTc.shapeTextColorScheme):tc;
+        const _tcSr=_dTc&&_dTc.shapeTextColorScheme;
+        let _tcCol=tc;
+        if(_tcSr&&typeof _resolveSchemeColor==='function'){
+          const _th=typeof _activeThemeForScheme==='function'?_activeThemeForScheme():null;
+          const _resolved=_th?_resolveSchemeColor(_tcSr,_th):null;
+          if(_resolved)_tcCol=_resolved;
+        }
+        const _tcPr=document.getElementById('sh-tc-preview');
+        if(_tcPr)_tcPr.style.background=_tcCol;
+        const _tcHx=document.getElementById('sh-tc-hex');
+        if(_tcHx)_tcHx.value=(typeof _colorFieldDisplay==='function')?_colorFieldDisplay(_tcCol,_tcSr):_tcCol;
       }catch(e){}
     }
   }
@@ -1964,7 +2078,8 @@ function _showHexPasteMenu(e,input){
 }
 
 function initHexFields(root){
-  root=root||document.getElementById('tprops')||document;
+  // Scan whole #props (text + shape + …), not only #tprops — shape fields live in #shprops
+  root=root||document.getElementById('props')||document;
   root.querySelectorAll('.hex-field').forEach(wrap=>{
     const inp=wrap.querySelector('input');
     if(!inp||wrap.dataset.hexInit==='1')return;
@@ -1986,4 +2101,4 @@ function initHexFields(root){
 window.initHexFields=initHexFields;
 window.hexFieldCopy=hexFieldCopy;
 
-document.addEventListener('DOMContentLoaded',()=>initHexFields());
+document.addEventListener('DOMContentLoaded',()=>initHexFields(document));

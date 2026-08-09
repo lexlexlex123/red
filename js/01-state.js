@@ -45,6 +45,20 @@ function _schemePosCode(col, row){
   return String((col|0)+1)+String((row|0)+1);
 }
 
+/** Default stroke for line segments & angle marks — palette "15". */
+const DEFAULT_LINE_COLOR_SCHEME = {col:0, row:4};
+
+function _defaultLineColor(){
+  const scheme = {col: DEFAULT_LINE_COLOR_SCHEME.col, row: DEFAULT_LINE_COLOR_SCHEME.row};
+  const th = typeof _activeThemeForScheme === 'function' ? _activeThemeForScheme() : null;
+  let color = null;
+  if(th && typeof _schemeSwatchColor === 'function')
+    color = _schemeSwatchColor(th, scheme.col, scheme.row);
+  if(!color && typeof THEMES !== 'undefined' && THEMES[0] && typeof _schemeSwatchColor === 'function')
+    color = _schemeSwatchColor(THEMES[0], scheme.col, scheme.row);
+  return {color: color || '#64748b', schemeRef: scheme};
+}
+
 function _activeThemeForScheme(){
   const idx=(typeof appliedThemeIdx!=='undefined'&&appliedThemeIdx>=0)?appliedThemeIdx
     :((typeof selTheme!=='undefined'&&selTheme>=0)?selTheme:-1);
@@ -201,6 +215,27 @@ function _schemeSwatchColor(theme, col, row){
   }
   return _setHexLightness(hex, L);
 }
+
+/** Nearest palette swatch for a hex (for default shape fill/stroke → "41" etc.). */
+function _closestSchemeRef(hex, theme){
+  if(!theme||!hex||hex==='none'||hex==='transparent') return null;
+  const target=_parseHexRgb(hex);
+  if(!target) return null;
+  let best=null, bestDist=Infinity;
+  for(let col=0; col<8; col++){
+    for(let row=0; row<SCHEME_TINT_LEVELS.length; row++){
+      const c=_schemeSwatchColor(theme, col, row);
+      const rgb=_parseHexRgb(c);
+      if(!rgb) continue;
+      const d=(rgb[0]-target[0])*(rgb[0]-target[0])
+        +(rgb[1]-target[1])*(rgb[1]-target[1])
+        +(rgb[2]-target[2])*(rgb[2]-target[2]);
+      if(d<bestDist){ bestDist=d; best={col, row}; if(d===0) return best; }
+    }
+  }
+  return best;
+}
+window._closestSchemeRef=_closestSchemeRef;
 
 const THEMES=[
   // ── DARK ──

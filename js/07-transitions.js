@@ -199,23 +199,39 @@
   window.updateSlideTransHint=updateSlideTransHint;
   window.updateTransHints=updateTransHints;
 
+  function _slideTransDur(slideIdx){
+    const i = slideIdx != null ? +slideIdx : (typeof cur !== 'undefined' ? cur : 0);
+    if(typeof slides !== 'undefined' && slides[i] && slides[i].transDur != null && +slides[i].transDur > 0)
+      return +slides[i].transDur;
+    return (typeof transitionDur !== 'undefined' && +transitionDur > 0) ? +transitionDur : 500;
+  }
   window.syncTransDurUI = function(){
     const el = document.getElementById('trans-dur');
     if(!el) return;
-    let d = (typeof transitionDur !== 'undefined' && +transitionDur > 0) ? +transitionDur : 500;
+    let d = _slideTransDur(typeof cur !== 'undefined' ? cur : 0);
     const opts = Array.from(el.options).map(o => +o.value);
     if(!opts.includes(d)) d = 500;
-    transitionDur = d;
     el.value = String(d);
   };
   window.setTransitionDur = function(v){
-    transitionDur = Math.max(0, +v || 500);
+    const d = Math.max(0, +v || 500);
+    if(typeof slides !== 'undefined' && slides[cur]) slides[cur].transDur = d;
     window.syncTransDurUI();
     if(typeof saveState === 'function') saveState();
   };
-  window._effectiveTransDur = function(){
-    window.syncTransDurUI();
-    return transitionDur;
+  window._effectiveTransDur = function(slideIdx){
+    return _slideTransDur(slideIdx);
+  };
+  window.syncSlideTransUI = function(t){
+    const id = (t == null || t === '') ? 'none' : t;
+    document.querySelectorAll('#trans-btn-grid .tbtn2[data-t]').forEach(b=>
+      b.classList.toggle('active', b.dataset.t === id)
+    );
+    document.querySelectorAll('#slide-trans-grid .tbtn2[data-st]').forEach(b=>
+      b.classList.toggle('active', b.dataset.st === id)
+    );
+    updateRibbonTransHint(id);
+    updateSlideTransHint(id);
   };
   window._flipAnimDur = function(ms){
     ms = (+ms > 0) ? +ms : 500;
@@ -235,40 +251,25 @@
       propsGrid.innerHTML='';
       TRANSITION_DEFS.forEach(def=>propsGrid.appendChild(_makeBtn(def,'slide')));
     }
-    const activeGlobal=(typeof globalTrans!=='undefined'&&globalTrans)?globalTrans:'none';
-    document.querySelectorAll('#trans-btn-grid .tbtn2[data-t]').forEach(b=>
-      b.classList.toggle('active', b.dataset.t===activeGlobal)
-    );
     const slideTrans=(typeof slides!=='undefined'&&slides[cur])?(slides[cur].trans||'none'):'none';
-    document.querySelectorAll('#slide-trans-grid .tbtn2[data-st]').forEach(b=>
-      b.classList.toggle('active', b.dataset.st===slideTrans)
-    );
-    updateRibbonTransHint(activeGlobal);
-    updateSlideTransHint(slideTrans);
+    window.syncSlideTransUI(slideTrans);
+    if(typeof syncTransDurUI === 'function') syncTransDurUI();
   }
   window.buildTransUI=buildTransUI;
 
-  window.setGlobalTrans = function(t, btn){
-    try{
-      globalTrans = t || 'none';
-      document.querySelectorAll('#trans-btn-grid .tbtn2[data-t]').forEach(b=>
-        b.classList.toggle('active', btn ? b===btn : b.dataset.t===globalTrans)
-      );
-      updateRibbonTransHint(globalTrans);
-      _saveState();
-      Bus && Bus.emit(Bus.EVENTS.TRANS_CHANGED, {global: t});
-    }catch(e){ console.warn('[07-transitions] setGlobalTrans:', e.message); }
+  window.setGlobalTrans = function(t){
+    // Ribbon selection applies to the current slide (same as props panel).
+    window.setSlideTrans(t);
   };
 
   window.setSlideTrans = function(t){
     try{
       if(t===''||t==null) t='none';
       if(typeof slides !== 'undefined' && slides[cur]) slides[cur].trans = t;
-      document.querySelectorAll('#slide-trans-grid .tbtn2[data-st]').forEach(b=>
-        b.classList.toggle('active', b.dataset.st===t)
-      );
-      updateSlideTransHint(t);
+      window.syncSlideTransUI(t);
+      _drawThumbs();
       _saveState();
+      if(typeof Bus !== 'undefined' && Bus && Bus.EVENTS) Bus.emit(Bus.EVENTS.TRANS_CHANGED, {slide: t});
     }catch(e){ console.warn('[07-transitions] setSlideTrans:', e.message); }
   };
 
@@ -282,14 +283,17 @@
   window.applyTransToAll = function(){
     try{
       _pushUndo();
-      const t   = (typeof globalTrans !== 'undefined' && globalTrans) ? globalTrans : 'none';
-      const dur = (typeof transitionDur !== 'undefined') ? transitionDur : 500;
+      const curSlide = (typeof slides !== 'undefined') ? slides[cur] : null;
+      const t   = curSlide ? (curSlide.trans || 'none') : ((typeof globalTrans !== 'undefined' && globalTrans) ? globalTrans : 'none');
+      const dur = (curSlide && curSlide.transDur != null && +curSlide.transDur > 0)
+        ? +curSlide.transDur
+        : ((typeof transitionDur !== 'undefined') ? transitionDur : 500);
+      globalTrans = t;
+      transitionDur = dur;
       if(typeof slides !== 'undefined')
         slides.forEach(s=>{ s.trans = t; s.transDur = dur; });
-      document.querySelectorAll('#slide-trans-grid .tbtn2[data-st]').forEach(b=>
-        b.classList.toggle('active', b.dataset.st === t)
-      );
-      updateSlideTransHint(t);
+      window.syncSlideTransUI(t);
+      if(typeof syncTransDurUI === 'function') syncTransDurUI();
       _saveState(); _drawThumbs();
       const name=_label(_def(t));
       _toast(_isRu() ? ('Переход «'+name+'» применён ко всем слайдам') : ('Transition "'+name+'" applied to all slides'), 'ok');

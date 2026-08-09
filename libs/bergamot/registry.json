@@ -1,0 +1,36 @@
+{
+  "enru": {
+    "model": {
+      "name": "../translate-models/enru/model.enru.intgemm.alphas.bin",
+      "size": 17141051,
+      "estimatedCompressedSize": 17141051
+    },
+    "lex": {
+      "name": "../translate-models/enru/lex.50.50.enru.s2t.bin",
+      "size": 2768468,
+      "estimatedCompressedSize": 2768468
+    },
+    "vocab": {
+      "name": "../translate-models/enru/vocab.enru.spm",
+      "size": 904455,
+      "estimatedCompressedSize": 904455
+    }
+  },
+  "ruen": {
+    "model": {
+      "name": "../translate-models/ruen/model.ruen.intgemm.alphas.bin",
+      "size": 17141051,
+      "estimatedCompressedSize": 17141051
+    },
+    "lex": {
+      "name": "../translate-models/ruen/lex.50.50.ruen.s2t.bin",
+      "size": 4483844,
+      "estimatedCompressedSize": 4483844
+    },
+    "vocab": {
+      "name": "../translate-models/ruen/vocab.ruen.spm",
+      "size": 905257,
+      "estimatedCompressedSize": 905257
+    }
+  }
+}

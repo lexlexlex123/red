@@ -454,6 +454,12 @@ function setFlipProp(prop,val,schemeRef){
 }
 window.setFlipProp=setFlipProp;
 
+function clearFlipBg(){
+  const scheme=typeof _flipDefaultBgScheme==='function'?_flipDefaultBgScheme():{col:7,row:7};
+  setFlipProp('genBg','',scheme);
+}
+window.clearFlipBg=clearFlipBg;
+
 function toggleFlipSide(){
   if(!sel||sel.dataset.appletId!=='flip') return;
   const d=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);

@@ -38,6 +38,8 @@ function _updateSelFrames(){
   }
   targets.forEach(el => {
     if(!el || !el.isConnected) return;
+    // Angle markers: no selection rectangle (settings live in props panel)
+    if(el.dataset && el.dataset.type === 'lineangle') return;
     const l = parseInt(el.style.left)||0;
     const t = parseInt(el.style.top)||0;
     const w = parseInt(el.style.width)||0;
@@ -149,7 +151,8 @@ function pickMulti(el,shiftKey){
     if(t.closest('.rh')) return false;
     if(t.closest('.conn-hit')) return false;
     if(t.closest('#conn-handles')) return false;
-    if(t.closest('#handles-overlay [data-cls]')) return false;
+    // Any handle on the overlay (resize, line endpoints, pivot, callout, …)
+    if(t.closest('#handles-overlay')) return false;
     if(t.closest('#pivot-handle')) return false;
     if(t.closest('#_anim-picker-ov')) return false;
     if(t.closest('#motion-ghosts') || t.closest('#motion-svg') || t.closest('.motion-ghost') || t.closest('.motion-handle') || t.closest('[data-motion-ui]')) return false;
@@ -170,6 +173,7 @@ function pickMulti(el,shiftKey){
     if(e.button!==0)return;
     if(typeof window._isPreviewActive==='function'&&window._isPreviewActive())return;
     if(window._anyDragging)return;
+    if(window._lineEpDragging)return;
     if(window._pivotDragging || window._overPivotHandle)return;
     if(window._animPickerCtx)return;
     if(e.target&&e.target.closest&&e.target.closest('#_anim-picker-ov'))return;
@@ -252,6 +256,82 @@ function pickMulti(el,shiftKey){
     _showRubber(x,y,w,h);
   });
 
+  function _rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh){
+    return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+  }
+
+  /** Axis-aligned bbox of element in canvas coords, accounting for CSS rotation */
+  function _elSelectAABB(el){
+    const L = parseInt(el.style.left) || 0;
+    const T = parseInt(el.style.top) || 0;
+    const W = parseInt(el.style.width) || 0;
+    const H = parseInt(el.style.height) || 0;
+    const rotDeg = parseFloat(el.dataset.rot) || 0;
+    if(!rotDeg) return { x: L, y: T, w: W, h: H };
+    const rad = rotDeg * Math.PI / 180;
+    const cos = Math.cos(rad), sin = Math.sin(rad);
+    const cx = L + W / 2, cy = T + H / 2;
+    const corners = [
+      [-W / 2, -H / 2], [W / 2, -H / 2], [W / 2, H / 2], [-W / 2, H / 2]
+    ].map(([dx, dy]) => ({
+      x: cx + dx * cos - dy * sin,
+      y: cy + dx * sin + dy * cos
+    }));
+    let minX = corners[0].x, maxX = corners[0].x, minY = corners[0].y, maxY = corners[0].y;
+    for(let i = 1; i < 4; i++){
+      const p = corners[i];
+      if(p.x < minX) minX = p.x;
+      if(p.x > maxX) maxX = p.x;
+      if(p.y < minY) minY = p.y;
+      if(p.y > maxY) maxY = p.y;
+    }
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  }
+
+  /** Line segment vs AABB (canvas space) — precise for thin rotated strokes */
+  function _segHitsRect(x1, y1, x2, y2, rx, ry, rw, rh){
+    const inR = (x, y) => x >= rx && x <= rx + rw && y >= ry && y <= ry + rh;
+    if(inR(x1, y1) || inR(x2, y2)) return true;
+    function cross(ax, ay, bx, by, cx, cy){ return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax); }
+    function overlaps1D(a1, a2, b1, b2){
+      return Math.max(a1, a2) >= Math.min(b1, b2) && Math.min(a1, a2) <= Math.max(b1, b2);
+    }
+    function segSeg(ax, ay, bx, by, cx, cy, dx, dy){
+      if(!overlaps1D(ax, bx, cx, dx) || !overlaps1D(ay, by, cy, dy)) return false;
+      const d1 = cross(ax, ay, bx, by, cx, cy);
+      const d2 = cross(ax, ay, bx, by, dx, dy);
+      const d3 = cross(cx, cy, dx, dy, ax, ay);
+      const d4 = cross(cx, cy, dx, dy, bx, by);
+      return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0) || d1 === 0 || d2 === 0) &&
+             ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0) || d3 === 0 || d4 === 0) &&
+             (d1 !== 0 || d2 !== 0 || d3 !== 0 || d4 !== 0 || true);
+    }
+    const x3 = rx + rw, y3 = ry + rh;
+    return segSeg(x1, y1, x2, y2, rx, ry, x3, ry) ||
+           segSeg(x1, y1, x2, y2, x3, ry, x3, y3) ||
+           segSeg(x1, y1, x2, y2, x3, y3, rx, y3) ||
+           segSeg(x1, y1, x2, y2, rx, y3, rx, ry);
+  }
+
+  function _elHitsRubber(el, rx, ry, rw, rh){
+    if(el.dataset.shape === 'line' && typeof _lineCanvasEnds === 'function' && typeof slides !== 'undefined' && slides[cur]){
+      const d = slides[cur].els.find(e => e && e.id === el.dataset.id);
+      if(d && d.shape === 'line'){
+        try{
+          const ends = _lineCanvasEnds(el, d);
+          if(_segHitsRect(ends.a.x, ends.a.y, ends.b.x, ends.b.y, rx, ry, rw, rh)) return true;
+          // Also accept if rubber covers a junction endpoint near the box (fat corner pick)
+          const pad = 10;
+          if(_rectsOverlap(ends.a.x - pad, ends.a.y - pad, pad * 2, pad * 2, rx, ry, rw, rh)) return true;
+          if(_rectsOverlap(ends.b.x - pad, ends.b.y - pad, pad * 2, pad * 2, rx, ry, rw, rh)) return true;
+          return false;
+        }catch(err){}
+      }
+    }
+    const b = _elSelectAABB(el);
+    return _rectsOverlap(b.x, b.y, b.w, b.h, rx, ry, rw, rh);
+  }
+
   document.addEventListener('mouseup',e=>{
     if(!rbStart)return;
     const z=typeof _canvasZoom==='number'?_canvasZoom:1;
@@ -282,9 +362,7 @@ function pickMulti(el,shiftKey){
     }
     cv.querySelectorAll('.el').forEach(el=>{
       if(el.dataset.objHidden==='1') return;
-      const ex=parseInt(el.style.left),ey=parseInt(el.style.top);
-      const ew=parseInt(el.style.width),eh=parseInt(el.style.height);
-      if(ex<rx+rw&&ex+ew>rx&&ey<ry+rh&&ey+eh>ry){
+      if(_elHitsRubber(el, rx, ry, rw, rh)){
         addToMultiSel(el);
       }
     });
@@ -315,6 +393,7 @@ function pickMulti(el,shiftKey){
       if(typeof toast==="function")toast(multiSel.size+t('toastMultiSel'),'ok');
     }
     if(typeof _updateSelFrames==='function') _updateSelFrames();
+    if(typeof syncProps==='function') syncProps();
   });
 })();
 
@@ -355,12 +434,58 @@ function pasteSelected(){
     const domEl=document.getElementById('canvas').querySelector('[data-id="'+nd.id+'"]');
     if(domEl)addToMultiSel(domEl);
   });
+  // Re-render angles after all lines exist (in case clone order put an angle first)
+  if(typeof renderLineAngleEl==='function'){
+    clones.forEach(nd=>{
+      if(!nd || nd.type!=='lineangle') return;
+      const domEl=document.getElementById('canvas').querySelector('[data-id="'+nd.id+'"]');
+      if(domEl) renderLineAngleEl(domEl, nd);
+    });
+  }
   save();if(typeof drawThumbs==="function")drawThumbs();if(typeof saveState==="function")saveState();
   if(typeof renderAnimPanel==='function')renderAnimPanel();
   if(typeof renderMotionOverlay==='function')renderMotionOverlay();
   if(multiSel.size===1){const only=[...multiSel][0];clearMultiSel();pick(only);}
   else if(multiSel.size>1){pick([...multiSel].slice(-1)[0]);if(typeof toast==="function")toast(t('toastElementsPasted')+multiSel.size+t('toastElementsSuffix'),'ok');}
 }
+
+function _clearAllJoinsToId(id){
+  if(typeof slides === 'undefined' || !slides[cur] || !id) return;
+  if(typeof _migrateSlideLineJoins === 'function') _migrateSlideLineJoins();
+  const d = slides[cur].els.find(e => e && e.id === id && e.shape === 'line');
+  if(d && d.lineJoin && typeof _clearLineJoin === 'function'){
+    ['a', 'b'].forEach(w => {
+      if(d.lineJoin[w]) _clearLineJoin(d, w);
+    });
+  }
+  const juncs = slides[cur].lineJunctions;
+  if(!juncs) return;
+  Object.keys(juncs).forEach(jid => {
+    const before = (juncs[jid] || []).length;
+    juncs[jid] = (juncs[jid] || []).filter(m => m.id !== id);
+    if(juncs[jid].length === before) return;
+    if(juncs[jid].length < 2){
+      juncs[jid].forEach(m => {
+        const md = slides[cur].els.find(e => e && e.id === m.id && e.shape === 'line');
+        if(md && md.lineJoin && md.lineJoin[m.end] === jid){
+          md.lineJoin[m.end] = null;
+          const oel = document.getElementById('canvas') && document.getElementById('canvas').querySelector('.el[data-id="'+m.id+'"]');
+          if(oel && typeof _persistLineJoinDom === 'function') _persistLineJoinDom(oel, md);
+        }
+      });
+      delete juncs[jid];
+    }
+  });
+  // Scrub legacy pairwise refs still pointing at this id
+  slides[cur].els.forEach(elD => {
+    if(!elD || elD.shape !== 'line' || !elD.lineJoin) return;
+    ['a', 'b'].forEach(w => {
+      const link = elD.lineJoin[w];
+      if(link && typeof link === 'object' && link.id === id) elD.lineJoin[w] = null;
+    });
+  });
+}
+window._clearAllJoinsToId = _clearAllJoinsToId;
 
 function deleteSelected(){
   if(multiSel.size>1){
@@ -372,6 +497,7 @@ function deleteSelected(){
         if(typeof _unlinkLinkedGraphs==='function') _unlinkLinkedGraphs(domEl.dataset.id);
         else if(typeof _deleteLinkedGraphs==='function') _deleteLinkedGraphs(domEl.dataset.id);
       }
+      if(domEl.dataset.shape==='line'&&typeof _clearAllJoinsToId==='function') _clearAllJoinsToId(domEl.dataset.id);
       const idx2=s.els.findIndex(x=>x.id===domEl.dataset.id);
       if(typeof _hfOnDelete==='function'){ const _d=s.els[idx2]; if(_d)_hfOnDelete(_d); }
       if(idx2>=0)s.els.splice(idx2,1);
@@ -392,6 +518,7 @@ function deleteSelected(){
     } else if(sel.dataset.type==='formula' && typeof _deleteLinkedGraphs==='function'){
       _deleteLinkedGraphs(sel.dataset.id);
     }
+    if(sel.dataset.shape==='line'&&typeof _clearAllJoinsToId==='function') _clearAllJoinsToId(sel.dataset.id);
     // htmlframe: delete linked code; code: unlink parent
     if(typeof _hfOnDelete==='function'){ const _d=s.els[idx2]; if(_d)_hfOnDelete(_d); }
     if(idx2>=0)s.els.splice(idx2,1);

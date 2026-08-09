@@ -435,18 +435,55 @@ function applySlideStyleToAll(){
     bgScheme: src.bgScheme,
     bgImg: src.bgImg ? JSON.parse(JSON.stringify(src.bgImg)) : null,
   };
+  const srcDecor = (src.els || []).find(d => d && d._isDecor) || null;
+  const decorTpl = srcDecor ? {
+    layoutIdx: srcDecor._layoutIdx,
+    style: srcDecor._decorStyle || 'content',
+    mirror: !!srcDecor._decorMirror,
+  } : null;
+
+  if(decorTpl && typeof selLayout !== 'undefined'){
+    selLayout = decorTpl.layoutIdx;
+  }
+
   slides.forEach((s, i) => {
-    if(i === cur) return;
-    s.bg = style.bg;
-    s.bgc = style.bgc;
-    if(style.bgScheme !== undefined) s.bgScheme = style.bgScheme;
-    else delete s.bgScheme;
-    if(style.bgImg) s.bgImg = JSON.parse(JSON.stringify(style.bgImg));
-    else delete s.bgImg;
+    if(i !== cur){
+      s.bg = style.bg;
+      s.bgc = style.bgc;
+      if(style.bgScheme !== undefined) s.bgScheme = style.bgScheme;
+      else delete s.bgScheme;
+      if(style.bgImg) s.bgImg = JSON.parse(JSON.stringify(style.bgImg));
+      else delete s.bgImg;
+    }
+
+    // Шаблон декора: тот же, что на текущем слайде (или снять со всех)
+    s.els = (s.els || []).filter(d => !d._isDecor);
+    if(decorTpl && typeof _buildDecorSvg === 'function'){
+      const svg = _buildDecorSvg(decorTpl.layoutIdx, decorTpl.style, decorTpl.mirror);
+      if(svg){
+        const d = {
+          id: 'decor_' + i + '_' + Date.now(),
+          type: 'svg',
+          x: 0, y: 0, w: canvasW, h: canvasH,
+          rot: 0, anims: [], isTrigger: false,
+          svgContent: svg,
+          _isDecor: true,
+          _decorStyle: decorTpl.style,
+          _decorMirror: !!decorTpl.mirror,
+          _layoutIdx: decorTpl.layoutIdx,
+        };
+        if(typeof _ensureGlDecorCfg === 'function') _ensureGlDecorCfg(d);
+        s.els.unshift(d);
+      }
+    }
   });
+
   _applySlideBgToCanvas(slides[cur]);
   syncSlideBgPreview();
   syncSlideBgImageUI();
+  if(typeof _syncSlidePropsAnimRow === 'function') _syncSlidePropsAnimRow();
+  if(typeof buildSlideTplGrid === 'function') buildSlideTplGrid();
+  if(typeof renderAll === 'function') renderAll();
   if(typeof invalidateThumbCache==='function') invalidateThumbCache();
   save(); drawThumbs(true); saveState();
   if(typeof toast === 'function') toast(t('toastSlideStyleApplied'), 'ok');

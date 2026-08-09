@@ -30,6 +30,9 @@ const KNOWN_NAMES = {
   'abstract':    'Абстракция',
   'icons_png':   'Иконки PNG',
   'smiles':      'Смайлики',
+  'decor':       'Декор',
+  'fish':        'Рыбы',
+  'food':        'Еда',
 };
 
 const IMG_EXTS = ['.svg', '.png', '.jpg', '.jpeg', '.webp', '.gif'];

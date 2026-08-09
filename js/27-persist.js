@@ -6,7 +6,7 @@
 function saveState(){
   const _pn=typeof pnGetSettings==='function'?pnGetSettings():null;
   // Strip heavy svgContent from icon elements before saving — always rebuilt from iconId on load
-  const slidesClean = slides.map(s=>({
+  let slidesClean = slides.map(s=>({
     ...s,
     els: (s.els||[]).map(d=>{
       if(d.type==='icon'){
@@ -34,7 +34,11 @@ function saveState(){
       return d;
     })
   }));
-  try{localStorage.setItem('sf_v4',JSON.stringify({
+  // Аудио/видео: dataURL/blob не пишем в localStorage — только mediaId (IndexedDB)
+  if(typeof MediaStore!=='undefined'&&MediaStore.stripSlidesForPersist){
+    slidesClean=MediaStore.stripSlidesForPersist(slidesClean);
+  }
+  const payload={
     slides:slidesClean,cur,ar,canvasW,canvasH,globalTrans,transitionDur,autoDelay,ec,
     appliedThemeIdx,
     selLayout:(typeof selLayout!=='undefined'?selLayout:-1),
@@ -42,11 +46,39 @@ function saveState(){
     decorPausedAt:(typeof _decorPausedAt!=='undefined'&&!_layoutAnimated?Array.from(_decorPausedAt.entries()):[]),
     title:document.getElementById('pres-title').value,
     pnSettings:_pn
-  }));}catch(e){
+  };
+  let raw;
+  try{ raw=JSON.stringify(payload); }
+  catch(e){
+    console.warn('saveState stringify failed:',e);
+    if(typeof toast==='function') toast(typeof t==='function'?t('toastSaveFailed'):'Не удалось сохранить','err');
+    return false;
+  }
+  try{
+    localStorage.setItem('sf_v4',raw);
+    try{ localStorage.setItem('sf_v4_ts',String(Date.now())); }catch(_e){}
+    return true;
+  }catch(e){
     console.warn('saveState failed:',e);
-    if(typeof toast==='function'){
-      const msg=typeof t==='function'?t('toastSaveFailed'):'Could not save — storage may be full';
-      toast(msg,'err');
+    // Повтор без любых mediaSrc
+    try{
+      payload.slides=(payload.slides||[]).map(s=>({
+        ...s,
+        els:(s.els||[]).map(d=>{
+          if(d.type!=='mediavideo'&&d.type!=='mediaaudio') return d;
+          return Object.assign({},d,{mediaSrc:''});
+        })
+      }));
+      raw=JSON.stringify(payload);
+      localStorage.setItem('sf_v4',raw);
+      if(typeof toast==='function') toast('Сохранено без встроенных медиафайлов (они в IndexedDB)','ok');
+      return true;
+    }catch(e2){
+      if(typeof toast==='function'){
+        const msg=typeof t==='function'?t('toastSaveFailed'):'Не удалось сохранить — хранилище переполнено';
+        toast(msg,'err');
+      }
+      return false;
     }
   }
 }
@@ -100,6 +132,15 @@ function loadState(){
       pnSettings=Object.assign({},defaults,s.pnSettings);
     }
     if(slides.length)toast(t('toastRestored'));
+    // Restore media blobs from IndexedDB (localStorage хранит только mediaId)
+    if(typeof MediaStore!=='undefined'&&MediaStore.hydrateSlides){
+      MediaStore.hydrateSlides(slides).then(n=>{
+        if(n>0&&typeof load==='function'){
+          try{ load(); }catch(e){}
+          if(typeof drawThumbs==='function') drawThumbs();
+        }
+      }).catch(()=>{});
+    }
     // Restore active tab after render completes
     try{
       const savedTab=localStorage.getItem('sf_active_tab')||'home';

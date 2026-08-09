@@ -149,7 +149,7 @@ function _pointHitsEl(el, clientX, clientY, threshold) {
     for (const e of elems) {
       const owner = e.closest('.el, .psel');
       if (owner !== el) continue;
-      if (el.dataset.shape === 'curve') {
+      if (el.dataset.shape === 'curve' || el.dataset.shape === 'line') {
         if (e.tagName === 'path') return true;
         if (e.tagName === 'svg' && e.classList.contains('shape-hit-area')) return true;
       } else {
@@ -217,7 +217,9 @@ function _forwardClickThrough(e, opts) {
 
 function _elWantsPointer(el) {
   if (!el) return false;
-  if (el._isTrigger || el._hasLink) return true;
+  if (el._isTrigger || el._hasLink || el._mAudioTrig) return true;
+  if (el.classList && el.classList.contains('_ma-trig')) return true;
+  if (el.dataset && el.dataset.maTrig) return true;
   const aid = el.dataset.appletId;
   if (aid === 'counter' || aid === 'generator') return true;
   if (el.style && el.style.cursor === 'pointer') return true;
@@ -1305,6 +1307,9 @@ function mkEl(d){
     if(d.arcStart!=null){el.dataset.arcStart=d.arcStart;}
     if(d.arcEnd!=null){el.dataset.arcEnd=d.arcEnd;}
     if(d.tailX!==undefined){el.dataset.tailX=d.tailX;el.dataset.tailY=d.tailY;}
+    if(d.shape==='line'&&d.lineJoin&&(d.lineJoin.a||d.lineJoin.b)){
+      try{ el.dataset.lineJoin=JSON.stringify({a:d.lineJoin.a||null,b:d.lineJoin.b||null}); }catch(e){}
+    }
     el.dataset.sw=d.sw!=null?d.sw:2;el.dataset.rx=d.rx||0;el.dataset.fillOp=d.fillOp!=null?d.fillOp:1;
     el.dataset.shadow=d.shadow?'true':'false';
     el.dataset.shadowBlur=d.shadowBlur!=null?d.shadowBlur:4;
@@ -1313,9 +1318,33 @@ function mkEl(d){
     if(d.shadowColorScheme)el.dataset.shadowColorScheme=JSON.stringify(d.shadowColorScheme);
     else if(d.shadowColorScheme===null)delete el.dataset.shadowColorScheme;
     if(d.strokeStyle)el.dataset.strokeStyle=d.strokeStyle;
+    if(d.lineMark && d.lineMark !== 'none') el.dataset.lineMark=d.lineMark;
+    else delete el.dataset.lineMark;
     // Apply clip-path so hit area matches shape, not bounding box
     _applyShapeClipPath(el, d);
     el.addEventListener('dblclick', _onShapeDblclick);
+  }else if(d.type==='lineangle'){
+    c.style.cssText='width:100%;height:100%;overflow:visible;pointer-events:none;';
+    el.style.overflow='visible';
+    el.style.pointerEvents='none';
+    el.dataset.shape='';
+    if(!d.labelStyle) d.labelStyle='deg';
+    if(d.markCount==null) d.markCount=1;
+    if(!d.color) d.color=(typeof _defaultLineColor==='function'?_defaultLineColor().color:'#64748b');
+    try{
+      el.dataset.lineAngle=JSON.stringify({
+        lineIdA:d.lineIdA,endA:d.endA,lineIdB:d.lineIdB,endB:d.endB,
+        radius:d.radius||36,color:d.color||(typeof _defaultLineColor==='function'?_defaultLineColor().color:'#64748b'),moveLine:d.moveLine||'B',
+        labelStyle:d.labelStyle||'deg',markCount:d.markCount||1,deg:d.deg,
+        displayDeg:d.displayDeg!=null?d.displayDeg:null,
+        labelFs:d.labelFs!=null?d.labelFs:18
+      });
+    }catch(e){}
+    // SVG is filled after el.append(.ec) below — see post-append renderLineAngleEl
+    el.addEventListener('dblclick', e=>{
+      e.stopPropagation();
+      if(typeof editLineAngleInteractive==='function') editLineAngleInteractive(d.id);
+    });
   }else if(d.type==='formula'){
     c.style.cssText='width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:visible;';
     c.style.color = d.formulaColor || '#ffffff';
@@ -1626,8 +1655,8 @@ function mkEl(d){
   }
   const lb=document.createElement('div');lb.className='link-bar';
   const trigBadge=document.createElement('div');trigBadge.className='trigger-badge';trigBadge.textContent='🎯';
-  // Decor and pagenum elements: no resize handles, no drag, no events
-  if(!d._isDecor && d.type!=='pagenum'){
+  // Decor, pagenum, lineangle: no resize handles
+  if(!d._isDecor && d.type!=='pagenum' && d.type!=='lineangle'){
     const rhs=[
       {cls:'rh br',dx:1, dy:1, ax:0,ay:0},
       {cls:'rh tr',dx:1, dy:-1,ax:0,ay:1},
@@ -1654,6 +1683,9 @@ function mkEl(d){
     _appendMain = body;
   }
   el.append(_appendMain, lb, trigBadge);cv.appendChild(el);
+  if(d.type==='lineangle'&&typeof renderLineAngleEl==='function'){
+    renderLineAngleEl(el,d);
+  }
   if(d.type==='shape'&&typeof window._syncShapeShadowLayout==='function')window._syncShapeShadowLayout(el,d,d.w,d.h);
   // Управляем анимацией декора после вставки в DOM
   if(d._isDecor){
@@ -1854,7 +1886,8 @@ function mkEl(d){
         const isSvgPart=ev.target.tagName==='path'||ev.target.tagName==='rect'||
           ev.target.tagName==='ellipse'||ev.target.tagName==='circle'||
           ev.target.tagName==='polygon'||ev.target.tagName==='polyline';
-        const isHitArea=ev.target.classList&&ev.target.classList.contains('shape-hit-area');
+        const isHitArea=(ev.target.classList&&ev.target.classList.contains('shape-hit-area'))||
+          !!(ev.target.closest&&ev.target.closest('.shape-hit-area'));
         const _sh2=typeof SHAPES!=='undefined'?SHAPES.find(s=>s.id===el.dataset.shape):null;
         const isNoFillSelf=ev.target===el&&_sh2&&_sh2.noFill;
         if(!isSvgPart&&!isHitArea&&!isNoFillSelf&&!ev.target.closest('.shape-text')&&!ev.target.closest('.rh'))return;
@@ -1922,6 +1955,7 @@ function pick(el){
       const _sh2=typeof SHAPES!=='undefined'?SHAPES.find(s=>s.id===el.dataset.shape):null;
       const _isCloud = _sh2 && _sh2.special === 'cloud';
       const _isCurve = _sh2 && _sh2.special === 'curve';
+      const _isLine = el.dataset.shape === 'line';
       // Check if shape needs clip-path hit testing when selected
       // (ellipse, polygon, star, parallelogram and any non-rectangular shape)
       const _dClipCheck = slides[cur]&&slides[cur].els.find(e=>e.id===el.dataset.id);
@@ -1934,10 +1968,10 @@ function pick(el){
         el.style.pointerEvents='none';
         const _dClip=slides[cur]&&slides[cur].els.find(e=>e.id===el.dataset.id);
         if(_dClip&&typeof _applyShapeClipPath==='function') _applyShapeClipPath(el,_dClip);
-      } else if(_isCurve){
-        // Curve: apply hit testing based on fill state
-        const _dCurve=slides[cur]&&slides[cur].els.find(e=>e.id===el.dataset.id);
-        if(_dCurve&&typeof _applyShapeClipPath==='function') _applyShapeClipPath(el,_dCurve);
+      } else if(_isCurve || _isLine){
+        // Curve/line: stroke-based hit testing (pass through empty bbox)
+        const _dHit=slides[cur]&&slides[cur].els.find(e=>e.id===el.dataset.id);
+        if(_dHit&&typeof _applyShapeClipPath==='function') _applyShapeClipPath(el,_dHit);
       } else if(_needsClipHit){
         // Keep/rebuild hit-area with clip-path so clicks outside shape pass through
         const _dClip=slides[cur]&&slides[cur].els.find(e=>e.id===el.dataset.id);

@@ -9,10 +9,10 @@ function _mediaInsertNew(type) {
   const d = {
     id: 'e' + (++ec), type,
     x: 80, y: 80,
-    w: isVideo ? 480 : 320, h: isVideo ? 270 : 60,
+    w: isVideo ? 480 : 320, h: isVideo ? 270 : 72,
     mediaSrc: '', mediaSrcType: 'url',
     mvDisplay: 'windowed', mvControls: 'controls', mvStart: 'click',
-    maStart: 'click-el', maContinue: 'this', maVolume: 1, maTriggerElIds: [],
+    maStart: 'click-el', maContinue: 'this', maLoop: false, maVolume: 1, maTriggerElIds: [],
     rot: 0, anims: []
   };
   slides[cur].els.push(d);
@@ -70,12 +70,30 @@ function _mkMediaEl(d) {
 }
 
 // ─── Editor player rendering ──────────────────────────────────────────────────
+function _mediaResolveSrc(src, d) {
+  if (d && d.mediaId && typeof MediaStore !== 'undefined' && MediaStore.getPlayUrl) {
+    const u = MediaStore.getPlayUrl(d.mediaId, src);
+    if (u) return u;
+  }
+  if (!src) return '';
+  return typeof assetUrl === 'function' ? assetUrl(src) : src;
+}
+
+/** Не дать drag/pick перехватить клики по нативным controls. */
+function _mediaBindControlsGuard(node) {
+  if (!node) return;
+  ['mousedown', 'pointerdown', 'click', 'dblclick'].forEach(ev => {
+    node.addEventListener(ev, e => e.stopPropagation());
+  });
+}
+
 function _mediaRenderPlayer(el, d) {
   const ec_ = el.querySelector('.ec'); if (!ec_) return;
   const old = ec_.querySelector('.media-player-wrap'); if (old) old.remove();
   const wrap = document.createElement('div');
   wrap.className = 'media-player-wrap';
-  wrap.style.cssText = 'width:100%;height:100%;position:relative;display:flex;flex-direction:column;overflow:hidden;';
+  // В редакторе только превью — без native controls, чтобы работали select/drag/resize
+  wrap.style.cssText = 'width:100%;height:100%;position:relative;display:flex;flex-direction:column;overflow:hidden;pointer-events:none;';
   if (d.type === 'mediavideo') _mediaRenderVideo(wrap, d);
   else _mediaRenderAudio(wrap, d);
   ec_.appendChild(wrap);
@@ -86,23 +104,30 @@ function _mediaRenderVideo(wrap, d) {
   const src = d.mediaSrc || '';
   if (src) {
     const v = document.createElement('video');
-    v.src = typeof assetUrl==='function'?assetUrl(src):src; v.muted = true; v.preload = 'metadata';
-    v.style.cssText = 'width:100%;height:100%;object-fit:contain;display:block;flex:1;';
+    v.src = _mediaResolveSrc(src, d);
+    v.muted = true;
+    v.preload = 'metadata';
+    v.playsInline = true;
+    v.setAttribute('playsinline', '');
+    v.removeAttribute('controls');
+    v.style.cssText = 'width:100%;height:100%;object-fit:contain;display:block;flex:1;min-height:0;background:#000;pointer-events:none;';
+    // Показать кадр, не запускать воспроизведение
+    v.addEventListener('loadedmetadata', () => { try { v.currentTime = Math.min(0.1, (v.duration || 1) * 0.01); } catch (e) {} });
     wrap.appendChild(v);
+    if (d.mvControls !== 'none') {
+      const bar = document.createElement('div');
+      bar.style.cssText = 'position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.55);display:flex;align-items:center;gap:6px;padding:5px 8px;pointer-events:none;';
+      bar.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="rgba(255,255,255,.85)" stroke="none"><polygon points="5,3 19,12 5,21"/></svg><div style="flex:1;height:3px;background:rgba(255,255,255,.25);border-radius:2px"></div><span style="font-size:9px;color:rgba(255,255,255,.5);font-family:sans-serif">в показе ▶</span>';
+      wrap.appendChild(bar);
+    }
   } else {
     const ph = document.createElement('div');
-    ph.style.cssText = 'flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:rgba(255,255,255,.4);font-family:sans-serif;';
+    ph.style.cssText = 'flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:rgba(255,255,255,.4);font-family:sans-serif;pointer-events:none;';
     ph.innerHTML = '<svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="4" width="20" height="16" rx="2"/><polygon points="10,8 16,12 10,16" fill="currentColor" stroke="none" opacity=".7"/></svg><span style="font-size:11px">Укажите источник в панели →</span>';
     wrap.appendChild(ph);
   }
-  if (d.mvControls !== 'none') {
-    const bar = document.createElement('div');
-    bar.style.cssText = 'position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.6);display:flex;align-items:center;gap:6px;padding:5px 8px;';
-    bar.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="rgba(255,255,255,.85)" stroke="none"><polygon points="5,3 19,12 5,21"/></svg><div style="flex:1;height:3px;background:rgba(255,255,255,.25);border-radius:2px"></div><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.7)" stroke-width="2"><polygon points="11,5 6,9 2,9 2,15 6,15 11,19"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg><span style="font-size:10px;color:rgba(255,255,255,.5);font-family:monospace">0:00</span>';
-    wrap.appendChild(bar);
-  }
   const lbl = document.createElement('div');
-  lbl.style.cssText = 'position:absolute;top:5px;left:5px;background:rgba(0,0,0,.55);color:rgba(255,255,255,.7);font-size:9px;font-family:sans-serif;padding:2px 5px;border-radius:3px;';
+  lbl.style.cssText = 'position:absolute;top:5px;left:5px;background:rgba(0,0,0,.55);color:rgba(255,255,255,.7);font-size:9px;font-family:sans-serif;padding:2px 5px;border-radius:3px;pointer-events:none;z-index:1;';
   lbl.textContent = (d.mvDisplay === 'fullscreen' ? '⛶' : '▣') + ' ' + (d.mvStart === 'auto' ? 'Авто' : 'По клику');
   wrap.appendChild(lbl);
 }
@@ -111,21 +136,23 @@ function _mediaRenderAudio(wrap, d) {
   const src = d.mediaSrc || '';
   wrap.style.cssText += 'background:rgba(25,25,45,.92);border:1px solid rgba(255,255,255,.1);border-radius:8px;justify-content:center;box-sizing:border-box;';
   const row = document.createElement('div');
-  row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:0 12px;width:100%;box-sizing:border-box;';
+  row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:0 12px;width:100%;box-sizing:border-box;pointer-events:none;';
   row.innerHTML = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.7)" stroke-width="1.5" style="flex-shrink:0"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
     <div style="flex:1;min-width:0;"><div style="font-size:11px;color:rgba(255,255,255,.75);font-family:sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${src ? _mediaShortSrc(src) : 'Укажите источник в панели →'}</div><div style="height:2px;background:rgba(255,255,255,.18);border-radius:2px;margin-top:4px;"></div></div>
     <svg width="16" height="16" viewBox="0 0 24 24" fill="rgba(255,255,255,.7)" stroke="none" style="flex-shrink:0"><polygon points="5,3 19,12 5,21"/></svg>`;
   wrap.appendChild(row);
   const modes = {'auto':'▶ Авто','click-el':'🖱 По объекту','click-slide':'🖱 По слайду'};
-  const triggerName = d.maStart === 'click-el' && d.maTriggerElId ? _mediaTriggerLabel(d.maTriggerElId) : '';
+  const trigIds = d.maTriggerElIds && d.maTriggerElIds.length ? d.maTriggerElIds : (d.maTriggerElId ? [d.maTriggerElId] : []);
+  const triggerName = d.maStart === 'click-el' && trigIds.length ? _mediaTriggerLabel(trigIds[0]) : '';
   const lbl = document.createElement('div');
-  lbl.style.cssText = 'font-size:9px;color:rgba(255,255,255,.35);font-family:sans-serif;text-align:center;padding:2px 0 5px;';
-  lbl.textContent = (modes[d.maStart]||'') + (triggerName ? ': '+triggerName : '') + (d.maContinue==='all'?' · 🔁':'');
+  lbl.style.cssText = 'font-size:9px;color:rgba(255,255,255,.35);font-family:sans-serif;text-align:center;padding:2px 0 5px;pointer-events:none;';
+  lbl.textContent = (modes[d.maStart]||'') + (triggerName ? ': '+triggerName : '') + (d.maLoop?' · ∞':'') + (src ? ' · в показе' : '');
   wrap.appendChild(lbl);
 }
 
 function _mediaShortSrc(src) {
   if (!src) return '—';
+  if (src.startsWith('blob:')) return '(файл загружен)';
   if (src.startsWith('data:')) { const m = src.match(/^data:(audio|video)\/([^;]+)/); return m ? '(файл: '+m[2]+')' : '(файл загружен)'; }
   try { const u = new URL(src); return u.hostname + (u.pathname.length > 1 ? u.pathname.slice(0, 18) : ''); } catch(e) { return src.slice(0, 28); }
 }
@@ -134,10 +161,16 @@ function _mediaTriggerLabel(elId) {
   if (!elId || !slides[cur]) return elId;
   const d = slides[cur].els.find(e => e.id === elId);
   if (!d) return elId;
+  // Сам аудио-объект как триггер
+  if (sel && sel.dataset && sel.dataset.id === elId && d.type === 'mediaaudio') {
+    return 'Аудио (этот объект)';
+  }
+  if (_mediaPickerAudioId && elId === _mediaPickerAudioId && d.type === 'mediaaudio') {
+    return 'Аудио (этот объект)';
+  }
   const labels = { text:'Текст', image:'Изображение', shape:'Фигура', icon:'Значок',
     table:'Таблица', code:'Код', markdown:'Markdown', mediavideo:'Видео', mediaaudio:'Аудио' };
   const type = labels[d.type] || d.type;
-  // Try to get a short name from content
   let name = '';
   if (d.type === 'text') {
     const tmp = document.createElement('div'); tmp.innerHTML = d.html || ''; name = tmp.textContent.slice(0, 20).trim();
@@ -201,14 +234,24 @@ function _mediaTriggerPick() {
     ov.remove();
     let target = null;
     for (const el2 of allEls) {
+      if (el2.id === '_media-picker-ov') continue;
       const found = el2.matches && el2.matches('.el[data-id]') ? el2 : (el2.closest ? el2.closest('.el[data-id]') : null);
-      if (found && found.dataset.id !== _mediaPickerAudioId) { target = found; break; }
+      // Можно выбрать и сам аудио-объект
+      if (found && found.dataset.id) { target = found; break; }
     }
     if (target) _mediaTriggerPickDone(target.dataset.id);
     else _mediaTriggerPickCancel();
   });
   cv.appendChild(ov);
 }
+
+/** Быстро привязать запуск к самому аудио-блоку. */
+function _mediaTriggerPickSelf() {
+  if (!sel || sel.dataset.type !== 'mediaaudio') return;
+  _mediaPickerAudioId = sel.dataset.id;
+  _mediaTriggerPickDone(sel.dataset.id);
+}
+window._mediaTriggerPickSelf = _mediaTriggerPickSelf;
 
 function _mediaTriggerPickDone(elId) {
   _mediaPickerActive = false;
@@ -266,6 +309,7 @@ function syncMediaProps() {
     const fn = document.getElementById('map-file-name'); if (fn) fn.textContent = d.mediaSrcType === 'data' ? _mediaShortSrc(d.mediaSrc) : '';
     const st = document.getElementById('map-start'); if (st) st.value = d.maStart||'click-el';
     const co = document.getElementById('map-continue'); if (co) co.value = d.maContinue||'this';
+    const lp = document.getElementById('map-loop'); if (lp) lp.value = d.maLoop ? '1' : '0';
     const vol = document.getElementById('map-volume'); if (vol) vol.value = d.maVolume != null ? d.maVolume : 1;
     _mediaUpdateAudioHints();
     _mediaSyncTriggerList(d);
@@ -296,6 +340,7 @@ function updateMediaSrcUrl(isVideo) {
   const d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id); if (!d) return;
   const val = document.getElementById(isVideo ? 'mvp-src' : 'map-src').value.trim();
   d.mediaSrc = val; d.mediaSrcType = 'url';
+  delete d.mediaId;
   _mediaRenderPlayer(sel, d);
   if (typeof save === 'function') save();
   if (typeof drawThumbs === 'function') drawThumbs();
@@ -305,16 +350,38 @@ function updateMediaSrcFile(input, isVideo) {
   if (!sel) return;
   const d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id); if (!d) return;
   const file = input.files[0]; if (!file) return;
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    d.mediaSrc = e.target.result; d.mediaSrcType = 'data';
-    const fn = document.getElementById(isVideo ? 'mvp-file-name' : 'map-file-name'); if (fn) fn.textContent = _mediaShortSrc(d.mediaSrc);
-    const se = document.getElementById(isVideo ? 'mvp-src' : 'map-src'); if (se) se.value = '';
-    _mediaRenderPlayer(sel, d);
-    if (typeof save === 'function') save();
-    if (typeof drawThumbs === 'function') drawThumbs();
-  };
-  reader.readAsDataURL(file);
+  const mime = (typeof _mediaMimeFromFile === 'function') ? _mediaMimeFromFile(file) : (file.type || '');
+  (async () => {
+    try {
+      if (typeof MediaStore !== 'undefined' && MediaStore.putFromFile) {
+        d.mediaId = await MediaStore.putFromFile(file, mime);
+        d.mediaSrc = MediaStore.getPlayUrl(d.mediaId, '');
+        d.mediaSrcType = 'idb';
+      } else {
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = e => {
+            let u = e.target.result;
+            if (typeof _mediaFixDataUrlMime === 'function') u = _mediaFixDataUrlMime(u, mime);
+            resolve(u);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        d.mediaSrc = dataUrl; d.mediaSrcType = 'data'; delete d.mediaId;
+      }
+      const fn = document.getElementById(isVideo ? 'mvp-file-name' : 'map-file-name');
+      if (fn) fn.textContent = _mediaShortSrc(d.mediaSrc) || (d.mediaId ? '(файл в IndexedDB)' : '');
+      const se = document.getElementById(isVideo ? 'mvp-src' : 'map-src'); if (se) se.value = '';
+      _mediaRenderPlayer(sel, d);
+      if (typeof save === 'function') save();
+      if (typeof saveState === 'function') saveState();
+      if (typeof drawThumbs === 'function') drawThumbs();
+    } catch (err) {
+      console.warn(err);
+      if (typeof toast === 'function') toast('Не удалось загрузить медиафайл', 'err');
+    }
+  })();
 }
 
 // ─── Preview/Stop buttons in props ────────────────────────────────────────────
@@ -323,10 +390,12 @@ let _propAudio = null;
 function _mediaPreviewPlay() {
   if (!sel) return;
   const d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
-  if (!d || !d.mediaSrc) return;
+  const src = d ? _mediaResolveSrc(d.mediaSrc, d) : '';
+  if (!d || !src) return;
   _mediaPreviewStop();
-  _propAudio = new Audio(d.mediaSrc);
+  _propAudio = new Audio(src);
   _propAudio.volume = d.maVolume != null ? d.maVolume : 1;
+  _propAudio.loop = !!d.maLoop;
   _propAudio.play().catch(() => {});
 }
 
@@ -361,13 +430,13 @@ let _pvGlobalAudio = null, _pvGlobalAudioId = null;
     _orig.apply(this, arguments);
     const s = typeof slides !== 'undefined' ? slides[idx] : null; if (!s) return;
     const hiddenSet = (typeof hiddenElsPerSlide !== 'undefined' ? hiddenElsPerSlide[idx] : null) || new Set();
-    const pEls = container.querySelectorAll('.psel');
-    let ei = 0;
     s.els.forEach(d => {
-      if (hiddenSet.has(d.id)) { ei++; return; }
-      const el = pEls[ei++]; if (!el) return;
-      if (d.type !== 'mediavideo' && d.type !== 'mediaaudio') return;
-      el.innerHTML = ''; el.style.overflow = 'hidden';
+      if (!d || (d.type !== 'mediavideo' && d.type !== 'mediaaudio')) return;
+      if (hiddenSet.has(d.id)) return;
+      const el = container.querySelector('.psel[data-id="' + d.id + '"]');
+      if (!el) return;
+      el.innerHTML = '';
+      el.style.overflow = 'hidden';
       if (d.type === 'mediavideo') _pvVideo(el, d);
       else _pvAudio(el, d, container, s, idx);
     });
@@ -376,82 +445,130 @@ let _pvGlobalAudio = null, _pvGlobalAudioId = null;
 
 function _pvVideo(el, d) {
   const src = d.mediaSrc||'', full = d.mvDisplay==='fullscreen', ctrl = d.mvControls!=='none', auto = d.mvStart==='auto';
+  const playSrc = _mediaResolveSrc(src, d);
   if (full) {
     el.style.cssText += 'background:#000;display:flex;align-items:center;justify-content:center;cursor:pointer;';
     el.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;gap:10px;pointer-events:none;"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.8)" stroke-width="1.3"><rect x="2" y="4" width="20" height="16" rx="2"/><polygon points="10,8 16,12 10,16" fill="rgba(255,255,255,.8)" stroke="none"/></svg><span style="font-size:12px;color:rgba(255,255,255,.5);font-family:sans-serif">Нажмите для просмотра</span></div>';
-    const open = () => _pvFullscreen(src, ctrl);
+    const open = () => _pvFullscreen(playSrc, ctrl);
     if (auto) setTimeout(open, 80); else el.addEventListener('click', e => { e.stopPropagation(); open(); });
   } else {
     const video = document.createElement('video');
-    video.src = typeof assetUrl==='function'?assetUrl(src):src; video.style.cssText = 'width:100%;height:100%;object-fit:contain;display:block;background:#000;';
-    if (ctrl) video.controls = true; if (auto) { video.autoplay = true; video.muted = true; }
+    video.src = playSrc;
+    video.style.cssText = 'width:100%;height:100%;object-fit:contain;display:block;background:#000;';
+    video.playsInline = true;
+    video.setAttribute('playsinline', '');
+    if (ctrl) video.controls = true;
+    if (auto) { video.autoplay = true; video.muted = true; }
     el.appendChild(video);
-    if (!auto && !ctrl) { el.style.cursor='pointer'; el.addEventListener('click', e => { e.stopPropagation(); video.paused ? video.play() : video.pause(); }); }
+    if (!auto && !ctrl) {
+      el.style.cursor = 'pointer';
+      el.addEventListener('click', e => {
+        e.stopPropagation();
+        if (video.paused) video.play().catch(() => {});
+        else video.pause();
+      });
+    }
   }
 }
 
 function _pvFullscreen(src, ctrl) {
   const ov = document.createElement('div');
   ov.style.cssText = 'position:fixed;inset:0;background:#000;z-index:99999;display:flex;align-items:center;justify-content:center;';
-  const v = document.createElement('video'); v.src=typeof assetUrl==='function'?assetUrl(src):src; v.autoplay=true; if(ctrl)v.controls=true;
-  v.style.cssText='max-width:100%;max-height:100%;outline:none;';
-  const btn = document.createElement('button'); btn.textContent='✕';
-  btn.style.cssText='position:absolute;top:16px;right:20px;background:rgba(255,255,255,.15);border:none;color:#fff;font-size:20px;cursor:pointer;padding:6px 12px;border-radius:6px;';
-  const destroy=()=>{v.pause();if(document.body.contains(ov))document.body.removeChild(ov);document.removeEventListener('keydown',onK);};
-  const onK=e=>{if(e.key==='Escape')destroy();};
-  btn.onclick=destroy; document.addEventListener('keydown',onK);
+  const v = document.createElement('video');
+  v.src = src || '';
+  v.autoplay = true;
+  v.playsInline = true;
+  if (ctrl) v.controls = true;
+  v.style.cssText = 'max-width:100%;max-height:100%;outline:none;';
+  const btn = document.createElement('button'); btn.textContent = '✕';
+  btn.style.cssText = 'position:absolute;top:16px;right:20px;background:rgba(255,255,255,.15);border:none;color:#fff;font-size:20px;cursor:pointer;padding:6px 12px;border-radius:6px;';
+  const destroy = () => { v.pause(); if (document.body.contains(ov)) document.body.removeChild(ov); document.removeEventListener('keydown', onK); };
+  const onK = e => { if (e.key === 'Escape') destroy(); };
+  btn.onclick = destroy; document.addEventListener('keydown', onK);
   ov.appendChild(v); ov.appendChild(btn); document.body.appendChild(ov);
 }
 
 function _pvAudio(el, d, container, slide, slideIdx) {
   const src = d.mediaSrc||'', mode = d.maStart||'click-el', cont = d.maContinue==='all';
   const vol = d.maVolume != null ? d.maVolume : 1;
-  const ic = mode==='auto'?'rgba(255,255,255,.3)':'rgba(255,255,255,.7)';
-  el.style.cssText += 'display:flex;align-items:center;justify-content:center;';
-  el.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;pointer-events:none;">
-    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="${ic}" stroke-width="1.5"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-    <span style="font-size:9px;color:${ic};font-family:sans-serif">${{'auto':'▶ Авто','click-el':'🖱 Клик','click-slide':'🖱 Слайд'}[mode]||''}</span></div>`;
-  if (!src) return;
+  const loop = !!d.maLoop;
+  const playSrc = _mediaResolveSrc(src, d);
+  const short = playSrc ? _mediaShortSrc(playSrc) : 'Аудио';
+  el.style.cssText += 'display:flex;flex-direction:column;align-items:stretch;justify-content:center;background:rgba(25,25,45,.92);border:1px solid rgba(255,255,255,.1);border-radius:8px;overflow:hidden;box-sizing:border-box;';
+  el.innerHTML = `<div style="display:flex;align-items:center;gap:10px;padding:0 12px;width:100%;height:100%;box-sizing:border-box;pointer-events:none;">
+    <svg class="_ma-ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.7)" stroke-width="1.5" style="flex-shrink:0"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+    <div style="flex:1;min-width:0;"><div style="font-size:11px;color:rgba(255,255,255,.75);font-family:sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${short}</div>
+    <div style="height:2px;background:rgba(255,255,255,.18);border-radius:2px;margin-top:4px;"></div></div>
+    <svg class="_ma-play" width="16" height="16" viewBox="0 0 24 24" fill="rgba(255,255,255,.7)" stroke="none" style="flex-shrink:0"><polygon points="5,3 19,12 5,21"/></svg></div>`;
+  if (!playSrc) return;
 
-  // Create or reuse audio
   let audio;
+  let reused = false;
   if (cont && _pvGlobalAudio && _pvGlobalAudioId === d.id) {
     audio = _pvGlobalAudio;
-  } else {
-    if (_pvGlobalAudio && _pvGlobalAudioId !== d.id) { _pvGlobalAudio.pause(); _pvGlobalAudio = null; }
-    audio = new Audio(src);
+    reused = true;
+  } else if (cont) {
+    if (_pvGlobalAudio && _pvGlobalAudioId !== d.id) {
+      try { _pvGlobalAudio.pause(); } catch (e) {}
+      _pvGlobalAudio = null;
+      _pvGlobalAudioId = null;
+    }
+    audio = new Audio(playSrc);
     audio.volume = vol;
+    audio.loop = loop;
+    _pvGlobalAudio = audio;
+    _pvGlobalAudioId = d.id;
     _pvAudioMap.set(d.id, audio);
-    if (cont) { _pvGlobalAudio = audio; _pvGlobalAudioId = d.id; }
+  } else {
+    audio = new Audio(playSrc);
+    audio.volume = vol;
+    audio.loop = loop;
+    _pvAudioMap.set(d.id, audio);
   }
+  audio.loop = loop;
 
-  const upIcon = p => { const s = el.querySelector('svg'); if (s) s.style.stroke = p ? 'rgba(99,210,150,.9)' : ic; };
+  const upIcon = p => {
+    const c = p ? 'rgba(99,210,150,.9)' : 'rgba(255,255,255,.7)';
+    const ico = el.querySelector('._ma-ico');
+    if (ico) ico.style.stroke = c;
+    const pl = el.querySelector('._ma-play');
+    if (pl) pl.setAttribute('fill', c);
+  };
   audio.addEventListener('play', () => upIcon(true));
   audio.addEventListener('pause', () => upIcon(false));
   audio.addEventListener('ended', () => upIcon(false));
+  if (!audio.paused) upIcon(true);
 
   if (mode === 'auto') {
-    audio.play().catch(() => {});
-  } else if (mode === 'click-el') {
-    // Support both old single id and new array
-    const trigIds = d.maTriggerElIds && d.maTriggerElIds.length ? d.maTriggerElIds : (d.maTriggerElId ? [d.maTriggerElId] : []);
-    if (trigIds.length > 0) {
-      trigIds.forEach(trigId => {
-        const idx2 = slide && slide.els ? slide.els.findIndex(e => e.id === trigId) : -1;
-        const trigEl = idx2 >= 0 ? container.querySelectorAll('.psel')[idx2] : null;
-        if (trigEl) {
-          trigEl.style.cursor = 'pointer';
-          trigEl.addEventListener('click', e => { e.stopPropagation(); audio.currentTime = 0; audio.play(); });
-        }
-      });
-    } else {
-      el.style.cursor = 'pointer';
-      el.addEventListener('click', e => { e.stopPropagation(); audio.currentTime = 0; audio.play(); });
+    // Не рестартить уже играющий persist-трек при повторном входе на слайд
+    if (!(reused && !audio.paused)) {
+      if (!reused) try { audio.currentTime = 0; } catch (e) {}
+      audio.play().catch(() => {});
     }
+  } else if (mode === 'click-el') {
+    let trigIds = d.maTriggerElIds && d.maTriggerElIds.length ? d.maTriggerElIds.slice() : (d.maTriggerElId ? [d.maTriggerElId] : []);
+    // Без выбранных триггеров — клик по самому аудио-объекту
+    if (!trigIds.length) trigIds = [d.id];
+    trigIds.forEach(trigId => {
+      const trigEl = container.querySelector('.psel[data-id="' + trigId + '"]');
+      if (trigEl) {
+        trigEl.style.cursor = 'pointer';
+        trigEl.addEventListener('click', e => {
+          e.stopPropagation();
+          // Клик: старт → пауза → продолжить
+          if (!audio.paused) {
+            audio.pause();
+          } else {
+            if (audio.ended) try { audio.currentTime = 0; } catch (err) {}
+            audio.play().catch(() => {});
+          }
+        });
+      }
+    });
   } else if (mode === 'click-slide') {
     el.style.pointerEvents = 'none';
     if (container) {
-      let started = false;
+      let started = reused && !audio.paused;
       const prev = container._fireNextStep;
       container._fireNextStep = function() {
         if (!started) { started = true; audio.play().catch(() => {}); return true; }

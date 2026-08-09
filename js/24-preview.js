@@ -161,9 +161,24 @@ let _pvSnapIdx=null,_pvSnapEls=null;
 window._pvRestoring=false;
 let pidx=0,pTransiting=false,pTransitionTo=null,_pTransTimers=[],autoTimer=null;
 
+window._pvCloneSlideEls=function(els){
+  if(!els) return [];
+  try{
+    if(typeof structuredClone==='function') return structuredClone(els);
+  }catch(e){}
+  // Без JSON.stringify огромных dataURL — копируем поля, строки mediaSrc по значению
+  return els.map(d=>{
+    const o=Object.assign({},d);
+    if(Array.isArray(d.anims)) o.anims=d.anims.map(a=>Object.assign({},a));
+    if(Array.isArray(d.maTriggerElIds)) o.maTriggerElIds=d.maTriggerElIds.slice();
+    return o;
+  });
+};
 window._pvRestoreSlideSnapshot=function(){
   if(_pvSnapIdx==null||!_pvSnapEls||!slides[_pvSnapIdx]) return;
-  slides[_pvSnapIdx].els=JSON.parse(JSON.stringify(_pvSnapEls));
+  slides[_pvSnapIdx].els=typeof window._pvCloneSlideEls==='function'
+    ? window._pvCloneSlideEls(_pvSnapEls)
+    : _pvSnapEls;
   _pvSnapIdx=null;
   _pvSnapEls=null;
 };
@@ -264,7 +279,9 @@ function startPreview(startIdx){
   if(typeof window._pvCleanupEditorCanvas==='function') window._pvCleanupEditorCanvas(cur);
   save();
   _pvSnapIdx=cur;
-  _pvSnapEls=JSON.parse(JSON.stringify(slides[cur].els||[]));
+  _pvSnapEls=typeof window._pvCloneSlideEls==='function'
+    ? window._pvCloneSlideEls(slides[cur].els||[])
+    : (slides[cur].els||[]).slice();
   pidx=startIdx||0;pTransiting=false;pTransitionTo=null;_clearPreviewTransTimers();
   _pvSeedDecorTimeFromEditor();
   pBlackScreen=false;_pJumpBuf='';clearTimeout(_pJumpTimer);
@@ -479,9 +496,21 @@ function stopPreview(){
   const _prevSelId=window._previewSelRestoreId||null;
   delete window._previewSelRestoreId;
   // Re-render current slide from data so all styles (textBg etc.) are restored
-  load();
+  // Не автоподгонять высоту — иначе ручной размер блока сбрасывается
+  window._skipTextAutofit=true;
+  window._skipNextTextAutofit=true;
+  (typeof window.load==='function'?window.load:load)();
+  if(typeof MediaStore!=='undefined'&&MediaStore.hydrateSlides&&slides[cur]){
+    MediaStore.hydrateSlides([slides[cur]]).then(n=>{
+      if(n>0&&typeof load==='function'){
+        window._skipTextAutofit=true;
+        window._skipNextTextAutofit=true;
+        (typeof window.load==='function'?window.load:load)();
+      }
+    }).catch(()=>{});
+  }
   document.body.classList.remove('preview-mode');
-  window._pvRestoring=false;
+  // _pvRestoring держим до конца восстановления визуалов/высот
   // Re-apply text backgrounds from model data (dataset may be stale after preview)
   requestAnimationFrame(()=>{
     const _cv=document.getElementById('canvas');
@@ -505,6 +534,10 @@ function stopPreview(){
       if(el.dataset.type==='text'){
         const d=slides[cur]&&slides[cur].els.find(x=>x.id===el.dataset.id);
         if(d&&typeof window._stampTextDatasetFromModel==='function') window._stampTextDatasetFromModel(el,d);
+        // Жёстко вернуть сохранённую высоту (на случай если что-то успело подогнать)
+        if(d&&d.h!=null){
+          el.style.height=d.h+'px';
+        }
         if(typeof window._restoreTextBlockVisuals==='function') window._restoreTextBlockVisuals(el);
         else if(typeof applyTextBg==='function') applyTextBg(el);
       }
@@ -531,6 +564,9 @@ function stopPreview(){
     if(window._propsScrollMem) window._propsScrollMem.markRestoreAfterPick();
     if(_prevSelId){const _resel=document.querySelector(`.el[data-id="${_prevSelId}"]`);if(_resel&&typeof pick==='function')pick(_resel);}
     else if(window._propsScrollMem) window._propsScrollMem.restoreSoon();
+    window._pvRestoring=false;
+    window._skipTextAutofit=false;
+    window._skipNextTextAutofit=false;
   }); });
 }
 function _pResetStageZoom(){
@@ -716,7 +752,7 @@ function gotoPreview(to,dir){
     if (psbEl) window._pvCleanupPreviewStage(psbEl, pidx);
   }
   const trans=(slides[to]&&slides[to].trans)||globalTrans||'none';
-  const dur=typeof _effectiveTransDur==='function'?_effectiveTransDur():(transitionDur||500);
+  const dur=typeof _effectiveTransDur==='function'?_effectiveTransDur(to):((slides[to]&&slides[to].transDur)||transitionDur||500);
   const flipDur=typeof _flipAnimDur==='function'?_flipAnimDur(dur):dur;
   if(trans==='none'||dur===0){
     // Cancel any running transition immediately
@@ -1063,7 +1099,7 @@ function _morphHideOnFrom(ael){
   ael.style.pointerEvents='none';
 }
 function doMorphTransition(a,b,to,cb,durMs){
-  const dur=durMs!=null?durMs:(typeof _effectiveTransDur==='function'?_effectiveTransDur():(transitionDur||500));
+  const dur=durMs!=null?durMs:(typeof _effectiveTransDur==='function'?_effectiveTransDur(to):((slides[to]&&slides[to].transDur)||transitionDur||500));
   const fromSlide=slides[pidx]||{els:[]};
   const toSlide=slides[to]||{els:[]};
   const usedFrom=new Set();
@@ -1203,24 +1239,32 @@ function doMorphTransition(a,b,to,cb,durMs){
 let presShuffle=false,presLoop=false,_shuffleHistory=[];
 let presShowFooter=true,presShowSideNav=true,presShowEsc=true;
 
+function _savePresDisplayPrefs(){
+  try{
+    const o={
+      footer:!!presShowFooter,
+      sidenav:!!presShowSideNav,
+      esc:!!presShowEsc
+    };
+    localStorage.setItem('sf_pres_display', JSON.stringify(o));
+    window._presDisplay = o;
+  }catch(e){}
+}
 function _loadPresDisplayPrefs(){
   try{
     const raw=localStorage.getItem('sf_pres_display');
-    if(!raw) return;
+    if(!raw) {
+      window._presDisplay={footer:true,sidenav:true,esc:true};
+      return;
+    }
     const o=JSON.parse(raw);
     if(typeof o.footer==='boolean') presShowFooter=o.footer;
     if(typeof o.sidenav==='boolean') presShowSideNav=o.sidenav;
     if(typeof o.esc==='boolean') presShowEsc=o.esc;
-  }catch(e){}
-}
-function _savePresDisplayPrefs(){
-  try{
-    localStorage.setItem('sf_pres_display', JSON.stringify({
-      footer:!!presShowFooter,
-      sidenav:!!presShowSideNav,
-      esc:!!presShowEsc
-    }));
-  }catch(e){}
+    window._presDisplay={footer:!!presShowFooter,sidenav:!!presShowSideNav,esc:!!presShowEsc};
+  }catch(e){
+    window._presDisplay={footer:true,sidenav:true,esc:true};
+  }
 }
 _loadPresDisplayPrefs();
 
@@ -1842,7 +1886,7 @@ function buildPSlide(container,idx,transOffset,noScale){
     const _sfSft=(d.shapeFlipH||d.shapeFlipV)?' scale('+(d.shapeFlipH?-1:1)+','+(d.shapeFlipV?-1:1)+')':'';
     if(d._isDecor) el.classList.add('is-decor');
     const _pvZ=d._isDecor?'1':'2';
-    el.style.cssText='position:absolute;left:'+d.x+'px;top:'+d.y+'px;width:'+d.w+'px;height:'+d.h+'px;z-index:'+_pvZ+';'+(d.type==='lego'||_hasSwing||_hasFloat||_hasDance||_hasParticles||_hasCaption||_hasTextShadow?'overflow:visible;':'overflow:hidden;')+'transform:rotate('+rot+'deg)'+_sfSft+';'+rxStr+(hasCursor?'cursor:pointer;':'cursor:default;')+(elOp!==1?'opacity:'+elOp+';':'')+_previewBdBlur;
+    el.style.cssText='position:absolute;left:'+d.x+'px;top:'+d.y+'px;width:'+d.w+'px;height:'+d.h+'px;z-index:'+_pvZ+';'+(d.type==='lego'||d.type==='lineangle'||_hasSwing||_hasFloat||_hasDance||_hasParticles||_hasCaption||_hasTextShadow?'overflow:visible;':'overflow:hidden;')+'transform:rotate('+rot+'deg)'+_sfSft+';'+rxStr+(hasCursor?'cursor:pointer;':'cursor:default;')+(elOp!==1?'opacity:'+elOp+';':'')+_previewBdBlur;
     if(_hasDance) el.classList.add('has-dance');
 
     // Build content
@@ -2156,6 +2200,20 @@ function buildPSlide(container,idx,transOffset,noScale){
       c.style.cssText='width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:visible;';
       c.innerHTML=d.html||'';
       el.appendChild(c);
+    }else if(d.type==='lineangle'){
+      el.style.overflow='visible';
+      el.style.pointerEvents='none';
+      el.style.zIndex='6';
+      el.style.transform='none';
+      el.dataset.rot='0';
+      const built = typeof buildLineAngleContent==='function' ? buildLineAngleContent(d, s.els) : null;
+      if(built){
+        el.style.left=built.x+'px';
+        el.style.top=built.y+'px';
+        el.style.width=built.w+'px';
+        el.style.height=built.h+'px';
+        el.innerHTML=built.html;
+      }
     }
 
     const anims=d.anims||[];

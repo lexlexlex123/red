@@ -99,8 +99,41 @@ window.closeAnimPanel = function(){
 function snapV(v){return document.getElementById('snap-chk').checked?Math.round(v/SNAP)*SNAP:v;}
 let guides=[];
 function clearGuides(){guides.forEach(g=>g.remove());guides=[];}
+const SNAP_LS_KEY='sf_snap';
+function onSnapToggle(on){
+  if(!on){
+    clearGuides();
+    if(typeof _clearExtraGuides==='function') _clearExtraGuides();
+  } else if(typeof _extraGuidesMode!=='undefined'&&_extraGuidesMode!=='none'&&typeof _drawExtraGuides==='function'){
+    _drawExtraGuides();
+  }
+  try{
+    const settingsSnap=document.getElementById('settings-snap');
+    if(settingsSnap) settingsSnap.checked=!!on;
+  }catch(e){}
+  try{ localStorage.setItem(SNAP_LS_KEY, on ? '1' : '0'); }catch(e){}
+}
+window.onSnapToggle=onSnapToggle;
+function restoreSnapPref(){
+  try{
+    const v=localStorage.getItem(SNAP_LS_KEY);
+    if(v===null) return;
+    const on=v==='1';
+    const chk=document.getElementById('snap-chk');
+    if(chk) chk.checked=on;
+    const settingsSnap=document.getElementById('settings-snap');
+    if(settingsSnap) settingsSnap.checked=on;
+    if(!on){
+      clearGuides();
+      if(typeof _clearExtraGuides==='function') _clearExtraGuides();
+    }
+  }catch(e){}
+}
+window.restoreSnapPref=restoreSnapPref;
 function showGuides(el){
   clearGuides();
+  const snapOn=document.getElementById('snap-chk');
+  if(!snapOn||!snapOn.checked) return;
   const x=parseInt(el.style.left),y=parseInt(el.style.top),w=parseInt(el.style.width),h=parseInt(el.style.height);
   const cx=canvasW/2,cy=canvasH/2,TH=7;
   let snappedX=x, snappedY=y;
@@ -548,6 +581,32 @@ function _repositionHandlesOverlay(el) {
     const pos = positions[rh.dataset.cls];
     if (pos) { rh.style.left = pos.x + 'px'; rh.style.top = pos.y + 'px'; }
   });
+  // Line endpoint squares
+  if (el.dataset.shape === 'line') {
+    const dLine = typeof slides !== 'undefined' && slides[cur] && slides[cur].els.find(e => e.id === el.dataset.id);
+    if (dLine) {
+      const ends = typeof _lineLocalEnds === 'function' ? _lineLocalEnds(dLine, elW, elH) : null;
+      if (ends) {
+        const fx = (dLine.shapeFlipH === true || el.dataset.shapeFlipH === 'true') ? -1 : 1;
+        const fy = (dLine.shapeFlipV === true || el.dataset.shapeFlipV === 'true') ? -1 : 1;
+        function toC(lx, ly) {
+          const dx = (lx - elW / 2) * fx, dy = (ly - elH / 2) * fy;
+          return { x: ecx + dx * cosr - dy * sinr, y: ecy + dx * sinr + dy * cosr };
+        }
+        const pa = toC(ends.x1, ends.y1), pb = toC(ends.x2, ends.y2);
+        const ha = overlay.querySelector('[data-line-ep="a"]');
+        const hb = overlay.querySelector('[data-line-ep="b"]');
+        if (ha) {
+          if (typeof _placeLineEpHandle === 'function') _placeLineEpHandle(ha, pa.x, pa.y);
+          else { ha.style.left = pa.x + 'px'; ha.style.top = pa.y + 'px'; ha.style.transform = 'translate(-50%,-50%)'; }
+        }
+        if (hb) {
+          if (typeof _placeLineEpHandle === 'function') _placeLineEpHandle(hb, pb.x, pb.y);
+          else { hb.style.left = pb.x + 'px'; hb.style.top = pb.y + 'px'; hb.style.transform = 'translate(-50%,-50%)'; }
+        }
+      }
+    }
+  }
   // Keep selection rectangle in sync with rotation (handles already track corners)
   const layer = document.getElementById('sel-frames-layer');
   if (layer) {
@@ -991,6 +1050,820 @@ function _buildChevronHandle() {
   });
 }
 
+// Square endpoint markers for the line shape — drag either end to set length/angle
+/** Half-stroke pad: round cap radius (visual tip sticks out this far past the path end). */
+function _lineStrokePad(d){
+  const sw = d.sw !== undefined ? +d.sw : 2;
+  const strokeStyle = d.strokeStyle || 'solid';
+  const isComplex = strokeStyle === 'wave' || strokeStyle === 'zigzag';
+  return (!isComplex && sw > 0) ? sw / 2 : 0;
+}
+/**
+ * Local path endpoints = centers of round linecaps (the points that must coincide at a join).
+ * Stroke extends `_lineStrokePad` past these points; SVG overflow is visible.
+ */
+function _lineLocalEnds(d, w, h){
+  const sw = d.sw !== undefined ? +d.sw : 2;
+  return { x1: 0, y1: h / 2, x2: Math.max(1, w), y2: h / 2, m: 0, sw };
+}
+function _parsePx(v){
+  const n = parseFloat(v);
+  return isFinite(n) ? n : 0;
+}
+/** Place handle so its center is exactly at (x,y) canvas coords */
+function _placeLineEpHandle(h, x, y){
+  h.style.left = x + 'px';
+  h.style.top = y + 'px';
+  h.style.transform = 'translate(-50%,-50%)';
+}
+
+/** Map shape-local coords → canvas (accounts for rot / flip) */
+function _elLocalToCanvas(el, lx, ly){
+  const L = _parsePx(el.style.left);
+  const T = _parsePx(el.style.top);
+  const W = _parsePx(el.style.width);
+  const H = _parsePx(el.style.height);
+  const rot = (parseFloat(el.dataset.rot) || 0) * Math.PI / 180;
+  const fx = el.dataset.shapeFlipH === 'true' ? -1 : 1;
+  const fy = el.dataset.shapeFlipV === 'true' ? -1 : 1;
+  const cosr = Math.cos(rot), sinr = Math.sin(rot);
+  const cx = L + W / 2, cy = T + H / 2;
+  const dx = (lx - W / 2) * fx, dy = (ly - H / 2) * fy;
+  return { x: cx + dx * cosr - dy * sinr, y: cy + dx * sinr + dy * cosr };
+}
+
+function _lineCanvasEnds(el, d){
+  const w = _parsePx(el.style.width) || (d && d.w) || 0;
+  const h = _parsePx(el.style.height) || (d && d.h) || 0;
+  const ends = _lineLocalEnds(d, w, h);
+  return {
+    a: _elLocalToCanvas(el, ends.x1, ends.y1),
+    b: _elLocalToCanvas(el, ends.x2, ends.y2)
+  };
+}
+
+/** Legacy lines: width included stroke pad and path was inset — convert to cap-center model */
+function _migrateLineCapGeometry(el, d){
+  if(!el || !d || d.shape !== 'line' || d._lineCapV === 2) return;
+  const w = _parsePx(el.style.width) || d.w || 0;
+  const h = _parsePx(el.style.height) || d.h || 0;
+  const sw = d.sw !== undefined ? +d.sw : 2;
+  const strokeStyle = d.strokeStyle || 'solid';
+  const isComplex = strokeStyle === 'wave' || strokeStyle === 'zigzag';
+  const oldPad = (!isComplex && sw > 0) ? sw / 2 : 0;
+  d._lineCapV = 2;
+  if(oldPad <= 0 || w <= oldPad * 2 + 1){
+    // Already looks like new model or too short — just rebuild from current ends at 0..w
+    return;
+  }
+  // Old path ends (cap centers) were at local (pad, h/2) and (w-pad, h/2)
+  const a = _elLocalToCanvas(el, oldPad, h / 2);
+  const b = _elLocalToCanvas(el, Math.max(oldPad + 1, w - oldPad), h / 2);
+  _applyLineFromCanvasEnds(el, d, a, b);
+}
+
+/** Rebuild line geometry from two canvas endpoints (= round-cap centers).
+ *  pin: 'a' | 'b' — which end must stay exactly in place (the other may move / extend). */
+function _applyLineFromCanvasEnds(el, d, p1, p2, pin){
+  let x1 = p1.x, y1 = p1.y, x2 = p2.x, y2 = p2.y;
+  let dx = x2 - x1, dy = y2 - y1;
+  let len = Math.hypot(dx, dy);
+  const sw = d.sw !== undefined ? +d.sw : 2;
+  const minLen = 8;
+  let cosr, sinr;
+  if(len < 1e-8){
+    const rot0 = ((parseFloat(el.dataset.rot) || 0) * Math.PI / 180);
+    cosr = Math.cos(rot0); sinr = Math.sin(rot0);
+    if(pin === 'b'){ x1 = x2 - cosr * minLen; y1 = y2 - sinr * minLen; }
+    else { x2 = x1 + cosr * minLen; y2 = y1 + sinr * minLen; }
+    len = minLen;
+  } else {
+    cosr = dx / len; sinr = dy / len;
+    if(len < minLen){
+      // Extend only the free end — pinned end stays put
+      if(pin === 'b'){ x1 = x2 - cosr * minLen; y1 = y2 - sinr * minLen; }
+      else if(pin === 'a'){ x2 = x1 + cosr * minLen; y2 = y1 + sinr * minLen; }
+      else {
+        // No pin: grow symmetrically (rare)
+        const midX = (x1 + x2) / 2, midY = (y1 + y2) / 2;
+        x1 = midX - cosr * minLen / 2; y1 = midY - sinr * minLen / 2;
+        x2 = midX + cosr * minLen / 2; y2 = midY + sinr * minLen / 2;
+      }
+      len = minLen;
+    }
+  }
+  const rot = Math.atan2(sinr, cosr) * 180 / Math.PI;
+  const newW = len;
+  const newH = Math.max(24, sw + 16);
+  // Anchor the element so the pinned endpoint maps to exact canvas coords
+  let midX, midY;
+  if(pin === 'a'){
+    midX = x1 + cosr * (newW / 2);
+    midY = y1 + sinr * (newW / 2);
+  } else if(pin === 'b'){
+    midX = x2 - cosr * (newW / 2);
+    midY = y2 - sinr * (newW / 2);
+  } else {
+    midX = (x1 + x2) / 2;
+    midY = (y1 + y2) / 2;
+  }
+  d.x = midX - newW / 2;
+  d.y = midY - newH / 2;
+  d.w = newW;
+  d.h = newH;
+  d.rot = rot;
+  d._lineCapV = 2;
+  d.shapeFlipH = false;
+  d.shapeFlipV = false;
+  el.style.left = d.x + 'px';
+  el.style.top = d.y + 'px';
+  el.style.width = d.w + 'px';
+  el.style.height = d.h + 'px';
+  el.style.transform = 'rotate(' + rot + 'deg)';
+  el.dataset.rot = String(rot);
+  delete el.dataset.shapeFlipH;
+  delete el.dataset.shapeFlipV;
+  if(typeof renderShapeEl === 'function') renderShapeEl(el, d);
+  if(typeof _applyShapeClipPath === 'function') _applyShapeClipPath(el, d);
+}
+
+window._migrateLineCapGeometry = _migrateLineCapGeometry;
+window._lineStrokePad = _lineStrokePad;
+
+function _setLineEndCanvas(el, d, which, pt){
+  const ends = _lineCanvasEnds(el, d);
+  // Pin the opposite end so it never drifts when this end moves
+  if(which === 'a') _applyLineFromCanvasEnds(el, d, pt, ends.b, 'b');
+  else _applyLineFromCanvasEnds(el, d, ends.a, pt, 'a');
+}
+
+function _ensureLineJoin(d){
+  if(!d.lineJoin) d.lineJoin = { a: null, b: null };
+  if(!('a' in d.lineJoin)) d.lineJoin.a = null;
+  if(!('b' in d.lineJoin)) d.lineJoin.b = null;
+  return d.lineJoin;
+}
+
+function _persistLineJoinDom(el, d){
+  if(!el || !d) return;
+  const j = d.lineJoin;
+  if(j && (j.a || j.b)){
+    try{ el.dataset.lineJoin = JSON.stringify({ a: j.a || null, b: j.b || null }); }
+    catch(e){ delete el.dataset.lineJoin; }
+  } else {
+    delete el.dataset.lineJoin;
+  }
+}
+
+function _findLineData(id){
+  if(typeof slides === 'undefined' || !slides[cur]) return null;
+  return slides[cur].els.find(e => e && e.id === id && e.shape === 'line') || null;
+}
+
+function _findLineEl(id){
+  const canvas = document.getElementById('canvas');
+  return canvas ? canvas.querySelector('.el[data-id="'+id+'"]') : null;
+}
+
+function _ensureSlideJunctions(){
+  if(typeof slides === 'undefined' || !slides[cur]) return {};
+  if(!slides[cur].lineJunctions) slides[cur].lineJunctions = {};
+  return slides[cur].lineJunctions;
+}
+
+function _newJunctionId(){
+  return 'j' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+function _isLegacyJoinRef(ref){
+  return !!(ref && typeof ref === 'object' && ref.id && (ref.end === 'a' || ref.end === 'b'));
+}
+
+function _endJunctionId(d, which){
+  if(!d || !d.lineJoin) return null;
+  const ref = d.lineJoin[which];
+  return (typeof ref === 'string' && ref) ? ref : null;
+}
+
+function _addMemberToJunction(jid, member){
+  if(!jid || !member) return;
+  const juncs = _ensureSlideJunctions();
+  if(!juncs[jid]) juncs[jid] = [];
+  if(!juncs[jid].some(m => m.id === member.id && m.end === member.end))
+    juncs[jid].push({ id: member.id, end: member.end });
+}
+
+function _getJunctionMembers(jid){
+  if(!jid) return [];
+  const juncs = _ensureSlideJunctions();
+  return (juncs[jid] || []).slice();
+}
+
+function _migrateLegacyJoinPair(d, which){
+  if(!d || !d.lineJoin) return;
+  const ref = d.lineJoin[which];
+  if(!_isLegacyJoinRef(ref)) return;
+  const od = _findLineData(ref.id);
+  if(!od){ d.lineJoin[which] = null; return; }
+  _ensureLineJoin(od);
+  const back = od.lineJoin[ref.end];
+  if(typeof back === 'string'){
+    d.lineJoin[which] = back;
+    _addMemberToJunction(back, { id: d.id, end: which });
+    _persistLineJoinDom(_findLineEl(d.id), d);
+    return;
+  }
+  const jid = _newJunctionId();
+  _ensureSlideJunctions()[jid] = [
+    { id: d.id, end: which },
+    { id: od.id, end: ref.end }
+  ];
+  d.lineJoin[which] = jid;
+  od.lineJoin[ref.end] = jid;
+  _persistLineJoinDom(_findLineEl(d.id), d);
+  _persistLineJoinDom(_findLineEl(od.id), od);
+}
+
+function _migrateSlideLineJoins(){
+  if(typeof slides === 'undefined' || !slides[cur]) return;
+  (slides[cur].els || []).forEach(d => {
+    if(!d || d.shape !== 'line') return;
+    _ensureLineJoin(d);
+    ['a', 'b'].forEach(w => _migrateLegacyJoinPair(d, w));
+  });
+}
+
+function _dissolveJunctionIfSmall(jid){
+  if(!jid) return;
+  const juncs = _ensureSlideJunctions();
+  const members = juncs[jid] || [];
+  if(members.length >= 2) return;
+  members.forEach(m => {
+    const md = _findLineData(m.id);
+    if(md && md.lineJoin && md.lineJoin[m.end] === jid){
+      md.lineJoin[m.end] = null;
+      _persistLineJoinDom(_findLineEl(m.id), md);
+    }
+  });
+  delete juncs[jid];
+}
+
+function _clearLineJoin(d, which){
+  if(!d || !d.lineJoin || !d.lineJoin[which]) return;
+  _migrateSlideLineJoins();
+  const live = _findLineData(d.id) || d;
+  const ref = live.lineJoin[which];
+  if(_isLegacyJoinRef(ref)){
+    live.lineJoin[which] = null;
+    const other = _findLineData(ref.id);
+    if(other){
+      _ensureLineJoin(other);
+      const back = other.lineJoin[ref.end];
+      if(_isLegacyJoinRef(back) && back.id === live.id && back.end === which){
+        other.lineJoin[ref.end] = null;
+        _persistLineJoinDom(_findLineEl(other.id), other);
+      } else if(typeof back === 'string'){
+        _clearLineJoin(other, ref.end);
+        return;
+      }
+    }
+    _persistLineJoinDom(_findLineEl(live.id), live);
+    if(d !== live) d.lineJoin = live.lineJoin;
+    return;
+  }
+  if(typeof ref !== 'string'){
+    live.lineJoin[which] = null;
+    _persistLineJoinDom(_findLineEl(live.id), live);
+    if(d !== live) d.lineJoin = live.lineJoin;
+    return;
+  }
+  const jid = ref;
+  live.lineJoin[which] = null;
+  _persistLineJoinDom(_findLineEl(live.id), live);
+  const juncs = _ensureSlideJunctions();
+  if(juncs[jid]){
+    juncs[jid] = juncs[jid].filter(m => !(m.id === live.id && m.end === which));
+    _dissolveJunctionIfSmall(jid);
+  }
+  if(d !== live) d.lineJoin = live.lineJoin;
+}
+
+function _mergeJunctions(keepJid, dropJid){
+  if(!keepJid || !dropJid || keepJid === dropJid) return keepJid;
+  const juncs = _ensureSlideJunctions();
+  const drop = (juncs[dropJid] || []).slice();
+  drop.forEach(m => {
+    const md = _findLineData(m.id);
+    if(!md) return;
+    _ensureLineJoin(md)[m.end] = keepJid;
+    _addMemberToJunction(keepJid, m);
+    _persistLineJoinDom(_findLineEl(m.id), md);
+  });
+  delete juncs[dropJid];
+  return keepJid;
+}
+
+function _joinLineEnds(d1, end1, d2, end2){
+  if(!d1 || !d2 || d1.id === d2.id) return;
+  if(end1 !== 'a' && end1 !== 'b') return;
+  if(end2 !== 'a' && end2 !== 'b') return;
+  _migrateSlideLineJoins();
+  const live1 = _findLineData(d1.id) || d1;
+  const live2 = _findLineData(d2.id) || d2;
+  _ensureLineJoin(live1);
+  _ensureLineJoin(live2);
+  const j1 = _endJunctionId(live1, end1);
+  const j2 = _endJunctionId(live2, end2);
+  let jid = null;
+  if(j1 && j2 && j1 === j2){
+    jid = j1;
+  } else if(j1 && j2){
+    jid = _mergeJunctions(j1, j2);
+  } else if(j1){
+    if(live2.lineJoin[end2]) _clearLineJoin(live2, end2);
+    live2.lineJoin[end2] = j1;
+    _addMemberToJunction(j1, { id: live2.id, end: end2 });
+    _persistLineJoinDom(_findLineEl(live2.id), live2);
+    jid = j1;
+  } else if(j2){
+    if(live1.lineJoin[end1]) _clearLineJoin(live1, end1);
+    live1.lineJoin[end1] = j2;
+    _addMemberToJunction(j2, { id: live1.id, end: end1 });
+    _persistLineJoinDom(_findLineEl(live1.id), live1);
+    jid = j2;
+  } else {
+    if(live1.lineJoin[end1]) _clearLineJoin(live1, end1);
+    if(live2.lineJoin[end2]) _clearLineJoin(live2, end2);
+    jid = _newJunctionId();
+    _ensureSlideJunctions()[jid] = [];
+    live1.lineJoin[end1] = jid;
+    live2.lineJoin[end2] = jid;
+    _addMemberToJunction(jid, { id: live1.id, end: end1 });
+    _addMemberToJunction(jid, { id: live2.id, end: end2 });
+    _persistLineJoinDom(_findLineEl(live1.id), live1);
+    _persistLineJoinDom(_findLineEl(live2.id), live2);
+  }
+  if(d1 !== live1) d1.lineJoin = live1.lineJoin;
+  if(d2 !== live2) d2.lineJoin = live2.lineJoin;
+  return jid;
+}
+
+/** Ensure junction tables match lineJoin refs; migrate legacy pairwise joins */
+function _repairLineJoins(d){
+  _migrateSlideLineJoins();
+  if(!d || d.shape !== 'line') return;
+  _ensureLineJoin(d);
+  const juncs = _ensureSlideJunctions();
+  ['a', 'b'].forEach(which => {
+    const jid = d.lineJoin[which];
+    if(!jid) return;
+    if(typeof jid !== 'string'){ d.lineJoin[which] = null; return; }
+    _addMemberToJunction(jid, { id: d.id, end: which });
+    juncs[jid] = (juncs[jid] || []).filter(m => {
+      const md = _findLineData(m.id);
+      return !!(md && md.lineJoin && md.lineJoin[m.end] === jid);
+    });
+    if((juncs[jid] || []).length < 2){
+      _dissolveJunctionIfSmall(jid);
+      if(d.lineJoin[which] === jid) d.lineJoin[which] = null;
+    }
+  });
+  const el = _findLineEl(d.id);
+  if(el) _persistLineJoinDom(el, d);
+}
+
+function _lineEndIsJoined(d, which){
+  if(!d) return false;
+  _repairLineJoins(d);
+  const jid = _endJunctionId(d, which);
+  return !!(jid && _getJunctionMembers(jid).length >= 2);
+}
+
+function _moveJunctionTo(jid, pt, skipId, skipEnd){
+  if(!jid || !pt) return;
+  _getJunctionMembers(jid).forEach(m => {
+    if(skipId && m.id === skipId && m.end === skipEnd) return;
+    const mel = _findLineEl(m.id);
+    const md = _findLineData(m.id);
+    if(mel && md) _setLineEndCanvas(mel, md, m.end, pt);
+  });
+}
+
+/** Force all members of a junction to share the exact same canvas point */
+function _coalesceJunction(jid, preferredPt){
+  if(!jid) return null;
+  const members = _getJunctionMembers(jid);
+  if(members.length < 2) return null;
+  let pt = preferredPt ? { x: preferredPt.x, y: preferredPt.y } : null;
+  if(!pt){
+    let sx = 0, sy = 0, n = 0;
+    members.forEach(m => {
+      const mel = _findLineEl(m.id);
+      const md = _findLineData(m.id);
+      if(!mel || !md) return;
+      const e = _lineCanvasEnds(mel, md)[m.end];
+      if(!e) return;
+      sx += e.x; sy += e.y; n++;
+    });
+    if(!n) return null;
+    pt = { x: sx / n, y: sy / n };
+  }
+  // Snap to sub-pixel so round-cap centers stay glued (no integer drift)
+  pt = { x: Math.round(pt.x * 100) / 100, y: Math.round(pt.y * 100) / 100 };
+  members.forEach(m => {
+    const mel = _findLineEl(m.id);
+    const md = _findLineData(m.id);
+    if(mel && md) _setLineEndCanvas(mel, md, m.end, pt);
+  });
+  return pt;
+}
+window._coalesceJunction = _coalesceJunction;
+
+window._coalesceAllLineJunctions = function(){
+  if(typeof slides === 'undefined' || !slides[cur]) return;
+  _migrateSlideLineJoins();
+  const juncs = _ensureSlideJunctions();
+  Object.keys(juncs).forEach(jid => {
+    if((juncs[jid] || []).length >= 2) _coalesceJunction(jid, null);
+  });
+  if(typeof refreshAllLineAngles === 'function') refreshAllLineAngles();
+};
+
+/** After moving a line body, keep junction mates glued to this line's ends */
+function _syncLineJoinsAfterMove(el){
+  const d = slides[cur] && slides[cur].els.find(e => e.id === el.dataset.id);
+  if(!d || d.shape !== 'line' || !d.lineJoin) return;
+  _repairLineJoins(d);
+  const myEnds = _lineCanvasEnds(el, d);
+  ['a', 'b'].forEach(which => {
+    const jid = _endJunctionId(d, which);
+    if(!jid) return;
+    _coalesceJunction(jid, myEnds[which]);
+  });
+}
+
+/** All line ids reachable via junctions from startId */
+function _lineConnectedComponentIds(startId){
+  const seen = new Set();
+  if(!startId) return seen;
+  _migrateSlideLineJoins();
+  const q = [startId];
+  while(q.length){
+    const id = q.shift();
+    if(seen.has(id)) continue;
+    seen.add(id);
+    const d = _findLineData(id);
+    if(!d) continue;
+    _ensureLineJoin(d);
+    ['a', 'b'].forEach(w => {
+      const jid = _endJunctionId(d, w);
+      if(!jid) return;
+      _getJunctionMembers(jid).forEach(m => {
+        if(!seen.has(m.id)) q.push(m.id);
+      });
+    });
+  }
+  return seen;
+}
+
+window._syncLineJoinsAfterMove = _syncLineJoinsAfterMove;
+window._persistLineJoinDom = _persistLineJoinDom;
+window._lineEndIsJoined = _lineEndIsJoined;
+window._lineConnectedComponentIds = _lineConnectedComponentIds;
+window._getJunctionMembers = _getJunctionMembers;
+window._endJunctionId = _endJunctionId;
+window._migrateSlideLineJoins = _migrateSlideLineJoins;
+window._moveJunctionTo = _moveJunctionTo;
+window._setLineEndCanvas = _setLineEndCanvas;
+window._lineCanvasEnds = _lineCanvasEnds;
+window._findLineEl = _findLineEl;
+window._findLineData = _findLineData;
+
+function _closestOnSeg(px, py, ax, ay, bx, by){
+  const dx = bx - ax, dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  if(len2 < 1e-8) return { x: ax, y: ay };
+  let t = ((px - ax) * dx + (py - ay) * dy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  return { x: ax + t * dx, y: ay + t * dy };
+}
+
+function _svgUserToCanvas(path, x, y){
+  try{
+    const svg = path.ownerSVGElement;
+    if(!svg || typeof _toCanvasCoords !== 'function') return null;
+    const pt = svg.createSVGPoint();
+    pt.x = x; pt.y = y;
+    const ctm = path.getScreenCTM() || svg.getScreenCTM();
+    if(!ctm) return null;
+    const sp = pt.matrixTransform(ctm);
+    return _toCanvasCoords(sp.x, sp.y);
+  }catch(e){ return null; }
+}
+
+/** Snap a canvas point to nearby line segments / curve strokes (and their ends) */
+function _snapLineEpToGeometry(pt, excludeId, threshold){
+  threshold = threshold != null ? threshold : 14;
+  let best = null, bestD = threshold;
+  function consider(cand, meta){
+    if(!cand) return;
+    const dist = Math.hypot(pt.x - cand.x, pt.y - cand.y);
+    if(dist < bestD){
+      bestD = dist;
+      best = Object.assign({ x: cand.x, y: cand.y, dist }, meta || {});
+    }
+  }
+  if(typeof slides === 'undefined' || !slides[cur]) return null;
+  const canvas = document.getElementById('canvas');
+  if(!canvas) return null;
+
+  // Pass 1: prefer other line endpoints (join targets) with a slightly larger radius
+  const epTh = Math.max(threshold, 16);
+  bestD = epTh;
+  slides[cur].els.forEach(d => {
+    if(!d || d._isDecor || d.id === excludeId || d.type !== 'shape' || d.shape !== 'line') return;
+    const el = canvas.querySelector('.el[data-id="'+d.id+'"]');
+    if(!el || el.dataset.objHidden === '1') return;
+    const ends = _lineLocalEnds(d, d.w, d.h);
+    const a = _elLocalToCanvas(el, ends.x1, ends.y1);
+    const b = _elLocalToCanvas(el, ends.x2, ends.y2);
+    consider(a, { kind: 'endpoint', targetId: d.id, targetEnd: 'a' });
+    consider(b, { kind: 'endpoint', targetId: d.id, targetEnd: 'b' });
+  });
+  if(best && best.kind === 'endpoint') return best;
+
+  // Pass 2: segments / curves
+  best = null; bestD = threshold;
+  slides[cur].els.forEach(d => {
+    if(!d || d._isDecor || d.id === excludeId || d.type !== 'shape') return;
+    if(d.shape !== 'line' && d.shape !== 'curve') return;
+    const el = canvas.querySelector('.el[data-id="'+d.id+'"]');
+    if(!el || el.dataset.objHidden === '1') return;
+
+    if(d.shape === 'line'){
+      const ends = _lineLocalEnds(d, d.w, d.h);
+      const a = _elLocalToCanvas(el, ends.x1, ends.y1);
+      const b = _elLocalToCanvas(el, ends.x2, ends.y2);
+      consider(_closestOnSeg(pt.x, pt.y, a.x, a.y, b.x, b.y), { kind: 'segment', targetId: d.id });
+      return;
+    }
+
+    if(d.curvePoints && d.curvePoints.length){
+      d.curvePoints.forEach(cp => {
+        consider(_elLocalToCanvas(el, cp.x * d.w, cp.y * d.h), { kind: 'curve', targetId: d.id });
+      });
+    }
+    const path = el.querySelector('.shape-svg path');
+    if(path && typeof path.getTotalLength === 'function'){
+      try{
+        const len = path.getTotalLength();
+        if(len > 0){
+          const steps = Math.max(24, Math.min(120, Math.ceil(len / 6)));
+          for(let i = 0; i <= steps; i++){
+            const p = path.getPointAtLength(len * i / steps);
+            consider(_svgUserToCanvas(path, p.x, p.y) || _elLocalToCanvas(el, p.x, p.y), { kind: 'curve', targetId: d.id });
+          }
+        }
+      }catch(e){}
+    }
+  });
+  return best;
+}
+
+function _showLineEpSnapMark(pt){
+  clearGuides();
+  if(!pt) return;
+  addGuide('v', pt.x, 'element');
+  addGuide('h', pt.y, 'element');
+}
+
+function _constrainLineAngle15(mx, my, fx, fy){
+  let dx = mx - fx, dy = my - fy;
+  let len = Math.hypot(dx, dy);
+  if(len < 1) len = 1;
+  let ang = Math.atan2(dy, dx) * 180 / Math.PI;
+  ang = Math.round(ang / 15) * 15;
+  const rad = ang * Math.PI / 180;
+  return { x: fx + Math.cos(rad) * len, y: fy + Math.sin(rad) * len };
+}
+
+function _buildLineEndpointHandles(overlay, el, elL, elT, elW, elH, elRad, elDeg){
+  const d = slides[cur] && slides[cur].els.find(e => e.id === el.dataset.id);
+  if(!d) return;
+  const ends = _lineLocalEnds(d, elW, elH);
+  const pts = {
+    a: _elLocalToCanvas(el, ends.x1, ends.y1),
+    b: _elLocalToCanvas(el, ends.x2, ends.y2)
+  };
+  pts.a.which = 'a';
+  pts.b.which = 'b';
+
+  function makeHandle(pt, joined){
+    const h = document.createElement('div');
+    h.dataset.lineEp = pt.which;
+    if(joined) h.dataset.lineEpJoin = '1';
+    const size = joined ? 12 : 10;
+    const bg = joined ? '#fbbf24' : '#fff';
+    const bd = joined ? '#d97706' : 'var(--selb)';
+    h.title = joined
+      ? ((typeof getLang === 'function' && getLang() === 'en')
+        ? 'Drag to move junction · Snap more lines here · Double-click to leave'
+        : 'Тяни — двигать стык · Приклей ещё отрезок · Двойной клик — отсоединить')
+      : '';
+    h.style.cssText = `position:absolute;left:${pt.x}px;top:${pt.y}px;width:${size}px;height:${size}px;
+      transform:translate(-50%,-50%);box-sizing:border-box;
+      background:${bg};border:1.5px solid ${bd};border-radius:${joined ? 2 : 1}px;
+      box-shadow:0 1px 4px rgba(0,0,0,.5);pointer-events:auto;cursor:move;z-index:10001;`;
+
+    if(joined){
+      h.addEventListener('dblclick', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        if(typeof pushUndo === 'function') pushUndo();
+        _clearLineJoin(d, pt.which);
+        if(typeof save === 'function') save();
+        if(typeof saveState === 'function') saveState();
+        if(typeof _updateHandlesOverlay === 'function') _updateHandlesOverlay();
+        if(typeof toast === 'function'){
+          toast((typeof getLang === 'function' && getLang() === 'en') ? 'Detached from junction' : 'Отсоединено от стыка', 'ok');
+        }
+      });
+    }
+
+    h.addEventListener('mousedown', e => {
+      if(e.detail > 1 && joined) return; // let dblclick handle disconnect
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      window._anyDragging = true;
+      window._lineEpDragging = true;
+      if(typeof pick === 'function' && sel !== el) pick(el);
+      if(typeof pushUndo === 'function') pushUndo();
+
+      const excludeId = el.dataset.id;
+      const otherWhich = pt.which === 'a' ? 'b' : 'a';
+      const myEnds0 = _lineCanvasEnds(el, d);
+      const fixed = { x: myEnds0[otherWhich].x, y: myEnds0[otherWhich].y };
+      _repairLineJoins(d);
+      const jid0 = _endJunctionId(d, pt.which);
+      const mateState = [];
+      if(jid0){
+        _getJunctionMembers(jid0).forEach(m => {
+          if(m.id === d.id && m.end === pt.which) return;
+          const partnerD = _findLineData(m.id);
+          const partnerEl = _findLineEl(m.id);
+          if(!partnerD || !partnerEl) return;
+          const pe = _lineCanvasEnds(partnerEl, partnerD);
+          const pOther = m.end === 'a' ? 'b' : 'a';
+          mateState.push({
+            end: m.end,
+            d: partnerD,
+            el: partnerEl,
+            fixed: { x: pe[pOther].x, y: pe[pOther].y }
+          });
+        });
+      }
+      let lastSnap = null;
+
+      function paintHandle(snappedEp){
+        if(joined){
+          h.style.background = snappedEp ? '#34d399' : '#fbbf24';
+          h.style.borderColor = snappedEp ? '#059669' : '#d97706';
+        } else {
+          h.style.background = snappedEp ? '#34d399' : '#fff';
+          h.style.borderColor = snappedEp ? '#059669' : 'var(--selb)';
+        }
+      }
+
+      function refreshMarkers(){
+        const nEnds = _lineCanvasEnds(el, d);
+        const ha = overlay.querySelector('[data-line-ep="a"]');
+        const hb = overlay.querySelector('[data-line-ep="b"]');
+        if(ha) _placeLineEpHandle(ha, nEnds.a.x, nEnds.a.y);
+        if(hb) _placeLineEpHandle(hb, nEnds.b.x, nEnds.b.y);
+        pts.a.x = nEnds.a.x; pts.a.y = nEnds.a.y;
+        pts.b.x = nEnds.b.x; pts.b.y = nEnds.b.y;
+        if(typeof _updateSelFrames === 'function') _updateSelFrames();
+      }
+
+      function applyMoving(mx, my, opts){
+        let x = mx, y = my;
+        const skipGrid = opts && opts.skipGrid;
+        if(!skipGrid && typeof snapV === 'function' && document.getElementById('snap-chk')?.checked){
+          x = snapV(x); y = snapV(y);
+        }
+        // Always pin the opposite endpoint — it must stay put while this one moves
+        if(pt.which === 'a') _applyLineFromCanvasEnds(el, d, { x, y }, fixed, 'b');
+        else _applyLineFromCanvasEnds(el, d, fixed, { x, y }, 'a');
+        mateState.forEach(ms => {
+          if(ms.end === 'a') _applyLineFromCanvasEnds(ms.el, ms.d, { x, y }, ms.fixed, 'b');
+          else _applyLineFromCanvasEnds(ms.el, ms.d, ms.fixed, { x, y }, 'a');
+        });
+        refreshMarkers();
+        if(typeof refreshAllLineAngles === 'function') refreshAllLineAngles();
+      }
+
+      function onMove(ev){
+        const cv = typeof _toCanvasCoords === 'function' ? _toCanvasCoords(ev.clientX, ev.clientY) : null;
+        if(!cv) return;
+        let mx = cv.x, my = cv.y;
+
+        // Shift: force angle multiples of 15° around the fixed end
+        if(ev.shiftKey){
+          const c = _constrainLineAngle15(mx, my, fixed.x, fixed.y);
+          mx = c.x; my = c.y;
+        }
+
+        const snapped = _snapLineEpToGeometry({ x: mx, y: my }, excludeId, 14);
+        if(snapped){
+          // If shift is held and snap is not an endpoint join target, keep angle constraint
+          if(ev.shiftKey && snapped.kind !== 'endpoint'){
+            lastSnap = null;
+            clearGuides();
+            paintHandle(false);
+            applyMoving(mx, my);
+          } else {
+            // Ignore snap onto an endpoint already in this same junction
+            const sameJunc = joined && snapped.kind === 'endpoint' && jid0 && (() => {
+              const od = _findLineData(snapped.targetId);
+              return od && _endJunctionId(od, snapped.targetEnd) === jid0;
+            })();
+            if(sameJunc){
+              lastSnap = null;
+              clearGuides();
+              paintHandle(false);
+              applyMoving(mx, my, ev.shiftKey ? { skipGrid: true } : null);
+            } else {
+              mx = snapped.x; my = snapped.y;
+              lastSnap = snapped;
+              _showLineEpSnapMark(snapped);
+              paintHandle(snapped.kind === 'endpoint');
+              applyMoving(mx, my, { skipGrid: true });
+            }
+          }
+        } else {
+          lastSnap = null;
+          clearGuides();
+          paintHandle(false);
+          applyMoving(mx, my, ev.shiftKey ? { skipGrid: true } : null);
+        }
+      }
+
+      function onUp(){
+        window._anyDragging = false;
+        window._lineEpDragging = false;
+        clearGuides();
+        paintHandle(false);
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+
+        if(lastSnap && lastSnap.kind === 'endpoint' && lastSnap.targetId && lastSnap.targetEnd){
+          const od = _findLineData(lastSnap.targetId);
+          if(od){
+            const jid = _joinLineEnds(d, pt.which, od, lastSnap.targetEnd);
+            const joinPt = { x: lastSnap.x, y: lastSnap.y };
+            if(jid && typeof _coalesceJunction === 'function'){
+              _coalesceJunction(jid, joinPt);
+            } else {
+              applyMoving(joinPt.x, joinPt.y, { skipGrid: true });
+            }
+            const live = _findLineData(d.id) || d;
+            d.lineJoin = live.lineJoin;
+          }
+        } else if(!joined){
+          _clearLineJoin(d, pt.which);
+        } else {
+          // Finished moving an existing junction — snap all members to one point
+          const jid = _endJunctionId(d, pt.which);
+          if(jid){
+            const ends = _lineCanvasEnds(el, d);
+            _coalesceJunction(jid, ends[pt.which]);
+          }
+        }
+
+        if(typeof pick === 'function' && sel !== el) pick(el);
+        else if(typeof _updateHandlesOverlay === 'function') _updateHandlesOverlay();
+        if(typeof refreshAllLineAngles === 'function') refreshAllLineAngles();
+        if(typeof save === 'function') save();
+        if(typeof drawThumbs === 'function') drawThumbs();
+        if(typeof saveState === 'function') saveState();
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    }, true);
+    overlay.appendChild(h);
+  }
+
+  makeHandle(pts.a, _lineEndIsJoined(d, 'a'));
+  makeHandle(pts.b, _lineEndIsJoined(d, 'b'));
+}
+window._buildLineEndpointHandles = _buildLineEndpointHandles;
+window._placeLineEpHandle = _placeLineEpHandle;
+window._snapLineEpToGeometry = _snapLineEpToGeometry;
+window._joinLineEnds = _joinLineEnds;
+window._clearLineJoin = _clearLineJoin;
+
 function _updateHandlesOverlay(){
   // Allow update during rotation drag so handles track the element
   const overlay = document.getElementById('handles-overlay');
@@ -1023,6 +1896,8 @@ function _updateHandlesOverlay(){
 
   // Lego blocks: no resize handles, no rotation
   if(el.dataset.type === 'lego') { _rotEl = null; return; }
+  // Angle markers: no handles / rotation — only props panel
+  if(el.dataset.type === 'lineangle') { _rotEl = null; return; }
 
   const elL = parseInt(el.style.left)||0;
   const elT = parseInt(el.style.top)||0;
@@ -1069,6 +1944,9 @@ function _updateHandlesOverlay(){
     rh.dataset.overlayHidden = '1';
   });
 
+  const _isLineShape = el.dataset.type === 'shape' && el.dataset.shape === 'line';
+
+  if (!_isLineShape) {
   // 8 handle positions rotated around element centre
   const positions = [
     ['tl', elL,       elT      ],
@@ -1104,11 +1982,15 @@ function _updateHandlesOverlay(){
     });
     overlay.appendChild(rh);
   });
+  } else {
+    _buildLineEndpointHandles(overlay, el, elL, elT, elW, elH, elRad, elDeg);
+  }
   // Add rotation logic (no extra divs — uses document-level hover detection)
-  _addRotationZones(overlay, el);
+  if (!_isLineShape) _addRotationZones(overlay, el);
+  else _rotEl = null;
 
   // ── Pivot point handle (purple dot) ──
-  _buildPivotHandle(overlay, el);
+  if (!_isLineShape) _buildPivotHandle(overlay, el);
 
   // ── Arc handles for ellipse ──
   _buildArcHandles();
@@ -1597,8 +2479,11 @@ function _addRotationZones(overlay, el) {
         ev.clientY < cr.top  || ev.clientY > cr.bottom) return;
     if (window._pivotDragging) return; // pivot handle takes priority
     if (window._overPivotHandle) return; // mouse is over pivot handle
-    const rhHit = ev.target.closest && ev.target.closest('#handles-overlay [data-cls]');
-    if (rhHit) return; // resize handles always win over rotation
+    const rhHit = ev.target.closest && (
+      ev.target.closest('#handles-overlay [data-cls]') ||
+      ev.target.closest('#handles-overlay [data-line-ep]')
+    );
+    if (rhHit) return; // resize / line-endpoint handles always win over rotation
     const p = _toCanvasCoords(ev.clientX, ev.clientY);
     const corner = _nearCorner(_rotEl, p.x, p.y);
     if (!corner) return;

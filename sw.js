@@ -1,7 +1,7 @@
 /* Service worker — офлайн-кэш для PWA «Слайды» */
 importScripts('./pwa-precache-images.js');
 
-const CACHE = 'slides-pwa-v58';
+const CACHE = 'slides-pwa-v62';
 
 /** Критичные файлы оболочки (галерея — в PRECACHE_IMAGES). */
 const PRECACHE = [
@@ -26,6 +26,7 @@ const PRECACHE = [
   './js/00-bus.js',
   './js/00-guard.js',
   './js/01-state.js',
+  './js/01b-media-store.js',
   './js/02-applets.js',
   './js/02b-periodic.js',
   './js/02b-flip.js',
@@ -93,7 +94,17 @@ const PRECACHE = [
   './js/44-group.js',
   './js/45-media.js',
   './js/46-cross-clipboard.js',
+  './js/47-translate.js',
   './js/50-voice.js',
+  './libs/bergamot/translator-worker.js',
+  './libs/bergamot/bergamot-translator-worker.js',
+  './libs/bergamot/bergamot-translator-worker.wasm',
+  './libs/translate-models/enru/model.enru.intgemm.alphas.bin',
+  './libs/translate-models/enru/lex.50.50.enru.s2t.bin',
+  './libs/translate-models/enru/vocab.enru.spm',
+  './libs/translate-models/ruen/model.ruen.intgemm.alphas.bin',
+  './libs/translate-models/ruen/lex.50.50.ruen.s2t.bin',
+  './libs/translate-models/ruen/vocab.ruen.spm',
   './config/canvas.js',
   './config/animations.js',
   './config/themes.js',

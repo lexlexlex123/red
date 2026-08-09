@@ -170,8 +170,16 @@ function applyTheme(){
           const resolved = _resolveSchemeColor(el.fillScheme, theme);
           if(resolved) { el.fill = resolved; }
         } else if(el.fillScheme === undefined){
-          // Legacy element — apply theme default fill
+          // Legacy element — apply theme default fill and pin to nearest swatch
           if(theme.shapeFill) el.fill = theme.shapeFill;
+          if(typeof _closestSchemeRef === 'function'){
+            const sr = _closestSchemeRef(el.fill || theme.shapeFill, theme);
+            if(sr){
+              el.fillScheme = sr;
+              const resolved = _resolveSchemeColor(sr, theme);
+              if(resolved) el.fill = resolved;
+            }
+          }
         }
         // else fillScheme===null: custom color — leave el.fill unchanged
         // Ensure fill is never empty
@@ -195,6 +203,14 @@ function applyTheme(){
           if(resolved) { el.stroke = resolved; }
         } else if(el.strokeScheme === undefined){
           if(theme.shapeStroke) el.stroke = theme.shapeStroke;
+          if(typeof _closestSchemeRef === 'function'){
+            const sr = _closestSchemeRef(el.stroke || theme.shapeStroke, theme);
+            if(sr){
+              el.strokeScheme = sr;
+              const resolved = _resolveSchemeColor(sr, theme);
+              if(resolved) el.stroke = resolved;
+            }
+          }
         }
         // else strokeScheme===null: custom — leave unchanged
         if(!el.stroke) el.stroke = theme.shapeStroke || '#1d4ed8';
@@ -297,6 +313,14 @@ function applyTheme(){
         }
         if(newFc){ el.formulaColor = newFc; }
       }
+      if(el.type==='lineangle'){
+        // null = custom hex from color wheel — leave unchanged
+        // {col,row} = palette swatch — remap on theme change
+        if(el.colorScheme !== null && el.colorScheme !== undefined){
+          const resolved = _resolveSchemeColor(el.colorScheme, theme);
+          if(resolved) el.color = resolved;
+        }
+      }
       if(el.type==='lego'){
         // null = кастомный цвет, оставляем как есть
         // schemeRef {col,row} = пересчитываем по новой теме
@@ -339,8 +363,9 @@ function applyTheme(){
   });
   // Set theme index FIRST so all refresh functions use correct colors
   appliedThemeIdx=selTheme;
-  // Refresh decor SVGs with new accent colors (updates d.svgContent in data)
+  // Refresh decor SVGs with new accent colors (layout stays the same)
   refreshDecorColors(theme.ac1||'#6366f1', theme.ac2||'#818cf8', true);
+  if(typeof buildSlideTplGrid === 'function') buildSlideTplGrid();
   if(typeof refreshAllCodeBlocks==='function')refreshAllCodeBlocks();
   if(typeof refreshAllGraphs==='function')refreshAllGraphs(theme, {skipRender:true});
   // Render slide DOM first, then refresh applets (iframe postMessage needs loaded srcdoc)
@@ -414,5 +439,7 @@ function applyTheme(){
   drawThumbs(true);
   // Обновить квадратики цветов в панели, если элемент уже снова выбран
   if(typeof syncProps==='function') syncProps();
+  // Если палитра уже была открыта — пересобрать сетку под новую схему
+  if(typeof refreshOpenColorPanel==='function') refreshOpenColorPanel();
   toast(t('toastThemeApplied')+': '+theme.name,'ok');
 }

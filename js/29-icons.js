@@ -367,16 +367,22 @@ function openIconPickerForList(bulletSpan, textData) {
     var fsMatch = cs.match(/font-size:\s*([\d.]+)px/);
     var sz = Math.round(parseFloat(fsMatch ? fsMatch[1] : '24'));
     var style = document.getElementById('ic-style') ? document.getElementById('ic-style').value : 'stroke';
-    var color = 'currentColor'; // always inherit text color for scheme-awareness
     var sw = parseFloat(document.getElementById('ic-sw') ? document.getElementById('ic-sw').value : '1.8') || 1.8;
+    // Keep the marker color that was already set (palette / custom / currentColor)
+    var keepColor = (bulletSpan && bulletSpan.getAttribute('data-icon-color')) || 'currentColor';
+    var keepScheme = bulletSpan ? bulletSpan.getAttribute('data-icon-schemeref') : null;
     var allBulletSpans = (typeof window._getTargetedMarkers === 'function')
       ? window._getTargetedMarkers(c).filter(function(sp){ return sp.hasAttribute('data-list-bullet'); })
       : Array.prototype.slice.call(c.querySelectorAll('span[data-list-bullet]'));
     allBulletSpans.forEach(function(sp) {
+      var color = sp.getAttribute('data-icon-color') || keepColor;
+      var scheme = sp.getAttribute('data-icon-schemeref') || keepScheme;
       sp.setAttribute('data-icon-id', ic.id);
       sp.setAttribute('data-icon-style', style);
       sp.setAttribute('data-icon-color', color);
       sp.setAttribute('data-icon-sw', sw);
+      if (scheme) sp.setAttribute('data-icon-schemeref', scheme);
+      else sp.removeAttribute('data-icon-schemeref');
       sp.innerHTML = _buildBulletIconSVG(ic, sz, style, color, sw);
     });
     if (typeof window._rtApplyMarkerVerticalAlign === 'function') {
@@ -385,6 +391,7 @@ function openIconPickerForList(bulletSpan, textData) {
     var root = c.querySelector('.ec-valign-wrap') || c;
     if (textData) textData.html = root.innerHTML;
     if (typeof commitAll === 'function') commitAll();
+    if (typeof window.rtUpdateListButtonState === 'function') window.rtUpdateListButtonState();
     window._listIconInsertCallback = null;
   };
   openIconModal();

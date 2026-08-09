@@ -9,12 +9,126 @@ function _quotePtToPx(pt){ return Math.round(+pt * 96 / 72); }
 const QUOTE_FS = _quotePtToPx(QUOTE_PT);
 const QUOTE_AUTHOR_FS = _quotePtToPx(QUOTE_AUTHOR_PT);
 
-function _quotePickRandom(){
+/** Выбранная категория: 'all' | writers | history | proverbs | … */
+let quoteCat = 'all';
+try{
+  const saved = localStorage.getItem('slides_quote_cat');
+  if(saved) quoteCat = saved;
+}catch(e){}
+
+function _quoteCatList(){
+  const base = (typeof QUOTE_CATEGORIES!=='undefined' && Array.isArray(QUOTE_CATEGORIES) && QUOTE_CATEGORIES.length)
+    ? QUOTE_CATEGORIES
+    : [
+      {id:'writers', nameRu:'Писатели', name:'Writers'},
+      {id:'history', nameRu:'История', name:'History'},
+      {id:'proverbs', nameRu:'Пословицы', name:'Proverbs'},
+      {id:'philosophy', nameRu:'Философия', name:'Philosophy'},
+      {id:'science', nameRu:'Наука', name:'Science'},
+      {id:'spirit', nameRu:'Духовность', name:'Spirituality'},
+      {id:'other', nameRu:'Разное', name:'Other'},
+    ];
+  return [{id:'all', nameRu:'Все', name:'All'}].concat(base);
+}
+
+function _quoteCatLabel(id){
+  if(id==='all' && typeof t==='function'){
+    const tr=t('quoteCatAll');
+    if(tr && tr!=='quoteCatAll') return tr;
+  }
+  const c = _quoteCatList().find(function(x){ return x.id===id; });
+  if(!c) return id||'';
+  const isRu = typeof getLang==='function' ? getLang()==='ru' : true;
+  return (isRu && c.nameRu) ? c.nameRu : (c.name||c.nameRu||id);
+}
+
+function _quoteRowCat(row){
+  if(Array.isArray(row)) return String(row[2]||'other');
+  return String(row.cat||row.category||'other');
+}
+
+function _quoteRowParse(row){
+  if(Array.isArray(row)) return {text:String(row[0]||''), author:String(row[1]||''), cat:_quoteRowCat(row)};
+  return {text:String(row.text||row.q||''), author:String(row.author||row.a||''), cat:_quoteRowCat(row)};
+}
+
+function _quoteFilteredBank(){
   const bank=(typeof QUOTE_BANK!=='undefined'&&QUOTE_BANK&&QUOTE_BANK.length)?QUOTE_BANK:null;
-  if(!bank) return {text:'Красота спасёт мир.', author:'Фёдор Достоевский'};
+  if(!bank) return null;
+  if(!quoteCat || quoteCat==='all') return bank;
+  const filtered=bank.filter(function(row){ return _quoteRowCat(row)===quoteCat; });
+  return filtered.length ? filtered : bank;
+}
+
+function _quotePickRandom(){
+  const bank=_quoteFilteredBank();
+  if(!bank) return {text:'Красота спасёт мир.', author:'Фёдор Достоевский', cat:'writers'};
   const row=bank[Math.floor(Math.random()*bank.length)];
-  if(Array.isArray(row)) return {text:String(row[0]||''), author:String(row[1]||'')};
-  return {text:String(row.text||row.q||''), author:String(row.author||row.a||'')};
+  return _quoteRowParse(row);
+}
+
+function setQuoteCat(id){
+  const list=_quoteCatList();
+  if(!list.some(function(c){ return c.id===id; })) id='all';
+  quoteCat=id;
+  try{ localStorage.setItem('slides_quote_cat', quoteCat); }catch(e){}
+  _syncQuoteCatBtn();
+  closeQuoteCatMenu();
+}
+
+function _syncQuoteCatBtn(){
+  const lab=document.getElementById('btn-quote-cat-label');
+  if(lab) lab.textContent=_quoteCatLabel(quoteCat);
+  const btn=document.getElementById('btn-quote-cat');
+  if(btn) btn.title=(typeof t==='function'?t('btnQuoteCatTitle'):'Категория цитат')+': '+_quoteCatLabel(quoteCat);
+}
+
+let _quoteCatMenu=null;
+function closeQuoteCatMenu(){
+  if(_quoteCatMenu){ _quoteCatMenu.remove(); _quoteCatMenu=null; }
+  document.removeEventListener('mousedown', _quoteCatMenuOutside, true);
+}
+
+function _quoteCatMenuOutside(e){
+  if(!_quoteCatMenu) return;
+  if(_quoteCatMenu.contains(e.target)) return;
+  if(e.target&&e.target.closest&&e.target.closest('#btn-quote-cat')) return;
+  closeQuoteCatMenu();
+}
+
+function toggleQuoteCatMenu(ev){
+  if(ev){ ev.preventDefault(); ev.stopPropagation(); }
+  if(_quoteCatMenu){ closeQuoteCatMenu(); return; }
+  const btn=document.getElementById('btn-quote-cat');
+  if(!btn) return;
+  const m=document.createElement('div');
+  m.className='slide-ctx-menu quote-cat-menu';
+  m.style.minWidth=Math.max(140, btn.offsetWidth)+'px';
+  const isRu=typeof getLang==='function'?getLang()==='ru':true;
+  _quoteCatList().forEach(function(c){
+    const b=document.createElement('button');
+    b.type='button';
+    b.className='slide-ctx-item'+(c.id===quoteCat?' active':'');
+    b.innerHTML='<span class="slide-ctx-lbl">'+(isRu&&c.nameRu?c.nameRu:(c.name||c.nameRu))+'</span>';
+    b.onmousedown=function(e){ e.preventDefault(); e.stopPropagation(); };
+    b.onclick=function(e){
+      e.preventDefault(); e.stopPropagation();
+      setQuoteCat(c.id);
+    };
+    m.appendChild(b);
+  });
+  document.body.appendChild(m);
+  _quoteCatMenu=m;
+  const r=btn.getBoundingClientRect();
+  const mw=m.offsetWidth, mh=m.offsetHeight;
+  let left=r.right-mw;
+  let top=r.bottom+4;
+  if(left<8) left=8;
+  if(left+mw>window.innerWidth-8) left=window.innerWidth-mw-8;
+  if(top+mh>window.innerHeight-8) top=Math.max(8, r.top-mh-4);
+  m.style.left=left+'px';
+  m.style.top=top+'px';
+  document.addEventListener('mousedown', _quoteCatMenuOutside, true);
 }
 
 function _quoteThemeColor(){
@@ -146,3 +260,10 @@ function insertQuoteText(){
   }
 }
 window.insertQuoteText=insertQuoteText;
+window.setQuoteCat=setQuoteCat;
+window.toggleQuoteCatMenu=toggleQuoteCatMenu;
+window.closeQuoteCatMenu=closeQuoteCatMenu;
+window._syncQuoteCatBtn=_syncQuoteCatBtn;
+
+document.addEventListener('DOMContentLoaded', _syncQuoteCatBtn);
+if(document.readyState!=='loading') _syncQuoteCatBtn();

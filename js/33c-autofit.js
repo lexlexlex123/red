@@ -63,6 +63,7 @@ function _measureTextContentHeight(el, tel){
 // Вызывается после рендера (mkEl уже создал .tel в DOM)
 // opts.shrink — также уменьшать высоту (например после уменьшения font-size всего блока)
 function fitTextHeight(d, opts){
+  if(window._skipTextAutofit||window._pvRestoring) return false;
   if(d.type!=='text') return false;
   const el=document.querySelector('.el[data-id="'+d.id+'"]');
   if(!el) return false;
@@ -82,6 +83,7 @@ function fitTextHeight(d, opts){
 
 // Подгоняет все тексты текущего слайда
 function fitAllTextsOnSlide(){
+  if(window._skipTextAutofit||window._pvRestoring) return;
   const s=slides[cur]; if(!s) return;
   let changed=false;
   s.els.forEach(d=>{
@@ -137,10 +139,19 @@ window.fitCurrentSlideTexts = function(){
 (function(){
   const _origLoad = window.load;
   if(typeof _origLoad!=='function') return;
-  window.load = function(){
+  const _wrappedLoad = function(){
     _origLoad.apply(this, arguments);
-    requestAnimationFrame(()=>{ fitAllTextsOnSlide(); });
+    requestAnimationFrame(()=>{
+      if(window._skipNextTextAutofit||window._skipTextAutofit||window._pvRestoring){
+        window._skipNextTextAutofit=false;
+        return;
+      }
+      fitAllTextsOnSlide();
+    });
   };
+  window.load = _wrappedLoad;
+  // classic script: sync global binding if different from window.load
+  try{ if(typeof load==='function') load = _wrappedLoad; }catch(e){}
 })();
 
 // После импорта — подгоняем все слайды

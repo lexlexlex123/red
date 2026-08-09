@@ -54,7 +54,7 @@
 
   function registerSw() {
     navigator.serviceWorker
-      .register('sw.js?v=7', { scope: './' })
+      .register('sw.js?v=8', { scope: './' })
       .then((reg) => {
         reg.update();
         reg.addEventListener('updatefound', () => {

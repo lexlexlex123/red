@@ -195,6 +195,7 @@
       this.unmount(id);
       const r = new CausticsRenderer(cfg);
       r.mount(parent);
+      if (cfg && cfg.animated === false) r.pause();
       _active.set(id, r);
       return () => this.unmount(id);
     },

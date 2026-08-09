@@ -196,7 +196,18 @@ html.light .rglbl{color:#475569;}
 /* ELEMENTS */
 .el{position:absolute;cursor:move;user-select:none;border:1.5px solid transparent;z-index:3;overflow:visible;}
 .el.sel{border-color:var(--selb)!important;overflow:visible!important;}
+/* Line: no element border so endpoint markers sit on the stroke tips (SVG fills the full box) */
+.el[data-type=shape][data-shape=line],
+.el[data-type=shape][data-shape=line].sel{border-width:0!important;}
+.el[data-type=lineangle],.el[data-type=lineangle].sel{border:none!important;outline:none!important;box-shadow:none!important;background:transparent!important;}
+.el[data-type=lineangle].sel .rh,.el[data-type=lineangle] .rh{display:none!important;}
 .el:hover{border-color:rgba(59,130,246,.35);}
+.el[data-type=lineangle]:hover{border-color:transparent!important;}
+.la-label-btns{display:flex;flex-wrap:wrap;gap:4px;}
+.la-label-btn{width:28px;height:28px;padding:0;background:var(--surface2);border:1px solid var(--border2);color:var(--text2);border-radius:4px;cursor:pointer;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center;box-sizing:border-box;line-height:1;}
+.la-label-btn:hover{color:var(--text);border-color:var(--border);}
+.la-label-btn.active{background:var(--accentl);border-color:var(--accent);color:var(--accent);}
+.la-label-btn svg{display:block;pointer-events:none;}
 #sel-frames-layer{position:absolute;inset:0;pointer-events:none;z-index:10001;overflow:visible;}
 .sel-frame{position:absolute;box-sizing:border-box;border:2px solid var(--selb);pointer-events:none;border-radius:1px;}
 .sel-frame.multi{border-style:dashed;opacity:1;}

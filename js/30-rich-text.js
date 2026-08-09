@@ -6,7 +6,7 @@ let _rtElId      = null;
 let _savedSelIdx = null;
 
 const _RT_MARKER_BULLET_VA = '-0.2em';
-const _RT_MARKER_NUM_VA = '-0.14em';
+const _RT_MARKER_NUM_VA = '0';
 const _RT_MARKER_GAP_DEFAULT = 10;
 window._RT_MARKER_BULLET_VA = _RT_MARKER_BULLET_VA;
 window._RT_MARKER_NUM_VA = _RT_MARKER_NUM_VA;
@@ -82,7 +82,8 @@ function _rtApplyMarkerVerticalAlign(root, baseFs, gapPx) {
     sp.style.lineHeight = '1';
     sp.style.verticalAlign = _RT_MARKER_NUM_VA;
     sp.style.marginRight = gap + 'px';
-    sp.style.transform = 'translateY(' + Math.max(1, Math.round(lineFs * 0.04)) + 'px)';
+    // Raise numbers to match text baseline, then nudge 3px down
+    sp.style.transform = 'translateY(' + (-Math.max(1, Math.round(lineFs * 0.1)) + 3) + 'px)';
   });
 }
 window._rtApplyMarkerVerticalAlign = _rtApplyMarkerVerticalAlign;
@@ -96,7 +97,8 @@ function _rebuildMarkerHtml(m) {
     const schemeAttr = m.iconSchemeRef ? ` data-icon-schemeref="${JSON.stringify(m.iconSchemeRef).replace(/"/g,'&quot;')}"` : '';
     return `<span data-list-bullet data-icon-id="${m.iconId}" data-icon-style="${m.iconStyle}" data-icon-color="${m.iconColor}" data-icon-sw="${m.iconSw}"${schemeAttr} contenteditable="false" style="${_rtMarkerBulletCss(null, null)}" onclick="rtChangeBulletIcon(this)">${svg}</span>`;
   } else {
-    return `<span data-list-num data-num-color="${m.color||''}" contenteditable="false" style="${_rtMarkerNumCss(null, null, m.color)}">${m.text}</span>`;
+    const schemeAttr = m.numSchemeRef ? ` data-num-schemeref="${JSON.stringify(m.numSchemeRef).replace(/"/g,'&quot;')}"` : '';
+    return `<span data-list-num data-num-style="${m.numStyle || 'decimal'}" data-num-color="${m.color||''}"${schemeAttr} contenteditable="false" style="${_rtMarkerNumCss(null, null, m.color)}">${m.text}</span>`;
   }
 }
 let _lastBulletFontSize = 24;
@@ -117,7 +119,10 @@ function _rtStyleSpansInTel(tel) {
   return [...tel.querySelectorAll('span')].filter(sp =>
     !sp.hasAttribute('data-list-bullet') &&
     !sp.hasAttribute('data-list-num') &&
-    !sp.hasAttribute('data-br-anchor')
+    !sp.hasAttribute('data-br-anchor') &&
+    // Ударение — вложенный span без собственных метрик; иначе normalize ставит
+    // baseFs и буква с ударением становится меньше соседних.
+    !(sp.dataset && (sp.dataset.stress === '1' || sp.dataset.stress === 'true'))
   );
 }
 
@@ -152,6 +157,12 @@ function _rtNormalizeTextDisplay(tel, cs, gapPx) {
       const va = sp.style.verticalAlign;
       if (va !== 'super' && va !== 'sub' && !va) sp.style.verticalAlign = 'baseline';
       if (!sp.style.lineHeight) sp.style.lineHeight = '1.25';
+    });
+    // Сбросить ошибочный font-size на вложенных [data-stress] (раньше normalize его проставлял)
+    tel.querySelectorAll('[data-stress]').forEach(sp => {
+      if (sp.style && sp.style.fontSize) sp.style.fontSize = '';
+      if (sp.style && sp.style.lineHeight) sp.style.lineHeight = '';
+      if (sp.style && sp.style.verticalAlign) sp.style.verticalAlign = '';
     });
 
     const needsZeroStrut = usedSizes.size > 1 ||
@@ -254,10 +265,13 @@ function _toCharObjs(html) {
     }
     if (node.hasAttribute('data-list-num')) {
       const numColor = node.style.color || node.getAttribute('data-num-color') || '';
+      const numSchemeRaw = node.getAttribute('data-num-schemeref');
       out.push({ ch: '\x00', _listMarker: {
         type: 'num',
         text: node.textContent || '',
         color: numColor,
+        numStyle: node.getAttribute('data-num-style') || 'decimal',
+        numSchemeRef: numSchemeRaw ? (() => { try { return JSON.parse(numSchemeRaw); } catch(e) { return null; } })() : null,
       }, style: {} });
       return;
     }
@@ -295,7 +309,7 @@ function _toCharObjs(html) {
       m._ul = 'underline dash-dot';
       _rtClearUlPaint(m);
     }
-    // Stress on letter wrap (accent via CSS text-emphasis). Legacy mark-only sibling also OK.
+    // Stress on letter wrap (accent via CSS ::after). Legacy mark-only sibling also OK.
     if (node.dataset && (node.dataset.stress === '1' || node.dataset.stress === 'true')) {
       const raw = node.textContent || '';
       const markOnly = !/\p{L}/u.test(raw) && /[\u00B4\u02CA\u02B9\u0301]/.test(raw);
@@ -307,6 +321,17 @@ function _toCharObjs(html) {
         return;
       }
       m._stress = true;
+      // Метрики только от родителя — свои font-size на обёртке ударения игнорируем
+      // (раньше delete m.fontSize снимал и унаследованный размер → буква становилась другой)
+      if (inh.fontSize) m.fontSize = inh.fontSize;
+      else delete m.fontSize;
+      if (inh.lineHeight) m.lineHeight = inh.lineHeight;
+      else delete m.lineHeight;
+      if (inh.verticalAlign && inh.verticalAlign !== 'super' && inh.verticalAlign !== 'sub') {
+        m.verticalAlign = inh.verticalAlign;
+      } else {
+        delete m.verticalAlign;
+      }
     }
     // Block elements: inject leading \n (except for first/only child)
     const isBlock = _block.has(tag);
@@ -1536,6 +1561,9 @@ function _rtStressCase(ch) {
   if (!ch) return 'lower';
   const c = [...String(ch)][0];
   if (!c) return 'lower';
+  try {
+    if (/\p{Lu}|\p{Lt}/u.test(c)) return 'upper';
+  } catch (e) {}
   return (c.toUpperCase() === c && c.toLowerCase() !== c) ? 'upper' : 'lower';
 }
 
@@ -2097,6 +2125,103 @@ function _stripLineMarker(line) {
   return line.replace(/<span[^>]*data-list-[^>]*>[\s\S]*?<\/span>/i, '').replace(/^(&nbsp;|\s)+/, '');
 }
 
+const _RT_NUM_STYLES = ['decimal', 'roman', 'alpha'];
+
+function _rtToRoman(n) {
+  const pairs = [
+    [1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'],
+    [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'],
+    [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']
+  ];
+  let v = Math.max(1, Math.floor(n) || 1);
+  let out = '';
+  for (const [val, sym] of pairs) {
+    while (v >= val) { out += sym; v -= val; }
+  }
+  return out;
+}
+
+function _rtToAlpha(n) {
+  let v = Math.max(1, Math.floor(n) || 1);
+  let out = '';
+  while (v > 0) {
+    v--;
+    out = String.fromCharCode(65 + (v % 26)) + out;
+    v = Math.floor(v / 26);
+  }
+  return out;
+}
+
+function _rtFormatListNum(n, style) {
+  if (style === 'roman') return _rtToRoman(n) + '.';
+  if (style === 'alpha') return _rtToAlpha(n) + '.';
+  return n + '.';
+}
+
+function _rtDetectNumStyleFromText(text) {
+  const t = String(text || '').replace(/\.$/, '').trim();
+  if (/^\d+$/.test(t)) return 'decimal';
+  if (/^[IVXLCDM]+$/i.test(t)) return 'roman';
+  if (/^[A-Za-z]+$/.test(t)) return 'alpha';
+  return 'decimal';
+}
+
+function _lineNumStyle(line) {
+  if (!/data-list-num/i.test(line)) return null;
+  const m = line.match(/data-num-style="([^"]+)"/i);
+  if (m && _RT_NUM_STYLES.indexOf(m[1]) >= 0) return m[1];
+  const tm = line.match(/data-list-num[^>]*>([^<]*)/i);
+  return _rtDetectNumStyleFromText(tm ? tm[1] : '');
+}
+
+function _lineNumColor(line) {
+  const m = line.match(/data-num-color="([^"]*)"/i);
+  return m ? m[1] : '';
+}
+
+function _lineNumSchemeRef(line) {
+  const m = line.match(/data-num-schemeref="([^"]*)"/i);
+  if (!m) return null;
+  try { return JSON.parse(m[1].replace(/&quot;/g, '"')); } catch (e) { return null; }
+}
+
+function _rtCountLineChars(lineHtml) {
+  const tmp = document.createElement('div');
+  tmp.innerHTML = lineHtml;
+  let lineLen = 0;
+  function countNode(node) {
+    if (node.nodeType === 3) { lineLen += node.textContent.length; return; }
+    if (node.nodeType === 1) {
+      if (node.tagName === 'BR') { lineLen += 1; return; }
+      if (node.hasAttribute('data-list-bullet') || node.hasAttribute('data-list-num')) { lineLen += 1; return; }
+      if (node.hasAttribute('data-br-anchor')) return;
+      for (const ch of node.childNodes) countNode(ch);
+    }
+  }
+  for (const ch of tmp.childNodes) countNode(ch);
+  return lineLen;
+}
+
+function _rtMapSelThroughLines(oldIdx, lineOffsets, newLines) {
+  function mapOne(oldPos) {
+    let newPos = 0;
+    for (let i = 0; i < lineOffsets.length; i++) {
+      const oldLen = lineOffsets[i].end - lineOffsets[i].start;
+      const newLen = _rtCountLineChars(newLines[i]);
+      if (oldPos >= lineOffsets[i].start && oldPos <= lineOffsets[i].end) {
+        const withinLine = oldPos - lineOffsets[i].start;
+        const shifted = Math.max(0, Math.min(newLen, withinLine + (newLen - oldLen)));
+        return newPos + shifted;
+      }
+      newPos += newLen + 1;
+    }
+    return newPos;
+  }
+  const start = mapOne(oldIdx.start);
+  const end = mapOne(oldIdx.end);
+  return start <= end ? { start, end } : { start: end, end: start };
+}
+
 // Returns the set of marker spans (span[data-list-bullet] or span[data-list-num])
 // that fall within the current selection on `root`, using the same line-overlap
 // logic as _applyListToElement. If there's no selection, returns ALL markers
@@ -2177,8 +2302,17 @@ function _applyListToElement(listType) {
   const iconSw = parseFloat(document.getElementById('ic-sw') ? document.getElementById('ic-sw').value : '1.8') || 1.8;
   const iconId = _getBulletIconId();
 
-  // Determine which lines are "selected" (by char offset range)
-  const selIdx = _getSelOrCaretIdx(root);
+  // Determine which lines are "selected" (by char offset range).
+  // Only a real non-collapsed text selection targets specific lines.
+  // Caret-only or just the text block selected (not editing) → all lines.
+  const isEditing = sel.dataset.editing === 'true';
+  const liveRange = isEditing ? _readSelFromDOM(root) : null;
+  const savedRange = (isEditing && _savedSelIdx && _savedSelIdx.start < _savedSelIdx.end)
+    ? _savedSelIdx : null;
+  const selIdx = liveRange || savedRange;
+  const caretForRestore = (!selIdx && isEditing)
+    ? (_readCollapsedCaretIdx(root) || (_savedSelIdx && _savedSelIdx.start === _savedSelIdx.end ? _savedSelIdx : null))
+    : null;
   const html = _htmlWithoutStruts(root.innerHTML);
   const lines = _getHtmlLines(html);
 
@@ -2211,35 +2345,42 @@ function _applyListToElement(listType) {
   let selectedLineIndices;
   if (selIdx) {
     selectedLineIndices = new Set();
-    const isCaretPoint = selIdx.start === selIdx.end;
     lineOffsets.forEach(({ start, end }, i) => {
-      // A line is selected if selection overlaps it. For a collapsed caret
-      // (zero-width point), use the standard half-open [start,end) convention
-      // so a caret at a line's start unambiguously belongs to that line.
-      const overlaps = isCaretPoint
-        ? (selIdx.start >= start && selIdx.start < end) || (selIdx.start === end && i === lineOffsets.length - 1)
-        : (selIdx.start < end && selIdx.end > start);
-      if (overlaps) selectedLineIndices.add(i);
+      if (selIdx.start < end && selIdx.end > start) selectedLineIndices.add(i);
     });
   } else {
-    // No selection — apply to all lines
+    // No text highlight — apply to all lines of the block
     selectedLineIndices = new Set(lines.map((_, i) => i));
   }
 
-  // Among targeted lines: check if all already have this type → toggle off
+  // Targeted non-empty lines decide apply / cycle / toggle-off
   const targetedNonEmpty = lines.filter((l, i) =>
     selectedLineIndices.has(i) && l.replace(/<[^>]*>/g,'').trim()
   );
-  const allHaveType = targetedNonEmpty.length > 0 && targetedNonEmpty.every(l => {
-    const m = l.match(/data-list-(\w+)/);
-    return m && m[1] === listType;
-  });
+
+  let applyMode = 'on'; // 'on' | 'off'
+  let numStyle = 'decimal';
+  if (listType === 'bullet') {
+    const allHaveBullet = targetedNonEmpty.length > 0 && targetedNonEmpty.every(l =>
+      /data-list-bullet/i.test(l)
+    );
+    applyMode = allHaveBullet ? 'off' : 'on';
+  } else {
+    // Numbered: decimal → roman → alpha → off
+    const styles = targetedNonEmpty.map(l => _lineNumStyle(l));
+    const allHaveNum = styles.length > 0 && styles.every(s => s != null);
+    const uniform = allHaveNum && styles.every(s => s === styles[0]) ? styles[0] : null;
+    if (uniform === 'decimal') numStyle = 'roman';
+    else if (uniform === 'roman') numStyle = 'alpha';
+    else if (uniform === 'alpha') applyMode = 'off';
+    else numStyle = 'decimal';
+  }
 
   let numIdx = 0; // running index for numbered list (only targeted lines)
   const newLines = lines.map((line, i) => {
     const stripped = _stripLineMarker(line);
     if (!selectedLineIndices.has(i)) return line; // not targeted — leave untouched
-    if (allHaveType) return stripped; // toggle off
+    if (applyMode === 'off') return stripped;
     if (!stripped.replace(/<[^>]*>/g,'').trim()) return stripped; // skip empty
 
     numIdx++;
@@ -2248,41 +2389,23 @@ function _applyListToElement(listType) {
       const svg = _getBulletSvg(iconId, fontSize, iconStyle, iconColor, iconSw);
       marker = `<span data-list-bullet data-icon-id="${iconId}" data-icon-style="${iconStyle}" data-icon-color="${iconColor}" data-icon-sw="${iconSw}" contenteditable="false" style="${_rtMarkerBulletCss(null, root)}" onclick="rtChangeBulletIcon(this)">${svg}</span>`;
     } else {
-      marker = `<span data-list-num contenteditable="false" style="${_rtMarkerNumCss(null, root)}">${numIdx}.</span>`;
+      const prevColor = _lineNumColor(line);
+      const prevScheme = _lineNumSchemeRef(line);
+      const colorAttr = prevColor ? ` data-num-color="${prevColor}"` : '';
+      const schemeAttr = prevScheme ? ` data-num-schemeref="${JSON.stringify(prevScheme).replace(/"/g,'&quot;')}"` : '';
+      const colorStyle = prevColor ? _rtMarkerNumCss(null, root, prevColor) : _rtMarkerNumCss(null, root);
+      marker = `<span data-list-num data-num-style="${numStyle}"${colorAttr}${schemeAttr} contenteditable="false" style="${colorStyle}">${_rtFormatListNum(numIdx, numStyle)}</span>`;
     }
     return marker + stripped;
   });
 
   const newHtml = _joinHtmlLines(newLines);
-  // Compute where the caret should land in the new HTML before we replace the
-  // DOM: same line, shifted by the cumulative length change of every line up
-  // to and including the caret's line (marker add/remove changes line length
-  // by exactly 1 char in this counting scheme).
-  let caretTargetIdx = null;
-  if (selIdx && selIdx.start === selIdx.end) {
-    let newPos = 0;
-    for (let i = 0; i < lines.length; i++) {
-      const oldLen = lineOffsets[i].end - lineOffsets[i].start;
-      const tmp = document.createElement('div');
-      tmp.innerHTML = newLines[i];
-      let newLen = 0;
-      (function countNode(node) {
-        if (node.nodeType === 3) { newLen += node.textContent.length; return; }
-        if (node.nodeType === 1) {
-          if (node.tagName === 'BR') { newLen += 1; return; }
-          if (node.hasAttribute('data-list-bullet') || node.hasAttribute('data-list-num')) { newLen += 1; return; }
-          if (node.hasAttribute('data-br-anchor')) return;
-          for (const ch of node.childNodes) countNode(ch);
-        }
-      })(tmp);
-      if (selIdx.start >= lineOffsets[i].start && selIdx.start <= lineOffsets[i].end) {
-        const withinLine = selIdx.start - lineOffsets[i].start;
-        const shifted = Math.max(0, Math.min(newLen, withinLine + (newLen - oldLen)));
-        caretTargetIdx = newPos + shifted;
-        break;
-      }
-      newPos += newLen + 1;
-    }
+  // Map caret / selection through line length changes (marker add/remove = ±1).
+  let selToRestore = null;
+  if (selIdx) {
+    selToRestore = _rtMapSelThroughLines(selIdx, lineOffsets, newLines);
+  } else if (caretForRestore) {
+    selToRestore = _rtMapSelThroughLines(caretForRestore, lineOffsets, newLines);
   }
   root.innerHTML = newHtml;
   d.html = newHtml;
@@ -2291,9 +2414,26 @@ function _applyListToElement(listType) {
   _rtApplyMarkerVerticalAlign(root, parseFloat(fontSize));
   if (typeof _rtNormalizeTextDisplay === 'function') _rtNormalizeTextDisplay(c, cs, d.bulletGap);
   _rtReapplyTextShadow(sel);
-  if (caretTargetIdx != null) {
-    _restoreCaretToCharIndex(caretTargetIdx, root);
-    _savedSelIdx = null;
+  if (selToRestore) {
+    // Keep mapped indices so the next toolbar click can still target the same
+    // lines even if the live DOM selection briefly disappears.
+    if (selToRestore.start < selToRestore.end) _savedSelIdx = selToRestore;
+    const focusEl = (typeof _rtEl !== 'undefined' && _rtEl) || root;
+    const _idx = selToRestore;
+    const _root = root;
+    requestAnimationFrame(() => {
+      if (focusEl && focusEl.contentEditable === 'true' && document.activeElement !== focusEl) {
+        try { focusEl.focus({ preventScroll: true }); } catch (e) { try { focusEl.focus(); } catch (e2) {} }
+      }
+      if (_idx.start === _idx.end) {
+        _restoreCaretToCharIndex(_idx.start, _root);
+      } else {
+        _restoreSelToDOM(_idx, _root);
+        _savedSelIdx = _idx;
+        _rtSaveRange();
+      }
+      _updateListButtonState();
+    });
   }
   commitAll();
   _updateListButtonState();
@@ -2376,25 +2516,23 @@ function _updateListButtonState() {
   // Read color from data model (d.html) — reliable even after save/load round-trip
   const d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
   let col = null;
+  let schemeRef = null;
   if (d && d.html) {
-    // Parse data-icon-color from first bullet marker in saved html
-    const m = d.html.match(/data-list-bullet[^>]*data-icon-color="([^"]+)"/);
-    if (!m) {
-      // attribute order may vary
-      const m2 = d.html.match(/data-icon-color="([^"]+)"[^>]*data-list-bullet/);
-      if (m2) col = m2[1];
-    } else {
-      col = m[1];
+    const tmp = document.createElement('div');
+    tmp.innerHTML = d.html;
+    const sp = tmp.querySelector('span[data-list-bullet]');
+    if (sp) {
+      col = sp.getAttribute('data-icon-color');
+      const sr = sp.getAttribute('data-icon-schemeref');
+      if (sr) { try { schemeRef = JSON.parse(sr); } catch (e) {} }
     }
-    // Also check for generic data-icon-color near data-list-bullet
-    if (!col) {
-      const tmp = document.createElement('div');
-      tmp.innerHTML = d.html;
-      const sp = tmp.querySelector('span[data-list-bullet]');
-      if (sp) col = sp.getAttribute('data-icon-color');
-      if (!col) {
-        const spn = tmp.querySelector('span[data-list-num]');
-        if (spn) col = spn.style.color || null;
+    if (!col || col === 'currentColor') {
+      const spn = tmp.querySelector('span[data-list-num]');
+      if (spn) {
+        const nc = spn.getAttribute('data-num-color') || spn.style.color || null;
+        if (nc) col = nc;
+        const sr = spn.getAttribute('data-num-schemeref');
+        if (sr) { try { schemeRef = JSON.parse(sr); } catch (e) {} }
       }
     }
   }
@@ -2402,9 +2540,18 @@ function _updateListButtonState() {
   const preview = document.getElementById('bullet-color-preview');
   const hex = document.getElementById('bullet-color-hex');
   const gapEl = document.getElementById('bullet-marker-gap');
-  const displayColor = (!col || col === 'currentColor') ? _getCurrentTextColor(c) : col;
+  let displayColor = (!col || col === 'currentColor') ? _getCurrentTextColor(c) : col;
+  if (schemeRef && typeof _resolveSchemeColor === 'function') {
+    const th = typeof _activeThemeForScheme === 'function' ? _activeThemeForScheme() : null;
+    const resolved = th ? _resolveSchemeColor(schemeRef, th) : null;
+    if (resolved) displayColor = resolved;
+  }
   if (preview) preview.style.background = displayColor || '#ffffff';
-  if (hex) hex.value = (!col || col === 'currentColor') ? '' : col;
+  if (hex) {
+    hex.value = (!col || col === 'currentColor')
+      ? ''
+      : ((typeof _colorFieldDisplay === 'function') ? _colorFieldDisplay(displayColor, schemeRef) : col);
+  }
   if (gapEl) gapEl.value = _rtMarkerGapPx(null, sel);
 }
 window.rtUpdateListButtonState = _updateListButtonState;
@@ -2417,16 +2564,19 @@ function _getCurrentTextColor(ecEl) {
   return m ? m[1] : '#ffffff';
 }
 
-// Selected lines with markers → only those; no selection or no marker on selection → all
+// Selected lines with markers → only those; no real text highlight → all markers
 function _rtMarkersForColorUpdate(root) {
-  const selIdx = _getSelOrCaretIdx(root);
+  const wrap = root && root.closest && root.closest('.el');
+  const isEditing = wrap && wrap.dataset.editing === 'true';
+  const liveRange = isEditing ? _readSelFromDOM(root) : null;
+  const savedRange = (isEditing && _savedSelIdx && _savedSelIdx.start < _savedSelIdx.end)
+    ? _savedSelIdx : null;
+  const selIdx = liveRange || savedRange;
   const lines = _getHtmlLines(root.innerHTML);
   let targetLines = null;
   if (selIdx) {
     let pos = 0;
     const indices = new Set();
-    const isCaretPoint = selIdx.start === selIdx.end;
-    const lineCount = lines.length;
     lines.forEach((lineHtml, i) => {
       const tmp = document.createElement('div');
       tmp.innerHTML = lineHtml;
@@ -2442,10 +2592,7 @@ function _rtMarkersForColorUpdate(root) {
       }
       for (const ch of tmp.childNodes) countNode(ch);
       const start = pos, end = pos + lineLen;
-      const overlaps = isCaretPoint
-        ? (selIdx.start >= start && selIdx.start < end) || (selIdx.start === end && i === lineCount - 1)
-        : (selIdx.start < end && selIdx.end > start);
-      if (overlaps) indices.add(i);
+      if (selIdx.start < end && selIdx.end > start) indices.add(i);
       pos += lineLen + 1;
     });
     const anyMarker = [...indices].some(i => _lineHasMarker(lines[i]));
@@ -2493,9 +2640,12 @@ function rtBulletColorPick(color, schemeRef) {
     if (color !== 'currentColor') {
       sp.style.color = color;
       sp.setAttribute('data-num-color', color);
+      if (schemeRef) sp.setAttribute('data-num-schemeref', JSON.stringify(schemeRef));
+      else sp.removeAttribute('data-num-schemeref');
     } else {
       sp.style.color = '';
       sp.removeAttribute('data-num-color');
+      sp.removeAttribute('data-num-schemeref');
     }
   });
   _rtApplyMarkerVerticalAlign(root, sz);
@@ -2508,7 +2658,11 @@ function rtBulletColorPick(color, schemeRef) {
   const preview = document.getElementById('bullet-color-preview');
   const hex = document.getElementById('bullet-color-hex');
   if (preview) preview.style.background = displayColor;
-  if (hex) hex.value = color === 'currentColor' ? '' : color;
+  if (hex) {
+    hex.value = color === 'currentColor'
+      ? ''
+      : ((typeof _colorFieldDisplay === 'function') ? _colorFieldDisplay(color, schemeRef || null) : color);
+  }
   // Cache the last picked bullet color so _updateListButtonState always shows it
   _lastBulletColor = color;
 }
@@ -2516,6 +2670,10 @@ function rtBulletColorPick(color, schemeRef) {
 function rtBulletColorHex(val) {
   if (!val || !String(val).trim()) {
     rtBulletColorPick('currentColor', null);
+    return;
+  }
+  if (typeof colorFieldOnInput === 'function') {
+    colorFieldOnInput(val, 'bullet-color-preview', rtBulletColorPick);
     return;
   }
   const v = String(val).trim();

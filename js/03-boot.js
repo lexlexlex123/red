@@ -181,6 +181,7 @@ function boot(){
   window.addEventListener('resize',drawGrid);
   document.addEventListener('keydown',onKey);
   loadState();
+  if(typeof restoreSnapPref==='function') restoreSnapPref();
   if(typeof refreshDecorColors==='function'){
     const [_a1,_a2]=(typeof _decorAccents==='function')?_decorAccents():['#6366f1','#818cf8'];
     refreshDecorColors(_a1,_a2,true);
@@ -260,11 +261,13 @@ function _applyThemeByIdx(idx){
       if(el.type==='icon'&&!el.iconColorCustom){const newColor=theme.shapeFill||theme.tc||'#3b82f6';el.iconColor=newColor;}
     });
   });
-  if(typeof refreshDecorColors==='function')refreshDecorColors(theme.ac1||'#6366f1',theme.ac2||'#818cf8',true);
+  if(typeof refreshDecorColors==='function') refreshDecorColors(theme.ac1||'#6366f1',theme.ac2||'#818cf8',true);
+  if(typeof buildSlideTplGrid==='function')buildSlideTplGrid();
   if(typeof refreshAllCodeBlocks==='function')refreshAllCodeBlocks();
   if(typeof renderAll==='function') renderAll();
   else if(typeof refreshDecorOnCanvas==='function') refreshDecorOnCanvas();
   if(typeof refreshAppletThemes==='function')refreshAppletThemes();
+  if(typeof refreshOpenColorPanel==='function') refreshOpenColorPanel();
 }
 
 function buildSwatches(id){
@@ -494,6 +497,8 @@ function buildAppletGallery(){
 // The slot div expands/collapses inline — no popup.
 
 let _cpActivePanelId = null;
+let _cpActiveMode = null;
+let _cpActiveOnPick = null;
 
 function openColorPanel(panelId, mode, onPick) {
   // If same panel already open — close it (but not if native color picker is open)
@@ -505,7 +510,24 @@ function openColorPanel(panelId, mode, onPick) {
   // Close previously open panel
   if (_cpActivePanelId) closeColorPanel(_cpActivePanelId);
   _cpActivePanelId = panelId;
+  _cpActiveMode = mode;
+  _cpActiveOnPick = onPick;
 
+  _cpRenderPanel(panelId, mode, onPick);
+}
+
+/** Rebuild the currently open palette with the active theme colors. */
+function refreshOpenColorPanel() {
+  if (!_cpActivePanelId || typeof _cpActiveOnPick !== 'function') return;
+  const panelId = _cpActivePanelId;
+  const mode = _cpActiveMode;
+  const onPick = _cpActiveOnPick;
+  // Keep panel open — just rebuild contents for the new scheme
+  _cpRenderPanel(panelId, mode, onPick);
+}
+window.refreshOpenColorPanel = refreshOpenColorPanel;
+
+function _cpRenderPanel(panelId, mode, onPick) {
   const slot = document.getElementById(panelId);
   if (!slot) return;
   slot.innerHTML = '';
@@ -866,7 +888,11 @@ function closeColorPanel(panelId) {
   if (typeof window._cpCleanup === 'function') { window._cpCleanup(); }
   const slot = document.getElementById(panelId || _cpActivePanelId);
   if (slot) { slot.innerHTML = ''; slot.style.display = 'none'; }
-  if (!panelId || panelId === _cpActivePanelId) _cpActivePanelId = null;
+  if (!panelId || panelId === _cpActivePanelId) {
+    _cpActivePanelId = null;
+    _cpActiveMode = null;
+    _cpActiveOnPick = null;
+  }
 }
 
 function _blendToWhite(hex, amt) {

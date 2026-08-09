@@ -106,8 +106,8 @@
   const _origSaveState = window.saveState;
   let _idbThrottle = null;
   window.saveState = function(){
-    if(typeof _origSaveState === 'function') _origSaveState();
-    // Синхронно пишем в sessionStorage с timestamp как надёжный буфер
+    const ok = typeof _origSaveState === 'function' ? _origSaveState() : true;
+    // Синхронно пишем в sessionStorage то, что реально лежит в LS (уже без тяжёлых media)
     try{
       const raw = localStorage.getItem('sf_v4');
       const now = Date.now();
@@ -125,6 +125,7 @@
         if(raw) idbSave(raw);
       }catch(e){}
     }, 2000);
+    return ok;
   };
 
   // При beforeunload — flush cur и slides в storage, затем IDB
@@ -413,8 +414,10 @@ window.toggleExtraGuides = function(mode){
   _clearExtraGuides();
   if(_extraGuidesMode === mode){ _extraGuidesMode='none'; _updateGuideBtn(); return; }
   _extraGuidesMode = mode;
-  _drawExtraGuides();
   _updateGuideBtn();
+  const snapOn=document.getElementById('snap-chk');
+  if(snapOn&&!snapOn.checked) return; // snap off — no guides shown or snapped
+  _drawExtraGuides();
 };
 
 function _clearExtraGuides(){
@@ -422,6 +425,8 @@ function _clearExtraGuides(){
 }
 
 function _drawExtraGuides(){
+  const snapOn=document.getElementById('snap-chk');
+  if(snapOn&&!snapOn.checked) return;
   const cv=document.getElementById('canvas');
   if(!cv) return;
   const W=canvasW, H=canvasH;

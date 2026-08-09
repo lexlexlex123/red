@@ -65,8 +65,21 @@
     [5, 2, 1], [5, 3, 2], [5, 4, 3], [5, 1, 4]
   ];
 
-  function _depthAlpha(z, depth){
+  function _accentRgb(hex, cfg){
+    const rgb = _hexRgb(hex);
+    if (!cfg || !cfg.dark) return rgb;
+    // На тёмном фоне подмешиваем белый — акценты темы часто близки к фону
+    const k = cfg.lift != null ? cfg.lift : 0.38;
+    return [
+      rgb[0] + (1 - rgb[0]) * k,
+      rgb[1] + (1 - rgb[1]) * k,
+      rgb[2] + (1 - rgb[2]) * k
+    ];
+  }
+
+  function _depthAlpha(z, depth, cfg){
     const t = (z / (depth || 1) + 1) * 0.5;
+    if (cfg && cfg.dark) return 0.48 + t * 0.42; // 0.48–0.90
     return 0.14 + t * 0.22;
   }
 
@@ -113,9 +126,12 @@
 
   function _buildHelixMesh(cfg, scroll, rotPhase){
     const n = cfg.segments || 80;
-    const rgb1 = _hexRgb(cfg.a1);
-    const rgb2 = _hexRgb(cfg.a2);
-    const bead = cfg.h * 0.011;
+    const rgb1 = _accentRgb(cfg.a1, cfg);
+    const rgb2 = _accentRgb(cfg.a2, cfg);
+    const dark = !!(cfg && cfg.dark);
+    const bead = cfg.h * (dark ? 0.014 : 0.011);
+    const beadBoost = dark ? 0.18 : 0.12;
+    const beadBoost2 = dark ? 0.15 : 0.10;
     const triPos = [], triCol = [];
     const linePos = [], lineCol = [];
     const ptsA = [], ptsB = [];
@@ -128,18 +144,20 @@
 
       if (i > 0){
         const p0 = ptsA[i - 1], p1 = pa;
-        _pushLine(linePos, lineCol, p0.x, p0.y, p0.z, p1.x, p1.y, p1.z, rgb1, _depthAlpha((p0.z + p1.z) * 0.5, cfg.depth));
+        _pushLine(linePos, lineCol, p0.x, p0.y, p0.z, p1.x, p1.y, p1.z, rgb1, _depthAlpha((p0.z + p1.z) * 0.5, cfg.depth, cfg));
         const q0 = ptsB[i - 1], q1 = pb;
-        _pushLine(linePos, lineCol, q0.x, q0.y, q0.z, q1.x, q1.y, q1.z, rgb2, _depthAlpha((q0.z + q1.z) * 0.5, cfg.depth));
+        _pushLine(linePos, lineCol, q0.x, q0.y, q0.z, q1.x, q1.y, q1.z, rgb2, _depthAlpha((q0.z + q1.z) * 0.5, cfg.depth, cfg));
       }
 
       if (i % 2 === 0){
-        _pushOct(triPos, triCol, pa.x, pa.y, pa.z, bead, rgb1, _depthAlpha(pa.z, cfg.depth) + 0.12);
-        _pushOct(triPos, triCol, pb.x, pb.y, pb.z, bead * 0.92, rgb2, _depthAlpha(pb.z, cfg.depth) + 0.10);
+        _pushOct(triPos, triCol, pa.x, pa.y, pa.z, bead, rgb1, Math.min(1, _depthAlpha(pa.z, cfg.depth, cfg) + beadBoost));
+        _pushOct(triPos, triCol, pb.x, pb.y, pb.z, bead * 0.92, rgb2, Math.min(1, _depthAlpha(pb.z, cfg.depth, cfg) + beadBoost2));
       }
 
       if (i > 0 && i % 4 === 0){
-        const rungA = 0.08 + Math.abs(Math.cos(pa.t)) * 0.14;
+        const rungA = dark
+          ? (0.32 + Math.abs(Math.cos(pa.t)) * 0.28)
+          : (0.08 + Math.abs(Math.cos(pa.t)) * 0.14);
         const mix = [(rgb1[0] + rgb2[0]) * 0.5, (rgb1[1] + rgb2[1]) * 0.5, (rgb1[2] + rgb2[2]) * 0.5];
         _pushLine(linePos, lineCol, pa.x, pa.y, pa.z, pb.x, pb.y, pb.z, mix, rungA);
       }
@@ -353,6 +371,7 @@
       this.unmount(id);
       const r = new DnaRenderer(cfg);
       r.mount(parent);
+      if (cfg && cfg.animated === false) r.pause();
       _active.set(id, r);
       return () => this.unmount(id);
     },

@@ -339,6 +339,16 @@ window._stampTextDatasetFromModel=function(el,d){
   } else {
     delete el.dataset.rx_tl; delete el.dataset.rx_tr; delete el.dataset.rx_bl; delete el.dataset.rx_br;
   }
+  if(d.pad_t!==undefined||d.pad_r!==undefined||d.pad_b!==undefined||d.pad_l!==undefined){
+    el.dataset.pad_t=d.pad_t!=null?d.pad_t:0;
+    el.dataset.pad_r=d.pad_r!=null?d.pad_r:0;
+    el.dataset.pad_b=d.pad_b!=null?d.pad_b:0;
+    el.dataset.pad_l=d.pad_l!=null?d.pad_l:0;
+    el.dataset.padUnit=d.padUnit||'px';
+  } else {
+    delete el.dataset.pad_t; delete el.dataset.pad_r; delete el.dataset.pad_b; delete el.dataset.pad_l;
+    delete el.dataset.padUnit;
+  }
 };
 window._shadowOverrideFromModel=function(d){
   if(!d) return {};
@@ -496,6 +506,7 @@ function applyTextBorderStyle(el){
 window._restoreTextBlockVisuals=function(el){
   if(!el||el.dataset.type!=='text')return;
   if(typeof applyTextRadius==='function')applyTextRadius(el);
+  if(typeof applyTextPad==='function'&&el.dataset.pad_t!==undefined)applyTextPad(el);
   if(typeof applyTextBorderStyle==='function')applyTextBorderStyle(el);
   if(el.dataset.valign&&typeof applyTextVAlign==='function')applyTextVAlign(el,el.dataset.valign);
   else if(typeof applyTextVAlign==='function')applyTextVAlign(el,'top');
@@ -987,9 +998,10 @@ function setTextRxUnit(u){
   document.getElementById('rx-unit-pct').classList.toggle('active',u==='%');
   if(sel)syncTextRadiusUI();
 }
-function setTextRadius(corner,val){
+function setTextRadius(corner,val,opts){
+  opts=opts||{};
   if(!sel||sel.dataset.type!=='text')return;
-  const linked=document.getElementById('rx-linked').checked;
+  const linked=document.getElementById('rx-linked')&&document.getElementById('rx-linked').checked;
   const u=sel.dataset.rxUnit||textRxUnit||'px';
   const max=_dimInputMax(u,'rx');
   val=Math.max(0,Math.min(max,+val||0));
@@ -1000,10 +1012,12 @@ function setTextRadius(corner,val){
     });
   } else {
     sel.dataset['rx_'+corner]=val;
+    const inp=document.getElementById('p-rx-'+corner);if(inp)inp.value=val;
   }
   sel.dataset.rxUnit=u;
   applyTextRadius(sel);
-  save();drawThumbs();saveState();
+  _syncRxBoxPreview();
+  if(!opts.silent){ save();drawThumbs();saveState(); }
 }
 function applyTextRadius(el){
   const u=el.dataset.rxUnit||'px';
@@ -1021,6 +1035,91 @@ function applyTextRadius(el){
   if(typeof applyTextBlockShadowStyle==='function') applyTextBlockShadowStyle(el);
   if(+(el.dataset.textBorderW||0)>0&&typeof applyTextBorderStyle==='function') applyTextBorderStyle(el);
 }
+function _rxReadVal(c){
+  if(sel&&sel.dataset.type==='text') return +(sel.dataset['rx_'+c]||0);
+  const inp=document.getElementById('p-rx-'+c);
+  return inp?+(inp.value||0):0;
+}
+function _syncRxBoxPreview(){
+  const prev=document.getElementById('rx-box-preview');
+  if(!prev)return;
+  const u=(sel&&sel.dataset.type==='text'?(sel.dataset.rxUnit||textRxUnit):textRxUnit)||'px';
+  const max=_dimInputMax(u,'rx');
+  const w=prev.clientWidth||1, h=prev.clientHeight||1;
+  const maxVis=Math.max(8, Math.min(w,h)/2 - 2);
+  const toVis=function(v){
+    return Math.max(0, Math.min(maxVis, (Math.max(0,+v||0)/Math.max(1,max))*maxVis));
+  };
+  const tl=_rxReadVal('tl'),tr=_rxReadVal('tr'),bl=_rxReadVal('bl'),br=_rxReadVal('br');
+  const vtl=toVis(tl),vtr=toVis(tr),vbl=toVis(bl),vbr=toVis(br);
+  prev.style.borderRadius=vtl+'px '+vtr+'px '+vbr+'px '+vbl+'px';
+  const place=function(corner,x,y){
+    const el=prev.querySelector('.rx-handle.'+corner);
+    if(!el)return;
+    el.style.left=x+'px';
+    el.style.top=y+'px';
+  };
+  // Маркер на дуге угла (внутрь от угла)
+  place('tl', vtl, vtl);
+  place('tr', w - vtr, vtr);
+  place('bl', vbl, h - vbl);
+  place('br', w - vbr, h - vbr);
+}
+
+let _rxDrag=null;
+function _rxDragOnMove(e){
+  if(!_rxDrag)return;
+  e.preventDefault();
+  const prev=_rxDrag.prev;
+  const rect=prev.getBoundingClientRect();
+  const x=Math.max(0, Math.min(rect.width, (e.clientX!=null?e.clientX:_rxDrag.lastX)-rect.left));
+  const y=Math.max(0, Math.min(rect.height, (e.clientY!=null?e.clientY:_rxDrag.lastY)-rect.top));
+  if(e.clientX!=null){ _rxDrag.lastX=e.clientX; _rxDrag.lastY=e.clientY; }
+  const c=_rxDrag.corner;
+  let dist=0;
+  if(c==='tl') dist=Math.min(x,y);
+  else if(c==='tr') dist=Math.min(rect.width-x, y);
+  else if(c==='bl') dist=Math.min(x, rect.height-y);
+  else dist=Math.min(rect.width-x, rect.height-y);
+  const maxVis=Math.max(8, Math.min(rect.width,rect.height)/2 - 2);
+  const u=(sel&&sel.dataset.rxUnit)||textRxUnit||'px';
+  const max=_dimInputMax(u,'rx');
+  const val=Math.round(Math.max(0, Math.min(max, (dist/maxVis)*max)));
+  setTextRadius(c, val, {silent:true});
+}
+function _rxDragOnUp(){
+  if(!_rxDrag)return;
+  const h=_rxDrag.handle;
+  if(h) h.classList.remove('dragging');
+  document.removeEventListener('mousemove', _rxDragOnMove, true);
+  document.removeEventListener('mouseup', _rxDragOnUp, true);
+  _rxDrag=null;
+  if(typeof save==='function') save();
+  if(typeof drawThumbs==='function') drawThumbs();
+  if(typeof saveState==='function') saveState();
+}
+function _rxHandleDown(e){
+  if(!sel||sel.dataset.type!=='text')return;
+  const handle=e.target.closest&&e.target.closest('.rx-handle');
+  if(!handle)return;
+  e.preventDefault();
+  e.stopPropagation();
+  const prev=document.getElementById('rx-box-preview');
+  if(!prev)return;
+  if(typeof pushUndo==='function') pushUndo();
+  handle.classList.add('dragging');
+  _rxDrag={corner:handle.dataset.corner, prev:prev, handle:handle, lastX:e.clientX, lastY:e.clientY};
+  document.addEventListener('mousemove', _rxDragOnMove, true);
+  document.addEventListener('mouseup', _rxDragOnUp, true);
+  _rxDragOnMove(e);
+}
+function _initRxBoxHandles(){
+  const prev=document.getElementById('rx-box-preview');
+  if(!prev||prev._rxBound)return;
+  prev._rxBound=true;
+  prev.addEventListener('mousedown', _rxHandleDown);
+  window.addEventListener('resize', function(){ _syncRxBoxPreview(); });
+}
 function syncTextRadiusUI(){
   if(!sel||sel.dataset.type!=='text')return;
   const u=sel.dataset.rxUnit||textRxUnit||'px';
@@ -1036,7 +1135,10 @@ function syncTextRadiusUI(){
     const inp=document.getElementById('p-rx-'+c);
     if(inp&&typeof refreshNumScrubber==='function')refreshNumScrubber(inp);
   });
+  _initRxBoxHandles();
+  _syncRxBoxPreview();
 }
+window._syncRxBoxPreview=_syncRxBoxPreview;
 
 // ══════════════ PADDING WITH UNIT + LOCK ══════════════
 let textPadUnit = 'px';
@@ -1055,9 +1157,10 @@ function setTextPadUnit(u){
   document.getElementById('pad-unit-pct').classList.toggle('active', u==='%');
   if(sel) syncTextPadUI();
 }
-function setTextPad(side, val){
+function setTextPad(side, val, opts){
+  opts=opts||{};
   if(!sel||sel.dataset.type!=='text')return;
-  const linked = document.getElementById('pad-linked').checked;
+  const linked = document.getElementById('pad-linked')&&document.getElementById('pad-linked').checked;
   const u=sel.dataset.padUnit||textPadUnit||'px';
   const max=_dimInputMax(u,'pad');
   val=Math.max(0,Math.min(max,+val||0));
@@ -1068,17 +1171,23 @@ function setTextPad(side, val){
     });
   } else {
     sel.dataset['pad_'+side] = val;
+    const inp=document.getElementById('p-pad-'+side); if(inp) inp.value=val;
   }
   sel.dataset.padUnit=u;
   applyTextPad(sel);
-  save(); drawThumbs(); saveState();
+  _syncPadBoxPreview();
+  if(!opts.silent){ save(); drawThumbs(); saveState(); }
 }
 function applyTextPad(el){
+  if(!el) return;
+  // Без pad_* в dataset не трогаем — иначе затрём padding из cs дефолтами
+  if(el.dataset.pad_t===undefined&&el.dataset.pad_r===undefined&&
+     el.dataset.pad_b===undefined&&el.dataset.pad_l===undefined) return;
   const u = el.dataset.padUnit || textPadUnit || 'px';
-  const t=el.dataset.pad_t||el.dataset.pad_t===0?el.dataset.pad_t:6;
-  const r=el.dataset.pad_r||el.dataset.pad_r===0?el.dataset.pad_r:8;
-  const b=el.dataset.pad_b||el.dataset.pad_b===0?el.dataset.pad_b:6;
-  const l=el.dataset.pad_l||el.dataset.pad_l===0?el.dataset.pad_l:8;
+  const t=el.dataset.pad_t!==undefined&&el.dataset.pad_t!==''?+el.dataset.pad_t:0;
+  const r=el.dataset.pad_r!==undefined&&el.dataset.pad_r!==''?+el.dataset.pad_r:0;
+  const b=el.dataset.pad_b!==undefined&&el.dataset.pad_b!==''?+el.dataset.pad_b:0;
+  const l=el.dataset.pad_l!==undefined&&el.dataset.pad_l!==''?+el.dataset.pad_l:0;
   const padStr = `${t}${u} ${r}${u} ${b}${u} ${l}${u}`;
   const c2 = el.querySelector('.tel')||el.querySelector('.ec'); if(!c2) return;
   let cs = c2.getAttribute('style')||'';
@@ -1086,6 +1195,109 @@ function applyTextPad(el){
   cs = (cs.endsWith(';')||!cs ? cs : cs+';') + 'padding:'+padStr+';';
   c2.setAttribute('style', cs);
   if(window._textShadowActive&&window._textShadowActive(el.dataset)&&typeof applyTextShadowStyle==='function') applyTextShadowStyle(el);
+}
+function _padReadVal(s){
+  if(sel&&sel.dataset.type==='text'){
+    const v=sel.dataset['pad_'+s];
+    if(v!==undefined&&v!=='') return +v;
+  }
+  const inp=document.getElementById('p-pad-'+s);
+  return inp?+(inp.value||0):0;
+}
+function _syncPadBoxPreview(){
+  const prev=document.getElementById('pad-box-preview');
+  const inner=document.getElementById('pad-box-inner');
+  if(!prev)return;
+  const u=(sel&&sel.dataset.type==='text'?(sel.dataset.padUnit||textPadUnit):textPadUnit)||'px';
+  const max=_dimInputMax(u,'pad');
+  const w=prev.clientWidth||1, h=prev.clientHeight||1;
+  const maxVisX=Math.max(8, w/2 - 4);
+  const maxVisY=Math.max(8, h/2 - 4);
+  // px — 1:1 до половины превью; % — доля половины
+  const toVisX=function(v){
+    v=Math.max(0,+v||0);
+    if(u==='%') return Math.max(0, Math.min(maxVisX, v/100*maxVisX));
+    return Math.max(0, Math.min(maxVisX, v));
+  };
+  const toVisY=function(v){
+    v=Math.max(0,+v||0);
+    if(u==='%') return Math.max(0, Math.min(maxVisY, v/100*maxVisY));
+    return Math.max(0, Math.min(maxVisY, v));
+  };
+  const vt=toVisY(_padReadVal('t')), vr=toVisX(_padReadVal('r'));
+  const vb=toVisY(_padReadVal('b')), vl=toVisX(_padReadVal('l'));
+  if(inner){
+    inner.style.top=vt+'px';
+    inner.style.right=vr+'px';
+    inner.style.bottom=vb+'px';
+    inner.style.left=vl+'px';
+  }
+  const place=function(side,x,y){
+    const el=prev.querySelector('.pad-handle.'+side);
+    if(!el)return;
+    el.style.left=x+'px';
+    el.style.top=y+'px';
+  };
+  place('t', w/2, vt);
+  place('r', w - vr, h/2);
+  place('b', w/2, h - vb);
+  place('l', vl, h/2);
+}
+
+let _padDrag=null;
+function _padDragOnMove(e){
+  if(!_padDrag)return;
+  e.preventDefault();
+  const prev=_padDrag.prev;
+  const rect=prev.getBoundingClientRect();
+  const x=Math.max(0, Math.min(rect.width, (e.clientX!=null?e.clientX:_padDrag.lastX)-rect.left));
+  const y=Math.max(0, Math.min(rect.height, (e.clientY!=null?e.clientY:_padDrag.lastY)-rect.top));
+  if(e.clientX!=null){ _padDrag.lastX=e.clientX; _padDrag.lastY=e.clientY; }
+  const s=_padDrag.side;
+  let dist=0, maxVis=0;
+  if(s==='t'){ dist=y; maxVis=Math.max(8, rect.height/2 - 4); }
+  else if(s==='b'){ dist=rect.height-y; maxVis=Math.max(8, rect.height/2 - 4); }
+  else if(s==='l'){ dist=x; maxVis=Math.max(8, rect.width/2 - 4); }
+  else { dist=rect.width-x; maxVis=Math.max(8, rect.width/2 - 4); }
+  const u=(sel&&sel.dataset.padUnit)||textPadUnit||'px';
+  const max=_dimInputMax(u,'pad');
+  let val;
+  if(u==='%') val=Math.round(Math.max(0, Math.min(max, (dist/maxVis)*100)));
+  else val=Math.round(Math.max(0, Math.min(max, dist)));
+  setTextPad(s, val, {silent:true});
+}
+function _padDragOnUp(){
+  if(!_padDrag)return;
+  const h=_padDrag.handle;
+  if(h) h.classList.remove('dragging');
+  document.removeEventListener('mousemove', _padDragOnMove, true);
+  document.removeEventListener('mouseup', _padDragOnUp, true);
+  _padDrag=null;
+  if(typeof save==='function') save();
+  if(typeof drawThumbs==='function') drawThumbs();
+  if(typeof saveState==='function') saveState();
+}
+function _padHandleDown(e){
+  if(!sel||sel.dataset.type!=='text')return;
+  const handle=e.target.closest&&e.target.closest('.pad-handle');
+  if(!handle)return;
+  e.preventDefault();
+  e.stopPropagation();
+  const prev=document.getElementById('pad-box-preview');
+  if(!prev)return;
+  if(typeof pushUndo==='function') pushUndo();
+  handle.classList.add('dragging');
+  _padDrag={side:handle.dataset.side, prev:prev, handle:handle, lastX:e.clientX, lastY:e.clientY};
+  document.addEventListener('mousemove', _padDragOnMove, true);
+  document.addEventListener('mouseup', _padDragOnUp, true);
+  _padDragOnMove(e);
+}
+function _initPadBoxHandles(){
+  const prev=document.getElementById('pad-box-preview');
+  if(!prev||prev._padBound)return;
+  prev._padBound=true;
+  prev.addEventListener('mousedown', _padHandleDown);
+  window.addEventListener('resize', function(){ _syncPadBoxPreview(); });
 }
 function syncTextPadUI(){
   if(!sel||sel.dataset.type!=='text') return;
@@ -1096,7 +1308,11 @@ function syncTextPadUI(){
   document.getElementById('pad-unit-pct')?.classList.toggle('active', u==='%');
   ['t','r','b','l'].forEach(s=>{
     const inp=document.getElementById('p-pad-'+s);
-    if(inp){inp.value = sel.dataset['pad_'+s]??({t:6,r:8,b:6,l:8}[s]);inp.min=0;inp.max=max;}
+    if(inp){inp.value = sel.dataset['pad_'+s]!==undefined?sel.dataset['pad_'+s]:0;inp.min=0;inp.max=max;}
     if(inp&&typeof refreshNumScrubber==='function')refreshNumScrubber(inp);
   });
+  _initPadBoxHandles();
+  _syncPadBoxPreview();
 }
+window._syncPadBoxPreview=_syncPadBoxPreview;
+window._initPadBoxHandles=_initPadBoxHandles;

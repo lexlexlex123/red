@@ -44,17 +44,39 @@ function openShapeModalReplace(){
     if(fillEl){fillEl.value=_d.fill||fillEl.value;document.getElementById('sm-fill-inner').style.background=_d.fill||'';}
     if(strokeEl){strokeEl.value=_d.stroke||strokeEl.value;document.getElementById('sm-stroke-inner').style.background=_d.stroke||'';}
     if(swEl&&_d.sw!==undefined)swEl.value=_d.sw;
+    window._smFillScheme = _d.fillScheme !== undefined ? (_d.fillScheme||null) : null;
+    window._smStrokeScheme = _d.strokeScheme !== undefined ? (_d.strokeScheme||null) : null;
   }
 }
 
 function openShapeModal(){
-  // Pre-fill colors from current theme
+  // Pre-fill colors from current theme — pin to nearest palette swatch so the
+  // props field shows "41" (etc.) instead of a raw hex.
   let fillColor='#3b82f6', strokeColor='#1d4ed8';
-  if(appliedThemeIdx>=0&&appliedThemeIdx<THEMES.length){
+  let fillScheme=null, strokeScheme=null;
+  const theme=typeof _activeThemeForScheme==='function'?_activeThemeForScheme():null;
+  if(theme){
+    fillColor=theme.shapeFill||fillColor;
+    strokeColor=theme.shapeStroke||strokeColor;
+    if(typeof _closestSchemeRef==='function'){
+      fillScheme=_closestSchemeRef(fillColor, theme);
+      strokeScheme=_closestSchemeRef(strokeColor, theme);
+      if(fillScheme){
+        const r=_schemeSwatchColor(theme, fillScheme.col, fillScheme.row);
+        if(r) fillColor=r;
+      }
+      if(strokeScheme){
+        const r=_schemeSwatchColor(theme, strokeScheme.col, strokeScheme.row);
+        if(r) strokeColor=r;
+      }
+    }
+  } else if(appliedThemeIdx>=0&&appliedThemeIdx<THEMES.length){
     const t=THEMES[appliedThemeIdx];
     fillColor=t.shapeFill||fillColor;
     strokeColor=t.shapeStroke||strokeColor;
   }
+  window._smFillScheme=fillScheme;
+  window._smStrokeScheme=strokeScheme;
   const fillEl=document.getElementById('sm-fill');
   const strokeEl=document.getElementById('sm-stroke');
   if(fillEl)fillEl.value=fillColor;
@@ -387,6 +409,8 @@ function insertShapeSelected(){
       d.shape=sh.id;
       // Цвета: из модалки если пользователь их менял, иначе из оригинала
       d.fill=fill; d.stroke=stroke; d.sw=sw;
+      if(window._smFillScheme!==undefined) d.fillScheme=window._smFillScheme||null;
+      if(window._smStrokeScheme!==undefined) d.strokeScheme=window._smStrokeScheme||null;
       // Все остальные свойства — из оригинала
       if(src.fillOp!==undefined)d.fillOp=src.fillOp;
       if(src.shadow!==undefined)d.shadow=src.shadow;
@@ -420,14 +444,41 @@ function insertShapeSelected(){
   const _insertSw = _isCloud ? 0 : sw;
   const _isCurve = sh.special === 'curve';
   const _defSize = _isCloud ? _CLOUD_INSERT_SIZE : 200;
-  const d={id:'e'+(++ec),type:'shape',x:snapV((canvasW-_defSize)/2),y:snapV((canvasH-_defSize)/2),w:snapV(_defSize),h:snapV(_defSize),
+  const _isLine = sh.id === 'line';
+  const _insW = _defSize;
+  const _insH = _isLine ? Math.max(24, (_insertSw || 2) + 16) : _defSize;
+  const d={id:'e'+(++ec),type:'shape',x:snapV((canvasW-_insW)/2),y:snapV((canvasH-_insH)/2),w:snapV(_insW),h:snapV(_insH),
     shape:sh.id,fill:_insertFill,stroke:_isCloud?'#1d4ed8':stroke,sw:_insertSw,rx:_isCallout?12:0,fillOp:1,shadow:false,shadowBlur:4,shadowSize:3,shadowColor:'#000000',
     shapeHtml:'',shapeTextCss:'font-size:24px;font-weight:700;color:#ffffff;text-align:center;',
     tailX:_isCallout?0:undefined,tailY:_isCallout?130:undefined,rot:0,anims:[],
     cloudSeed:_isCloud?(Math.floor(Math.random()*999999)+1):undefined,
     cloudForm:_isCloud?'puff':undefined,
     curvePoints:_isCurve?_defaultCurvePoints():undefined,
-    curveClosed:_isCurve?false:undefined};
+    curveClosed:_isCurve?false:undefined,
+    _lineCapV:_isLine?2:undefined};
+  // Pin fill/stroke to palette so props show "41" not "#3b82f6"
+  if(!_isCloud && _insertFill!=='none'){
+    d.fillScheme = (window._smFillScheme!==undefined) ? (window._smFillScheme||null) : undefined;
+    if(d.fillScheme===undefined && typeof _closestSchemeRef==='function'){
+      const th=typeof _activeThemeForScheme==='function'?_activeThemeForScheme():null;
+      d.fillScheme = th ? _closestSchemeRef(_insertFill, th) : null;
+    }
+  } else if(_insertFill==='none'){
+    d.fillScheme = null;
+  }
+  if(!_isCloud){
+    d.strokeScheme = (window._smStrokeScheme!==undefined) ? (window._smStrokeScheme||null) : undefined;
+    if(d.strokeScheme===undefined && typeof _closestSchemeRef==='function'){
+      const th=typeof _activeThemeForScheme==='function'?_activeThemeForScheme():null;
+      d.strokeScheme = th ? _closestSchemeRef(stroke, th) : null;
+    }
+  }
+  // Line segments default to palette "15" (same as angle marks)
+  if(_isLine && typeof _defaultLineColor==='function'){
+    const _lc=_defaultLineColor();
+    d.stroke=_lc.color;
+    d.strokeScheme=_lc.schemeRef;
+  }
   if (_isCloud && typeof _cloudBakeAndFit === 'function') _cloudBakeAndFit(d, null);
   slides[cur].els.push(d);mkEl(d);save();drawThumbs();saveState();
   document.getElementById('shape-modal').classList.remove('open');
@@ -1169,6 +1220,13 @@ function buildShapeSVG(d, w, h) {
       return `<path d="${_cp}" ${fAttr} ${sAttr} ${extra} ${shadow}/>`;
     }
     if (sh.special === 'callout') return null;
+    // Line / wave: path ends = round-cap centers (joined at these points)
+    if (sh.noFill && sh.path) {
+      const y = h / 2;
+      const x1 = 0;
+      const x2 = Math.max(1, w);
+      return `<path d="M ${x1} ${y} L ${x2} ${y}" ${fAttr} ${sAttr} ${extra} ${shadow}/>`;
+    }
     if (!sh.path) return null; // no path defined (e.g. parametric shapes)
     // Scale path points and apply corner rounding
     const sx = ew/90, sy = eh/90;
@@ -1193,6 +1251,12 @@ function buildShapeSVG(d, w, h) {
   // Returns path data string for shape at margin m (for wave sampling & clipPath)
   function shapePathStr(m) {
     const ew = Math.max(1, w - m*2), eh = Math.max(1, h - m*2);
+    if (sh.noFill && sh.path) {
+      const y = h / 2;
+      const x1 = 0;
+      const x2 = Math.max(1, w);
+      return `M ${x1} ${y} L ${x2} ${y}`;
+    }
     if (sh.special === 'polygon') {
       const _sides2 = Math.max(3, Math.min(16, +(d.polySides||3)));
       const _pcx2=w/2, _pcy2=h/2, _prx2=ew/2, _pry2=eh/2;
@@ -1304,9 +1368,10 @@ function buildShapeSVG(d, w, h) {
       const perim = _shapePerimeter(sh, w, h, margin);
       const evenD = (strokeStyle === 'dotted' || strokeStyle === 'dashed')
         ? _evenDash(strokeStyle, sw, perim) : null;
+      const _cap = _noFill ? ' stroke-linecap="round" stroke-linejoin="round"' : '';
       const sAttr = evenD
         ? `stroke="${strokeColor}" stroke-width="${sw}" stroke-dasharray="${evenD.dasharray}" ${evenD.extraAttrs}`
-        : `stroke="${strokeColor}" stroke-width="${sw}" ${_getStrokeDasharray(strokeStyle, sw)}`;
+        : `stroke="${strokeColor}" stroke-width="${sw}" ${_getStrokeDasharray(strokeStyle, sw)}${_cap}`;
       shapeDef = shapeEl(fillAttr, sAttr, margin) || '';
     } else {
       shapeDef = shapeEl(fillAttr, 'stroke="none"', margin) || '';
@@ -1340,9 +1405,52 @@ function buildShapeSVG(d, w, h) {
     : 'overflow:visible;width:100%;height:100%';
   const svgViewBox = shadowPad ? `${-shadowPad} ${-shadowPad} ${vbW} ${vbH}` : `0 0 ${w} ${h}`;
   const svgSize = shadowPad ? `width="${vbW}" height="${vbH}"` : `width="${w}" height="${h}"`;
+  // Mid-segment geometry marks (equal lengths / shared side)
+  if (sh.id === 'line') {
+    shapeDef += _lineGeomMarkSvg(d, w, h, strokeColor, sw);
+  }
   // For noFill (line/wave) the bounding-box div hit area handles clicks
   return `<svg xmlns="http://www.w3.org/2000/svg" ${svgSize} viewBox="${svgViewBox}" style="${svgStyle}">${defs}${shapeDef}</svg>`;
 }
+
+/** Mid-segment geometry marks: ticks ⊥ to line, or S-shaped shared-side mark. */
+function _lineGeomMarkSvg(d, w, h, strokeColor, sw) {
+  const mark = d && d.lineMark;
+  if (!mark || mark === 'none') return '';
+  const cx = w / 2;
+  const cy = h / 2;
+  const col = strokeColor || '#1d4ed8';
+  const lineSw = Math.max(1, +sw || 2);
+  // Marks at half the segment stroke so they read as overlays, not merge into the line
+  const tw = Math.max(1, lineSw * 0.5);
+  if (mark === 'S' || mark === 's') {
+    // Letter-S along the segment (spine // line). Drawn upright then rotated −90°
+    // so local X = line; top bulge left / bottom bulge right — matches the sketch
+    // when the segment is vertical on the slide.
+    const H = Math.max(22, Math.min(48, 18 + lineSw * 5.5)); // length along line
+    const A = Math.max(7, Math.min(16, 5 + lineSw * 2.8));   // side bulge
+    const tip = A * 0.55; // terminals stick past the centerline
+    const y0 = cy - H / 2;
+    const y1 = cy + H / 2;
+    // Upright S: start past axis (right), top arc left, bottom arc right, end past axis (left)
+    const dPath =
+      `M ${cx + tip} ${y0} ` +
+      `C ${cx - A} ${y0} ${cx - A} ${cy - H * 0.08} ${cx} ${cy} ` +
+      `C ${cx + A} ${cy + H * 0.08} ${cx + A} ${y1} ${cx - tip} ${y1}`;
+    return `<path class="line-geom-mark" d="${dPath}" fill="none" stroke="${col}" stroke-width="${tw}" stroke-linecap="round" stroke-linejoin="round" transform="rotate(-90 ${cx} ${cy})"/>`;
+  }
+  const n = mark === 'tick3' || mark === '3' ? 3 : (mark === 'tick2' || mark === '2' ? 2 : 1);
+  const half = Math.max(7, Math.min(16, 6 + lineSw * 1.5));
+  const gap = Math.max(lineSw * 1.6, Math.min(8, 3.5 + lineSw * 0.9));
+  const start = -(n - 1) * gap / 2;
+  let html = '';
+  for (let i = 0; i < n; i++) {
+    const x = cx + start + i * gap;
+    html += `<line class="line-geom-mark" x1="${x}" y1="${cy - half}" x2="${x}" y2="${cy + half}" stroke="${col}" stroke-width="${tw}" stroke-linecap="round"/>`;
+  }
+  return html;
+}
+window._lineGeomMarkSvg = _lineGeomMarkSvg;
 
 
 // Returns CSS clip-path string matching the shape, for use with backdrop-filter
@@ -1528,8 +1636,30 @@ function _applyShapeClipPath(el, d) {
   const w = parseInt(el.style.width) || d.w;
   const h = parseInt(el.style.height) || d.h;
 
-  // noFill shapes (line, wave): use full bounding-box hit area — no clip-path
   const sh = typeof SHAPES !== 'undefined' ? SHAPES.find(s => s.id === d.shape) : null;
+  // Line: wide transparent stroke hit — only the segment is clickable (not the bbox)
+  if (sh && sh.id === 'line') {
+    const sw = d.sw !== undefined ? +d.sw : 2;
+    const hitSw = Math.max(20, sw + 16);
+    const x1 = 0, y1 = h / 2, x2 = Math.max(1, w), y2 = h / 2;
+    const svgHit = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svgHit.style.cssText = `position:absolute;left:0;top:0;width:${w}px;height:${h}px;overflow:visible;pointer-events:none;z-index:10;cursor:move;`;
+    svgHit.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    svgHit.classList.add('shape-hit-area');
+    const hitStrokePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    hitStrokePath.setAttribute('d', `M ${x1} ${y1} L ${x2} ${y2}`);
+    hitStrokePath.setAttribute('fill', 'none');
+    hitStrokePath.setAttribute('stroke', 'transparent');
+    hitStrokePath.setAttribute('stroke-width', hitSw);
+    hitStrokePath.setAttribute('stroke-linecap', 'round');
+    hitStrokePath.style.pointerEvents = 'stroke';
+    hitStrokePath.style.cursor = 'move';
+    svgHit.appendChild(hitStrokePath);
+    el.appendChild(svgHit);
+    el.style.pointerEvents = 'none';
+    return;
+  }
+  // Other noFill shapes (wave): full bounding-box hit area — no clip-path
   if (sh && sh.noFill) {
     const hit = document.createElement('div');
     hit.className = 'shape-hit-area';
@@ -2353,8 +2483,14 @@ function renderShapeEl(el,d,opts){
       _cloudPersistDataset(el, d);
     }
   }
-  const w = parseInt(el.style.width, 10) || 0;
-  const h = parseInt(el.style.height, 10) || 0;
+  let w = parseFloat(el.style.width) || 0;
+  let h = parseFloat(el.style.height) || 0;
+  if(d.shape==='line' && d._lineCapV!==2 && typeof window._migrateLineCapGeometry==='function'){
+    window._migrateLineCapGeometry(el, d);
+    w = parseFloat(el.style.width) || w;
+    h = parseFloat(el.style.height) || h;
+    if(typeof window._syncLineJoinsAfterMove==='function') window._syncLineJoinsAfterMove(el);
+  }
   if (opts.remapCloud && sh0 && sh0.special === 'cloud' && d.cloudFramed && w > 0 && h > 0) {
     const refW = Math.round(+(el.dataset.cloudRefW || d.cloudRefW) || 0);
     const refH = Math.round(+(el.dataset.cloudRefH || d.cloudRefH) || 0);
@@ -2394,9 +2530,10 @@ function renderShapeEl(el,d,opts){
   // Re-apply blur overlay after re-render (size may change)
   if(el.dataset.shapeBlur>0&&typeof _applyShapeBlur==='function')_applyShapeBlur(el);
   // Always apply hit-area clip-path so transparent areas pass clicks through
-  // But skip if element is currently selected — pick() manages pointer-events there
+  // Selected line/curve keep stroke hit testing (pick() also re-applies)
   const _d=slides[cur]&&slides[cur].els.find(e=>e.id===el.dataset.id);
-  if(_d && !el.classList.contains('sel'))_applyShapeClipPath(el,_d);
+  if(_d && (!el.classList.contains('sel') || _d.shape==='line' || _d.shape==='curve'))
+    _applyShapeClipPath(el,_d);
 }
 function updateShapeStyle(prop,val){
   if(!sel||sel.dataset.type!=='shape')return;
@@ -2428,6 +2565,17 @@ function updateShapeStyle(prop,val){
       }
       sel.dataset.curvePoints=JSON.stringify(d.curvePoints);
     } else {
+      // Preserve round-cap centers when stroke width changes (pad is not part of length)
+      if(d.shape==='line' && typeof _lineCanvasEnds==='function' && typeof _applyLineFromCanvasEnds==='function'){
+        const _ends=_lineCanvasEnds(sel,d);
+        d.sw=+val;sel.dataset.sw=val;
+        _applyLineFromCanvasEnds(sel,d,_ends.a,_ends.b);
+        if(typeof _syncLineJoinsAfterMove==='function') _syncLineJoinsAfterMove(sel);
+        if(typeof refreshAllLineAngles==='function') refreshAllLineAngles();
+        if(typeof _updateHandlesOverlay==='function') _updateHandlesOverlay();
+        save();drawThumbs();saveState();
+        return;
+      }
       d.sw=+val;sel.dataset.sw=val;
     }
     // Rebuild curve editor so its closure d matches updated slides data
@@ -2445,6 +2593,11 @@ function updateShapeStyle(prop,val){
   else if(prop==='shadowBlur'){d.shadowBlur=+val;sel.dataset.shadowBlur=val;}
   else if(prop==='shadowSize'){d.shadowSize=+val;sel.dataset.shadowSize=val;}
   else if(prop==='shadowColor'){d.shadowColor=val;sel.dataset.shadowColor=val;}
+  else if(prop==='lineMark'){
+    const v=val||'none';
+    if(v==='none'){ delete d.lineMark; delete sel.dataset.lineMark; }
+    else { d.lineMark=v; sel.dataset.lineMark=v; }
+  }
   renderShapeEl(sel,d);save();drawThumbs();saveState();
   const dCloud = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
   if (dCloud && dCloud.type === 'shape' && typeof _cloudPersistDataset === 'function') {
@@ -2467,6 +2620,22 @@ function updateShapeStyleScheme(prop, val, schemeRef) {
   }
   updateShapeStyle(prop, val);
 }
+
+/** Mid-line geometry mark: none | tick1 | tick2 | tick3 | S */
+function setLineGeomMark(mark){
+  if(!sel||sel.dataset.type!=='shape')return;
+  const d=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+  if(!d||d.shape!=='line')return;
+  const next=mark||'none';
+  if((d.lineMark||'none')===next)return;
+  updateShapeStyle('lineMark', next);
+  try{
+    document.querySelectorAll('#sh-line-mark-btns .la-label-btn').forEach(b=>{
+      b.classList.toggle('active', b.dataset.mark===next);
+    });
+  }catch(e){}
+}
+window.setLineGeomMark=setLineGeomMark;
 
 function startEditShapeText(){
   if(!sel||sel.dataset.type!=='shape')return;

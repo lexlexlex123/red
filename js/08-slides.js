@@ -27,6 +27,23 @@ function _remapSlideElIds(s){
       if(c.toId && map[c.toId]) c.toId = map[c.toId];
     });
   }
+  if(s.lineJunctions){
+    const nj = {};
+    Object.keys(s.lineJunctions).forEach(jid => {
+      const mems = (s.lineJunctions[jid] || [])
+        .map(m => map[m.id] ? { id: map[m.id], end: m.end } : null)
+        .filter(Boolean);
+      if(mems.length >= 2){
+        nj[jid] = mems;
+      } else {
+        mems.forEach(m => {
+          const d = (s.els || []).find(e => e && e.id === m.id);
+          if(d && d.lineJoin && d.lineJoin[m.end] === jid) d.lineJoin[m.end] = null;
+        });
+      }
+    });
+    s.lineJunctions = nj;
+  }
 }
 
 function _mapClonedElId(tid, oldId, newId, idMap) {
@@ -48,6 +65,20 @@ function _remapClonedElementRefs(d, oldId, newId, idMap) {
   }
   if (d.hfLinkedCodeId) d.hfLinkedCodeId = _mapClonedElId(d.hfLinkedCodeId, oldId, newId, idMap);
   if (d.hfParentId) d.hfParentId = _mapClonedElId(d.hfParentId, oldId, newId, idMap);
+  if (d.type === 'lineangle') {
+    if (d.lineIdA) d.lineIdA = _mapClonedElId(d.lineIdA, oldId, newId, idMap);
+    if (d.lineIdB) d.lineIdB = _mapClonedElId(d.lineIdB, oldId, newId, idMap);
+  }
+  if (d.shape === 'line' && d.lineJoin) {
+    ['a', 'b'].forEach(w => {
+      const ref = d.lineJoin[w];
+      if(ref && typeof ref === 'object' && ref.id){
+        const nid = _mapClonedElId(ref.id, oldId, newId, idMap);
+        if(nid && nid !== ref.id) d.lineJoin[w] = { id: nid, end: ref.end };
+        else if(!idMap || !idMap[ref.id]) d.lineJoin[w] = null;
+      }
+    });
+  }
 }
 
 function _freshElementDataFromDom(elId) {
@@ -70,7 +101,23 @@ function _freshElementDataFromDom(elId) {
 
 function _copyElementDataList(elIds) {
   if (typeof save === 'function') save();
-  return elIds.map(elId => _freshElementDataFromDom(elId)).filter(Boolean);
+  const idSet = new Set((elIds || []).filter(Boolean));
+  // Angles belong to their two legs — include them when both lines are copied
+  if (typeof slides !== 'undefined' && slides[cur] && slides[cur].els) {
+    slides[cur].els.forEach(e => {
+      if (!e || e.type !== 'lineangle' || idSet.has(e.id)) return;
+      if (e.lineIdA && e.lineIdB && idSet.has(e.lineIdA) && idSet.has(e.lineIdB)) {
+        idSet.add(e.id);
+      }
+    });
+    // Keep slide order so lines are cloned before dependent angles
+    const ordered = [];
+    slides[cur].els.forEach(e => {
+      if (e && idSet.has(e.id)) ordered.push(e.id);
+    });
+    return ordered.map(elId => _freshElementDataFromDom(elId)).filter(Boolean);
+  }
+  return [...idSet].map(elId => _freshElementDataFromDom(elId)).filter(Boolean);
 }
 
 function _cloneElementDataList(els, opts) {
@@ -88,7 +135,36 @@ function _cloneElementDataList(els, opts) {
     const off = opts.offset;
     pairs.forEach(({ nd }) => { nd.x = (nd.x || 0) + off; nd.y = (nd.y || 0) + off; });
   }
-  return pairs.map(p => p.nd);
+  const cloned = pairs.map(p => p.nd);
+  // Rebake N-way junctions for the pasted subset (new junction ids)
+  if(typeof slides !== 'undefined' && slides[cur]){
+    if(!slides[cur].lineJunctions) slides[cur].lineJunctions = {};
+    const juncs = slides[cur].lineJunctions;
+    const byOldJid = {};
+    cloned.forEach(d => {
+      if(d.shape !== 'line' || !d.lineJoin) return;
+      ['a', 'b'].forEach(w => {
+        const ref = d.lineJoin[w];
+        if(typeof ref === 'string' && ref){
+          if(!byOldJid[ref]) byOldJid[ref] = [];
+          byOldJid[ref].push({ d, w });
+        }
+      });
+    });
+    Object.keys(byOldJid).forEach(oldJid => {
+      const entries = byOldJid[oldJid];
+      if(entries.length < 2){
+        entries.forEach(({ d, w }) => { d.lineJoin[w] = null; });
+        return;
+      }
+      const newJid = 'j' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      juncs[newJid] = entries.map(({ d, w }) => {
+        d.lineJoin[w] = newJid;
+        return { id: d.id, end: w };
+      });
+    });
+  }
+  return cloned;
 }
 
 function _syncSlideAnimsFromDom(slideIdx) {
@@ -309,7 +385,7 @@ function save(){
   // Build lookup of existing decor flags before overwriting
   const decorMeta={};
   const oldEls=slides[cur].els||[]; // snapshot BEFORE overwriting
-  oldEls.forEach(d=>{if(d._isDecor)decorMeta[d.id]={_isDecor:true,_decorStyle:d._decorStyle,_layoutIdx:d._layoutIdx,_decorRenderer:d._decorRenderer,_glCfg:d._glCfg||d._crystalCfg,_crystalCfg:d._crystalCfg};});
+  oldEls.forEach(d=>{if(d._isDecor)decorMeta[d.id]={_isDecor:true,_decorStyle:d._decorStyle,_decorMirror:!!d._decorMirror,_layoutIdx:d._layoutIdx,_decorRenderer:d._decorRenderer,_glCfg:d._glCfg||d._crystalCfg,_crystalCfg:d._crystalCfg};});
   const oldElsById={}; oldEls.forEach(d=>oldElsById[d.id]=d);
   // Snapshot table data keyed by id so the table branch below always finds fresh data
   const tableSnap={}; oldEls.forEach(d=>{if(d.type==='table')tableSnap[d.id]=d;});
@@ -352,7 +428,7 @@ function save(){
            .replace(/\bdisplay\s*:[^;]+;?/gi,'')
            .replace(/\bflex-direction\s*:[^;]+;?/gi,'')
            .replace(/\bjustify-content\s*:[^;]+;?/gi,'')
-           .replace(/\bpadding-top\s*:[^;]+;?/gi,'')
+           .replace(/\bpadding(?:-top|-right|-bottom|-left)?\s*:[^;]+;?/gi,'')
            .replace(/\banimation\s*:[^;]+;?/gi,'')
            .replace(/\s{2,}/g,' ').trim();
       d.cs=cs;
@@ -518,6 +594,11 @@ function save(){
       d.shadowSize=el.dataset.shadowSize!=null?+el.dataset.shadowSize:(_ods&&_ods.shadowSize!=null?_ods.shadowSize:3);
       d.shadowColor=el.dataset.shadowColor||(_ods&&_ods.shadowColor)||'#000000';
       if(el.dataset.strokeStyle)d.strokeStyle=el.dataset.strokeStyle; else if(_ods&&_ods.strokeStyle)d.strokeStyle=_ods.strokeStyle;
+      if(el.dataset.lineMark!=null && el.dataset.lineMark!==''){
+        if(el.dataset.lineMark==='none') delete d.lineMark;
+        else d.lineMark=el.dataset.lineMark;
+      } else if(_ods && _ods.lineMark && _ods.lineMark!=='none') d.lineMark=_ods.lineMark;
+      else delete d.lineMark;
       // Shape fill gradient
       if(el.dataset.fillGrad!=null){d.fillGrad=el.dataset.fillGrad==='1';}
       else if(_ods&&_ods.fillGrad!=null){d.fillGrad=_ods.fillGrad;}
@@ -598,6 +679,14 @@ function save(){
       // Callout tail position - read from dataset (most reliable) or _ods
       if(el.dataset.tailX!==undefined&&el.dataset.tailX!=='undefined'){d.tailX=+el.dataset.tailX;d.tailY=+el.dataset.tailY;}
       else if(_ods&&_ods.tailX!==undefined){d.tailX=_ods.tailX;d.tailY=_ods.tailY;}
+      // Line endpoint joins — prefer DOM dataset (source of truth after glue), else previous data
+      if(el.dataset.lineJoin){
+        try{ d.lineJoin=JSON.parse(el.dataset.lineJoin); }catch(e){ if(_ods&&_ods.lineJoin) d.lineJoin=JSON.parse(JSON.stringify(_ods.lineJoin)); }
+      } else if(_ods&&_ods.lineJoin){
+        d.lineJoin=JSON.parse(JSON.stringify(_ods.lineJoin));
+      }
+      // Cap-center line model (v2): path ends = round-cap centers
+      if(d.shape==='line' && _ods && _ods._lineCapV!=null) d._lineCapV=_ods._lineCapV;
       const st=el.querySelector('.shape-text');d.shapeHtml=st?st.innerHTML:'';
       d.shapeTextCss=st?st.getAttribute('style')||'':'';
       // Preserve shapeTextColorScheme
@@ -621,6 +710,37 @@ function save(){
       else if(_oldSvg&&_oldSvg.svgShadowColorScheme!==undefined)d.svgShadowColorScheme=_oldSvg.svgShadowColorScheme;
     }
     else if(d.type==='formula'){const dd=oldElsById[d.id];if(dd){d.formulaRaw=dd.formulaRaw;d.formulaLines=dd.formulaLines;d.formulaSvg=dd.formulaSvg;d.formulaColorScheme=dd.formulaColorScheme;}d.formulaColor=el.dataset.formulaColor||'#ffffff';}
+    else if(d.type==='lineangle'){
+      const dd=oldElsById[d.id];
+      let meta=null;
+      if(el.dataset.lineAngle){ try{ meta=JSON.parse(el.dataset.lineAngle); }catch(e){} }
+      if(!meta && dd) meta={lineIdA:dd.lineIdA,endA:dd.endA,lineIdB:dd.lineIdB,endB:dd.endB,radius:dd.radius,color:dd.color,moveLine:dd.moveLine,labelStyle:dd.labelStyle,markCount:dd.markCount,deg:dd.deg,displayDeg:dd.displayDeg,colorScheme:dd.colorScheme,labelFs:dd.labelFs};
+      if(meta){
+        d.lineIdA=meta.lineIdA;d.endA=meta.endA;d.lineIdB=meta.lineIdB;d.endB=meta.endB;
+        d.radius=meta.radius||36;d.color=meta.color||(typeof _defaultLineColor==='function'?_defaultLineColor().color:'#64748b');d.moveLine=meta.moveLine||'B';
+        d.labelStyle=meta.labelStyle||(dd&&dd.labelStyle)||'deg';
+        d.markCount=meta.markCount!=null?meta.markCount:(dd&&dd.markCount!=null?dd.markCount:1);
+        if(meta.deg!=null) d.deg=meta.deg;
+        if(meta.displayDeg!=null) d.displayDeg=meta.displayDeg;
+        else if(dd&&dd.displayDeg!=null) d.displayDeg=dd.displayDeg;
+        if(meta.colorScheme!==undefined) d.colorScheme=meta.colorScheme;
+        else if(dd&&dd.colorScheme!==undefined) d.colorScheme=dd.colorScheme;
+        if(meta.labelFs!=null) d.labelFs=+meta.labelFs;
+        else if(dd&&dd.labelFs!=null) d.labelFs=+dd.labelFs;
+      }
+      if(d.deg==null && dd && dd.deg!=null) d.deg=dd.deg;
+      if(d.displayDeg==null && dd && dd.displayDeg!=null) d.displayDeg=dd.displayDeg;
+      if(!d.labelStyle) d.labelStyle=(dd&&dd.labelStyle)||'deg';
+      if(d.markCount==null) d.markCount=(dd&&dd.markCount!=null)?dd.markCount:1;
+      if(!d.color) d.color=(dd&&dd.color)||(typeof _defaultLineColor==='function'?_defaultLineColor().color:'#64748b');
+      if(d.labelFs==null) d.labelFs=(dd&&dd.labelFs!=null)?+dd.labelFs:18;
+      // Migrate legacy markN-as-labelStyle
+      if(d.labelStyle==='mark1'||d.labelStyle==='mark2'||d.labelStyle==='mark3'||d.labelStyle==='mark4'){
+        const map={mark1:1,mark2:2,mark3:3,mark4:4};
+        if(d.markCount==null||d.markCount===1) d.markCount=map[d.labelStyle]||1;
+        d.labelStyle='deg';
+      }
+    }
     else if(d.type==='lego'){d.legoStuds=+el.dataset.legoStuds||2;d.legoTall=el.dataset.legoTall==='true';d.legoSlope=el.dataset.legoSlope||null;d.legoStair=el.dataset.legoStair||null;d.legoColor=el.dataset.legoColor||'#e3000b';const _lsc=el.dataset.legoColorScheme;d.legoColorScheme=(!_lsc||_lsc===''||_lsc==='undefined')?undefined:(_lsc==='null'?null:(function(){try{return JSON.parse(_lsc);}catch(e){return undefined;}})());}
     else if(d.type==='graph'){const dd=oldElsById[d.id];if(dd){d.linkedFormulaId=dd.linkedFormulaId;d.graphExpr=dd.graphExpr;d.graphLatex=dd.graphLatex;d.graphExprs=dd.graphExprs;d.graphLines=dd.graphLines;d.graphLineColors=dd.graphLineColors;d.graphImg=dd.graphImg;d.graphColor=dd.graphColor;d.graphBg=dd.graphBg;d.graphDark=dd.graphDark;d.graphXMin=dd.graphXMin;d.graphXMax=dd.graphXMax;d.graphYMin=dd.graphYMin;d.graphYMax=dd.graphYMax;d.graphStep=dd.graphStep;d.graphKind=dd.graphKind;d.chemKey=dd.chemKey;d.chemName=dd.chemName;d.graphBgOp=dd.graphBgOp;d.graphBgBlur=dd.graphBgBlur;d.graphColorScheme=dd.graphColorScheme;d.graphBgScheme=dd.graphBgScheme;d.chemShowFormula=dd.chemShowFormula;d.chemShowName=dd.chemShowName;d.logicShowFormula=dd.logicShowFormula;d.graphShowLabel=dd.graphShowLabel;}
       // Prefer live DOM dataset (updated by chem style controls before save)
@@ -736,7 +856,12 @@ function save(){
     else if(d.type==='mediavideo'||d.type==='mediaaudio'){
       // Media elements — all data stored in slides array, not in DOM
       const dd=oldElsById[d.id];
-      if(dd){d.mediaSrc=dd.mediaSrc;d.mediaSrcType=dd.mediaSrcType;d.mvDisplay=dd.mvDisplay;d.mvControls=dd.mvControls;d.mvStart=dd.mvStart;d.maStart=dd.maStart;d.maContinue=dd.maContinue;d.maVolume=dd.maVolume;d.maTriggerElId=dd.maTriggerElId;d.maTriggerElIds=dd.maTriggerElIds;}
+      if(dd){
+        d.mediaSrc=dd.mediaSrc;d.mediaSrcType=dd.mediaSrcType;d.mediaId=dd.mediaId;
+        d.mvDisplay=dd.mvDisplay;d.mvControls=dd.mvControls;d.mvStart=dd.mvStart;
+        d.maStart=dd.maStart;d.maContinue=dd.maContinue;d.maLoop=dd.maLoop;d.maVolume=dd.maVolume;
+        d.maTriggerElId=dd.maTriggerElId;d.maTriggerElIds=dd.maTriggerElIds;
+      }
     }
     // Restore decor flags
     if(decorMeta[d.id])Object.assign(d,decorMeta[d.id]);
@@ -766,19 +891,26 @@ function load(){
   canvas.querySelectorAll('._particles_layer,._particle,#motion-ghosts,#motion-svg,.motion-ghost').forEach(e=>e.remove());
   canvas.querySelectorAll('.el').forEach(e=>e.remove());
   const s=slides[cur];loadBg(s);s.els.forEach(mkEl);
+  if(typeof _migrateSlideLineJoins==='function') _migrateSlideLineJoins();
+  if(typeof _coalesceAllLineJunctions==='function') _coalesceAllLineJunctions();
   document.getElementById('p-st').value=s.title;
-  // Highlight active transition button — пустой/undefined = 'none'
+  // Ribbon + props show the current slide transition (synced both ways)
   const _st=s.trans||'none';
-  document.querySelectorAll('#slide-trans-grid .tbtn2[data-st]').forEach(b=>
-    b.classList.toggle('active', b.dataset.st===_st)
-  );
-  if(typeof updateSlideTransHint==='function') updateSlideTransHint(_st);
+  if(typeof syncSlideTransUI==='function') syncSlideTransUI(_st);
+  else {
+    document.querySelectorAll('#slide-trans-grid .tbtn2[data-st]').forEach(b=>
+      b.classList.toggle('active', b.dataset.st===_st)
+    );
+    document.querySelectorAll('#trans-btn-grid .tbtn2[data-t]').forEach(b=>
+      b.classList.toggle('active', b.dataset.t===_st)
+    );
+    if(typeof updateSlideTransHint==='function') updateSlideTransHint(_st);
+    if(typeof updateRibbonTransHint==='function') updateRibbonTransHint(_st);
+  }
+  if(typeof syncTransDurUI==='function') syncTransDurUI();
   document.getElementById('p-auto').value=s.auto||0;
   const navChk=document.getElementById('slide-click-nav');
   if(navChk)navChk.checked=s.clickNav!==false; // default true
-  // Highlight active global transition button
-  const activeTrans=globalTrans||'none';
-  document.querySelectorAll('.tbtn2[data-t]').forEach(b=>b.classList.toggle('active',b.dataset.t===activeTrans));
   syncProps();
   if(typeof _updateSelFrames==='function') _updateSelFrames();
   if(typeof _updateHandlesOverlay==='function') _updateHandlesOverlay();

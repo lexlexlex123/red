@@ -541,6 +541,12 @@ function setPeriodicProp(prop,val,schemeRef){
 }
 window.setPeriodicProp=setPeriodicProp;
 
+function clearPeriodicBg(){
+  const scheme=typeof _pteDefaultBgScheme==='function'?_pteDefaultBgScheme():{col:7,row:7};
+  setPeriodicProp('genBg','',scheme);
+}
+window.clearPeriodicBg=clearPeriodicBg;
+
 function reselectPeriodicElement(){
   if(!sel||sel.dataset.appletId!=='periodic') return;
   openPeriodicModal({mode:'reselect',elId:sel.dataset.id});

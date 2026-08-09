@@ -46,7 +46,7 @@ const LAYOUTS=[
       return out;
     },
 
-    _build(w, h, a1, a2, isTitle, doAnimate){
+    _build(w, h, a1, a2, isTitle, doAnimate, mirror){
       const uid = 'prm' + Math.random().toString(36).slice(2, 7);
       const dur = isTitle ? 8 : 6.4;
       const rng = s => { let x = Math.sin(s * 41.7 + 9.2) * 43758.5; return x - Math.floor(x); };
@@ -54,8 +54,9 @@ const LAYOUTS=[
       const cycleBegin = doAnimate ? midBegin(3.7, dur, 0.12, 0.88) : '0';
       const sw = (n) => isTitle ? n : Math.max(0.45, n * 0.72);
       let extra = '';
+      const mir = !!mirror;
 
-      // [x1,y1,x2,y2, color, strokeWidth, fillOpacity]
+      // [x1,y1,x2,y2, color, strokeWidth, fillOpacity] — основная диагональ TR↔BL
       const trTitle = [
         [w * .52, 0, w, h * .68, a1, sw(1.1), 0.30],
         [w * .64, 0, w, h * .42, a2, sw(0.9), 0.26],
@@ -76,20 +77,48 @@ const LAYOUTS=[
         [0, h * .82, w * .16, h, a1, sw(0.75), 0.22],
         [0, h * .92, w * .08, h, a2, sw(0.5), 0.16],
       ];
+      // Зеркало по другой диагонали: TL↔BR
+      const tlTitle = [
+        [0, h * .68, w * .48, 0, a1, sw(1.1), 0.30],
+        [0, h * .42, w * .36, 0, a2, sw(0.9), 0.26],
+        [0, h * .24, w * .26, 0, a1, sw(0.75), 0.22],
+        [0, h * .10, w * .16, 0, a2, sw(0.55), 0.18],
+      ];
+      const tlContent = [
+        [0, h * .30, w * .24, 0, a1, sw(0.8), 0.24],
+        [0, h * .12, w * .12, 0, a2, sw(0.55), 0.18],
+      ];
+      const brTitle = [
+        [w * .66, h, w, h * .66, a1, sw(1.1), 0.30],
+        [w * .80, h, w, h * .76, a2, sw(0.9), 0.26],
+        [w * .88, h, w, h * .86, a1, sw(0.75), 0.22],
+        [w * .94, h, w, h * .94, a2, sw(0.55), 0.18],
+      ];
+      const brContent = [
+        [w * .84, h, w, h * .82, a1, sw(0.75), 0.22],
+        [w * .92, h, w, h * .92, a2, sw(0.5), 0.16],
+      ];
 
       if (isTitle){
+        const gx = mir ? w * .18 : w * .82;
         extra = `<defs><filter id="${uid}pgf"><feGaussianBlur stdDeviation="16"/></filter></defs>
-          <ellipse cx="${(w * .82).toFixed(1)}" cy="${(h * .72).toFixed(1)}" rx="${(h * .28).toFixed(1)}" ry="${(h * .28).toFixed(1)}" fill="${a1}" opacity="0.04" filter="url(#${uid}pgf)"/>`;
+          <ellipse cx="${gx.toFixed(1)}" cy="${(h * .72).toFixed(1)}" rx="${(h * .28).toFixed(1)}" ry="${(h * .28).toFixed(1)}" fill="${a1}" opacity="0.04" filter="url(#${uid}pgf)"/>`;
       }
 
-      const tr = this._cornerStripes(w, h, 'tr', isTitle ? trTitle : trContent, w, 0, doAnimate, dur, cycleBegin);
-      const bl = this._cornerStripes(w, h, 'bl', isTitle ? blTitle : blContent, 0, h, doAnimate, dur, cycleBegin);
+      let a, b;
+      if (mir){
+        a = this._cornerStripes(w, h, 'tl', isTitle ? tlTitle : tlContent, 0, 0, doAnimate, dur, cycleBegin);
+        b = this._cornerStripes(w, h, 'br', isTitle ? brTitle : brContent, w, h, doAnimate, dur, cycleBegin);
+      } else {
+        a = this._cornerStripes(w, h, 'tr', isTitle ? trTitle : trContent, w, 0, doAnimate, dur, cycleBegin);
+        b = this._cornerStripes(w, h, 'bl', isTitle ? blTitle : blContent, 0, h, doAnimate, dur, cycleBegin);
+      }
 
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden">${extra}${tr}${bl}</svg>`;
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden">${extra}${a}${b}</svg>`;
     },
 
-    titleSvg(w, h, a1, a2, doAnimate){ return this._build(w, h, a1, a2, true, doAnimate !== false); },
-    contentSvg(w, h, a1, a2, doAnimate){ return this._build(w, h, a1, a2, false, doAnimate !== false); },
+    titleSvg(w, h, a1, a2, doAnimate, mirror){ return this._build(w, h, a1, a2, true, doAnimate !== false, !!mirror); },
+    contentSvg(w, h, a1, a2, doAnimate, mirror){ return this._build(w, h, a1, a2, false, doAnimate !== false, !!mirror); },
   },
 
   // ── 2. AURORA ── северное сияние, анимированные переливающиеся блобы
@@ -1774,7 +1803,8 @@ M-29,-2.5 L-47,-19 L-44,0 L-47,19 L-29,2.5 Z"/>
     name:'Гроза', nameEn:'Storm',
     desc:'Грозовые тучи, вспышки молний, ливень',descEn:'Storm clouds, lightning flashes, downpour',
     animated: true,
-    _build:(w,h,a1,a2,isTitle,doAnimate)=>{
+    _build:(w,h,a1,a2,isTitle,doAnimate,mode)=>{
+      const rainOnly = mode === 'rain';
       const uid='stm'+Math.random().toString(36).slice(2,7);
       const rng=s=>{let x=Math.sin(s*127.1+311.7)*43758.5;return x-Math.floor(x);};
       const f=n=>n.toFixed(1);
@@ -1809,51 +1839,53 @@ M-29,-2.5 L-47,-19 L-44,0 L-47,19 L-29,2.5 Z"/>
       </defs>
       <rect width="${w}" height="${h}" fill="url(#${uid}sky)"/>`;
 
-      const puffTpl=[
-        {ox:0,oy:0,rx:1.00,ry:0.72,fill:'puff'},
-        {ox:-0.42,oy:0.14,rx:0.72,ry:0.58,fill:'puff'},
-        {ox:0.44,oy:0.10,rx:0.78,ry:0.62,fill:'puff'},
-        {ox:-0.20,oy:-0.18,rx:0.58,ry:0.48,fill:'puff'},
-        {ox:0.24,oy:-0.14,rx:0.52,ry:0.44,fill:'puff'},
-        {ox:0.58,oy:0.06,rx:0.62,ry:0.50,fill:'puff'},
-        {ox:-0.55,oy:0.08,rx:0.55,ry:0.46,fill:'puff'},
-        {ox:0.08,oy:0.22,rx:0.85,ry:0.55,fill:'puffD'},
-        {ox:-0.08,oy:0.28,rx:0.70,ry:0.48,fill:'puffD'},
-      ];
-      function cloudCluster(cx,cy,baseW,baseH,op,drift,dur,seed){
-        const x0=f(cx),x1=f(cx+drift);
-        const y0=f(cy);
-        const beg=midBegin(seed,dur,0.1,0.9);
-        const opLo=(op*0.72).toFixed(2),opHi=op.toFixed(2);
-        let inner='';
-        puffTpl.forEach((p,j)=>{
-          const px=f(cx+p.ox*baseW),py=f(cy+p.oy*baseH);
-          const prx=f(p.rx*baseW*0.5),pry=f(p.ry*baseH*0.5);
-          const fo=(op*(0.82+rng(seed+j*3)*0.18)).toFixed(2);
-          const grad=p.fill==='puffD'?`url(#${uid}puffD)`:`url(#${uid}puff)`;
-          inner+=`<ellipse cx="${px}" cy="${py}" rx="${prx}" ry="${pry}" fill="${grad}" opacity="${fo}"/>`;
-        });
-        const body=`<g filter="url(#${uid}cloud)" opacity="${opHi}">${inner}</g>`;
-        if(!doAnimate)return body;
-        return `<g>
-          ${body}
-          <animateTransform attributeName="transform" type="translate" values="0,0;${f(drift)},0;0,0" dur="${dur}s" begin="${beg}s" repeatCount="indefinite" calcMode="spline" keySplines="${sp};${sp}"/>
-          <animate attributeName="opacity" values="${opHi};${opLo};${opHi}" dur="${(dur*0.88).toFixed(1)}s" begin="${beg}s" repeatCount="indefinite" calcMode="spline" keySplines="${sp};${sp}"/>
-        </g>`;
+      if(!rainOnly){
+        const puffTpl=[
+          {ox:0,oy:0,rx:1.00,ry:0.72,fill:'puff'},
+          {ox:-0.42,oy:0.14,rx:0.72,ry:0.58,fill:'puff'},
+          {ox:0.44,oy:0.10,rx:0.78,ry:0.62,fill:'puff'},
+          {ox:-0.20,oy:-0.18,rx:0.58,ry:0.48,fill:'puff'},
+          {ox:0.24,oy:-0.14,rx:0.52,ry:0.44,fill:'puff'},
+          {ox:0.58,oy:0.06,rx:0.62,ry:0.50,fill:'puff'},
+          {ox:-0.55,oy:0.08,rx:0.55,ry:0.46,fill:'puff'},
+          {ox:0.08,oy:0.22,rx:0.85,ry:0.55,fill:'puffD'},
+          {ox:-0.08,oy:0.28,rx:0.70,ry:0.48,fill:'puffD'},
+        ];
+        function cloudCluster(cx,cy,baseW,baseH,op,drift,dur,seed){
+          const x0=f(cx),x1=f(cx+drift);
+          const y0=f(cy);
+          const beg=midBegin(seed,dur,0.1,0.9);
+          const opLo=(op*0.72).toFixed(2),opHi=op.toFixed(2);
+          let inner='';
+          puffTpl.forEach((p,j)=>{
+            const px=f(cx+p.ox*baseW),py=f(cy+p.oy*baseH);
+            const prx=f(p.rx*baseW*0.5),pry=f(p.ry*baseH*0.5);
+            const fo=(op*(0.82+rng(seed+j*3)*0.18)).toFixed(2);
+            const grad=p.fill==='puffD'?`url(#${uid}puffD)`:`url(#${uid}puff)`;
+            inner+=`<ellipse cx="${px}" cy="${py}" rx="${prx}" ry="${pry}" fill="${grad}" opacity="${fo}"/>`;
+          });
+          const body=`<g filter="url(#${uid}cloud)" opacity="${opHi}">${inner}</g>`;
+          if(!doAnimate)return body;
+          return `<g>
+            ${body}
+            <animateTransform attributeName="transform" type="translate" values="0,0;${f(drift)},0;0,0" dur="${dur}s" begin="${beg}s" repeatCount="indefinite" calcMode="spline" keySplines="${sp};${sp}"/>
+            <animate attributeName="opacity" values="${opHi};${opLo};${opHi}" dur="${(dur*0.88).toFixed(1)}s" begin="${beg}s" repeatCount="indefinite" calcMode="spline" keySplines="${sp};${sp}"/>
+          </g>`;
+        }
+
+        const cloudSpecs=isTitle?[
+          {cx:0.20*w,cy:0.09*h,w:w*0.34,h:h*0.14,op:0.88,drift:w*0.04,dur:28},
+          {cx:0.58*w,cy:0.06*h,w:w*0.40,h:h*0.16,op:0.82,drift:-w*0.035,dur:32},
+          {cx:0.84*w,cy:0.11*h,w:w*0.28,h:h*0.12,op:0.76,drift:w*0.028,dur:26},
+          {cx:0.40*w,cy:0.15*h,w:w*0.24,h:h*0.10,op:0.65,drift:-w*0.022,dur:24},
+        ]:[
+          {cx:0.14*w,cy:0.08*h,w:w*0.30,h:h*0.12,op:0.72,drift:w*0.03,dur:30},
+          {cx:0.74*w,cy:0.07*h,w:w*0.32,h:h*0.13,op:0.68,drift:-w*0.025,dur:28},
+        ];
+        cloudSpecs.forEach((c,i)=>{svg+=cloudCluster(c.cx,c.cy,c.w,c.h,c.op,c.drift,c.dur,i*19+3);});
       }
 
-      const cloudSpecs=isTitle?[
-        {cx:0.20*w,cy:0.09*h,w:w*0.34,h:h*0.14,op:0.88,drift:w*0.04,dur:28},
-        {cx:0.58*w,cy:0.06*h,w:w*0.40,h:h*0.16,op:0.82,drift:-w*0.035,dur:32},
-        {cx:0.84*w,cy:0.11*h,w:w*0.28,h:h*0.12,op:0.76,drift:w*0.028,dur:26},
-        {cx:0.40*w,cy:0.15*h,w:w*0.24,h:h*0.10,op:0.65,drift:-w*0.022,dur:24},
-      ]:[
-        {cx:0.14*w,cy:0.08*h,w:w*0.30,h:h*0.12,op:0.72,drift:w*0.03,dur:30},
-        {cx:0.74*w,cy:0.07*h,w:w*0.32,h:h*0.13,op:0.68,drift:-w*0.025,dur:28},
-      ];
-      cloudSpecs.forEach((c,i)=>{svg+=cloudCluster(c.cx,c.cy,c.w,c.h,c.op,c.drift,c.dur,i*19+3);});
-
-      const nRain=isTitle?110:58;
+      const nRain=rainOnly?(isTitle?130:70):(isTitle?110:58);
       const baseWind=w*(isTitle?0.11:0.09);
       for(let i=0;i<nRain;i++){
         const seed=i*4+90;
@@ -1883,29 +1915,31 @@ M-29,-2.5 L-47,-19 L-44,0 L-47,19 L-29,2.5 Z"/>
         }
       }
 
-      const boltSpecs=isTitle?[
-        {x:0.22,segs:9,spread:w*0.07,cycle:8.5,peak:0.92,sw:3.2,flash:0.14},
-        {x:0.68,segs:8,spread:w*0.06,cycle:11.2,peak:0.78,sw:2.6,flash:0.10},
-        {x:0.48,segs:7,spread:w*0.045,cycle:14.8,peak:0.55,sw:2.0,flash:0.07},
-      ]:[
-        {x:0.28,segs:7,spread:w*0.055,cycle:10.5,peak:0.72,sw:2.4,flash:0.09},
-        {x:0.74,segs:6,spread:w*0.05,cycle:13.2,peak:0.50,sw:1.8,flash:0.06},
-      ];
-      boltSpecs.forEach((b,i)=>{
-        const bx=f(b.x*w);
-        const path=boltPath(b.x*w,b.segs,b.spread,i);
-        const cycle=b.cycle.toFixed(1);
-        const beg=midBegin(i*53+200,b.cycle,0.05,0.95);
-        if(doAnimate){
-          svg+=`<g opacity="0" filter="url(#${uid}glow)">
-            <path d="${path}" fill="none" stroke="url(#${uid}bolt)" stroke-width="${b.sw}" stroke-linecap="round" stroke-linejoin="round"/>
-            <animate attributeName="opacity" values="0;0;0;${b.peak};${(b.peak*0.5).toFixed(2)};0;0;0" keyTimes="0;0.38;0.40;0.42;0.44;0.50;0.52;1" dur="${cycle}s" begin="${beg}s" repeatCount="indefinite"/>
-          </g>
-          <rect width="${w}" height="${h}" fill="#eef6ff" opacity="0">
-            <animate attributeName="opacity" values="0;0;0;${b.flash};0;0;0;0" keyTimes="0;0.38;0.40;0.42;0.46;0.50;0.52;1" dur="${cycle}s" begin="${beg}s" repeatCount="indefinite"/>
-          </rect>`;
-        }else svg+=`<path d="${path}" fill="none" stroke="url(#${uid}bolt)" stroke-width="${b.sw}" stroke-linecap="round" stroke-linejoin="round" opacity="${(b.peak*0.65).toFixed(2)}" filter="url(#${uid}glow)"/>`;
-      });
+      if(!rainOnly){
+        const boltSpecs=isTitle?[
+          {x:0.22,segs:9,spread:w*0.07,cycle:8.5,peak:0.92,sw:3.2,flash:0.14},
+          {x:0.68,segs:8,spread:w*0.06,cycle:11.2,peak:0.78,sw:2.6,flash:0.10},
+          {x:0.48,segs:7,spread:w*0.045,cycle:14.8,peak:0.55,sw:2.0,flash:0.07},
+        ]:[
+          {x:0.28,segs:7,spread:w*0.055,cycle:10.5,peak:0.72,sw:2.4,flash:0.09},
+          {x:0.74,segs:6,spread:w*0.05,cycle:13.2,peak:0.50,sw:1.8,flash:0.06},
+        ];
+        boltSpecs.forEach((b,i)=>{
+          const bx=f(b.x*w);
+          const path=boltPath(b.x*w,b.segs,b.spread,i);
+          const cycle=b.cycle.toFixed(1);
+          const beg=midBegin(i*53+200,b.cycle,0.05,0.95);
+          if(doAnimate){
+            svg+=`<g opacity="0" filter="url(#${uid}glow)">
+              <path d="${path}" fill="none" stroke="url(#${uid}bolt)" stroke-width="${b.sw}" stroke-linecap="round" stroke-linejoin="round"/>
+              <animate attributeName="opacity" values="0;0;0;${b.peak};${(b.peak*0.5).toFixed(2)};0;0;0" keyTimes="0;0.38;0.40;0.42;0.44;0.50;0.52;1" dur="${cycle}s" begin="${beg}s" repeatCount="indefinite"/>
+            </g>
+            <rect width="${w}" height="${h}" fill="#eef6ff" opacity="0">
+              <animate attributeName="opacity" values="0;0;0;${b.flash};0;0;0;0" keyTimes="0;0.38;0.40;0.42;0.46;0.50;0.52;1" dur="${cycle}s" begin="${beg}s" repeatCount="indefinite"/>
+            </rect>`;
+          }else svg+=`<path d="${path}" fill="none" stroke="url(#${uid}bolt)" stroke-width="${b.sw}" stroke-linecap="round" stroke-linejoin="round" opacity="${(b.peak*0.65).toFixed(2)}" filter="url(#${uid}glow)"/>`;
+        });
+      }
 
       const nMist=isTitle?28:14;
       for(let i=0;i<nMist;i++){
@@ -1925,8 +1959,13 @@ M-29,-2.5 L-47,-19 L-44,0 L-47,19 L-29,2.5 Z"/>
 
       return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden">${svg}</svg>`;
     },
-    titleSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,true,doAnimate!==false);},
-    contentSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,false,doAnimate!==false);},
+    variantSvg(w,h,a1,a2,style){
+      const doAnimate=!!(this.animated && typeof _layoutAnimated!=='undefined' && _layoutAnimated);
+      if(style==='rain') return this._build(w,h,a1,a2,true,doAnimate,'rain');
+      return this._build(w,h,a1,a2,style!=='content',doAnimate,'storm');
+    },
+    titleSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,true,doAnimate!==false,'storm');},
+    contentSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,false,doAnimate!==false,'storm');},
   },
   {
     name:'Город', nameEn:'City',
@@ -2245,8 +2284,10 @@ M-29,-2.5 L-47,-19 L-44,0 L-47,19 L-29,2.5 Z"/>
     renderer: 'dna',
 
     buildDnaCfg(w, h, a1, a2, isTitle, animated){
+      const th = typeof _activeTheme === 'function' ? _activeTheme() : null;
+      const dark = th ? th.dark !== false : true;
       return {
-        w, h, a1, a2, isTitle, animated: animated !== false,
+        w, h, a1, a2, isTitle, animated: animated !== false, dark,
         cx: isTitle ? w * 0.84 : w * 0.88,
         radius: isTitle ? w * 0.12 : w * 0.085,
         depth: isTitle ? w * 0.065 : w * 0.045,
@@ -2260,6 +2301,10 @@ M-29,-2.5 L-47,-19 L-44,0 L-47,19 L-29,2.5 Z"/>
     _buildBgSvg(w, h, a1, a2, isTitle, doAnimate){
       const uid = 'dn' + Math.random().toString(36).slice(2, 7);
       const sp = '0.42 0 0.58 1';
+      const th = typeof _activeTheme === 'function' ? _activeTheme() : null;
+      const dark = th ? th.dark !== false : true;
+      const g1a = dark ? [0.28, 0.12, 0] : [0.14, 0.05, 0];
+      const g2a = dark ? [0.22, 0.10, 0] : [0.11, 0.04, 0];
       const blobs = isTitle ? [
         {cx:w*.12, cy:h*.22, r:h*.18, g:'g1', dcx:w*.09, dcy:h*.12, dcx2:-w*.05, dcy2:h*.07, dr:.14, dur:9,  begin:0},
         {cx:w*.08, cy:h*.72, r:h*.14, g:'g2', dcx:w*.06, dcy:-h*.10, dcx2:-w*.07, dcy2:-h*.05, dr:.16, dur:11, begin:2.4},
@@ -2297,8 +2342,8 @@ M-29,-2.5 L-47,-19 L-44,0 L-47,19 L-29,2.5 Z"/>
       return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden">
         <defs>
           <filter id="${uid}blur" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="${blurDev}"/></filter>
-          <radialGradient id="${uid}g1" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="${a1}" stop-opacity="0.14"/><stop offset="70%" stop-color="${a1}" stop-opacity="0.05"/><stop offset="100%" stop-color="${a1}" stop-opacity="0"/></radialGradient>
-          <radialGradient id="${uid}g2" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="${a2}" stop-opacity="0.11"/><stop offset="70%" stop-color="${a2}" stop-opacity="0.04"/><stop offset="100%" stop-color="${a2}" stop-opacity="0"/></radialGradient>
+          <radialGradient id="${uid}g1" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="${a1}" stop-opacity="${g1a[0]}"/><stop offset="70%" stop-color="${a1}" stop-opacity="${g1a[1]}"/><stop offset="100%" stop-color="${a1}" stop-opacity="${g1a[2]}"/></radialGradient>
+          <radialGradient id="${uid}g2" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="${a2}" stop-opacity="${g2a[0]}"/><stop offset="70%" stop-color="${a2}" stop-opacity="${g2a[1]}"/><stop offset="100%" stop-color="${a2}" stop-opacity="${g2a[2]}"/></radialGradient>
         </defs>${blobSvg}</svg>`;
     },
 
@@ -2419,40 +2464,159 @@ M-29,-2.5 L-47,-19 L-44,0 L-47,19 L-29,2.5 Z"/>
   },
   {
     name:'Соты', nameEn:'Honeycomb',
-    desc:'Шестиугольная сетка с волной света',descEn:'Hex grid with rippling light',
+    desc:'Переливающаяся сетка: волны прозрачности по соседям',descEn:'Shimmering hex grid: opacity ripples through neighbors',
     animated: true,
     _build:(w,h,a1,a2,isTitle,doAnimate)=>{
-      const uid='hx'+Math.random().toString(36).slice(2,7);
       const rng=s=>{let x=Math.sin(s*53.2+9.1)*43758.5;return x-Math.floor(x);};
       const f=n=>n.toFixed(1);
       const hexR=isTitle?26:20;
       const dx=hexR*1.732, dy=hexR*1.5;
+      const cols=Math.ceil(w/dx)+3;
+      const rows=Math.ceil(h/dy)+3;
+      // Крупные соты (title) — 3 пика; мелкие (content) — 6
+      const peakN=isTitle?3:5;
+      const steps=doAnimate?56:1;
+      const durSec=isTitle?22:18;
+      const maxOp=0.3, stepOp=0.03; // шире радиус: ~10 колец до 0
+      const minPeakSep=isTitle?8:6; // пики держат дистанцию (в гекс-шагах)
+      const colMin=0, colMax=cols-2, rowMin=0, rowMax=rows-2;
+
       function hexD(hx,hy,r){
         let d='';
-        for(let k=0;k<6;k++){const a=Math.PI/6+k*Math.PI/3;const x=hx+Math.cos(a)*r,y=hy+Math.sin(a)*r;d+=(k?'L':'M')+f(x)+','+f(y);}
+        for(let k=0;k<6;k++){
+          const a=Math.PI/6+k*Math.PI/3;
+          d+=(k?'L':'M')+f(hx+Math.cos(a)*r)+','+f(hy+Math.sin(a)*r);
+        }
         return d+'Z';
       }
-      let hexSvg='';
-      let idx=0;
-      for(let row=-1;row*dy<h+hexR;row++){
-        for(let col=-1;col*w/dx<w+hexR;col++){
-          const hx=col*dx+(row%2?dx*0.5:0), hy=row*dy;
-          const dist=Math.hypot(hx-w*0.5,hy-h*0.5)/(Math.hypot(w,h)*0.55);
-          const baseOp=Math.max(0.02,0.09-dist*0.06);
-          const colFill=idx%3===0?a1:(idx%3===1?a2:a1);
-          const phase=rng(idx*7)*6.28;
-          const dur=(5+rng(idx*7+1)*4).toFixed(1);
-          const beg=(-(rng(idx*7+2)*+dur)).toFixed(2);
-          const op0=baseOp.toFixed(3), op1=(baseOp*0.35).toFixed(3);
-          if(doAnimate){
-            hexSvg+=`<path d="${hexD(hx,hy,hexR*0.92)}" fill="none" stroke="${colFill}" stroke-width="1.1" opacity="${op0}">
-              <animate attributeName="opacity" values="${op0};${op1};${op0}" dur="${dur}s" begin="${beg}s" repeatCount="indefinite"/>
-            </path>`;
-          }else hexSvg+=`<path d="${hexD(hx,hy,hexR*0.92)}" fill="none" stroke="${colFill}" stroke-width="1" opacity="${op0}"/>`;
-          idx++;
+      function hexCenter(col,row){
+        return {x:col*dx+(row%2?dx*0.5:0), y:row*dy};
+      }
+      function oddrToCube(col,row){
+        const x=col-(row-(row&1))/2;
+        const z=row;
+        return {x, y:-x-z, z};
+      }
+      function cubeDist(a,b){
+        return (Math.abs(a.x-b.x)+Math.abs(a.y-b.y)+Math.abs(a.z-b.z))/2;
+      }
+      function hexNeighbors(col,row){
+        // odd-r offset: чётные и нечётные ряды
+        const even=(row&1)===0;
+        const raw=even
+          ?[[col+1,row],[col-1,row],[col,row-1],[col-1,row-1],[col,row+1],[col-1,row+1]]
+          :[[col+1,row],[col-1,row],[col+1,row-1],[col,row-1],[col+1,row+1],[col,row+1]];
+        return raw.filter(([c,r])=>c>=colMin&&c<=colMax&&r>=rowMin&&r<=rowMax);
+      }
+      function randCell(seed){
+        return {
+          col:colMin+Math.floor(rng(seed)*(colMax-colMin+1)),
+          row:rowMin+Math.floor(rng(seed+17)*(rowMax-rowMin+1))
+        };
+      }
+      function farEnough(col,row,others){
+        const c=oddrToCube(col,row);
+        for(let i=0;i<others.length;i++){
+          if(cubeDist(c, oddrToCube(others[i].col, others[i].row))<minPeakSep) return false;
+        }
+        return true;
+      }
+      function randCellFar(seed,others){
+        for(let t=0;t<48;t++){
+          const c=randCell(seed+t*19);
+          if(farEnough(c.col,c.row,others)) return c;
+        }
+        return randCell(seed);
+      }
+      function stepToward(col,row,tCol,tRow){
+        if(col===tCol&&row===tRow) return {col,row};
+        const ns=hexNeighbors(col,row);
+        if(!ns.length) return {col,row};
+        const target=oddrToCube(tCol,tRow);
+        let best=ns[0], bestD=Infinity;
+        for(let i=0;i<ns.length;i++){
+          const d=cubeDist(oddrToCube(ns[i][0],ns[i][1]), target);
+          const tie=rng(col*13+row*29+tCol*7+tRow*3+i)*0.01;
+          if(d+tie<bestD){ bestD=d+tie; best=ns[i]; }
+        }
+        return {col:best[0], row:best[1]};
+      }
+
+      // Все пики вместе: старты/цели с разнесением, шаги только на соседа
+      const peakPaths=[];
+      const starts=[];
+      const targets=[];
+      for(let p=0;p<peakN;p++){
+        const start=randCellFar(p*101+3, starts);
+        starts.push(start);
+        peakPaths.push([{col:start.col,row:start.row}]);
+      }
+      for(let p=0;p<peakN;p++){
+        const others=starts.filter((_,i)=>i!==p).concat(targets);
+        targets.push(randCellFar(p*101+50, others));
+      }
+      for(let s=1;s<steps;s++){
+        for(let p=0;p<peakN;p++){
+          let pos=peakPaths[p][s-1];
+          let target=targets[p];
+          const start=starts[p];
+          const remaining=steps-s;
+          const distHome=cubeDist(oddrToCube(pos.col,pos.row), oddrToCube(start.col,start.row));
+          if(remaining<=distHome){
+            target={col:start.col,row:start.row};
+            targets[p]=target;
+          }else if(pos.col===target.col&&pos.row===target.row){
+            const others=[];
+            for(let i=0;i<peakN;i++) if(i!==p) others.push(peakPaths[i][s-1]);
+            target=randCellFar(p*101+80+s, others);
+            targets[p]=target;
+          }
+          pos=stepToward(pos.col,pos.row,target.col,target.row);
+          peakPaths[p].push({col:pos.col,row:pos.row});
         }
       }
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden" opacity="0.9">${hexSvg}</svg>`;
+
+      function opacityAt(col,row,stepIdx){
+        const cell=oddrToCube(col,row);
+        let op=0;
+        for(let p=0;p<peakN;p++){
+          const pk=peakPaths[p][Math.min(stepIdx, peakPaths[p].length-1)];
+          const dist=cubeDist(cell, oddrToCube(pk.col, pk.row));
+          // 0.3 → 0.27 → … → 0 (шаг 0.03, широкий радиус)
+          op=Math.max(op, Math.max(0, maxOp-stepOp*dist));
+        }
+        return op;
+      }
+
+      const cells=[];
+      for(let row=-1;row<rows;row++){
+        for(let col=-1;col<cols;col++){
+          const c=hexCenter(col,row);
+          if(c.x<-hexR||c.y<-hexR||c.x>w+hexR||c.y>h+hexR) continue;
+          const ops=[];
+          for(let fi=0;fi<steps;fi++){
+            ops.push(opacityAt(col,row, fi));
+          }
+          cells.push({x:c.x,y:c.y,ops});
+        }
+      }
+
+      let hexSvg='';
+      cells.forEach((cell,idx)=>{
+        const colFill=idx%3===0?a1:(idx%3===1?a2:a1);
+        const op0=cell.ops[0].toFixed(3);
+        if(doAnimate && steps>1){
+          // discrete: пик «перескакивает» только на соседа — без interpolate между кадрами
+          const vals=cell.ops.map(o=>o.toFixed(3)).join(';');
+          const keyTimes=cell.ops.map((_,i)=>(i/(cell.ops.length-1)).toFixed(4)).join(';');
+          hexSvg+=`<path d="${hexD(cell.x,cell.y,hexR*0.92)}" fill="none" stroke="${colFill}" stroke-width="1.15" opacity="${op0}">
+            <animate attributeName="opacity" values="${vals}" keyTimes="${keyTimes}" dur="${durSec}s" begin="0s" repeatCount="indefinite" calcMode="linear"/>
+          </path>`;
+        }else{
+          hexSvg+=`<path d="${hexD(cell.x,cell.y,hexR*0.92)}" fill="none" stroke="${colFill}" stroke-width="1" opacity="${op0}"/>`;
+        }
+      });
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden">${hexSvg}</svg>`;
     },
     titleSvg(w,h,a1,a2,d){return this._build(w,h,a1,a2,true,d!==false);},
     contentSvg(w,h,a1,a2,d){return this._build(w,h,a1,a2,false,d!==false);},
@@ -2629,17 +2793,21 @@ M-29,-2.5 L-47,-19 L-44,0 L-47,19 L-29,2.5 Z"/>
       const isThumb=w<=400&&h<=220;
       let bgDefs='';
       let mapBgFill='';
-      if(isThumb){
+      const themeBg=theme&&theme.bg?theme.bg:'';
+      if(themeBg){
+        // Same colour as layout thumbnails (button uses theme.bg under the SVG)
+        const cols=String(themeBg).match(/#[0-9a-fA-F]{3,8}/g);
+        const c1=cols?.[0]||themeBg, c2=cols?.[1]||c1;
+        bgDefs=`<linearGradient id="${uid}mbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="${c1}"/><stop offset="100%" stop-color="${c2}"/></linearGradient>`;
+        if(isThumb){
+          bgDefs+=`<linearGradient id="${uid}mveil" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${a2}" stop-opacity="0.14"/><stop offset="100%" stop-color="${a1}" stop-opacity="0.10"/></linearGradient>`;
+        }
+        mapBgFill=`url(#${uid}mbg)`;
+      }else if(isThumb){
         bgDefs=`<linearGradient id="${uid}mbg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${a2}" stop-opacity="0.14"/><stop offset="100%" stop-color="${a1}" stop-opacity="0.10"/></linearGradient>`;
         mapBgFill=`url(#${uid}mbg)`;
-      }else if(isLight){
-        const bg=theme.bg||'#f4f6fa';
-        const cols=bg.match(/#[0-9a-fA-F]{3,8}/g);
-        const c1=cols?.[0]||'#f8fafc', c2=cols?.[1]||c1;
-        bgDefs=`<linearGradient id="${uid}mbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="${c1}"/><stop offset="100%" stop-color="${c2}"/></linearGradient>`;
-        mapBgFill=`url(#${uid}mbg)`;
       }else{
-        mapBgFill='#0a0d14';
+        mapBgFill=isLight?'#f4f6fa':'#12151c';
       }
 
       const mapScale=isTitle?2.75:2.35;
@@ -2736,6 +2904,7 @@ M-29,-2.5 L-47,-19 L-44,0 L-47,19 L-29,2.5 Z"/>
 
       let map='';
       if(mapBgFill) map+=`<rect width="${f(mapW)}" height="${f(mapH)}" fill="${mapBgFill}"/>`;
+      if(isThumb&&themeBg) map+=`<rect width="${f(mapW)}" height="${f(mapH)}" fill="url(#${uid}mveil)"/>`;
       const gridOp=(isThumb||!isLight)?'0.06':'0.09';
       const gridStep=isTitle?44:52;
       for(let gx=0;gx<=mapW;gx+=gridStep){
@@ -2822,42 +2991,35 @@ M-29,-2.5 L-47,-19 L-44,0 L-47,19 L-29,2.5 Z"/>
     contentSvg(w,h,a1,a2,d){return this._build(w,h,a1,a2,false,d!==false);},
   },
 
-  // ── Notebook paper (same on title & content; colours follow colour scheme) ──
+  // ── Notebook paper (клетка: размеры + оси; линия: крупная/мелкая) ──
   {
     name:'Тетрадь · клетка', nameEn:'Notebook · Grid',
-    desc:'Крупная клетка — цвета из схемы', descEn:'Large grid — colours from scheme',
+    desc:'Клетка — размер и оси координат', descEn:'Grid — size and coordinate axes',
     animated:false,
-    paper:{kind:'grid', cell:48, fade:0.08},
-    _build(w,h,a1,a2){ return _notebookLayoutSvg(w,h,this.paper,a1,a2); },
-    titleSvg(w,h,a1,a2){ return this._build(w,h,a1,a2); },
-    contentSvg(w,h,a1,a2){ return this._build(w,h,a1,a2); },
-  },
-  {
-    name:'Тетрадь · мелкая клетка', nameEn:'Notebook · Fine grid',
-    desc:'Мелкая клетка — цвета из схемы', descEn:'Fine grid — colours from scheme',
-    animated:false,
-    paper:{kind:'grid', cell:28, fade:0.08},
-    _build(w,h,a1,a2){ return _notebookLayoutSvg(w,h,this.paper,a1,a2); },
-    titleSvg(w,h,a1,a2){ return this._build(w,h,a1,a2); },
-    contentSvg(w,h,a1,a2){ return this._build(w,h,a1,a2); },
+    paper:{kind:'grid', cell:48, cellFine:28, fade:0.08},
+    variantSvg(w,h,a1,a2,style){
+      const st = style || 'title';
+      const p = Object.assign({}, this.paper);
+      if(st === 'content' || st === 'fine') p.cell = this.paper.cellFine != null ? this.paper.cellFine : 28;
+      const axes = (st === 'axes-center' || st === 'axes-q1' || st === 'axes-q1inv' || st === 'axes-q1right') ? st : null;
+      return _notebookLayoutSvg(w,h,p,a1,a2,axes);
+    },
+    titleSvg(w,h,a1,a2){ return this.variantSvg(w,h,a1,a2,'title'); },
+    contentSvg(w,h,a1,a2){ return this.variantSvg(w,h,a1,a2,'content'); },
   },
   {
     name:'Тетрадь · линия', nameEn:'Notebook · Lined',
-    desc:'Линовка — цвета из схемы', descEn:'Lined paper — colours from scheme',
+    desc:'Линовка — крупная / мелкая в шаблонах', descEn:'Lined — large / fine in templates',
     animated:false,
-    paper:{kind:'lined', pitch:36, fade:0.08},
-    _build(w,h,a1,a2){ return _notebookLayoutSvg(w,h,this.paper,a1,a2); },
-    titleSvg(w,h,a1,a2){ return this._build(w,h,a1,a2); },
-    contentSvg(w,h,a1,a2){ return this._build(w,h,a1,a2); },
-  },
-  {
-    name:'Тетрадь · частая линия', nameEn:'Notebook · Fine lined',
-    desc:'Частая линовка — цвета из схемы', descEn:'Fine lined — colours from scheme',
-    animated:false,
-    paper:{kind:'lined', pitch:24, fade:0.08},
-    _build(w,h,a1,a2){ return _notebookLayoutSvg(w,h,this.paper,a1,a2); },
-    titleSvg(w,h,a1,a2){ return this._build(w,h,a1,a2); },
-    contentSvg(w,h,a1,a2){ return this._build(w,h,a1,a2); },
+    paper:{kind:'lined', pitch:36, pitchFine:24, fade:0.08},
+    variantSvg(w,h,a1,a2,style){
+      const st = style || 'title';
+      const p = Object.assign({}, this.paper);
+      if(st === 'content' || st === 'fine') p.pitch = this.paper.pitchFine != null ? this.paper.pitchFine : 24;
+      return _notebookLayoutSvg(w,h,p,a1,a2);
+    },
+    titleSvg(w,h,a1,a2){ return this.variantSvg(w,h,a1,a2,'title'); },
+    contentSvg(w,h,a1,a2){ return this.variantSvg(w,h,a1,a2,'content'); },
   },
 ];
 
@@ -2896,59 +3058,19 @@ function _syncSlidesThemeBg(opts){
   }
 }
 
-/** Resolve notebook stroke colours from the active colour scheme. */
+/** Resolve notebook stroke colours from the active colour scheme (palette «16»). */
 function _notebookSchemeColors(a1, a2){
   const theme = _activeTheme();
   const isLight = !!(theme && theme.dark === false);
-  const palette = (theme && typeof _themeColors === 'function')
-    ? _themeColors(theme).slice(0, 7)
-    : null;
-  const fallback1 = a1 || (isLight ? '#1d4ed8' : '#86efac');
-  const fallback2 = a2 || (isLight ? '#3b82f6' : '#a7f3d0');
-
-  function lum(col){
-    if(!col || typeof col !== 'string') return 0.5;
-    let hex = col;
-    if(hex.charAt(0) !== '#'){
-      const m = hex.match(/#([0-9a-fA-F]{6})/);
-      hex = m ? '#' + m[1] : '';
-    }
-    const m = /^#([0-9a-fA-F]{6})$/.exec(hex);
-    if(!m) return 0.5;
-    const n = parseInt(m[1], 16);
-    const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
-    return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  const fallback1 = a1 || (isLight ? '#cbd5e1' : '#475569');
+  // Палитра «16» = col0,row5
+  let lineCol = fallback1;
+  if(theme && typeof _schemeSwatchColor === 'function'){
+    const c16 = _schemeSwatchColor(theme, 0, 5);
+    if(c16) lineCol = c16;
   }
-
-  let lineCol = fallback1, lineCol2 = fallback2;
-  if(palette && palette.length){
-    const ranked = palette.slice().sort((x, y) => lum(x) - lum(y));
-    if(isLight){
-      // Not the darkest — mid-dark keeps lines softer on light paper
-      lineCol = ranked[Math.min(2, ranked.length - 1)] || ranked[0] || fallback1;
-      lineCol2 = ranked[Math.min(3, ranked.length - 1)] || ranked[1] || lineCol;
-    } else {
-      // Not the lightest — mid-light keeps lines softer on dark bg
-      lineCol = ranked[Math.max(0, ranked.length - 3)] || ranked[ranked.length - 1] || fallback1;
-      lineCol2 = ranked[Math.max(0, ranked.length - 4)] || ranked[ranked.length - 2] || lineCol;
-    }
-  }
-
-  // Soften further: lighten on light schemes, darken on dark schemes
-  function soften(hex, towardLight){
-    const m = /^#([0-9a-fA-F]{6})$/.exec(hex);
-    if(!m) return hex;
-    const n = parseInt(m[1], 16);
-    let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
-    const t = towardLight ? 0.42 : 0.38; // blend toward white / black
-    if(towardLight){ r = Math.round(r + (255 - r) * t); g = Math.round(g + (255 - g) * t); b = Math.round(b + (255 - b) * t); }
-    else { r = Math.round(r * (1 - t)); g = Math.round(g * (1 - t)); b = Math.round(b * (1 - t)); }
-    return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
-  }
-  lineCol = soften(lineCol, isLight);
-  lineCol2 = soften(lineCol2, isLight);
-
-  const lineOp = isLight ? 0.34 : 0.30;
+  const lineCol2 = lineCol;
+  const lineOp = isLight ? 0.5 : 0.4;
   const bgCss = (theme && theme.bg) ? theme.bg : (isLight ? '#f8fafc' : '#0f172a');
   return { theme, isLight, lineCol, lineCol2, lineOp, bgCss };
 }
@@ -2978,8 +3100,134 @@ function _notebookEdgeMaskDefs(uid, w, h, fade){
   </defs>`;
 }
 
-/** SVG for notebook-paper layout previews and slide decor (title = content). */
-function _notebookLayoutSvg(w, h, paper, a1, a2){
+/** Coordinate axes on grid (unit = one cell). Modes: axes-center | axes-q1 | axes-q1inv | axes-q1right */
+function _notebookAxesOverlay(w, h, cell, axesMode, axisCol){
+  if(!axesMode || !cell || cell <= 0) return '';
+  const f = n => n.toFixed(1);
+  const snap = v => Math.max(0, Math.min(w, Math.round(v / cell) * cell));
+  const snapY = v => Math.max(0, Math.min(h, Math.round(v / cell) * cell));
+  const margin = cell;
+  const tick = Math.max(3, cell * 0.18);
+  const swA = Math.max(1.2, cell * 0.06);
+  const ah = Math.max(5, cell * 0.28);
+  const axOp = 0.48; // полупрозрачные оси
+
+  let ox, oy;
+  let xMin, xMax, yMin, yMax;
+  let xPosRight = true;
+  let yPosDown = false;
+
+  if(axesMode === 'axes-center'){
+    ox = snap(w * 0.5); oy = snapY(h * 0.5);
+    xMin = 0; xMax = w; yMin = 0; yMax = h;
+    xPosRight = true; yPosDown = false;
+  } else if(axesMode === 'axes-q1'){
+    ox = snap(margin); oy = snapY(h - margin);
+    xMin = ox; xMax = w; yMin = 0; yMax = oy;
+    xPosRight = true; yPosDown = false;
+  } else if(axesMode === 'axes-q1inv'){
+    ox = snap(margin); oy = snapY(margin);
+    xMin = ox; xMax = w; yMin = oy; yMax = h;
+    xPosRight = true; yPosDown = true;
+  } else if(axesMode === 'axes-q1right'){
+    // I четверть справа: начало на середине, на 3 клетки выше низа
+    ox = snap(w * 0.5); oy = snapY(h - margin - 3 * cell);
+    if(ox < margin) ox = snap(margin);
+    if(oy < margin) oy = snap(margin);
+    if(oy > h - margin) oy = snapY(h - margin);
+    xMin = ox; xMax = w; yMin = 0; yMax = oy;
+    xPosRight = true; yPosDown = false;
+  } else {
+    return '';
+  }
+
+  const uid = 'ax' + Math.random().toString(36).slice(2, 7);
+  const col = axisCol || '#1e293b';
+  const fs = Math.max(9, cell * 0.36);
+  const fsAxis = Math.max(10, cell * 0.42);
+
+  function arrow(x1, y1, x2, y2){
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    const bx = x2 - ux * ah, by = y2 - uy * ah;
+    const px = -uy * (ah * 0.45), py = ux * (ah * 0.45);
+    return `<polygon points="${f(x2)},${f(y2)} ${f(bx+px)},${f(by+py)} ${f(bx-px)},${f(by-py)}" fill="${col}" fill-opacity="${axOp}"/>`;
+  }
+
+  let axes = '';
+  axes += `<line x1="${f(xMin)}" y1="${f(oy)}" x2="${f(xMax)}" y2="${f(oy)}" stroke="${col}" stroke-opacity="${axOp}" stroke-width="${swA.toFixed(2)}" stroke-linecap="round"/>`;
+  axes += `<line x1="${f(ox)}" y1="${f(yMin)}" x2="${f(ox)}" y2="${f(yMax)}" stroke="${col}" stroke-opacity="${axOp}" stroke-width="${swA.toFixed(2)}" stroke-linecap="round"/>`;
+
+  if(xPosRight) axes += arrow(ox, oy, xMax - 1, oy);
+  else axes += arrow(ox, oy, xMin + 1, oy);
+  if(yPosDown) axes += arrow(ox, oy, ox, yMax - 1);
+  else axes += arrow(ox, oy, ox, yMin + 1);
+
+  if(axesMode === 'axes-center'){
+    axes += arrow(ox, oy, xMin + 1, oy);
+    axes += arrow(ox, oy, ox, yMax - 1);
+  }
+
+  let ticks = '';
+  let nums = '';
+  const numGap = Math.max(2, cell * 0.12);
+
+  function numText(x, y, n, anchor, baseline){
+    return `<text x="${f(x)}" y="${f(y)}" fill="${col}" fill-opacity="${axOp}" font-size="${fs.toFixed(1)}" font-family="system-ui,Segoe UI,sans-serif" text-anchor="${anchor||'middle'}" dominant-baseline="${baseline||'hanging'}">${n}</text>`;
+  }
+
+  // X ticks + numbers (у шаблона «I четверть ↓» подписи X — сверху горизонтальной оси)
+  const xNumsAbove = axesMode === 'axes-q1inv';
+  let xi = 1;
+  for(let x = ox + cell; x <= xMax - cell * 0.35; x += cell, xi++){
+    ticks += `<line x1="${f(x)}" y1="${f(oy - tick)}" x2="${f(x)}" y2="${f(oy + tick)}" stroke="${col}" stroke-opacity="${axOp}" stroke-width="${swA.toFixed(2)}"/>`;
+    const n = xPosRight ? xi : -xi;
+    if(xNumsAbove) nums += numText(x, oy - tick - numGap, n, 'middle', 'auto');
+    else nums += numText(x, oy + tick + numGap, n, 'middle', 'hanging');
+  }
+  xi = 1;
+  for(let x = ox - cell; x >= xMin + cell * 0.35; x -= cell, xi++){
+    ticks += `<line x1="${f(x)}" y1="${f(oy - tick)}" x2="${f(x)}" y2="${f(oy + tick)}" stroke="${col}" stroke-opacity="${axOp}" stroke-width="${swA.toFixed(2)}"/>`;
+    const n = xPosRight ? -xi : xi;
+    if(xNumsAbove) nums += numText(x, oy - tick - numGap, n, 'middle', 'auto');
+    else nums += numText(x, oy + tick + numGap, n, 'middle', 'hanging');
+  }
+
+  // Y ticks + numbers — слева от оси
+  let yi = 1;
+  for(let y = oy + cell; y <= yMax - cell * 0.35; y += cell, yi++){
+    ticks += `<line x1="${f(ox - tick)}" y1="${f(y)}" x2="${f(ox + tick)}" y2="${f(y)}" stroke="${col}" stroke-opacity="${axOp}" stroke-width="${swA.toFixed(2)}"/>`;
+    const n = yPosDown ? yi : -yi;
+    nums += numText(ox - tick - numGap, y, n, 'end', 'middle');
+  }
+  yi = 1;
+  for(let y = oy - cell; y >= yMin + cell * 0.35; y -= cell, yi++){
+    ticks += `<line x1="${f(ox - tick)}" y1="${f(y)}" x2="${f(ox + tick)}" y2="${f(y)}" stroke="${col}" stroke-opacity="${axOp}" stroke-width="${swA.toFixed(2)}"/>`;
+    const n = yPosDown ? -yi : yi;
+    nums += numText(ox - tick - numGap, y, n, 'end', 'middle');
+  }
+
+  // Origin «0»
+  const or = Math.max(2, cell * 0.1);
+  ticks += `<circle cx="${f(ox)}" cy="${f(oy)}" r="${f(or)}" fill="${col}" fill-opacity="${axOp}"/>`;
+  if(xNumsAbove) nums += numText(ox - tick - numGap, oy - tick - numGap, '0', 'end', 'auto');
+  else nums += numText(ox - tick - numGap, oy + tick + numGap, '0', 'end', 'hanging');
+
+  // x / y labels
+  let lx, ly, lyx, lyy;
+  if(xPosRight){ lx = xMax - ah * 1.6; lyx = oy + fsAxis * 0.95; }
+  else { lx = xMin + ah * 0.8; lyx = oy + fsAxis * 0.95; }
+  if(yPosDown){ ly = yMax - ah * 0.4; lyy = ox + fsAxis * 0.85; }
+  else { ly = yMin + ah * 1.1; lyy = ox + fsAxis * 0.85; }
+  const labels = `<text x="${f(lx)}" y="${f(lyx)}" fill="${col}" fill-opacity="${axOp}" font-size="${fsAxis.toFixed(1)}" font-family="Georgia,serif" font-style="italic">x</text>`
+    + `<text x="${f(lyy)}" y="${f(ly)}" fill="${col}" fill-opacity="${axOp}" font-size="${fsAxis.toFixed(1)}" font-family="Georgia,serif" font-style="italic">y</text>`;
+
+  return `<g id="${uid}-axes">${axes}${ticks}${nums}${labels}</g>`;
+}
+
+/** SVG for notebook-paper layout previews and slide decor. */
+function _notebookLayoutSvg(w, h, paper, a1, a2, axesMode){
   const p = paper || {};
   const c = _notebookSchemeColors(a1, a2);
   const scale = w / 1200;
@@ -2988,27 +3236,37 @@ function _notebookLayoutSvg(w, h, paper, a1, a2){
   const uid = 'nb' + Math.random().toString(36).slice(2, 7);
   const sw = Math.max(0.45, scale).toFixed(2);
   let lines = '';
+  let cellPx = 0;
 
   if(p.kind === 'lined'){
     const pitch = (p.pitch || 32) * scale;
-    // Equal left/right inset matching the fade zone (no vertical margin strip)
     const inset = fade * w;
     for(let y = pitch; y < h - pitch * 0.25; y += pitch){
       lines += `<line x1="${f(inset)}" y1="${f(y)}" x2="${f(w - inset)}" y2="${f(y)}" stroke="${c.lineCol}" stroke-opacity="${c.lineOp}" stroke-width="${sw}"/>`;
     }
   } else {
-    const cell = (p.cell || 36) * scale;
-    for(let y = 0; y <= h; y += cell){
+    cellPx = (p.cell || 36) * scale;
+    for(let y = 0; y <= h; y += cellPx){
       lines += `<line x1="0" y1="${f(y)}" x2="${w}" y2="${f(y)}" stroke="${c.lineCol}" stroke-opacity="${c.lineOp}" stroke-width="${sw}"/>`;
     }
-    for(let x = 0; x <= w; x += cell){
+    for(let x = 0; x <= w; x += cellPx){
       lines += `<line x1="${f(x)}" y1="0" x2="${f(x)}" y2="${h}" stroke="${c.lineCol}" stroke-opacity="${c.lineOp}" stroke-width="${sw}"/>`;
     }
   }
 
+  const axisCol = (theme => {
+    if(theme && typeof _schemeSwatchColor === 'function'){
+      // Оси чуть контрастнее линий сетки: палитра «14»
+      return _schemeSwatchColor(theme, 0, 3) || c.lineCol;
+    }
+    return c.lineCol;
+  })(c.theme);
+  const axes = (axesMode && cellPx) ? _notebookAxesOverlay(w, h, cellPx, axesMode, axisCol || c.lineCol) : '';
+
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden">
     ${_notebookEdgeMaskDefs(uid, w, h, fade)}
     <g mask="url(#${uid}mx)"><g mask="url(#${uid}my)">${lines}</g></g>
+    ${axes}
   </svg>`;
 }
 
@@ -3073,14 +3331,19 @@ function _ensureCrystalCfg(d, a1, a2){ _ensureGlDecorCfg(d, a1, a2); }
 // Build the SVG string for a decor element using current canvas dimensions.
 // Scopes all defs IDs with a unique prefix so multiple slides never share filter/gradient IDs.
 let _svgUidCounter=0;
-function _buildDecorSvg(layoutIdx, style){
+function _buildDecorSvg(layoutIdx, style, mirror){
   const L=LAYOUTS[layoutIdx];
   if(!L)return '';
   const [a1,a2]=_decorAccents();
-  const fn=(style==='title')?L.titleSvg:L.contentSvg;
-  if(typeof fn!=='function')return '';
   const doAnimate = L.animated && _layoutAnimated;
-  let svg=fn.call(L, canvasW, canvasH, a1, a2, doAnimate)||'';;
+  let svg='';
+  if(typeof L.variantSvg==='function'){
+    svg=L.variantSvg.call(L, canvasW, canvasH, a1, a2, style||'title')||'';
+  } else {
+    const fn=(style==='title')?L.titleSvg:L.contentSvg;
+    if(typeof fn!=='function')return '';
+    svg=fn.call(L, canvasW, canvasH, a1, a2, doAnimate, !!mirror)||'';
+  }
   // Make every defs id unique to avoid cross-slide collisions in the DOM
   const uid='u'+(++_svgUidCounter);
   svg=svg.replace(/\bid="([^"]+)"/g, (_,id)=>`id="${uid}_${id}"`);
@@ -3089,10 +3352,10 @@ function _buildDecorSvg(layoutIdx, style){
 }
 
 // Create a new decor element data object for slide index si
-function makeDecorEl(si, style){
+function makeDecorEl(si, style, mirror){
   if(selLayout<0||selLayout>=LAYOUTS.length)return null;
   const decorStyle=style||'content';
-  const svg=_buildDecorSvg(selLayout, decorStyle);
+  const svg=_buildDecorSvg(selLayout, decorStyle, mirror);
   if(!svg)return null;
   const d = {
     id:'decor_'+(si||0)+'_'+Date.now(),
@@ -3102,6 +3365,7 @@ function makeDecorEl(si, style){
     svgContent:svg,
     _isDecor:true,
     _decorStyle:decorStyle,
+    _decorMirror:!!mirror,
     _layoutIdx:selLayout,
   };
   _ensureGlDecorCfg(d);
@@ -3116,17 +3380,28 @@ function refreshDecorColors(ac1, ac2, skipRender){
   _syncSlidesThemeBg({ force:true, onlyNotebook:true });
   // Override _decorAccents temporarily if explicit colors passed
   const _oa1=ac1||_decorAccents()[0], _oa2=ac2||_decorAccents()[1];
+  const _linedIdx = LAYOUTS.findIndex(L => L && L.nameEn === 'Notebook · Lined');
+  const _gridIdx = LAYOUTS.findIndex(L => L && L.nameEn === 'Notebook · Grid');
   slides.forEach(s=>{
     (s.els||[]).forEach(d=>{
       if(!d._isDecor)return;
+      // Legacy: убраны «мелкая клетка» / «частая линия» как отдельные макеты
+      if(d._layoutIdx == null || d._layoutIdx < 0 || d._layoutIdx >= LAYOUTS.length || !LAYOUTS[d._layoutIdx]){
+        d._layoutIdx = _linedIdx >= 0 ? _linedIdx : (_gridIdx >= 0 ? _gridIdx : 0);
+        if(!d._decorStyle) d._decorStyle = 'content';
+      }
       const li=d._layoutIdx;
       if(li==null||li<0||li>=LAYOUTS.length)return;
       const L=LAYOUTS[li];
-      const fn=(d._decorStyle==='title')?L.titleSvg:L.contentSvg;
-      if(typeof fn!=='function')return;
-      // SVG генерируется с учётом текущего флага анимации — чтобы экспорт/просмотр работали корректно
       const doAnim = L.animated && _layoutAnimated;
-          let svg=fn.call(L, canvasW, canvasH, _oa1, _oa2, doAnim)||';;'
+      let svg='';
+      if(typeof L.variantSvg==='function'){
+        svg=L.variantSvg.call(L, canvasW, canvasH, _oa1, _oa2, d._decorStyle||'title')||'';
+      } else {
+        const fn=(d._decorStyle==='title')?L.titleSvg:L.contentSvg;
+        if(typeof fn!=='function')return;
+        svg=fn.call(L, canvasW, canvasH, _oa1, _oa2, doAnim, !!d._decorMirror)||'';
+      }
       const uid='u'+(++_svgUidCounter);
       svg=svg.replace(/\bid="([^"]+)"/g, (_,id)=>`id="${uid}_${id}"`);
       svg=svg.replace(/url\(#([^)]+)\)/g, (_,id)=>`url(#${uid}_${id})`);
@@ -3323,8 +3598,7 @@ window.setLayoutAnimated = function(val){
   _layoutAnimated = val;
   _syncAnimToggleBtns();
   buildLayoutGrid();
-  // Регенерируем svgContent всех декоров с правильным doAnimate —
-  // чтобы просмотр и экспорт получили корректную SVG-строку (без перерисовки DOM)
+  // Регенерируем svgContent всех декоров с правильным doAnimate
   if(typeof refreshDecorColors==='function') refreshDecorColors(null, null, true);
   if(!val){
     if(typeof CrystalDecor!=='undefined') CrystalDecor.pauseAll();
@@ -3340,17 +3614,23 @@ window.setLayoutAnimated = function(val){
       }catch(e){}
     });
   } else {
+    // Пока анимация выключена, в данные пишется статичный SVG. После смены слайда
+    // на холсте нет SMIL — одного unpause недостаточно. Подтягиваем анимированный
+    // контент только если в DOM нет SMIL (на том же слайде оставляем паузу/resume).
+    const _domSvg = document.querySelector('.decor-el svg');
+    const _hasSmil = !!( _domSvg && _domSvg.querySelector('animate,animateTransform,animateMotion') );
+    if(!_hasSmil && typeof refreshDecorOnCanvas==='function') refreshDecorOnCanvas();
     if(typeof CrystalDecor!=='undefined') CrystalDecor.resumeAll();
     if(typeof DnaDecor!=='undefined') DnaDecor.resumeAll();
     if(typeof GalaxyDecor!=='undefined') GalaxyDecor.resumeAll();
     if(typeof CausticsDecor!=='undefined') CausticsDecor.resumeAll();
-    // Возобновляем все видимые SVG
     document.querySelectorAll('.decor-el svg').forEach(function(svg){
       try{ svg.unpauseAnimations(); }catch(e){}
     });
     _decorPausedAt.clear();
   }
   if(typeof saveState==='function') saveState();
+  if(typeof buildSlideTplGrid==='function') buildSlideTplGrid();
 };
 
 // Находим индекс слайда по DOM-элементу SVG
@@ -3391,8 +3671,8 @@ function applyLayout(idx,btn){
   slides.forEach((s,si)=>{
     // Remove old decor
     s.els=s.els.filter(d=>!d._isDecor);
-    // Determine style — first slide is title, rest are content
-    const decorStyle=si===0?'title':'content';
+    // Notebook: оба размера — шаблоны; с модалки ставим крупную. Иначе title/content.
+    const decorStyle=(L && L.paper) ? 'title' : (si===0?'title':'content');
     const svg=_buildDecorSvg(idx, decorStyle);
     if(!svg)return;
     const d={
@@ -3403,6 +3683,7 @@ function applyLayout(idx,btn){
       svgContent:svg,
       _isDecor:true,
       _decorStyle:decorStyle,
+      _decorMirror:false,
       _layoutIdx:idx,
     };
     _ensureGlDecorCfg(d, a1, a2);
@@ -3413,6 +3694,7 @@ function applyLayout(idx,btn){
   if(typeof invalidateThumbCache==='function')invalidateThumbCache();
   if(typeof drawThumbs==='function')drawThumbs(true);
   _syncSlidePropsAnimRow();
+  if(typeof buildSlideTplGrid==='function') buildSlideTplGrid();
 }
 
 function clearLayout(){
@@ -3423,6 +3705,7 @@ function clearLayout(){
   if(typeof renderAll==="function")renderAll();if(typeof saveState==="function")saveState();
   if(typeof invalidateThumbCache==='function')invalidateThumbCache();
   if(typeof drawThumbs==='function')drawThumbs(true);
+  if(typeof buildSlideTplGrid==='function') buildSlideTplGrid();
 }
 
 function openLayoutModal(){
@@ -3438,4 +3721,209 @@ function applyLayoutDecor(){
   applyLayout(selLayout,null);
   closeLayoutModal();
 }
+
+/** Index of Prism layout in LAYOUTS (by nameEn). */
+function _prismLayoutIdx(){
+  const i = LAYOUTS.findIndex(L => L && L.nameEn === 'Prism');
+  return i >= 0 ? i : 0;
+}
+
+/** Current slide decor meta for template highlight. */
+function _currentSlideDecorMeta(){
+  const s = (typeof slides !== 'undefined' && slides[cur]) ? slides[cur] : null;
+  if(!s || !s.els) return null;
+  const d = s.els.find(e => e && e._isDecor);
+  if(!d) return null;
+  return {
+    layoutIdx: d._layoutIdx,
+    style: d._decorStyle || 'content',
+    mirror: !!d._decorMirror,
+  };
+}
+
+/** Layout shown in slide-props templates: slide decor → selLayout → Prism. */
+function _slideTplLayoutIdx(){
+  const meta = _currentSlideDecorMeta();
+  if(meta && meta.layoutIdx != null && meta.layoutIdx >= 0 && meta.layoutIdx < LAYOUTS.length) return meta.layoutIdx;
+  if(typeof selLayout === 'number' && selLayout >= 0 && selLayout < LAYOUTS.length) return selLayout;
+  return _prismLayoutIdx();
+}
+
+/** Apply layout template to the current slide only. */
+window.applySlidePrismTemplate = function(style, mirror){
+  if(typeof slides === 'undefined' || !slides[cur]) return;
+  const idx = _slideTplLayoutIdx();
+  const L = LAYOUTS[idx];
+  if(!L) return;
+  if(typeof pushUndo === 'function') pushUndo();
+
+  selLayout = idx;
+  if(L.animated && !_layoutAnimated){
+    _layoutAnimated = true;
+    _syncAnimToggleBtns();
+  }
+
+  const decorStyle = style || 'content';
+  const useMirror = L.nameEn === 'Prism' && !!mirror;
+  const svg = _buildDecorSvg(idx, decorStyle, useMirror);
+  if(!svg) return;
+
+  const s = slides[cur];
+  s.els = (s.els || []).filter(d => !d._isDecor);
+  const d = {
+    id: 'decor_' + cur + '_' + Date.now(),
+    type: 'svg',
+    x: 0, y: 0, w: canvasW, h: canvasH,
+    rot: 0, anims: [], isTrigger: false,
+    svgContent: svg,
+    _isDecor: true,
+    _decorStyle: decorStyle,
+    _decorMirror: useMirror,
+    _layoutIdx: idx,
+  };
+  _ensureGlDecorCfg(d);
+  s.els.unshift(d);
+
+  if(typeof renderAll === 'function') renderAll();
+  else if(typeof load === 'function') load();
+  if(typeof saveState === 'function') saveState();
+  if(typeof invalidateThumbCache === 'function') invalidateThumbCache();
+  if(typeof drawThumbs === 'function') drawThumbs(true);
+  _syncSlidePropsAnimRow();
+  buildSlideTplGrid();
+};
+window.applySlideTemplate = window.applySlidePrismTemplate;
+
+/** Clear decor on the current slide only. */
+window.clearSlidePrismTemplate = function(){
+  if(typeof slides === 'undefined' || !slides[cur]) return;
+  const s = slides[cur];
+  if(!(s.els || []).some(d => d && d._isDecor)) return;
+  if(typeof pushUndo === 'function') pushUndo();
+  s.els = (s.els || []).filter(d => !d._isDecor);
+  if(typeof renderAll === 'function') renderAll();
+  else if(typeof load === 'function') load();
+  if(typeof saveState === 'function') saveState();
+  if(typeof invalidateThumbCache === 'function') invalidateThumbCache();
+  if(typeof drawThumbs === 'function') drawThumbs(true);
+  buildSlideTplGrid();
+};
+
+/** Live template cards in slide properties (empty + layout variants). */
+function buildSlideTplGrid(){
+  const grid = document.getElementById('slide-tpl-grid');
+  if(!grid) return;
+  grid.innerHTML = '';
+
+  const [a1, a2] = _decorAccents();
+  const PW = 160, PH = 90;
+  const themeBg = (_activeTheme() && _activeTheme().bg) || '';
+  const isRu = typeof getLang === 'function' && getLang() === 'ru';
+  const meta = _currentSlideDecorMeta();
+  const noDecor = !meta;
+
+  // Пустой шаблон — миниатюра с крестиком (для любой темы/макета)
+  const noneBtn = document.createElement('button');
+  noneBtn.type = 'button';
+  noneBtn.className = 'slide-tpl-item' + (noDecor ? ' active' : '');
+  noneBtn.title = isRu ? 'Пустой шаблон' : 'Empty template';
+  if(themeBg) noneBtn.style.background = themeBg;
+  const noneInner = document.createElement('div');
+  noneInner.className = 'slide-tpl-inner';
+  noneInner.style.cssText = 'display:flex;align-items:center;justify-content:center;';
+  noneInner.innerHTML = '<svg width="36" height="36" viewBox="0 0 48 48" fill="none" style="opacity:.4;position:relative;inset:auto;width:36px;height:36px"><line x1="8" y1="8" x2="40" y2="40" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/><line x1="40" y1="8" x2="8" y2="40" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/></svg>';
+  noneBtn.appendChild(noneInner);
+  noneBtn.onclick = () => {
+    if(typeof clearSlidePrismTemplate === 'function') clearSlidePrismTemplate();
+  };
+  grid.appendChild(noneBtn);
+
+  const idx = _slideTplLayoutIdx();
+  const L = LAYOUTS[idx];
+  if(!L || typeof L.titleSvg !== 'function') return;
+
+  const doAnim = !!(L.animated && _layoutAnimated);
+  const layoutActive = meta && meta.layoutIdx === idx;
+  const supportsMirror = L.nameEn === 'Prism';
+  const isPaper = !!L.paper;
+  const layoutName = isRu ? (L.name || L.nameEn) : (L.nameEn || L.name);
+
+  // Notebook grid: крупная/мелкая + 4 варианта осей; линия: крупная/мелкая; иначе главный/побочный
+  let variants;
+  if(isPaper && L.paper && L.paper.kind === 'grid'){
+    variants = [
+      { style: 'title',        mirror: false, tip: isRu ? 'Крупная' : 'Large' },
+      { style: 'content',      mirror: false, tip: isRu ? 'Мелкая' : 'Fine' },
+      { style: 'axes-center',  mirror: false, tip: isRu ? 'Оси · центр' : 'Axes · center' },
+      { style: 'axes-q1',      mirror: false, tip: isRu ? 'Оси · I четверть' : 'Axes · Q1' },
+      { style: 'axes-q1inv',   mirror: false, tip: isRu ? 'Оси · I четверть ↓' : 'Axes · Q1 ↓' },
+      { style: 'axes-q1right', mirror: false, tip: isRu ? 'Оси · правая половина' : 'Axes · right half' },
+    ];
+  } else if(isPaper){
+    variants = [
+      { style: 'title',   mirror: false, tip: isRu ? 'Крупная' : 'Large' },
+      { style: 'content', mirror: false, tip: isRu ? 'Мелкая' : 'Fine' },
+    ];
+  } else if(L.nameEn === 'Storm'){
+    variants = [
+      { style: 'title',   mirror: false, tip: isRu ? 'Гроза' : 'Storm' },
+      { style: 'content', mirror: false, tip: isRu ? 'Гроза · тише' : 'Storm · soft' },
+      { style: 'rain',    mirror: false, tip: isRu ? 'Дождь' : 'Rain' },
+    ];
+  } else {
+    variants = [
+      { style: 'title',   mirror: false, tip: isRu ? 'Главный' : 'Title' },
+      { style: 'content', mirror: false, tip: isRu ? 'Побочный' : 'Content' },
+    ];
+    if(supportsMirror){
+      variants.push(
+        { style: 'title',   mirror: true, tip: isRu ? 'Главный, другая диагональ' : 'Title, other diagonal' },
+        { style: 'content', mirror: true, tip: isRu ? 'Побочный, другая диагональ' : 'Content, other diagonal' }
+      );
+    }
+  }
+
+  variants.forEach(v => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    const isActive = layoutActive && meta.style === v.style && !!meta.mirror === !!v.mirror;
+    btn.className = 'slide-tpl-item' + (isActive ? ' active' : '');
+    btn.title = layoutName + ' — ' + v.tip;
+    if(themeBg) btn.style.background = themeBg;
+
+    const inner = document.createElement('div');
+    inner.className = 'slide-tpl-inner';
+    let svgStr = '';
+    if(typeof L.variantSvg === 'function'){
+      svgStr = L.variantSvg.call(L, PW, PH, a1, a2, v.style) || '';
+    } else {
+      const fn = v.style === 'title' ? L.titleSvg : L.contentSvg;
+      svgStr = fn.call(L, PW, PH, a1, a2, doAnim, !!v.mirror) || '';
+    }
+    const prev = document.createElement('div');
+    prev.innerHTML = svgStr;
+    inner.appendChild(prev);
+
+    // WebGL layouts: still-frame preview when available
+    if(L.renderer && typeof _isGlDecorRenderer === 'function' && _isGlDecorRenderer(L.renderer)){
+      let cfg = null;
+      const isTitle = v.style === 'title';
+      if(L.renderer === 'crystal' && L.buildCrystalCfg) cfg = L.buildCrystalCfg(PW, PH, a1, a2, isTitle, doAnim);
+      else if(L.renderer === 'dna' && L.buildDnaCfg) cfg = L.buildDnaCfg(PW, PH, a1, a2, isTitle, doAnim);
+      else if(L.renderer === 'galaxy' && L.buildGalaxyCfg) cfg = L.buildGalaxyCfg(PW, PH, a1, a2, isTitle, doAnim);
+      else if(L.renderer === 'caustics' && L.buildCausticsCfg) cfg = L.buildCausticsCfg(PW, PH, a1, a2, isTitle, doAnim);
+      const decor = typeof _glDecorByRenderer === 'function' ? _glDecorByRenderer(L.renderer) : null;
+      if(cfg && decor && decor.renderStill){
+        const still = decor.renderStill(cfg, PW, PH);
+        if(still) inner.appendChild(still);
+      }
+    }
+
+    btn.appendChild(inner);
+    btn.onclick = () => applySlidePrismTemplate(v.style, v.mirror);
+    grid.appendChild(btn);
+  });
+}
+window.buildSlideTplGrid = buildSlideTplGrid;
+
 // NOTE: new animated layouts appended below — inserted before closing ];

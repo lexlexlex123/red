@@ -486,14 +486,17 @@ function _buildGrid() {
       if (c !== _color) { _color = c; _buildGrid(); }
 
     } else {
-      // Not lego selected — hide lego panel, restore everything
+      // Not lego selected — hide lego panel, restore everything (except lineangle)
       panel.style.display = 'none';
-      ['lego-hide-dims','lego-hide-link-ph','lego-hide-link-body'].forEach(id => {
-        const e_ = document.getElementById(id);
-        if (e_) e_.style.display = '';
-      });
-      const elph = document.querySelector('#elprops > .ph');
-      if (elph) elph.style.display = '';
+      const isLineAngle = !!(sel && sel.dataset && sel.dataset.type === 'lineangle');
+      if (!isLineAngle) {
+        ['lego-hide-dims','lego-hide-link-ph','lego-hide-link-body'].forEach(id => {
+          const e_ = document.getElementById(id);
+          if (e_) e_.style.display = '';
+        });
+        const elph = document.querySelector('#elprops > .ph');
+        if (elph) elph.style.display = '';
+      }
     }
   };
 })();

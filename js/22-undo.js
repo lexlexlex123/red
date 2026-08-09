@@ -43,6 +43,10 @@
       canvasW=s.canvasW||1200; canvasH=s.canvasH||675;
       globalTrans=s.globalTrans||'none'; transitionDur=s.transitionDur||500;
       if(typeof syncTransDurUI==='function') syncTransDurUI();
+      if(typeof syncSlideTransUI==='function'){
+        const _st=(slides[cur]&&slides[cur].trans)||'none';
+        syncSlideTransUI(_st);
+      }
       if(s.pnSettings && typeof pnGetSettings==='function'){
         const def=pnGetSettings(); pnSettings=Object.assign({},def,s.pnSettings);
       }

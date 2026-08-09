@@ -1,9 +1,9 @@
 // ══════════════ LOCALIZATION (i18n) ══════════════
-// Версия / Version: 6.4
+// Версия / Version: 6.5
 // Автор / Author: Некрасов Александр
 
 const APP_NAME = 'Слайды';
-const APP_VERSION = '6.4';
+const APP_VERSION = '6.5';
 const APP_AUTHOR = 'Некрасов Александр';
 
 const LANG_DATA = {
@@ -76,7 +76,7 @@ const LANG_DATA = {
     transDissolve: 'Dissolve', transMorph: 'Morph',
     transDurFast: 'Fast', transDurNormal: 'Normal', transDurSlow: 'Slow', transDurVerySlow: 'Very slow',
     // Text roles
-    roleBodyText: 'Body Text', roleHeading: 'Heading',
+    roleBodyText: 'Body Text', roleHeading: 'HEADING',
     // Misc
     btnRemove: 'Remove', btnApply: 'Apply',
     btnAlignSelShort: 'Sel', btnAlignSlideShort: 'Slide', labelAlignTo: 'Align to:',
@@ -127,6 +127,39 @@ const LANG_DATA = {
     // Props panel
     propRole: 'Role',
     btnFillQuote: 'Quote',
+    btnTranslateTitle: 'Translate via Google, or local offline',
+    toastTranslateNeedText: 'Select a text block',
+    toastTranslateEmpty: 'No text to translate',
+    toastTranslateDownloading: 'Downloading Google model',
+    toastTranslateOfflineLocal: 'Offline — local translation',
+    toastTranslatedEn: 'Translated to English',
+    toastTranslatedRu: 'Translated to Russian',
+    toastTranslateNoEngine: 'No network and local translator failed',
+    toastTranslateFail: 'Translation failed',
+    btnDrawAngle: 'Draw angle',
+    phMultiSel: 'Selection',
+    phLineAngle: 'Angle',
+    propLineAngleDeg: 'Degrees',
+    propLineAngleFs: 'Font size',
+    propLineAngleEdit: 'Edit angle',
+    propLineAngleDelete: 'Delete angle',
+    propLineAngleLabel: 'Label',
+    propLineAngleMarks: 'Arcs',
+    propLineAngleColor: 'Color',
+    propLineAngleMark1: 'Single arc',
+    propLineAngleMark2: 'Double arc',
+    propLineAngleMark3: 'Triple arc',
+    propLineAngleMark4: 'Quadruple arc',
+    phLineGeom: 'Geometry',
+    propLineGeomMark: 'Mark',
+    propLineGeomNone: 'No mark',
+    propLineGeomTick1: 'Single tick',
+    propLineGeomTick2: 'Double tick',
+    propLineGeomTick3: 'Triple tick',
+    propLineGeomS: 'Wavy mark (shared side)',
+    hintLineAngle: 'Degrees in the panel are the label only (line geometry stays). A measured 90° is drawn as a square corner.',
+    btnQuoteCatTitle: 'Quote category',
+    quoteCatAll: 'All',
     propSize: 'Size',
     propWeight: 'Weight',
     propTextColor: 'Text Color',
@@ -141,6 +174,7 @@ const LANG_DATA = {
     propTextShadow: 'Text shadow',
     propBulletColor: 'Marker color',
     propBulletColorAuto: 'auto',
+    propBulletColorHint: '11 or #hex',
     propBulletGap: 'Gap, px',
     propBulletGapHint: 'Distance from marker to text',
     propTshadowColor: 'Color',
@@ -317,6 +351,7 @@ const LANG_DATA = {
 
     // Additional props labels
     propSlideBg: 'Slide Background',
+    propSlideTpl: 'Templates',
     propLayoutAnim: 'Bg Animation',
     propDimW: 'W',
     propDimH: 'H',
@@ -450,7 +485,7 @@ const LANG_DATA = {
     transDissolve: 'Растворение', transMorph: 'Морфинг',
     transDurFast: 'Быстро', transDurNormal: 'Нормально', transDurSlow: 'Медленно', transDurVerySlow: 'Очень медленно',
     // Роли текста
-    roleBodyText: 'Основной текст', roleHeading: 'Заголовок',
+    roleBodyText: 'Основной текст', roleHeading: 'ЗАГОЛОВОК',
     // Разное
     btnRemove: 'Удалить', btnApply: 'Применить',
     btnAlignSelShort: 'Выд.', btnAlignSlideShort: 'Слайд', labelAlignTo: 'Выровн.:',
@@ -500,6 +535,39 @@ const LANG_DATA = {
     // Props panel
     propRole: 'Роль',
     btnFillQuote: 'Цитата',
+    btnTranslateTitle: 'Перевести через Google, иначе локально',
+    toastTranslateNeedText: 'Выберите текстовый блок',
+    toastTranslateEmpty: 'Нет текста для перевода',
+    toastTranslateDownloading: 'Загрузка модели Google',
+    toastTranslateOfflineLocal: 'Нет сети — локальный перевод',
+    toastTranslatedEn: 'Переведено на английский',
+    toastTranslatedRu: 'Переведено на русский',
+    toastTranslateNoEngine: 'Нет сети и не удалось запустить локальный переводчик',
+    toastTranslateFail: 'Не удалось перевести',
+    btnDrawAngle: 'Нарисовать угол',
+    phMultiSel: 'Выделение',
+    phLineAngle: 'Угол',
+    propLineAngleDeg: 'Градусы',
+    propLineAngleFs: 'Размер шрифта',
+    propLineAngleEdit: 'Изменить угол',
+    propLineAngleDelete: 'Удалить угол',
+    propLineAngleLabel: 'Подпись',
+    propLineAngleMarks: 'Дуги',
+    propLineAngleColor: 'Цвет',
+    propLineAngleMark1: 'Одинарный',
+    propLineAngleMark2: 'Двойной',
+    propLineAngleMark3: 'Тройной',
+    propLineAngleMark4: 'Четверной',
+    phLineGeom: 'Геометрия',
+    propLineGeomMark: 'Метка',
+    propLineGeomNone: 'Без метки',
+    propLineGeomTick1: 'Одинарная',
+    propLineGeomTick2: 'Двойная',
+    propLineGeomTick3: 'Тройная',
+    propLineGeomS: 'Волна (общая сторона)',
+    hintLineAngle: 'Градусы в панели — подпись на слайде (геометрия отрезков не меняется). Для 90° рисуется квадратный уголок.',
+    btnQuoteCatTitle: 'Категория цитат',
+    quoteCatAll: 'Все',
     propSize: 'Размер',
     propWeight: 'Насыщенность',
     propTextColor: 'Цвет текста',
@@ -514,6 +582,7 @@ const LANG_DATA = {
     propTextShadow: 'Тень текста',
     propBulletColor: 'Цвет маркеров',
     propBulletColorAuto: 'авто',
+    propBulletColorHint: '11 или #hex',
     propBulletGap: 'Отступ, px',
     propBulletGapHint: 'Расстояние от маркера до текста',
     propTshadowColor: 'Цвет',
@@ -689,6 +758,7 @@ const LANG_DATA = {
 
     // Additional props labels
     propSlideBg: 'Фон слайда',
+    propSlideTpl: 'Шаблоны',
     propLayoutAnim: 'Анимация фона',
     propDimW: 'Ш',
     propDimH: 'В',
@@ -865,4 +935,5 @@ function setLang(lang) {
   if (typeof buildLayoutGrid === 'function') buildLayoutGrid();
   if (typeof buildTransUI === 'function') buildTransUI();
   if (typeof window._voiceOnLangChange === 'function') window._voiceOnLangChange();
+  if (typeof window._syncQuoteCatBtn === 'function') window._syncQuoteCatBtn();
 }

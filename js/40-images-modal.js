@@ -9,6 +9,7 @@ const IMAGE_CATS_NAMES = {
   'business':'Бизнес', 'technology':'Технологии', 'backgrounds':'Фоны',
   'textures':'Текстуры', 'people':'Люди', 'abstract':'Абстракция',
   'icons_png':'Иконки PNG', 'smiles':'Смайлики',
+  'decor':'Декор', 'fish':'Рыбы', 'food':'Еда',
 };
 // IMAGE_CATS строится динамически из IMAGE_INDEX — все папки подхватываются автоматически
 function _buildImageCats() {
