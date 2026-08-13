@@ -11,6 +11,9 @@
     markdown: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="12" height="8" rx="1"/><path d="M5 10V6l2 2 2-2v4"/><path d="M12 10V6l-2 3"/></svg>',
     svg:      '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5.5"/><path d="M4 8c1-3 7-3 8 0s-7 3-8 0"/></svg>',
     applet:   '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M5 8h6M8 5v6"/></svg>',
+    mediavideo: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="12" height="8" rx="1.5"/><polygon points="7,6.5 10.5,8 7,9.5" fill="currentColor" stroke="none"/></svg>',
+    mediaaudio: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 12V5l7-1v7"/><circle cx="4.5" cy="12" r="1.5"/><circle cx="11.5" cy="11" r="1.5"/></svg>',
+    model3d:  '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2l6 3.5v7L8 16l-6-3.5v-7L8 2z"/><path d="M8 9l6-3.5M8 9v7M8 9L2 5.5"/></svg>',
     connector: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 12 C6 12 10 4 14 4"/><circle cx="2" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="14" cy="4" r="1.5" fill="currentColor" stroke="none"/></svg>',
   };
 
@@ -47,6 +50,9 @@
       return lbl + sfx;
     }
     if (d.type === 'pagenum')  return 'Номер страницы';
+    if (d.type === 'model3d')  return 'OBJ' + sfx;
+    if (d.type === 'mediavideo') return 'Видео' + sfx;
+    if (d.type === 'mediaaudio') return 'Аудио' + sfx;
     return (d.type || 'Объект') + sfx;
   }
 

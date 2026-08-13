@@ -1,7 +1,7 @@
 /* Service worker — офлайн-кэш для PWA «Слайды» */
 importScripts('./pwa-precache-images.js');
 
-const CACHE = 'slides-pwa-v62';
+const CACHE = 'slides-pwa-v66';
 
 /** Критичные файлы оболочки (галерея — в PRECACHE_IMAGES). */
 const PRECACHE = [
@@ -12,9 +12,9 @@ const PRECACHE = [
   './fonts/fonts.css',
   './fonts/fonts-list.js',
   './fonts/fonts-data.js',
-  './icons/icon.svg',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
+  './icon.svg',
+  './icon-192.png',
+  './icon-512.png',
   './libs/qrcode.min.js',
   './libs/jszip.min.js',
   './libs/jquery.min.js',
@@ -71,6 +71,7 @@ const PRECACHE = [
   './js/28-filedrop.js',
   './js/29-icons.js',
   './js/30-rich-text.js',
+  './js/30b-toc.js',
   './js/31-table.js',
   './js/32-scrubber.js',
   './js/33-objects.js',
@@ -93,18 +94,10 @@ const PRECACHE = [
   './js/42-dictation.js',
   './js/44-group.js',
   './js/45-media.js',
+  './js/45b-model3d.js',
   './js/46-cross-clipboard.js',
   './js/47-translate.js',
   './js/50-voice.js',
-  './libs/bergamot/translator-worker.js',
-  './libs/bergamot/bergamot-translator-worker.js',
-  './libs/bergamot/bergamot-translator-worker.wasm',
-  './libs/translate-models/enru/model.enru.intgemm.alphas.bin',
-  './libs/translate-models/enru/lex.50.50.enru.s2t.bin',
-  './libs/translate-models/enru/vocab.enru.spm',
-  './libs/translate-models/ruen/model.ruen.intgemm.alphas.bin',
-  './libs/translate-models/ruen/lex.50.50.ruen.s2t.bin',
-  './libs/translate-models/ruen/vocab.ruen.spm',
   './config/canvas.js',
   './config/animations.js',
   './config/themes.js',
@@ -124,9 +117,25 @@ const PRECACHE = [
   './config/text.js'
 ];
 
-function allPrecacheUrls() {
+const HEAVY_PRECACHE = [
+  './libs/bergamot/translator-worker.js',
+  './libs/bergamot/bergamot-translator-worker.js',
+  './libs/bergamot/bergamot-translator-worker.wasm',
+  './libs/translate-models/enru/model.enru.intgemm.alphas.bin',
+  './libs/translate-models/enru/lex.50.50.enru.s2t.bin',
+  './libs/translate-models/enru/vocab.enru.spm',
+  './libs/translate-models/ruen/model.ruen.intgemm.alphas.bin',
+  './libs/translate-models/ruen/lex.50.50.ruen.s2t.bin',
+  './libs/translate-models/ruen/vocab.ruen.spm'
+];
+
+function shellPrecacheUrls() {
+  return PRECACHE.slice();
+}
+
+function heavyPrecacheUrls() {
   const extra = typeof PRECACHE_IMAGES !== 'undefined' ? PRECACHE_IMAGES : [];
-  return PRECACHE.concat(extra);
+  return HEAVY_PRECACHE.concat(extra);
 }
 
 function cacheMatchUrl(cache, req) {
@@ -161,8 +170,12 @@ function precacheAll(cache, urls) {
 }
 
 self.addEventListener('install', (ev) => {
+  // Только оболочка — иначе на хостинге install зависает на галерее/WASM и PWA не ставится
   ev.waitUntil(
-    caches.open(CACHE).then((cache) => precacheAll(cache, allPrecacheUrls())).then(() => self.skipWaiting())
+    caches.open(CACHE).then((cache) => precacheAll(cache, shellPrecacheUrls())).then(() => {
+      // Первая установка — сразу активируем. Обновление ждёт кнопку «Обновить».
+      if (!self.registration.active) return self.skipWaiting();
+    })
   );
 });
 
@@ -174,7 +187,9 @@ self.addEventListener('activate', (ev) => {
   ev.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
-    ).then(() => self.clients.claim())
+    ).then(() => self.clients.claim()).then(() => {
+      caches.open(CACHE).then((cache) => precacheAll(cache, heavyPrecacheUrls()));
+    })
   );
 });
 
@@ -191,6 +206,7 @@ function isCacheable(req) {
   const u = new URL(req.url);
   if (!sameOrigin(req.url)) return false;
   if (u.pathname.includes('/.')) return false;
+  if (u.pathname.toLowerCase().endsWith('.php')) return false;
   return true;
 }
 

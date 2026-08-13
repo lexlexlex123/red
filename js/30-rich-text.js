@@ -101,6 +101,11 @@ function _rebuildMarkerHtml(m) {
     return `<span data-list-num data-num-style="${m.numStyle || 'decimal'}" data-num-color="${m.color||''}"${schemeAttr} contenteditable="false" style="${_rtMarkerNumCss(null, null, m.color)}">${m.text}</span>`;
   }
 }
+function _rebuildTocItemHtml(m) {
+  const title = String(m.title || '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return `<span data-toc-slide="${m.slide}" class="toc-item">${title}</span>`;
+}
 let _lastBulletFontSize = 24;
 
 function _rtFontSizeFromCs(cs) {
@@ -119,6 +124,7 @@ function _rtStyleSpansInTel(tel) {
   return [...tel.querySelectorAll('span')].filter(sp =>
     !sp.hasAttribute('data-list-bullet') &&
     !sp.hasAttribute('data-list-num') &&
+    !sp.hasAttribute('data-toc-slide') &&
     !sp.hasAttribute('data-br-anchor') &&
     // Ударение — вложенный span без собственных метрик; иначе normalize ставит
     // baseFs и буква с ударением становится меньше соседних.
@@ -204,6 +210,13 @@ function _rtNormalizeTextDisplay(tel, cs, gapPx) {
   }
 
   if (hasMarkers) _rtApplyMarkerVerticalAlign(tel, baseFs, gapPx);
+
+  // TOC / quote: пункты оглавления не попадают в spans — сбросить font-size:0 от цитаты
+  if (tel.querySelector('[data-toc-slide]') && !spans.length) {
+    tel.style.fontSize = baseFs + 'px';
+    tel.style.lineHeight = '';
+    tel.querySelectorAll('span._rt-blank-strut').forEach(s => s.remove());
+  }
 }
 window._rtNormalizeTextDisplay = _rtNormalizeTextDisplay;
 
@@ -272,6 +285,13 @@ function _toCharObjs(html) {
         color: numColor,
         numStyle: node.getAttribute('data-num-style') || 'decimal',
         numSchemeRef: numSchemeRaw ? (() => { try { return JSON.parse(numSchemeRaw); } catch(e) { return null; } })() : null,
+      }, style: {} });
+      return;
+    }
+    if (node.hasAttribute('data-toc-slide')) {
+      out.push({ ch: '\x00', _tocItem: {
+        slide: parseInt(node.getAttribute('data-toc-slide'), 10) || 0,
+        title: node.textContent || '',
       }, style: {} });
       return;
     }
@@ -356,7 +376,7 @@ function _rtFoldCombiningStress(chars) {
     const c = chars[i];
     if (c.ch === '\u0301' && out.length) {
       const prev = out[out.length - 1];
-      if (prev && !prev._listMarker && prev.ch && /\p{L}/u.test(prev.ch) && !/[\u0300-\u036f]/.test(prev.ch)) {
+      if (prev && !prev._listMarker && !prev._tocItem && prev.ch && /\p{L}/u.test(prev.ch) && !/[\u0300-\u036f]/.test(prev.ch)) {
         prev.style = Object.assign({}, prev.style, { _stress: true });
         continue;
       }
@@ -471,6 +491,7 @@ function _renderCharSpans(chars, withDataCh) {
   let cur = null;
   for (const c of chars) {
     if (c._listMarker) { groups.push({ markerData: c._listMarker }); cur = null; continue; }
+    if (c._tocItem) { groups.push({ tocData: c._tocItem }); cur = null; continue; }
     if (c.ch === '\n') { groups.push({ br: true }); cur = null; continue; }
     const key = _rtStyleGroupKey(c.style);
     const stress = !!(c.style && c.style._stress);
@@ -485,6 +506,7 @@ function _renderCharSpans(chars, withDataCh) {
   }
   return groups.map(g => {
     if (g.markerData) return _rebuildMarkerHtml(g.markerData);
+    if (g.tocData) return _rebuildTocItemHtml(g.tocData);
     if (g.br) return '<br>';
     const schemeRef = g.style && g.style._schemeRef;
     const ulKind = _rtCharUl(g.style);
@@ -526,7 +548,7 @@ function rtMigrateHtml(html, fontSizePx) {
   if (html.includes('data-ch')) {
     // Re-process when markers need rebuild, or when underlines need regrouping
     // (old per-char wavy/dotted looked jagged — regroup into continuous runs).
-    if (html.includes('data-list-bullet') || html.includes('data-list-num')
+    if (html.includes('data-list-bullet') || html.includes('data-list-num') || html.includes('data-toc-slide')
         || /data-ul=|data-stress=|text-decoration[^;]*(wavy|dotted|dashed|double)|repeating-linear-gradient|radial-gradient|\u0301/i.test(html)) {
       return _charObjsToHtml(_toCharObjs(html));
     }

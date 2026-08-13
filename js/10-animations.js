@@ -56,6 +56,7 @@ const ANIM_CATS = [
       {name:'float',      label:'Плавание',     icon:'🌊'},
       {name:'particles',  label:'Частицы',      icon:'✨'},
       {name:'typewriter', label:'Смена текста',  icon:'⌨'},
+      {name:'langFade', label:'Перевод', icon:'🌐'},
       {name:'captionSlide', label:'Титр в сторону', icon:'📰'},
     ]
   },
@@ -430,7 +431,7 @@ window._selectedAnimCat  = null;
     const used = new Set();
     const _isElSpec = typeof window._animIsElementSpecific === 'function'
       ? window._animIsElementSpecific
-      : (n) => n === 'particles' || n === 'captionSlide' || n === 'splitHalf' || n === 'typewriter';
+      : (n) => n === 'particles' || n === 'captionSlide' || n === 'splitHalf' || n === 'typewriter' || n === 'langFade';
 
     const pushEntry = (elId, ai) => {
       const d = slide.els && slide.els.find(x => x.id === elId);
@@ -489,7 +490,7 @@ window._selectedAnimCat  = null;
     let prevTo = html;
     return sourceAnims.map(a => {
       const copy = JSON.parse(JSON.stringify(a));
-      if (copy.name === 'typewriter') {
+      if (copy.name === 'typewriter' || copy.name === 'langFade') {
         copy.fromHtml = prevTo;
         copy.toHtml = (a.fromHtml === a.toHtml) ? html : (a.toHtml || html);
         prevTo = copy.toHtml;
@@ -501,7 +502,7 @@ window._selectedAnimCat  = null;
   function _mergeGroupAnimsFromLeader(leaderAnims, memberAnims, dom) {
     const _isElSpec = typeof window._animIsElementSpecific === 'function'
       ? window._animIsElementSpecific
-      : (n) => n === 'particles' || n === 'captionSlide' || n === 'splitHalf' || n === 'typewriter';
+      : (n) => n === 'particles' || n === 'captionSlide' || n === 'splitHalf' || n === 'typewriter' || n === 'langFade';
     const kept = (memberAnims || []).filter(a => _isElSpec(a.name));
     const shared = (leaderAnims || []).filter(a => !_isElSpec(a.name));
     return _cloneAnimsForMember(shared, dom).concat(kept);
@@ -564,6 +565,16 @@ window._selectedAnimCat  = null;
         anim.fromHtml = _tel ? _tel.innerHTML : '';
         anim.toHtml = _tel ? _tel.innerHTML : '';
       }
+    }
+    if (animName === 'langFade') {
+      anim.duration = 800;
+      const _prevLf = (d.anims || []).filter(x => x.name === 'langFade');
+      const _tel = domEl && (domEl.querySelector('.tel') || domEl.querySelector('.shape-text') || domEl.querySelector('.ec'));
+      const html = _tel ? _tel.innerHTML : (d.html || '');
+      anim.fromHtml = _prevLf.length ? (_prevLf[_prevLf.length - 1].toHtml || html) : html;
+      anim.toHtml = anim.fromHtml;
+      anim.fromLang = '';
+      anim.toLang = '';
     }
     return anim;
   }
@@ -963,7 +974,7 @@ window._selectedAnimCat  = null;
       const relDelay = a.delay || 0;
       let absDelay;
       const _isLive = typeof ANIM_INFO!=='undefined' && ANIM_INFO[a.name] && ANIM_INFO[a.name].cat==='live';
-      const _isLiveLoop = _isLive && a.name !== 'captionSlide' && a.name !== 'typewriter' && a.name !== 'particles';
+      const _isLiveLoop = _isLive && a.name !== 'captionSlide' && a.name !== 'typewriter' && a.name !== 'langFade' && a.name !== 'particles';
       if(i === 0){
         absDelay = relDelay;
       } else if(_isLiveLoop){
@@ -986,13 +997,23 @@ window._selectedAnimCat  = null;
   window.addAnimToSel = function(animName, cat){
     try{
       const el=_sel(); if(!el) return;
-      const targets = _animGroupData(el);
+      let targets = _animGroupData(el);
       if (!targets.length) return;
+      if (animName === 'langFade') {
+        targets = targets.filter(({ d }) => d && d.type === 'text');
+        if (!targets.length) {
+          if (typeof toast === 'function') toast('Анимация «Перевод» только для текста', 'err');
+          return;
+        }
+      }
       _pushUndo();
       const slide = _slides()[_cur()];
+      const added = [];
       targets.forEach(({ dom, d }) => {
         if (!d.anims) d.anims = [];
-        d.anims.push(_makeAnim(animName, cat, dom, d));
+        const anim = _makeAnim(animName, cat, dom, d);
+        d.anims.push(anim);
+        added.push({ d, ai: d.anims.length - 1 });
       });
       if (slide && targets[0]) {
         _ensureAnimOrder(slide);
@@ -1007,6 +1028,10 @@ window._selectedAnimCat  = null;
       if(animName==='moveTo' && typeof renderMotionOverlay==='function') renderMotionOverlay();
       if(animName==='orbitTo' && typeof renderMotionOverlay==='function') renderMotionOverlay();
       if(typeof syncProps==='function') syncProps();
+      if (animName === 'langFade' && typeof window._prepareLangFadeAnim === 'function') {
+        added.forEach(({ d, ai }) => { window._prepareLangFadeAnim(d, null, ai); });
+        if (typeof toast === 'function') toast('Перевод…', 'ok');
+      }
     }catch(e){ console.warn('[10-animations] addAnimToSel:', e.message); }
   };
 
@@ -1228,8 +1253,23 @@ window._selectedAnimCat  = null;
     if (typeof window._clearAnimHoverPreview === 'function') window._clearAnimHoverPreview(el);
     const _isElSpec = typeof window._animIsElementSpecific === 'function'
       ? window._animIsElementSpecific
-      : (n) => n === 'particles' || n === 'captionSlide' || n === 'splitHalf' || n === 'typewriter';
+      : (n) => n === 'particles' || n === 'captionSlide' || n === 'splitHalf' || n === 'typewriter' || n === 'langFade';
     const targets = _isElSpec(animName) ? [el] : _animGroupDomEls(el);
+    if (animName === 'langFade') {
+      const d2 = (typeof slides !== 'undefined' && typeof cur !== 'undefined')
+        ? slides[cur] && slides[cur].els.find(x => el.dataset && x.id === el.dataset.id) : null;
+      const a = (animData && animData.fromHtml != null) ? animData
+        : ((d2 && d2.anims || []).filter(x => x.name === 'langFade').slice(-1)[0]);
+      if (a && typeof window._fireLangFadeAnim === 'function') {
+        window._fireLangFadeAnim(el, d2, Object.assign({ duration: a.duration || 800 }, a), 0, { restore: true });
+        clearTimeout(_animPreviewTimer);
+        _animPreviewTimer = setTimeout(() => {
+          const tel = typeof window._langFadeTel === 'function' ? window._langFadeTel(el, d2) : null;
+          if (tel && a.fromHtml != null) tel.innerHTML = a.fromHtml;
+        }, (a.duration || 800) + 80);
+      }
+      return;
+    }
     if (animName === 'float') {
       const slide = (typeof slides !== 'undefined' && typeof cur !== 'undefined') ? slides[cur] : null;
       let sharedFrames = null;
@@ -1815,6 +1855,39 @@ window._selectedAnimCat  = null;
         props.appendChild(twWrap);
       }
 
+      if(a.name === 'langFade'){
+        const lfWrap = document.createElement('div');
+        lfWrap.style.cssText = 'margin-top:6px;display:flex;flex-direction:column;gap:6px;';
+        const infoDiv = document.createElement('div');
+        infoDiv.style.cssText = 'font-size:8px;color:var(--text3);line-height:1.5;';
+        const dir = (a.fromLang && a.toLang)
+          ? ((a.fromLang === 'ru' ? 'RU' : 'EN') + ' → ' + (a.toLang === 'ru' ? 'RU' : 'EN'))
+          : 'RU ↔ EN';
+        const _fromTxt = (a.fromHtml||'').replace(/<[^>]*>/g,'').slice(0,40) || '(пусто)';
+        const _toTxt   = (a.toHtml  ||'').replace(/<[^>]*>/g,'').slice(0,40) || '…';
+        infoDiv.innerHTML = '<b>' + dir + '</b><br><b>Было:</b> ' + _fromTxt + '<br><b>Станет:</b> ' + _toTxt;
+        lfWrap.appendChild(infoDiv);
+        const reBtn = document.createElement('button');
+        reBtn.textContent = '↻ Перевести заново';
+        reBtn.style.cssText = 'width:100%;padding:5px 8px;font-size:10px;font-family:inherit;border-radius:4px;cursor:pointer;border:1px solid var(--border2);background:var(--surface2);color:var(--text);';
+        reBtn.addEventListener('mousedown', e => e.preventDefault());
+        reBtn.addEventListener('click', () => {
+          const _s = slides[cur]; if(!_s) return;
+          const _d2 = _s.els.find(x=>x.id===d.id); if(!_d2||!_d2.anims) return;
+          const _a2 = _d2.anims[ai]; if(!_a2) return;
+          if (typeof window._prepareLangFadeAnim === 'function') {
+            if (typeof toast === 'function') toast('Перевод…', 'ok');
+            window._prepareLangFadeAnim(_d2, _a2, ai);
+          }
+        });
+        lfWrap.appendChild(reBtn);
+        const hintLf = document.createElement('div');
+        hintLf.style.cssText = 'font-size:8px;color:var(--text3);line-height:1.4;';
+        hintLf.textContent = '🌐 Каждый клик по триггеру переключает язык туда-обратно.';
+        lfWrap.appendChild(hintLf);
+        props.appendChild(lfWrap);
+      }
+
       // swing: количество качаний в стиле поля длительности
 
       function _mkRepeatRow(animName2, d2, ai2, cnt, isInf) {
@@ -2016,31 +2089,19 @@ window._selectedAnimCat  = null;
       if(a.name === 'recolor'){
         const col = a.recolorColor || '#000000';
         const inv = !!a.recolorInvert;
-        const reRow = document.createElement('div');
-        reRow.className = 'anim-row-props';
-        reRow.style.marginTop = '4px';
-        reRow.style.alignItems = 'center';
-        reRow.innerHTML =
-          '<label style="display:flex;align-items:center;gap:6px">Цвет'+
-            '<input type="color" value="'+col+'" style="width:28px;height:22px;padding:0;border:1px solid var(--border2);border-radius:3px;background:transparent;cursor:pointer" '+
+        const reGrid = document.createElement('div');
+        reGrid.className = 'anim-row-props';
+        reGrid.style.marginTop = '4px';
+        reGrid.innerHTML =
+          '<label>Цвет<input type="color" value="'+col+'" '+
               'oninput="updateAnimProp(\''+d.id+'\','+ai+',\'recolorColor\',this.value)" '+
               'onchange="updateAnimProp(\''+d.id+'\','+ai+',\'recolorColor\',this.value)">'+
-          '</label>';
-        props.appendChild(reRow);
-        const invLab = document.createElement('label');
-        invLab.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:10px;color:var(--text2);margin-top:6px;cursor:pointer;user-select:none';
-        invLab.innerHTML =
-          '<label class="tog"><input type="checkbox" '+(inv?'checked':'')+
+          '</label>'+
+          '<label style="display:flex;align-items:center;gap:6px;grid-column:1/-1">'+
+            '<input type="checkbox" class="tog"'+(inv?' checked':'')+
             ' onchange="updateAnimProp(\''+d.id+'\','+ai+',\'recolorInvert\',this.checked)">'+
-            '<span class="tog-track"></span><span class="tog-thumb"></span></label>'+
-          '<span>Инверсия (уходит в цвет)</span>';
-        props.appendChild(invLab);
-        const reHint = document.createElement('div');
-        reHint.style.cssText = 'font-size:8px;color:var(--text3);margin-top:5px;line-height:1.4;';
-        reHint.textContent = inv
-          ? '🎨 При показе обычный вид; плавно уходит в силуэт за время длительности'
-          : '🎨 При показе сразу силуэт; после задержки плавно проявляется цвет';
-        props.appendChild(reHint);
+            '<span>Инверсия</span></label>';
+        props.appendChild(reGrid);
       }
 
       // Trigger select for all anims
@@ -2060,6 +2121,7 @@ window._selectedAnimCat  = null;
           const newTrig = trigSel.value;
           const changes = { trigger: newTrig };
           if (newTrig !== 'element' && newTrig !== 'counter' && newTrig !== 'timer') changes.triggerElId = undefined;
+          if (newTrig === 'element' && !a.triggerElId && a.name === 'langFade') changes.triggerElId = d.id;
           if (newTrig !== 'nav') changes.navTarget = undefined;
           _setAnimTriggerBatch(d.id, ai, changes);
           const iconSpan = head.querySelector('.anim-trig-icon');

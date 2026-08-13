@@ -31,6 +31,10 @@ function saveState(){
         });
         return {...d, html:tmp.innerHTML};
       }
+      // WebGL mesh cache — rebuilt from objText on load
+      if(d.type==='model3d'&&d._mesh){
+        const {_mesh,...rest}=d; return rest;
+      }
       return d;
     })
   }));

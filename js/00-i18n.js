@@ -1,9 +1,9 @@
 // ══════════════ LOCALIZATION (i18n) ══════════════
-// Версия / Version: 6.5
+// Версия / Version: 6.6
 // Автор / Author: Некрасов Александр
 
 const APP_NAME = 'Слайды';
-const APP_VERSION = '6.5';
+const APP_VERSION = '6.6';
 const APP_AUTHOR = 'Некрасов Александр';
 
 const LANG_DATA = {
@@ -127,7 +127,16 @@ const LANG_DATA = {
     // Props panel
     propRole: 'Role',
     btnFillQuote: 'Quote',
+    btnFillToc: 'Contents',
+    btnFillTocTitle: 'Fill chapter list from marked entries',
+    btnTocEntryTitle: 'Mark as table-of-contents chapter',
     btnTranslateTitle: 'Translate via Google, or local offline',
+    btnTranscribe: 'transcription',
+    btnTranscribeTitle: 'Phonetic transcription via Google; Russian also works offline',
+    toastTranscribed: 'Transcribed',
+    toastTranscribeFail: 'Transcription failed',
+    toastTranscribeOfflineLocal: 'Offline — local transcription',
+    toastTranscribeNoEngine: 'No network and local transcription failed',
     toastTranslateNeedText: 'Select a text block',
     toastTranslateEmpty: 'No text to translate',
     toastTranslateDownloading: 'Downloading Google model',
@@ -232,6 +241,7 @@ const LANG_DATA = {
     // Buttons in modals
     btnCancel: 'Cancel',
     btnInsert: 'Insert',
+    btnSelect: 'Select',
     btnInsertUpdate: 'Insert / Update',
     modalImages: '🖼 Image Gallery',
     imgSearch: 'Search images…',
@@ -256,6 +266,10 @@ const LANG_DATA = {
     pwaInstallBtn: 'Install',
     pwaInstallHint: 'Use browser menu → Install app',
     pwaInstalled: 'App installed',
+    pwaUpdateAvailable: 'Version {v} is available',
+    pwaUpdateAvailableNoVer: 'An app update is available',
+    pwaUpdateBtn: 'Update',
+    pwaUpdateLater: 'Later',
     pwaUpdateReady: 'Update ready — reload the page (F5)',
 
     // Toast messages
@@ -535,7 +549,16 @@ const LANG_DATA = {
     // Props panel
     propRole: 'Роль',
     btnFillQuote: 'Цитата',
+    btnFillToc: 'Оглавление',
+    btnFillTocTitle: 'Заполнить список глав из помеченных пунктов',
+    btnTocEntryTitle: 'Пункт оглавления',
     btnTranslateTitle: 'Перевести через Google, иначе локально',
+    btnTranscribe: 'транскрипция',
+    btnTranscribeTitle: 'Транскрипция через Google; для русского есть и локальный режим',
+    toastTranscribed: 'Транскрибировано',
+    toastTranscribeFail: 'Не удалось сделать транскрипцию',
+    toastTranscribeOfflineLocal: 'Нет сети — локальная транскрипция',
+    toastTranscribeNoEngine: 'Нет сети и не удалось сделать транскрипцию локально',
     toastTranslateNeedText: 'Выберите текстовый блок',
     toastTranslateEmpty: 'Нет текста для перевода',
     toastTranslateDownloading: 'Загрузка модели Google',
@@ -640,6 +663,7 @@ const LANG_DATA = {
     // Buttons in modals
     btnCancel: 'Отмена',
     btnInsert: 'Вставить',
+    btnSelect: 'Выбрать',
     btnInsertUpdate: 'Вставить / Обновить',
     modalImages: '🖼 Галерея изображений',
     imgSearch: 'Поиск изображений…',
@@ -664,6 +688,10 @@ const LANG_DATA = {
     pwaInstallBtn: 'Установить',
     pwaInstallHint: 'Меню браузера → «Установить приложение»',
     pwaInstalled: 'Приложение установлено',
+    pwaUpdateAvailable: 'Доступна версия {v}',
+    pwaUpdateAvailableNoVer: 'Доступно обновление приложения',
+    pwaUpdateBtn: 'Обновить',
+    pwaUpdateLater: 'Позже',
     pwaUpdateReady: 'Обновление готово — перезагрузите страницу (F5)',
 
     // Toast messages

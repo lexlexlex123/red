@@ -300,6 +300,7 @@ function syncProps(){
     // Text role
     const role=sel.dataset.textRole||'body';
     try{document.getElementById('role-body').classList.toggle('active',role==='body');document.getElementById('role-heading').classList.toggle('active',role==='heading');}catch(e){}
+    if (typeof window._updateTocButtonState === 'function') window._updateTocButtonState();
     try{if(typeof syncTranslateBtn==='function') syncTranslateBtn();}catch(e){}
     // Border
     try{const _brd=document.getElementById('p-border-preview');if(_brd)_brd.style.background=sel.dataset.textBorderColor||'#ffffff';document.getElementById('p-border-w').value=sel.dataset.textBorderW||0;}catch(e){}
@@ -746,9 +747,25 @@ function applyTextBg(el){
 // ══════════════ TEXT COLOR GRADIENT ══════════════
 function applyTextColorGrad(el){
   const c=el.querySelector('.ec');if(!c)return;
+  if(el.dataset.textRole==='toc'){
+    if(typeof window._tocClearParentTextGrad==='function')window._tocClearParentTextGrad(el);
+    if(typeof window._fixTocItemsVisible==='function')window._fixTocItemsVisible(c,false);
+    return;
+  }
   const isGrad=el.dataset.textColorGrad==='1';
   if(!isGrad){
     c.style.background='';c.style.webkitBackgroundClip='';c.style.backgroundClip='';c.style.webkitTextFillColor='';
+    if(typeof window._stripGradFromStyleAttr==='function')window._stripGradFromStyleAttr(c);
+    else{
+      let cs=c.getAttribute('style')||'';
+      cs=cs.replace(/\bbackground\s*:[^;]+;?/gi,'')
+        .replace(/-webkit-background-clip\s*:[^;]+;?/gi,'')
+        .replace(/\bbackground-clip\s*:[^;]+;?/gi,'')
+        .replace(/-webkit-text-fill-color\s*:[^;]+;?/gi,'')
+        .replace(/\s{2,}/g,' ').trim();
+      if(cs&&!cs.endsWith(';'))cs+=';';
+      c.setAttribute('style',cs);
+    }
     return;
   }
   const col1=el.dataset.textColorGrad1||'#ffffff';
@@ -756,6 +773,7 @@ function applyTextColorGrad(el){
   const dir=el.dataset.textColorGradDir!=null?+el.dataset.textColorGradDir:90;
   c.style.background=`linear-gradient(${dir}deg,${col1},${col2})`;
   c.style.webkitBackgroundClip='text';c.style.backgroundClip='text';c.style.webkitTextFillColor='transparent';
+  if(el.dataset.textRole==='toc'&&typeof window._fixTocItemsVisible==='function')window._fixTocItemsVisible(c,false);
 }
 function setTextColorGrad(on){
   if(!sel||sel.dataset.type!=='text')return;
@@ -800,6 +818,7 @@ function setTextRole(role){
   if(!sel||sel.dataset.type!=='text')return;
   sel.dataset.textRole=role;
   try{document.getElementById('role-body').classList.toggle('active',role==='body');document.getElementById('role-heading').classList.toggle('active',role==='heading');}catch(e){}
+  if (typeof window._updateTocButtonState === 'function') window._updateTocButtonState();
   const c=sel.querySelector('.tel')||sel.querySelector('.ec');
   if(c){
     let cs=c.getAttribute('style')||'';

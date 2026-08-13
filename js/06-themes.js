@@ -443,3 +443,88 @@ function applyTheme(){
   if(typeof refreshOpenColorPanel==='function') refreshOpenColorPanel();
   toast(t('toastThemeApplied')+': '+theme.name,'ok');
 }
+
+/** Средняя яркость фона (0…1) по hex-цветам в CSS. */
+function _cssBgLuminance(css){
+  if(!css) return null;
+  const matches = String(css).match(/#([0-9a-fA-F]{3,8})\b/g);
+  if(!matches || !matches.length) return null;
+  let sum = 0, n = 0;
+  for(let i = 0; i < matches.length; i++){
+    let h = matches[i].slice(1);
+    if(h.length === 3 || h.length === 4) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+    else if(h.length > 6) h = h.slice(0, 6);
+    if(h.length !== 6) continue;
+    const r = parseInt(h.slice(0, 2), 16) / 255;
+    const g = parseInt(h.slice(2, 4), 16) / 255;
+    const b = parseInt(h.slice(4, 6), 16) / 255;
+    if(isNaN(r) || isNaN(g) || isNaN(b)) continue;
+    sum += 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    n++;
+  }
+  return n ? sum / n : null;
+}
+
+/**
+ * Подобрать индекс темы по фонам слайдов (после импорта без THEME_*).
+ * Сначала точное совпадение bg, иначе светлая/тёмная по яркости.
+ */
+function inferThemeIdxFromSlides(slidesArr){
+  if(typeof THEMES === 'undefined' || !THEMES || !THEMES.length) return null;
+  const list = slidesArr || (typeof slides !== 'undefined' ? slides : null);
+  if(!list || !list.length) return null;
+
+  for(let i = 0; i < list.length; i++){
+    const s = list[i];
+    if(!s || !s.bgc) continue;
+    const bg = String(s.bgc).trim().toLowerCase().replace(/\s+/g, '');
+    const byBg = THEMES.findIndex(t => t && String(t.bg || '').trim().toLowerCase().replace(/\s+/g, '') === bg);
+    if(byBg >= 0) return byBg;
+  }
+
+  const sample = list.find(s => s && s.bgc) || list[0];
+  const lum = sample && sample.bgc ? _cssBgLuminance(sample.bgc) : null;
+  if(lum == null) return null;
+  if(lum >= 0.55){
+    const light = THEMES.findIndex(t => t && t.dark === false);
+    return light >= 0 ? light : null;
+  }
+  if(lum <= 0.4){
+    const dark = THEMES.findIndex(t => t && t.dark === true);
+    return dark >= 0 ? dark : null;
+  }
+  return null;
+}
+
+/** Выставить appliedThemeIdx после импорта (+ декор), без перекраски слайдов. */
+function applyImportedThemeIdx(themeIdx){
+  let idx = themeIdx;
+  if(idx == null || idx < 0) idx = inferThemeIdxFromSlides();
+  if(idx == null || idx < 0 || typeof THEMES === 'undefined' || !THEMES[idx]) return null;
+  // Если индекс темы противоречит яркости слайдов — предпочитаем вывод по фону
+  try{
+    const s0 = (typeof slides !== 'undefined' && slides[0]) ? slides[0] : null;
+    const lum = s0 && s0.bgc ? _cssBgLuminance(s0.bgc) : null;
+    const th = THEMES[idx];
+    if(lum != null && th){
+      if(lum >= 0.55 && th.dark === true){
+        const alt = inferThemeIdxFromSlides();
+        if(alt != null && THEMES[alt] && THEMES[alt].dark === false) idx = alt;
+      } else if(lum <= 0.4 && th.dark === false){
+        const alt = inferThemeIdxFromSlides();
+        if(alt != null && THEMES[alt] && THEMES[alt].dark === true) idx = alt;
+      }
+    }
+  }catch(e){}
+  appliedThemeIdx = idx;
+  if(typeof selTheme !== 'undefined') selTheme = idx;
+  const theme = THEMES[idx];
+  if(theme && typeof refreshDecorColors === 'function'){
+    refreshDecorColors(theme.ac1 || '#6366f1', theme.ac2 || '#818cf8', true);
+  }
+  return idx;
+}
+window.inferThemeIdxFromSlides = inferThemeIdxFromSlides;
+window.applyImportedThemeIdx = applyImportedThemeIdx;
+window._cssBgLuminance = _cssBgLuminance;
+

@@ -889,7 +889,118 @@ window._particlesCycleSpan = function(a) {
 };
 
 window._animIsElementSpecific = function(name) {
-  return name === 'particles' || name === 'captionSlide' || name === 'splitHalf' || name === 'typewriter';
+  return name === 'particles' || name === 'captionSlide' || name === 'splitHalf' || name === 'typewriter' || name === 'langFade';
+};
+
+window._langFadeTel = function(el, d) {
+  if (!el) return null;
+  const type = (d && d.type) || (el.dataset && el.dataset.type) || '';
+  if (type === 'text') {
+    const wrap = el.querySelector('._langfade_wrap');
+    if (wrap && wrap.parentNode) return wrap.parentNode;
+    const psel = el.querySelector('.psel-txt');
+    if (psel && psel.children && psel.children[0]) return psel.children[0];
+    return el.querySelector('.tel') || el.querySelector('.ec') || null;
+  }
+  return el.querySelector('.shape-text') || el.querySelector('.tel') || el.querySelector('.ec');
+};
+
+window._langFadePlain = function(html) {
+  try {
+    const box = document.createElement('div');
+    box.innerHTML = String(html || '');
+    return String(box.textContent || '').replace(/\u200b/g, '').replace(/\s+/g, ' ').trim();
+  } catch (e) {
+    return String(html || '').replace(/<[^>]*>/g, '').replace(/\u200b/g, '').replace(/\s+/g, ' ').trim();
+  }
+};
+
+window._fireLangFadeAnim = function(el, d, a, delay, opts) {
+  opts = opts || {};
+  if (!el || !a) return null;
+  const dur = Math.max(120, +(a.duration || 800) || 800);
+  const fromStored = a.fromHtml != null ? a.fromHtml : '';
+  const toStored = a.toHtml != null ? a.toHtml : fromStored;
+  const tel = window._langFadeTel(el, d);
+  if (!tel) return null;
+
+  if (el._langFadeHandle && typeof el._langFadeHandle.cancel === 'function') {
+    try { el._langFadeHandle.cancel({ restore: false }); } catch (e) {}
+    el._langFadeHandle = null;
+  }
+
+  const fromP = window._langFadePlain(fromStored);
+  const toP = window._langFadePlain(toStored);
+  const toLayer = tel.querySelector && tel.querySelector('._langfade_to');
+  const curHtml = toLayer ? toLayer.innerHTML : tel.innerHTML;
+  const curP = window._langFadePlain(curHtml);
+
+  const atTo = (toP && curP === toP) || el._langFadeSide === 'to';
+  const atFrom = (fromP && curP === fromP) || el._langFadeSide === 'from';
+  let goingTo = 'to';
+  if (atTo && !atFrom) goingTo = 'from';
+  else if (atFrom && !atTo) goingTo = 'to';
+  else if (el._langFadeSide === 'to') goingTo = 'from';
+
+  const nextHtml = goingTo === 'from' ? fromStored : toStored;
+  const prevHtml = curP ? curHtml : (goingTo === 'from' ? toStored : fromStored);
+  el._langFadeSide = goingTo;
+
+  let cancelled = false;
+  let timer = 0;
+  let animA = null;
+  let animB = null;
+
+  const handle = {
+    cancel: function (cOpts) {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      try { if (animA) animA.cancel(); } catch (e) {}
+      try { if (animB) animB.cancel(); } catch (e) {}
+      const doRestore = !(cOpts && cOpts.restore === false) && opts.restore !== false;
+      if (doRestore && tel.querySelector && tel.querySelector('._langfade_wrap')) {
+        tel.innerHTML = nextHtml;
+      }
+    }
+  };
+  el._langFadeHandle = handle;
+  if (!el._liveAnims) el._liveAnims = [];
+  el._liveAnims.push(handle);
+
+  const start = function () {
+    if (cancelled) return;
+    const wrap = document.createElement('div');
+    wrap.className = '_langfade_wrap';
+    wrap.style.cssText = 'position:relative;width:100%;min-height:100%;';
+    const layerFrom = document.createElement('div');
+    layerFrom.className = '_langfade_from';
+    layerFrom.style.cssText = 'position:absolute;left:0;top:0;width:100%;opacity:1;z-index:1;pointer-events:none;';
+    layerFrom.innerHTML = prevHtml;
+    const layerTo = document.createElement('div');
+    layerTo.className = '_langfade_to';
+    layerTo.style.cssText = 'position:relative;width:100%;opacity:0;z-index:2;pointer-events:none;';
+    layerTo.innerHTML = nextHtml;
+    wrap.appendChild(layerFrom);
+    wrap.appendChild(layerTo);
+    tel.innerHTML = '';
+    tel.appendChild(wrap);
+    const ease = 'ease-in-out';
+    try {
+      animA = layerFrom.animate([{ opacity: 1 }, { opacity: 0 }], { duration: dur, easing: ease, fill: 'forwards' });
+      animB = layerTo.animate([{ opacity: 0 }, { opacity: 1 }], { duration: dur, easing: ease, fill: 'forwards' });
+      animB.onfinish = function () {
+        if (cancelled) return;
+        tel.innerHTML = nextHtml;
+        el._langFadeSide = goingTo;
+      };
+    } catch (e) {
+      tel.innerHTML = nextHtml;
+      el._langFadeSide = goingTo;
+    }
+  };
+
+  timer = setTimeout(start, delay || 0);
+  return handle;
 };
 
 window._particlesEnsureHiddenIfNeeded = function(el, d) {
@@ -1346,6 +1457,7 @@ window.ANIM_ENGINE_META = {
   float: { engine: 'live', export: 'live' },
   particles: { engine: 'custom', export: 'particles' },
   typewriter: { engine: 'custom', export: 'typewriter' },
+  langFade: { engine: 'custom', export: 'langFade' },
   captionSlide: { engine: 'custom', export: 'captionSlide' },
 };
 
@@ -1376,6 +1488,7 @@ window._animChainDuration = function(a) {
     const toLen = (a.toHtml || '').replace(/<[^>]*>/g, '').length;
     return (fromLen + toLen) * cd + 200;
   }
+  if (a.name === 'langFade') return +(a.duration || 800) || 800;
   return a.duration || 600;
 };
 
@@ -2869,3 +2982,6 @@ window.renderAnimTimelineBar = function(slide) {
   window._fireRecolorAnim=_fireRecolorAnim;
   window._resetRecolor=_resetRecolor;
 })();
+
+
+

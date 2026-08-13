@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **«Слайды»** — презентационный редактор, работающий в одном HTML-файле (или модульно).
 Не требует сервера, сборки или интернета. Открывается напрямую в браузере.
 
-- **Версия:** v6.5
+- **Версия:** v6.6
 - **Автор:** Некрасов Александр
 - **Стек:** Vanilla JS + HTML + CSS, без фреймворков
 - **Зависимости:** JSZip (офлайн), QRCode (офлайн), системные шрифты
@@ -52,7 +52,7 @@ project/
 │   ├── qrcode.min.js       # QR-аплет
 │   └── mathjax/tex-svg.js  # MathJax 3 (офлайн)
 └── js/
-    ├── 00-i18n.js          # Локализация RU/EN, APP_VERSION='6.5', APP_NAME
+    ├── 00-i18n.js          # Локализация RU/EN, APP_VERSION='6.6', APP_NAME
     ├── 00-pwa.js           # Service Worker, File Handling / launchQueue
     ├── 00-bus.js           # Шина событий Bus.emit / Bus.on
     ├── 00-guard.js         # window.guard.* прокси + Bus-обработчики
@@ -73,6 +73,7 @@ project/
     ├── 24-preview.js       # Показ, fireAnim, float/swing/dance на child wrapper
     ├── 26-export.js        # Экспорт в HTML (inline buildShapeSVG), импорт PPTX
     ├── 26b-ppt-binary.js   # Импорт binary .ppt (PowerPoint 97–2003 / OLE)
+    ├── 26c-import-gallery.js # Каталог презентаций (плитка / список)
     ├── 27-persist.js       # saveState(), loadState(), localStorage
     ├── 28-multisel.js      # Множественное выделение, rubber-band + магнит
     ├── 33-objects.js       # Панель объектов, слои, z-order

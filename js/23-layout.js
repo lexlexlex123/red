@@ -1603,198 +1603,270 @@ M-29,-2.5 L-47,-19 L-44,0 L-47,19 L-29,2.5 Z"/>
 
   {
     name:'Лес', nameEn:'Forest',
-    desc:'Силуэты деревьев, кружатся падающие листья',descEn:'Tree silhouettes, swirling falling leaves',
+    desc:'Силуэты лиственных деревьев, падающая листва',descEn:'Deciduous silhouettes, falling leaves',
     animated: true,
     _build:(w,h,a1,a2,isTitle,doAnimate)=>{
       const uid='fr'+Math.random().toString(36).slice(2,7);
-      const rng=(s)=>{let x=Math.sin(s*127.1+311.7)*43758.5;return x-Math.floor(x);};
-      const preWarm=isTitle?8:12;
+      const rng=s=>{let x=Math.sin(s*127.1+311.7)*43758.5;return x-Math.floor(x);};
+      const f=n=>n.toFixed(1);
+      const preWarm=isTitle?11:13;
 
-      // ── Ёль/сосна: ярусы веток + ствол ──
-      function spruceTree(tx,baseY,th,col,op,seed){
-        const tw=th*0.38, trunkW=tw*0.11, trunkH=th*0.2;
-        let g=`<rect x="${(tx-trunkW/2).toFixed(1)}" y="${(baseY-trunkH).toFixed(1)}" width="${trunkW.toFixed(1)}" height="${trunkH.toFixed(1)}" fill="${col}" opacity="${op}"/>`;
-        const tiers=6;
-        for(let i=0;i<tiers;i++){
-          const t=i/tiers;
-          const tierBase=baseY-trunkH-th*0.78*(1-t*0.88);
-          const tierW=tw*(0.28+t*0.72);
-          const tierH=th*(0.17+rng(seed+i*13)*0.04);
-          const jag=rng(seed+i*17)*tw*0.06;
-          const tipY=tierBase-tierH;
-          const d=`M${tx.toFixed(1)},${tipY.toFixed(1)} L${(tx+tierW/2+jag).toFixed(1)},${tierBase.toFixed(1)} L${(tx-tierW/2-jag*0.7).toFixed(1)},${tierBase.toFixed(1)} Z`;
-          g+=`<path d="${d}" fill="${col}" opacity="${op}"/>`;
-        }
-        return g;
-      }
-
-      // ── Лиственное: ствол + органическая крона ──
-      function deciduousTree(tx,baseY,th,col,op,seed){
-        const tw=th*0.55, trunkW=tw*0.13, trunkH=th*0.42;
-        const topY=baseY-trunkH-th*0.52;
-        let g=`<rect x="${(tx-trunkW/2).toFixed(1)}" y="${(baseY-trunkH).toFixed(1)}" width="${trunkW.toFixed(1)}" height="${trunkH.toFixed(1)}" fill="${col}" opacity="${op}"/>`;
-        const lobes=7;
-        let d=`M${tx.toFixed(1)},${topY.toFixed(1)} `;
-        for(let i=0;i<=lobes;i++){
-          const a=Math.PI*(0.15+i/lobes*0.7);
-          const rx=tw*(0.38+rng(seed+i*19)*0.14);
-          const ry=th*(0.22+rng(seed+i*23)*0.08);
-          const px=tx+Math.cos(a-Math.PI/2)*rx;
-          const py=baseY-trunkH-th*0.28+Math.sin(a-Math.PI/2)*ry*0.55;
-          d+=`L${px.toFixed(1)},${py.toFixed(1)} `;
-        }
-        d+=`L${(tx+trunkW*0.55).toFixed(1)},${(baseY-trunkH).toFixed(1)} L${(tx-trunkW*0.55).toFixed(1)},${(baseY-trunkH).toFixed(1)} Z`;
-        g+=`<path d="${d}" fill="${col}" opacity="${op}"/>`;
-        // ветки
-        for(let b=0;b<3;b++){
-          const by=baseY-trunkH*(0.55+b*0.12);
-          const bx=tx+(b%2?1:-1)*trunkW*0.4;
-          const bl=tw*(0.18+rng(seed+b*31)*0.12);
-          g+=`<line x1="${tx.toFixed(1)}" y1="${by.toFixed(1)}" x2="${(bx+(b%2?bl:-bl)).toFixed(1)}" y2="${(by-bl*0.15).toFixed(1)}" stroke="${col}" stroke-width="${(trunkW*0.35).toFixed(1)}" stroke-linecap="round" opacity="${(+op*0.85).toFixed(2)}"/>`;
-        }
-        return g;
-      }
-
-      // ── Берёза: тонкий ствол, лёгкая крона ──
-      function birchTree(tx,baseY,th,col,op,seed){
-        const trunkW=th*0.045, trunkH=th*0.72;
-        const topY=baseY-trunkH-th*0.22;
-        let g=`<rect x="${(tx-trunkW/2).toFixed(1)}" y="${(baseY-trunkH).toFixed(1)}" width="${trunkW.toFixed(1)}" height="${trunkH.toFixed(1)}" fill="${col}" opacity="${op}" rx="${(trunkW*0.3).toFixed(1)}"/>`;
-        const n=9;
-        let d=`M${tx.toFixed(1)},${topY.toFixed(1)} `;
+      function crownPath(cx,cy,rx,ry,seed,lobes,openBottom){
+        const n=lobes||14;
+        const a0=openBottom?-Math.PI*0.92:-Math.PI;
+        const a1=openBottom?Math.PI*0.92:Math.PI;
+        const pts=[];
         for(let i=0;i<=n;i++){
-          const a=(i/n)*Math.PI*2;
-          const r=th*(0.14+rng(seed+i*29)*0.06)*(i%2?0.85:1);
-          d+=`L${(tx+Math.cos(a)*r).toFixed(1)},${(baseY-trunkH-th*0.12+Math.sin(a)*r*0.7).toFixed(1)} `;
+          const t=i/n;
+          const ang=a0+(a1-a0)*t;
+          const lobe=0.72+0.28*Math.abs(Math.sin(t*Math.PI*n*0.5));
+          const jag=0.88+rng(seed+i*7)*0.22;
+          const rr=lobe*jag;
+          const squash=(ang>0.35&&ang<Math.PI-0.35)?1.05:1;
+          pts.push([cx+Math.cos(ang)*rx*rr, cy+Math.sin(ang)*ry*rr*squash]);
         }
-        d+='Z';
-        g+=`<path d="${d}" fill="${col}" opacity="${(+op*0.9).toFixed(2)}"/>`;
+        let d='M'+f(pts[0][0])+','+f(pts[0][1]);
+        for(let i=1;i<pts.length;i++){
+          const p0=pts[i-1], p1=pts[i];
+          const mx=(p0[0]+p1[0])/2, my=(p0[1]+p1[1])/2;
+          const dx=p1[0]-p0[0], dy=p1[1]-p0[1];
+          const nx=-dy*0.18, ny=dx*0.18;
+          const hyp=Math.hypot(mx-cx,my-cy)||1;
+          const ox=(mx-cx)/hyp, oy=(my-cy)/hyp;
+          d+=' Q'+f(mx+nx*0.15+ox*rx*0.06)+','+f(my+ny*0.15+oy*ry*0.06)+' '+f(p1[0])+','+f(p1[1]);
+        }
+        if(openBottom){
+          d+=' L'+f(cx+rx*0.08)+','+f(cy+ry*0.55)+' L'+f(cx-rx*0.08)+','+f(cy+ry*0.55)+' Z';
+        } else d+=' Z';
+        return d;
+      }
+
+      function trunkPath(tx,baseY,topY,botW,topW,lean,seed){
+        const midY=(baseY+topY)/2;
+        const leanX=lean*(baseY-topY)*0.12;
+        const flare=botW*0.55;
+        const L0=tx-botW/2-flare*0.35, R0=tx+botW/2+flare*0.35;
+        const L1=tx-botW*0.42+leanX*0.4, R1=tx+botW*0.42+leanX*0.4;
+        const L2=tx-topW/2+leanX, R2=tx+topW/2+leanX;
+        const bump=rng(seed)*0.3-0.15;
+        return 'M'+f(L0)+','+f(baseY)+
+          ' C'+f(L0+botW*0.05)+','+f(baseY-(baseY-midY)*0.4)+' '+f(L1-bump*botW)+','+f(midY)+' '+f(L2)+','+f(topY)+
+          ' L'+f(R2)+','+f(topY)+
+          ' C'+f(R1+bump*botW)+','+f(midY)+' '+f(R0-botW*0.05)+','+f(baseY-(baseY-midY)*0.4)+' '+f(R0)+','+f(baseY)+
+          ' C'+f(tx+botW*0.15)+','+f(baseY+flare*0.25)+' '+f(tx-botW*0.15)+','+f(baseY+flare*0.25)+' '+f(L0)+','+f(baseY)+' Z';
+      }
+
+      function branch(x0,y0,x1,y1,w0,col,op){
+        const mx=(x0+x1)/2+(y0-y1)*0.12;
+        const my=(y0+y1)/2+(x1-x0)*0.08;
+        const ang=Math.atan2(y1-y0,x1-x0);
+        const nx=Math.cos(ang+Math.PI/2), ny=Math.sin(ang+Math.PI/2);
+        const w1=w0*0.22;
+        return '<path d="M'+f(x0+nx*w0)+','+f(y0+ny*w0)+
+          ' Q'+f(mx+nx*w0*0.5)+','+f(my+ny*w0*0.5)+' '+f(x1+nx*w1)+','+f(y1+ny*w1)+
+          ' L'+f(x1-nx*w1)+','+f(y1-ny*w1)+
+          ' Q'+f(mx-nx*w0*0.5)+','+f(my-ny*w0*0.5)+' '+f(x0-nx*w0)+','+f(y0-ny*w0)+' Z"'+
+          ' fill="'+col+'" opacity="'+op+'"/>';
+      }
+
+      function bigTree(tx,baseY,th,col,op,seed,opts){
+        opts=opts||{};
+        const lean=opts.lean||0;
+        const face=opts.face||1;
+        const trunkH=th*(opts.trunkFrac||0.46);
+        const topY=baseY-trunkH;
+        const botW=th*(opts.trunkBot||0.078);
+        const topW=botW*(opts.taper||0.48);
+        const cx=tx+lean*th*0.06+face*th*0.04;
+        const cy=topY-th*(opts.crownLift||0.22);
+        const rx=th*(opts.crownRx||0.38);
+        const ry=th*(opts.crownRy||0.32);
+        let g='';
+        const limbs=[
+          [0.55, face*0.55, -0.22, 0.55],
+          [0.68, -face*0.42, -0.28, 0.42],
+          [0.78, face*0.28, -0.38, 0.38],
+          [0.42, -face*0.25, -0.12, 0.35],
+          [0.88, face*0.15, -0.48, 0.28],
+        ];
+        limbs.forEach((L,i)=>{
+          if(opts.branchN!=null&&i>=opts.branchN) return;
+          const y0=baseY-trunkH*L[0];
+          const x0=tx+lean*(baseY-y0)*0.1;
+          const x1=cx+L[1]*rx*(0.85+rng(seed+i*13)*0.25);
+          const y1=cy+L[2]*ry*(0.9+rng(seed+i*17)*0.2);
+          const bw=topW*(L[3]*(0.7+rng(seed+i*19)*0.4));
+          g+=branch(x0,y0,x1,y1,bw,col,(+op*0.88).toFixed(2));
+        });
+        g+='<path d="'+trunkPath(tx,baseY,topY,botW,topW,lean,seed)+'" fill="'+col+'" opacity="'+op+'"/>';
+        g+='<path d="'+crownPath(cx,cy,rx,ry,seed,opts.lobes||16,true)+'" fill="'+col+'" opacity="'+op+'"/>';
+        const cx2=cx+face*rx*0.18, cy2=cy-ry*0.12;
+        g+='<path d="'+crownPath(cx2,cy2,rx*0.62,ry*0.55,seed+40,11,false)+'" fill="'+col+'" opacity="'+(+op*0.92).toFixed(2)+'"/>';
+        g+='<path d="'+crownPath(cx-face*rx*0.1,cy+ry*0.28,rx*0.48,ry*0.32,seed+70,9,false)+'" fill="'+col+'" opacity="'+(+op*0.9).toFixed(2)+'"/>';
         return g;
       }
 
-      function treeAt(tx,baseY,th,type,col,op,seed){
-        if(type==='deciduous') return deciduousTree(tx,baseY,th,col,op,seed);
-        if(type==='birch') return birchTree(tx,baseY,th,col,op,seed);
-        return spruceTree(tx,baseY,th,col,op,seed);
+      function farCanopy(y,amp,col,op,seed,seg){
+        const n=seg||18;
+        let d='M0,'+f(h)+' L0,'+f(y);
+        for(let i=0;i<=n;i++){
+          const x=w*i/n;
+          const peak=y-amp*(0.45+rng(seed+i)*0.55)*(0.7+0.3*Math.sin(i*1.7));
+          const mid=y-amp*(0.15+rng(seed+i+0.5)*0.25);
+          if(i===0) d+=' L'+f(x)+','+f(peak);
+          else {
+            const px=w*(i-0.5)/n;
+            d+=' Q'+f(px)+','+f(mid)+' '+f(x)+','+f(peak);
+          }
+        }
+        d+=' L'+f(w)+','+f(h)+' Z';
+        return '<path d="'+d+'" fill="'+col+'" opacity="'+op+'"/>';
       }
 
-      // ── Лист (каштан/дуб) ──
-      function leafShape(r,angle,col,op){
-        const a=angle*Math.PI/180,cs=Math.cos(a),sn=Math.sin(a);
-        const R=(x,y)=>`${(x*cs-y*sn).toFixed(1)},${(x*sn+y*cs).toFixed(1)}`;
-        const rx=(x,y)=>(x*cs-y*sn).toFixed(1);
-        const ry=(x,y)=>(x*sn+y*cs).toFixed(1);
-        const d=`M${R(0,r*0.35)} C${R(-r*0.5,r*0.1)} ${R(-r*0.55,-r*0.55)} ${R(0,-r*1.1)} C${R(r*0.55,-r*0.55)} ${R(r*0.5,r*0.1)} ${R(0,r*0.35)} Z`;
-        return `<g fill="${col}" opacity="${op}"><path d="${d}"/><line x1="${rx(0,r*0.35)}" y1="${ry(0,r*0.35)}" x2="${rx(0,-r*0.95)}" y2="${ry(0,-r*0.95)}" stroke="${col}" stroke-width="0.6" opacity="0.45"/></g>`;
+      function groundWave(y0,amp,col,op,seed){
+        let d='M0,'+f(h)+' L0,'+f(y0);
+        const n=8;
+        for(let i=1;i<=n;i++){
+          const x=w*i/n;
+          const y=y0+Math.sin(i*1.1+seed)*amp+rng(seed+i)*amp*0.3;
+          const px=w*(i-0.5)/n;
+          const py=y0+Math.sin((i-0.5)*1.1+seed)*amp;
+          d+=' Q'+f(px)+','+f(py)+' '+f(x)+','+f(y);
+        }
+        d+=' L'+f(w)+','+f(h)+' Z';
+        return '<path d="'+d+'" fill="'+col+'" opacity="'+op+'"/>';
       }
 
-      const _leafXY=(t,sx,phase,swayA,h,r)=>[
-        sx+Math.sin(phase+t*Math.PI*2.5)*swayA,
-        -r*3+(h+r*6)*t,
+      function leafShape(r,ang,col,op,kind){
+        const a=ang*Math.PI/180, cs=Math.cos(a), sn=Math.sin(a);
+        const T=(x,y)=>[x*cs-y*sn, x*sn+y*cs];
+        const P=(x,y)=>{const p=T(x,y);return f(p[0])+','+f(p[1]);};
+        let d;
+        if(kind===1){
+          d='M'+P(0,r*0.4)+' C'+P(-r*0.45,r*0.15)+' '+P(-r*0.4,-r*0.5)+' '+P(0,-r*1.15)+' C'+P(r*0.4,-r*0.5)+' '+P(r*0.45,r*0.15)+' '+P(0,r*0.4)+' Z';
+        } else {
+          d='M'+P(0,r*0.35)+
+            ' C'+P(-r*0.25,r*0.1)+' '+P(-r*0.7,-r*0.05)+' '+P(-r*0.55,-r*0.55)+
+            ' C'+P(-r*0.2,-r*0.35)+' '+P(-r*0.15,-r*0.7)+' '+P(0,-r*1.05)+
+            ' C'+P(r*0.15,-r*0.7)+' '+P(r*0.2,-r*0.35)+' '+P(r*0.55,-r*0.55)+
+            ' C'+P(r*0.7,-r*0.05)+' '+P(r*0.25,r*0.1)+' '+P(0,r*0.35)+' Z';
+        }
+        const tip=T(0,-r*0.95), base=T(0,r*0.3);
+        return '<g fill="'+col+'" opacity="'+op+'"><path d="'+d+'"/><line x1="'+f(base[0])+'" y1="'+f(base[1])+'" x2="'+f(tip[0])+'" y2="'+f(tip[1])+'" stroke="'+col+'" stroke-width="0.7" opacity="0.4"/></g>';
+      }
+
+      const _leafXY=(t,sx,phase,sway,y0,fall,drift)=>[
+        sx+Math.sin(phase+t*Math.PI*2.2)*sway+Math.sin(phase*0.6+t*Math.PI)*sway*0.4+drift*t,
+        y0+fall*t
       ];
 
-      const layerDefs=isTitle
-        ?[
-          [0.58,0.13,0.11,0.042,'spruce'],
-          [0.72,0.19,0.19,0.052,'spruce'],
-          [0.86,0.26,0.30,0.068,'mixed'],
-          [1.00,0.36,0.52,0.088,'mixed'],
-        ]
-        :[
-          [0.92,0.08,0.10,0.065,'spruce'],
-          [0.98,0.12,0.16,0.078,'mixed'],
-          [1.00,0.17,0.26,0.095,'mixed'],
-        ];
-
-      let layers='', fogBands='';
-      layerDefs.forEach(([yFrac,hFrac,op,spacing,layerType],li)=>{
-        const baseY=h*yFrac, maxH=h*hFrac, step=w*spacing;
-        const nTrees=Math.ceil(w/step)+2;
-        let row='';
-        for(let i=0;i<nTrees;i++){
-          const seed=li*100+i*3;
-          const tx=(i-0.5)*step+rng(seed)*step*0.55;
-          const th=maxH*(0.7+rng(seed+1)*0.35);
-          let type=layerType;
-          if(layerType==='mixed'){
-            const pick=rng(seed+2);
-            type=pick<0.45?'spruce':pick<0.78?'deciduous':'birch';
+      function makeLeaves(list){
+        let out='';
+        list.forEach((sp,i)=>{
+          const col=i%2?a2:a1;
+          const op=(sp.op0+rng(i*9+2)*sp.op1).toFixed(2);
+          const r=sp.rm+rng(i*9+3)*sp.rs;
+          const ang=rng(i*9+4)*360;
+          const dur=sp.d0+rng(i*9)*sp.d1;
+          const delay=rng(i*9+1)*dur;
+          const begin=(delay-preWarm).toFixed(2);
+          const sx=sp.x+rng(i*9+5)*sp.xw;
+          const y0=sp.y+rng(i*9+6)*sp.yw;
+          const fall=sp.fall||(h-y0+20);
+          const sway=sp.sw0+rng(i*9+7)*sp.sw1;
+          const phase=rng(i*9+8)*Math.PI*2;
+          const drift=(rng(i*9+10)-0.5)*sp.drift;
+          const spinDir=rng(i*9+11)>0.5?1:-1;
+          const kind=rng(i*9+12)>0.45?1:0;
+          if(doAnimate){
+            const pts=[];
+            for(let k=0;k<=8;k++){
+              const t=k/8;
+              const xy=_leafXY(t,sx,phase,sway,y0,fall,drift);
+              pts.push(f(xy[0])+','+f(xy[1]));
+            }
+            const ks=Array(8).fill('0.4 0 0.6 1').join(';');
+            out+='<g><animateTransform attributeName="transform" type="translate" values="'+pts.join(';')+'" keyTimes="0;0.1;0.22;0.36;0.5;0.64;0.78;0.9;1" keySplines="'+ks+'" dur="'+dur.toFixed(1)+'s" begin="'+begin+'s" repeatCount="indefinite" calcMode="spline"/><g><animateTransform attributeName="transform" type="rotate" values="0;'+(90*spinDir)+';'+(270*spinDir)+';'+(400*spinDir)+'" dur="'+(1.4+rng(i)*1.8).toFixed(2)+'s" repeatCount="indefinite"/>'+leafShape(r,ang,col,op,kind)+'</g></g>';
+          } else {
+            let el=preWarm-delay; while(el<0)el+=dur; el%=dur;
+            const t=el/dur;
+            const xy=_leafXY(t,sx,phase,sway,y0,fall,drift);
+            out+='<g transform="translate('+f(xy[0])+','+f(xy[1])+') rotate('+((t*320*spinDir).toFixed(0))+')">'+leafShape(r,ang,col,op,kind)+'</g>';
           }
-          const col=(type==='birch'&&li>=layerDefs.length-2)?a2:(i%3===0?a2:a1);
-          row+=treeAt(tx,baseY,th,type,col,op.toFixed(2),seed+500);
-        }
-        layers+=`<g>${row}</g>`;
-        if(li<layerDefs.length-1){
-          const fogY=baseY-maxH*0.35;
-          const nextY=h*layerDefs[li+1][0];
-          const fogH=Math.max(8,nextY-fogY+maxH*0.4);
-          fogBands+=`<rect x="0" y="${fogY.toFixed(1)}" width="${w}" height="${fogH.toFixed(1)}" fill="${a2}" opacity="${(0.05+li*0.02).toFixed(3)}"/>`;
-        }
-      });
-
-      const defs=`<defs>
-        <linearGradient id="${uid}sky" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stop-color="${a2}" stop-opacity="0"/>
-          <stop offset="60%" stop-color="${a2}" stop-opacity="0.05"/>
-          <stop offset="100%" stop-color="${a1}" stop-opacity="0.16"/>
-        </linearGradient>
-        <linearGradient id="${uid}fog" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stop-color="${a2}" stop-opacity="0.18"/>
-          <stop offset="100%" stop-color="${a2}" stop-opacity="0"/>
-        </linearGradient>
-      </defs>`;
-      const bgRect=`<rect width="${w}" height="${h}" fill="url(#${uid}sky)"/>`;
-      const hazeY=(h*(isTitle?0.38:0.52)).toFixed(0);
-      const hazeH=(h*(isTitle?0.2:0.12)).toFixed(0);
-      const haze=`<rect x="0" y="${hazeY}" width="${w}" height="${hazeH}" fill="url(#${uid}fog)"/>`;
-
-      const nL=isTitle?22:12;
-      const leafOpMin=isTitle?0.22:0.07;
-      const leafOpRange=isTitle?0.28:0.10;
-      let leafSvg='';
-      for(let i=0;i<nL;i++){
-        const col=i%3===0?a2:a1;
-        const op=(leafOpMin+rng(i*7+3)*leafOpRange).toFixed(2);
-        const r=3.5+rng(i*7+2)*6.5;
-        const startAng=(rng(i*7+4)*360).toFixed(0);
-        const dur=5.5+rng(i*7)*5.5;
-        const delay=rng(i*7+0.3)*dur;
-        const begin=(delay-preWarm).toFixed(2);
-        const sx=rng(i*7)*w;
-        const swayA=14+rng(i*7+5)*36;
-        const phase=rng(i*7+6)*Math.PI*2;
-        const spinDur=(1.1+rng(i*7+8)*1.6).toFixed(2);
-        const spinDir=rng(i*7+9)>0.5?1:-1;
-        const spinTo=(360*spinDir*3).toFixed(0);
-
-        if(doAnimate){
-          const xV=[],yV=[];
-          for(let k=0;k<=7;k++){
-            const t=k/7;
-            const [lx,ly]=_leafXY(t,sx,phase,swayA,h,r);
-            xV.push(lx.toFixed(1)); yV.push(ly.toFixed(1));
-          }
-          const kv=xV.map((x,k)=>`${x},${yV[k]}`).join(';');
-          const ks='0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1';
-          leafSvg+=`<g>
-            <animateTransform attributeName="transform" type="translate" values="${kv}" keyTimes="0;0.12;0.26;0.42;0.58;0.74;0.88;1" keySplines="${ks}" dur="${dur.toFixed(1)}s" begin="${begin}s" repeatCount="indefinite" calcMode="spline"/>
-            <g>
-              <animateTransform attributeName="transform" type="rotate" values="0;${(120*spinDir).toFixed(0)};${spinTo}" dur="${spinDur}s" repeatCount="indefinite"/>
-              ${leafShape(r,+startAng,col,op)}
-            </g>
-          </g>`;
-        } else {
-          let elapsed=preWarm-delay;
-          while(elapsed<0) elapsed+=dur;
-          elapsed%=dur;
-          const t=elapsed/dur;
-          const [lx,ly]=_leafXY(t,sx,phase,swayA,h,r);
-          const rot=(t*360*3*spinDir)%360;
-          leafSvg+=`<g transform="translate(${lx.toFixed(1)},${ly.toFixed(1)}) rotate(${rot.toFixed(0)})">${leafShape(r,+startAng,col,op)}</g>`;
-        }
+        });
+        return out;
       }
 
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${defs}${bgRect}${layers}${fogBands}${haze}${leafSvg}</svg>`;
+      const defs='<defs><linearGradient id="'+uid+'sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="'+a2+'" stop-opacity="0.03"/><stop offset="70%" stop-color="'+a1+'" stop-opacity="0.06"/><stop offset="100%" stop-color="'+a1+'" stop-opacity="0.16"/></linearGradient><clipPath id="'+uid+'cp"><rect width="'+w+'" height="'+h+'"/></clipPath></defs>';
+
+      let scene='<rect width="'+w+'" height="'+h+'" fill="url(#'+uid+'sky)"/>';
+      let leaves='';
+
+      if(isTitle){
+        scene+=farCanopy(h*0.58,h*0.16,a2,'0.10',3.1,22);
+        scene+=farCanopy(h*0.66,h*0.20,a1,'0.14',7.4,18);
+        scene+=groundWave(h*0.78,h*0.025,a2,'0.08',1.2);
+
+        [
+          {x:0.10,th:0.48,op:0.22,lean:0.3,face:1,c:a2,s:11},
+          {x:0.28,th:0.55,op:0.26,lean:-0.2,face:-1,c:a1,s:22},
+          {x:0.48,th:0.42,op:0.20,lean:0.1,face:1,c:a2,s:33},
+          {x:0.68,th:0.58,op:0.28,lean:-0.35,face:-1,c:a1,s:44},
+          {x:0.88,th:0.50,op:0.24,lean:0.25,face:1,c:a2,s:55},
+        ].forEach(t=>{
+          scene+=bigTree(w*t.x,h*0.92,h*t.th,t.c,t.op.toFixed(2),t.s,{
+            lean:t.lean, face:t.face, trunkFrac:0.40, crownRx:0.40, crownRy:0.34, crownLift:0.24, lobes:15, branchN:4
+          });
+        });
+        scene+=groundWave(h*0.88,h*0.02,a1,'0.10',2.5);
+
+        [
+          {x:0.00,th:0.82,op:0.40,lean:0.55,face:1,c:a1,s:101},
+          {x:0.22,th:0.68,op:0.34,lean:0.15,face:1,c:a2,s:112},
+          {x:0.55,th:0.88,op:0.44,lean:-0.2,face:-1,c:a1,s:123},
+          {x:0.85,th:0.74,op:0.38,lean:-0.5,face:-1,c:a2,s:134},
+          {x:1.02,th:0.80,op:0.42,lean:-0.6,face:-1,c:a1,s:145},
+        ].forEach(t=>{
+          scene+=bigTree(w*t.x,h*1.04,h*t.th,t.c,t.op.toFixed(2),t.s,{
+            lean:t.lean, face:t.face, trunkFrac:0.48, trunkBot:0.085, crownRx:0.42, crownRy:0.36,
+            crownLift:0.26, lobes:17, branchN:5
+          });
+        });
+        scene+=groundWave(h*0.94,h*0.015,a1,'0.12',4.1);
+
+        leaves=makeLeaves(Array.from({length:28},()=>({
+          x:0, xw:w, y:h*0.05, yw:h*0.32, fall:h*0.95,
+          op0:0.18, op1:0.30, rm:3.5, rs:6.5, d0:6.5, d1:6,
+          sw0:18, sw1:38, drift:w*0.06
+        })));
+      } else {
+        scene+=farCanopy(h*0.90,h*0.08,a1,'0.07',9.2,14);
+        scene+=groundWave(h*0.95,h*0.012,a2,'0.06',3.3);
+
+        scene+=bigTree(-w*0.06, h*1.05, h*1.15, a1, '0.42', 201, {
+          lean:0.7, face:1, trunkFrac:0.58, trunkBot:0.095, taper:0.45,
+          crownRx:0.40, crownRy:0.33, crownLift:0.20, lobes:18, branchN:5
+        });
+        scene+=bigTree(w*1.06, h*1.05, h*1.12, a2, '0.40', 221, {
+          lean:-0.7, face:-1, trunkFrac:0.57, trunkBot:0.092, taper:0.45,
+          crownRx:0.38, crownRy:0.32, crownLift:0.20, lobes:17, branchN:5
+        });
+
+        leaves=makeLeaves([
+          ...Array.from({length:12},()=>({
+            x:-w*0.05, xw:w*0.32, y:h*0.02, yw:h*0.30, fall:h*0.92,
+            op0:0.14, op1:0.24, rm:3.2, rs:5.8, d0:7, d1:5.5,
+            sw0:16, sw1:34, drift:w*0.04
+          })),
+          ...Array.from({length:12},()=>({
+            x:w*0.70, xw:w*0.34, y:h*0.02, yw:h*0.30, fall:h*0.92,
+            op0:0.14, op1:0.24, rm:3.2, rs:5.8, d0:7, d1:5.5,
+            sw0:16, sw1:34, drift:-w*0.04
+          })),
+        ]);
+      }
+
+      return '<svg xmlns="http://www.w3.org/2000/svg" width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'">'+defs+'<g clip-path="url(#'+uid+'cp)">'+scene+leaves+'</g></svg>';
     },
     titleSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,true,doAnimate!==false);},
     contentSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,false,doAnimate!==false);},
@@ -3809,6 +3881,23 @@ window.clearSlidePrismTemplate = function(){
   buildSlideTplGrid();
 };
 
+/** Фон для миниатюр шаблонов: как у текущего слайда, иначе тема. */
+function _slideTplPreviewBg(){
+  try{
+    const s = (typeof slides !== 'undefined' && slides[cur]) ? slides[cur] : null;
+    if(s){
+      if(s.bgScheme != null && typeof _resolveSchemeColor === 'function'){
+        const th = _activeTheme();
+        const resolved = _resolveSchemeColor(s.bgScheme, th);
+        if(resolved) return resolved;
+      }
+      if(s.bgc) return s.bgc;
+    }
+  }catch(e){}
+  const theme = _activeTheme();
+  return (theme && theme.bg) || '';
+}
+
 /** Live template cards in slide properties (empty + layout variants). */
 function buildSlideTplGrid(){
   const grid = document.getElementById('slide-tpl-grid');
@@ -3817,7 +3906,7 @@ function buildSlideTplGrid(){
 
   const [a1, a2] = _decorAccents();
   const PW = 160, PH = 90;
-  const themeBg = (_activeTheme() && _activeTheme().bg) || '';
+  const themeBg = _slideTplPreviewBg();
   const isRu = typeof getLang === 'function' && getLang() === 'ru';
   const meta = _currentSlideDecorMeta();
   const noDecor = !meta;

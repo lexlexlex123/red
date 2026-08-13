@@ -2,17 +2,72 @@
 (function () {
   const LS_KEY = 'slides_import_base';
   const DEFAULT_BASE = 'http://pyabc.ru/prezi/';
+  const PROXY_PHP = 'prezi-proxy.php';
 
   let _base = '';
   let _relPath = ''; // '' or 'math/' or 'math/algebra/'
   let _loading = false;
+  const LS_VIEW = 'slides_import_view';
+  const _igSlideThumbCache = {};
+  let _igThumbGen = 0;
+  let _igThumbQueue = [];
+  let _igThumbRunning = 0;
+  let _igThumbIO = null;
+  let _igLastItems = null;
+  let _igLastAbsUrl = '';
+
+  function _igGetView() {
+    try {
+      const v = localStorage.getItem(LS_VIEW);
+      if (v === 'list' || v === 'grid') return v;
+    } catch (e) {}
+    return 'grid';
+  }
+  function _igSetView(mode) {
+    const v = mode === 'list' ? 'list' : 'grid';
+    try { localStorage.setItem(LS_VIEW, v); } catch (e) {}
+    _igSyncViewUI();
+    if (v === 'grid') _igKickSlideThumbs();
+  }
+  function _igSyncViewUI() {
+    const v = _igGetView();
+    const grid = document.getElementById('ig-grid');
+    if (grid) grid.classList.toggle('ig-list', v === 'list');
+    const gBtn = document.getElementById('ig-view-grid');
+    const lBtn = document.getElementById('ig-view-list');
+    if (gBtn) gBtn.classList.toggle('on', v === 'grid');
+    if (lBtn) lBtn.classList.toggle('on', v === 'list');
+  }
 
   function _normBase(url) {
     let u = String(url || '').trim();
     if (!u) return DEFAULT_BASE;
-    if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+    if (!/^https?:\/\//i.test(u)) u = 'http://' + u;
+    // На pyabc.ru нет сертификата — https://pyabc.ru не откроется
+    u = u.replace(/^https:\/\/(www\.)?pyabc\.ru\//i, 'http://pyabc.ru/');
     if (!u.endsWith('/')) u += '/';
     return u;
+  }
+  function _needsProxy() {
+    try {
+      return location.protocol === 'https:' && /^http:\/\//i.test(_normBase(_base));
+    } catch (e) { return false; }
+  }
+  function _proxyUrl(opts) {
+    const src = encodeURIComponent(_normBase(_base));
+    const file = opts && opts.file ? '&file=' + encodeURIComponent(opts.file) : '';
+    const path = encodeURIComponent((opts && opts.path) || '');
+    const p = (typeof assetUrl === 'function') ? assetUrl(PROXY_PHP) : PROXY_PHP;
+    return p + '?src=' + src + file + '&path=' + path;
+  }
+  function _proxiedAsset(absOrRel) {
+    const base = _normBase(_base);
+    let rel = String(absOrRel || '');
+    if (!rel) return rel;
+    if (rel.indexOf(base) === 0) rel = rel.slice(base.length);
+    else if (/^https?:\/\//i.test(rel)) return rel;
+    if (!_needsProxy()) return /^https?:\/\//i.test(absOrRel) ? absOrRel : (base + rel.replace(/^\//, ''));
+    return _proxyUrl({ path: rel.replace(/^\//, '') });
   }
   function _getStoredBase() {
     try { return _normBase(localStorage.getItem(LS_KEY) || DEFAULT_BASE); }
@@ -42,14 +97,18 @@
       .trim() || name;
   }
   function _igAppIconUrl() {
-    const p = 'icons/icon-512.png';
+    const p = 'icon-512.png';
     return (typeof assetUrl === 'function') ? assetUrl(p) : p;
   }
 
   function openImportGallery() {
-    _base = _getStoredBase();
+    _base = _setStoredBase(_getStoredBase());
     _relPath = '';
     let modal = document.getElementById('import-gallery-modal');
+    if (modal && !modal.querySelector('#ig-view-grid')) {
+      modal.remove();
+      modal = null;
+    }
     if (!modal) {
       modal = document.createElement('div');
       modal.className = 'modal-ov';
@@ -69,6 +128,14 @@
           '<div class="ig-grid" id="ig-grid"></div>' +
           '<div class="ig-footer">' +
             '<button type="button" class="mbtn" id="ig-close">Закрыть</button>' +
+            '<div class="ig-view-toggle" role="group" aria-label="Вид">' +
+              '<button type="button" class="ig-view-btn" id="ig-view-grid" title="Плитка">' +
+                '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>' +
+              '</button>' +
+              '<button type="button" class="ig-view-btn" id="ig-view-list" title="Список">' +
+                '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 6h13M8 12h13M8 18h13"/><rect x="3" y="4" width="3" height="3" rx="0.5"/><rect x="3" y="10" width="3" height="3" rx="0.5"/><rect x="3" y="16" width="3" height="3" rx="0.5"/></svg>' +
+              '</button>' +
+            '</div>' +
             '<button type="button" class="mbtn pri" id="ig-local">📁 С компьютера…</button>' +
           '</div>' +
         '</div>';
@@ -93,9 +160,12 @@
         if (e.key === 'Enter') modal.querySelector('#ig-apply-base').click();
       });
       modal.querySelector('#ig-back').onclick = function () { _igGoUp(); };
+      modal.querySelector('#ig-view-grid').onclick = function () { _igSetView('grid'); };
+      modal.querySelector('#ig-view-list').onclick = function () { _igSetView('list'); };
     }
     document.getElementById('ig-base-url').value = _base;
     modal.classList.add('open');
+    _igSyncViewUI();
     _igLoad();
   }
 
@@ -160,14 +230,14 @@
   }
 
   function _igListPhpUrl(pathRel) {
-    const base = _normBase(_base);
-    const q = encodeURIComponent(String(pathRel || '').replace(/^\/+|\/+$/g, ''));
-    return base + 'list.php?path=' + q;
+    const q = String(pathRel || '').replace(/^\/+|\/+$/g, '');
+    if (_needsProxy()) return _proxyUrl({ file: 'list.php', path: q });
+    return _normBase(_base) + 'list.php?path=' + encodeURIComponent(q);
   }
   function _igGetPhpUrl(pathRel) {
-    const base = _normBase(_base);
-    const q = encodeURIComponent(String(pathRel || '').replace(/^\/+/, ''));
-    return base + 'get.php?path=' + q;
+    const q = String(pathRel || '').replace(/^\/+/, '');
+    if (_needsProxy()) return _proxyUrl({ file: 'get.php', path: q });
+    return _normBase(_base) + 'get.php?path=' + encodeURIComponent(q);
   }
 
   /** 1) list.php (CORS) → 2) index.json → 3) HTML directory listing */
@@ -184,12 +254,15 @@
       var phpErr = ePhp;
     }
     try {
-      const raw = await _igFetchText(absUrl.replace(/\/?$/, '/') + 'index.json');
+      const idxUrl = _needsProxy()
+        ? _proxyUrl({ file: 'index.json', path: String(pathRel || '').replace(/^\/+|\/+$/g, '') })
+        : absUrl.replace(/\/?$/, '/') + 'index.json';
+      const raw = await _igFetchText(idxUrl);
       const data = JSON.parse(raw);
       return _igNormalizeIndex(data, absUrl);
     } catch (eJson) { /* continue */ }
     try {
-      const html = await _igFetchText(absUrl);
+      const html = await _igFetchText(_needsProxy() ? _proxyUrl({ path: String(pathRel || '').replace(/^\/+/, '') }) : absUrl);
       return _igParseDirListing(html, absUrl);
     } catch (e2) {
       throw new Error(
@@ -214,6 +287,7 @@
       const file = it.file || it.href || (String(name).match(/\.(html?|json|slides\.json)$/i) ? name : name + '.html');
       let thumb = it.thumb || it.preview || it.image || '';
       if (thumb && !/^https?:\/\//i.test(thumb)) thumb = absUrl.replace(/\/?$/, '/') + thumb.replace(/^\//, '');
+      if (thumb) thumb = _proxiedAsset(thumb);
       return { type: 'pres', name: name, file: file.replace(/^\//, ''), thumb: thumb };
     }).filter(Boolean);
   }
@@ -249,12 +323,11 @@
         out.push({ type: 'folder', name: seg, id: seg });
       } else if (/\.html?$/i.test(seg) || /\.slides\.json$/i.test(seg) || (/\.json$/i.test(seg) && seg !== 'index.json')) {
         seen[seg] = 1;
-        const baseName = seg.replace(/\.slides\.json$/i, '').replace(/\.html?$/i, '').replace(/\.json$/i, '');
         out.push({
           type: 'pres',
           name: _prettyName(seg),
           file: seg,
-          thumb: base + baseName + '.png'
+          thumb: ''
         });
       }
     }
@@ -271,6 +344,7 @@
     _igRenderCrumbs();
     const grid = document.getElementById('ig-grid');
     if (grid) grid.innerHTML = '<div class="ig-loading">Загрузка…</div>';
+    _igSyncViewUI();
     _igSetStatus('Читаю ' + _joinUrl(_base, _relPath));
     try {
       const abs = _joinUrl(_base, _relPath);
@@ -288,13 +362,232 @@
     _loading = false;
   }
 
+  function _igThumbCacheKey(it) {
+    return ((_relPath || '') + String(it && it.file || '')).replace(/^\/+/, '');
+  }
+
+  function _igPaintCanvas(cnv, color) {
+    if (!cnv) return;
+    const ctx = cnv.getContext('2d');
+    if (!ctx) return;
+    ctx.fillStyle = color || '#1a1a2e';
+    ctx.fillRect(0, 0, cnv.width, cnv.height);
+  }
+
+  function _igDrawImgCover(cnv, img) {
+    const TW = cnv.width, TH = cnv.height;
+    const ctx = cnv.getContext('2d');
+    if (!ctx || !img) return;
+    const ir = (img.naturalWidth / img.naturalHeight) || 1;
+    const tr = TW / TH;
+    let dw, dh, dx, dy;
+    if (ir > tr) { dh = TH; dw = dh * ir; dx = (TW - dw) / 2; dy = 0; }
+    else { dw = TW; dh = dw / ir; dx = 0; dy = (TH - dh) / 2; }
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(0, 0, TW, TH);
+    ctx.drawImage(img, dx, dy, dw, dh);
+  }
+
+  function _igLoadImg(url) {
+    return new Promise(function (resolve) {
+      if (!url) { resolve(null); return; }
+      const img = new Image();
+      img.onload = function () { resolve(img); };
+      img.onerror = function () { resolve(null); };
+      img.src = url;
+    });
+  }
+
+  function _igExtractFirstSlide(raw, isLite) {
+    try {
+      if (isLite || (raw && raw.trim().charAt(0) === '{')) {
+        const obj = JSON.parse(raw);
+        const data = Array.isArray(obj) ? { slides: obj } : obj;
+        const s = data.slides && data.slides[0];
+        if (!s) return null;
+        return {
+          slide: s,
+          canvasW: +data.canvasW || 0,
+          canvasH: +data.canvasH || 0,
+          themeIdx: data.themeIdx != null ? data.themeIdx : data.appliedThemeIdx,
+          themeName: data.themeName
+        };
+      }
+      if (typeof _importHtmlScriptJson !== 'function') return null;
+      const json = _importHtmlScriptJson(raw, '_sl');
+      if (!json) return null;
+      const slidesArr = JSON.parse(json);
+      const s = Array.isArray(slidesArr) ? slidesArr[0] : null;
+      if (!s) return null;
+      let themeIdx = null;
+      if (typeof _importThemeFromHtml === 'function') themeIdx = _importThemeFromHtml(raw);
+      return { slide: s, canvasW: 0, canvasH: 0, themeIdx: themeIdx, themeName: null };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function _igResolveSlideForThumb(info) {
+    if (!info || !info.slide) return null;
+    let s = info.slide;
+    if ((s.bg === 'theme' || !s.bg) && !s.bgc && typeof THEMES !== 'undefined' && THEMES) {
+      let idx = info.themeIdx;
+      if ((idx == null || idx < 0) && info.themeName) {
+        idx = THEMES.findIndex(function (t) { return t && t.name === info.themeName; });
+      }
+      if (idx >= 0 && THEMES[idx] && THEMES[idx].bg) {
+        s = Object.assign({}, s, { bg: 'custom', bgc: THEMES[idx].bg });
+      }
+    }
+    return s;
+  }
+
+  function _igDrawFirstSlide(cnv, info) {
+    if (typeof renderThumbCanvas !== 'function') return false;
+    const s = _igResolveSlideForThumb(info);
+    if (!s) return false;
+    const prevW = typeof canvasW !== 'undefined' ? canvasW : 1200;
+    const prevH = typeof canvasH !== 'undefined' ? canvasH : 675;
+    const TW = 160;
+    try {
+      if (info.canvasW > 0 && info.canvasH > 0) {
+        canvasW = info.canvasW;
+        canvasH = info.canvasH;
+      }
+      const TH = Math.max(1, Math.round(TW * (canvasH / canvasW)));
+      renderThumbCanvas(cnv, s, null, TW, TH);
+      return true;
+    } catch (e) {
+      return false;
+    } finally {
+      canvasW = prevW;
+      canvasH = prevH;
+    }
+  }
+
+  async function _igFetchPresRaw(absUrl, it) {
+    const relFile = ((_relPath || '') + String(it.file || '').replace(/^\//, '')).replace(/^\/+/, '');
+    const viaGet = _igGetPhpUrl(relFile);
+    const direct = absUrl.replace(/\/?$/, '/') + String(it.file || '').replace(/^\//, '');
+    try {
+      return await _igFetchText(viaGet);
+    } catch (e1) {
+      return await _igFetchText(_needsProxy() ? _proxiedAsset(direct) : direct);
+    }
+  }
+
+  function _igCacheCanvas(key, cnv) {
+    try { _igSlideThumbCache[key] = cnv.toDataURL('image/jpeg', 0.72); } catch (e) {}
+  }
+
+  function _igRevealThumb(card) {
+    if (!card) return;
+    card.setAttribute('data-thumb-ready', '1');
+    const wrap = card.querySelector('.ig-thumb');
+    if (!wrap || wrap.classList.contains('is-ready')) return;
+    requestAnimationFrame(function () {
+      wrap.classList.add('is-ready');
+    });
+  }
+
+  async function _igMakeSlideThumb(job) {
+    const { card, it, absUrl, gen } = job;
+    if (gen !== _igThumbGen || !card || !card.isConnected) return;
+    const cnv = card.querySelector('canvas.ig-thumb-slide');
+    if (!cnv) return;
+    const key = _igThumbCacheKey(it);
+    if (_igSlideThumbCache[key]) {
+      const cached = await _igLoadImg(_igSlideThumbCache[key]);
+      if (gen !== _igThumbGen || !card.isConnected) return;
+      if (cached) { _igDrawImgCover(cnv, cached); _igRevealThumb(card); }
+      return;
+    }
+    const png = await _igLoadImg(it.thumb || '');
+    if (gen !== _igThumbGen || !card.isConnected) return;
+    if (png && png.naturalWidth > 8) {
+      _igDrawImgCover(cnv, png);
+      _igCacheCanvas(key, cnv);
+      _igRevealThumb(card);
+      return;
+    }
+    try {
+      const isLite = /\.json$/i.test(String(it.file || it.name || ''));
+      const raw = await _igFetchPresRaw(absUrl, it);
+      if (gen !== _igThumbGen || !card.isConnected) return;
+      const info = _igExtractFirstSlide(raw, isLite);
+      if (info && _igDrawFirstSlide(cnv, info)) {
+        _igRevealThumb(card);
+        setTimeout(function () {
+          if (gen === _igThumbGen && card.isConnected) _igCacheCanvas(key, cnv);
+        }, 500);
+      }
+    } catch (e) { /* leave placeholder */ }
+  }
+
+  function _igPumpThumbs() {
+    while (_igThumbRunning < 2 && _igThumbQueue.length) {
+      const job = _igThumbQueue.shift();
+      _igThumbRunning++;
+      Promise.resolve(_igMakeSlideThumb(job)).then(function () {
+        _igThumbRunning--;
+        _igPumpThumbs();
+      }, function () {
+        _igThumbRunning--;
+        _igPumpThumbs();
+      });
+    }
+  }
+
+  function _igQueueThumb(card, it, absUrl, gen) {
+    if (!card || !it || it.type === 'folder') return;
+    if (card.getAttribute('data-thumb-ready') === '1') return;
+    _igThumbQueue.push({ card: card, it: it, absUrl: absUrl, gen: gen });
+    _igPumpThumbs();
+  }
+
+  function _igKickSlideThumbs() {
+    if (_igGetView() !== 'grid') return;
+    const grid = document.getElementById('ig-grid');
+    const items = _igLastItems;
+    const absUrl = _igLastAbsUrl;
+    if (!grid || !items) return;
+    if (_igThumbIO) { try { _igThumbIO.disconnect(); } catch (e) {} _igThumbIO = null; }
+    const gen = ++_igThumbGen;
+    _igThumbQueue = [];
+    const cards = grid.querySelectorAll('.ig-card.ig-pres');
+    if (!cards.length) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      cards.forEach(function (btn) {
+        const it = items[+btn.getAttribute('data-i')];
+        _igQueueThumb(btn, it, absUrl, gen);
+      });
+      return;
+    }
+    _igThumbIO = new IntersectionObserver(function (entries) {
+      if (gen !== _igThumbGen) return;
+      entries.forEach(function (en) {
+        if (!en.isIntersecting) return;
+        if (_igThumbIO) _igThumbIO.unobserve(en.target);
+        const it = items[+en.target.getAttribute('data-i')];
+        _igQueueThumb(en.target, it, absUrl, gen);
+      });
+    }, { root: grid, rootMargin: '120px' });
+    cards.forEach(function (btn) { _igThumbIO.observe(btn); });
+  }
+
   function _igRenderGrid(items, absUrl) {
     const grid = document.getElementById('ig-grid');
     if (!grid) return;
+    _igLastItems = items;
+    _igLastAbsUrl = absUrl;
+    if (_igThumbIO) { try { _igThumbIO.disconnect(); } catch (e) {} _igThumbIO = null; }
+    _igThumbGen++;
+    _igThumbQueue = [];
     if (!items.length) {
       grid.innerHTML = '<div class="ig-empty">Здесь пока нет папок и презентаций</div>';
       return;
     }
+    const appIcon = _igAppIconUrl();
     grid.innerHTML = items.map(function (it, i) {
       if (it.type === 'folder') {
         return '<button type="button" class="ig-card ig-folder" data-i="' + i + '" title="Двойной клик — открыть">' +
@@ -306,29 +599,16 @@
           '</div>' +
           '<div class="ig-label">' + _esc(it.name) + '</div></button>';
       }
-      const thumb = it.thumb || '';
-      const appIcon = _igAppIconUrl();
       return '<button type="button" class="ig-card ig-pres" data-i="' + i + '" title="Двойной клик — импортировать">' +
         '<div class="ig-thumb">' +
-          (thumb
-            ? '<img class="ig-thumb-preview" src="' + _esc(thumb) + '" alt="" loading="lazy" data-fallback="' + _esc(appIcon) + '"/>'
-            : '<img class="ig-thumb-app" src="' + _esc(appIcon) + '" alt="" loading="lazy"/>') +
+          '<canvas class="ig-thumb-slide" width="160" height="90"></canvas>' +
+          '<img class="ig-thumb-app" src="' + _esc(appIcon) + '" alt="" />' +
         '</div>' +
         '<div class="ig-label">' + _esc(it.name) + '</div></button>';
     }).join('');
 
     grid.querySelectorAll('.ig-card').forEach(function (btn) {
       const it = items[+btn.getAttribute('data-i')];
-      const preview = btn.querySelector('img.ig-thumb-preview');
-      if (preview) {
-        preview.onerror = function () {
-          const fb = preview.getAttribute('data-fallback') || _igAppIconUrl();
-          preview.onerror = null;
-          preview.className = 'ig-thumb-app';
-          preview.removeAttribute('data-fallback');
-          preview.src = fb;
-        };
-      }
       btn.ondblclick = function (e) {
         e.preventDefault();
         if (!it) return;
@@ -336,6 +616,7 @@
         else _igImportPres(absUrl, it);
       };
     });
+    _igKickSlideThumbs();
   }
 
   async function _igImportPres(absUrl, it) {
@@ -350,7 +631,7 @@
       try {
         raw = await _igFetchText(viaGet);
       } catch (e1) {
-        raw = await _igFetchText(direct);
+        raw = await _igFetchText(_needsProxy() ? _proxiedAsset(direct) : direct);
       }
       const modal = document.getElementById('import-gallery-modal');
       if (modal) modal.classList.remove('open');

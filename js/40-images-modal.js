@@ -391,11 +391,23 @@ function imgModalUpload(){
     const file = e.target.files[0];
     if(!file) return;
     const slideBgMode = _imgSlideBgMode;
+    const pickCb = _imgPickCallback;
+    _imgPickCallback = null;
     closeImageModal();
     if(slideBgMode){
       const reader = new FileReader();
       reader.onload = ev => {
         if(typeof setSlideBgImage==='function')setSlideBgImage(ev.target.result,file.name);
+      };
+      reader.readAsDataURL(file);
+      inp.value = '';
+      return;
+    }
+    // Режим выбора (перевёртыш и др.) — отдать data URL в колбэк, не вставлять на слайд
+    if(pickCb){
+      const reader = new FileReader();
+      reader.onload = ev => {
+        try{ pickCb(ev.target.result); }catch(err){ console.error(err); }
       };
       reader.readAsDataURL(file);
       inp.value = '';

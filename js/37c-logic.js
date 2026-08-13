@@ -382,7 +382,10 @@
 
     const plotW = W - padL - padR;
     const plotH = H - padT - padB;
-    const colGap = maxCol > 0 ? plotW / (maxCol + 0.45) : plotW;
+    // Компактные колонки: не растягивать провода на всю ширину холста
+    const stretchGap = maxCol > 0 ? plotW / (maxCol + 0.55) : plotW;
+    const compactGap = Math.max(gateW + 52, Math.min(gateW + 100, W * 0.145));
+    const colGap = maxCol > 0 ? Math.min(stretchGap, compactGap) : plotW;
     const rowGap = rowSpan > 0 ? plotH / (rowSpan + 0.6) : plotH / 2;
 
     function hasBubble(kind) {
@@ -474,7 +477,9 @@
 
         const yMin = Math.min.apply(null, pinYs);
         const yMax = Math.max.apply(null, pinYs);
-        gh = Math.max(baseGateH, (yMax - yMin) + Math.max(16, baseGateH * 0.28));
+        // Отступ пинов от верхнего/нижнего края прямоугольника (не «впритык»)
+        const pinEdgePad = Math.max(26, baseGateH * 0.55);
+        gh = Math.max(baseGateH, (yMax - yMin) + 2 * pinEdgePad);
         cy = (yMin + yMax) / 2;
       }
 
@@ -665,7 +670,7 @@
           n.inputs.forEach(inp => {
             const sp = pos[inp.id];
             if (!sp || !tp) return;
-            const need = sp.outX + Math.max(32, colGap * 0.18);
+            const need = sp.outX + Math.max(24, colGap * 0.12);
             if (tp.inX < need) {
               const dx = need - tp.inX;
               tp.inX += dx;
@@ -708,12 +713,14 @@
 
     /**
      * Orthogonal route: only right / up / down (never left).
-     * Ends with a horizontal into the pin from the left.
+     * Ends with a horizontal into the pin from the left —
+     * never run a vertical along the gate's left edge (looks flush at the corner).
      */
     function routeToPin(src, t) {
       const obs = gateObstacles({ [src.id]: 1, [t.gateId]: 1 });
       const x0 = src.outX, y0 = src.outY;
       const x1 = t.x, y1 = t.y;
+      const minApproach = Math.max(14, Math.min(26, (x1 - x0) * 0.45));
 
       if (x1 <= x0 + 2) {
         line(x0, y0, x0 + 2, y0);
@@ -721,7 +728,9 @@
       }
 
       function tryHVH(xm) {
-        xm = Math.max(x0, Math.min(x1, xm));
+        // Vertical must stay left of the pin by minApproach
+        const maxXm = x1 - Math.min(minApproach, Math.max(8, x1 - x0 - 2));
+        xm = Math.max(x0, Math.min(maxXm, xm));
         if (hHits(y0, x0, xm, obs)) return false;
         if (Math.abs(y0 - y1) > 0.5 && vHits(xm, y0, y1, obs)) return false;
         if (hHits(y1, xm, x1, obs)) return false;
@@ -745,26 +754,26 @@
         });
         const viaY = (Number.isFinite(blockTop) && y0 - blockTop <= blockBot - y0)
           ? blockTop - 10 : blockBot + 10;
-        const xm = Math.max(x0 + 4, Math.min(x1 - 4, (x0 + x1) / 2));
+        const xm = Math.max(x0 + 4, Math.min(x1 - minApproach, (x0 + x1) / 2));
         if (!hHits(y0, x0, xm, obs) && !vHits(xm, y0, viaY, obs) &&
-            !hHits(viaY, xm, x1, obs) && !vHits(x1, viaY, y1, obs)) {
+            !hHits(viaY, xm, x1, obs)) {
           line(x0, y0, xm, y0);
           line(xm, y0, xm, viaY);
           line(xm, viaY, x1, viaY);
-          if (Math.abs(viaY - y1) > 0.5) line(x1, viaY, x1, y1);
+          // no vertical on the gate face
           return;
         }
       }
 
       const prefers = [
-        x1 - Math.max(14, colGap * 0.1),
+        x1 - minApproach,
         x0 + Math.max(14, colGap * 0.1),
         (x0 + x1) / 2
       ];
       for (let i = 0; i < prefers.length; i++) {
         if (tryHVH(prefers[i])) return;
       }
-      for (let xm = x1 - 8; xm >= x0 + 4; xm -= 10) {
+      for (let xm = x1 - minApproach; xm >= x0 + 4; xm -= 10) {
         if (tryHVH(xm)) return;
       }
 
@@ -777,22 +786,20 @@
       const viaYs = [y1 - 44, y1 + 44, y0 - 44, y0 + 44, padT + 10, H - padB - 10];
       for (let vi = 0; vi < viaYs.length; vi++) {
         const viaY = viaYs[vi];
-        const xm = Math.max(x0 + 4, Math.min(x1 - 4, (x0 + x1) / 2));
+        const xm = Math.max(x0 + 4, Math.min(x1 - minApproach, (x0 + x1) / 2));
         if (hHits(y0, x0, xm, obs)) continue;
         if (vHits(xm, y0, viaY, obs)) continue;
         if (hHits(viaY, xm, x1, obs)) continue;
-        if (vHits(x1, viaY, y1, obs)) continue;
         line(x0, y0, xm, y0);
         line(xm, y0, xm, viaY);
         line(xm, viaY, x1, viaY);
-        if (Math.abs(viaY - y1) > 0.5) line(x1, viaY, x1, y1);
         return;
       }
 
-      const xm = Math.max(x0, Math.min(x1, (x0 + x1) / 2));
+      const xm = Math.max(x0, Math.min(x1 - Math.min(minApproach, (x1 - x0) * 0.5), (x0 + x1) / 2));
       line(x0, y0, xm, y0);
       line(xm, y0, xm, y1);
-      line(xm, y1, x1, y1);
+      if (x1 > xm + 0.5) line(xm, y1, x1, y1);
     }
 
     // Leave room for a visible fan-out junction left of every multi-fan consumer
@@ -803,7 +810,7 @@
       );
       if (cons.length < 2) return;
       const sp = pos[v.id];
-      const need = sp.outX + Math.max(56, colGap * 0.28);
+      const need = sp.outX + Math.max(40, colGap * 0.2);
       const minIn = Math.min.apply(null, cons.map(g => pos[g.id].inX));
       if (minIn >= need) return;
       const dx = need - minIn;
@@ -855,8 +862,8 @@
       const minTX = Math.min.apply(null, targets.map(t => t.x));
       const trunkObs = gateObstacles({ [srcId]: 1 });
 
-      let bx = Math.min(minTX - Math.max(28, colGap * 0.16), src.outX + Math.max(28, colGap * 0.22));
-      bx = Math.max(src.outX + 14, Math.min(bx, minTX - 18));
+      let bx = Math.min(minTX - Math.max(20, colGap * 0.12), src.outX + Math.max(22, colGap * 0.16));
+      bx = Math.max(src.outX + 12, Math.min(bx, minTX - 14));
 
       for (let k = 0; k < 14; k++) {
         const yMin0 = Math.min.apply(null, targets.map(t => t.y).concat([src.outY]));
@@ -871,6 +878,8 @@
       // Plan each stub first (may offset viaY around a nearer sibling gate)
       const stubPlans = targets.map(t => {
         const stubObs = gateObstacles({ [srcId]: 1, [t.gateId]: 1 });
+        const approach = Math.max(14, Math.min(22, Math.max(8, t.x - bx - 4)));
+        const ax = Math.max(bx + 2, t.x - approach);
         let viaY = t.y;
         if (t.x > bx + 1 && hHits(t.y, bx, t.x, stubObs)) {
           const cands = [];
@@ -884,13 +893,14 @@
           cands.sort((a, b) => Math.abs(a - src.outY) - Math.abs(b - src.outY));
           for (let ci = 0; ci < cands.length; ci++) {
             const vy = cands[ci];
-            if (hHits(vy, bx, t.x, stubObs)) continue;
-            if (Math.abs(vy - t.y) > 0.5 && vHits(t.x, vy, t.y, stubObs)) continue;
+            if (hHits(vy, bx, ax, stubObs)) continue;
+            if (Math.abs(vy - t.y) > 0.5 && vHits(ax, vy, t.y, stubObs)) continue;
+            if (hHits(t.y, ax, t.x, stubObs)) continue;
             viaY = vy;
             break;
           }
         }
-        return { t, viaY, stubObs };
+        return { t, viaY, stubObs, ax };
       });
 
       const trunkYs = stubPlans.map(p => p.viaY).concat(targets.map(t => t.y)).concat([src.outY]);
@@ -903,12 +913,14 @@
       stubPlans.forEach(p => {
         const t = p.t;
         if (t.x <= bx + 1) return;
-        // Always leave the bus at bx — never invent a vertical to the right of the junction
+        const ax = p.ax;
+        // Always leave the bus at bx; vertical stays LEFT of the gate face
         if (Math.abs(p.viaY - t.y) < 0.5) {
           line(bx, t.y, t.x, t.y);
         } else {
-          line(bx, p.viaY, t.x, p.viaY);
-          line(t.x, p.viaY, t.x, t.y);
+          if (ax > bx + 0.5) line(bx, p.viaY, ax, p.viaY);
+          line(ax, p.viaY, ax, t.y);
+          if (t.x > ax + 0.5) line(ax, t.y, t.x, t.y);
         }
       });
 

@@ -1,0 +1,37 @@
+Options -Indexes +FollowSymLinks
+RewriteEngine on
+RewriteBase /
+
+# Блокировка вредоносных скриптов
+RewriteCond %{QUERY_STRING} (\<|%3C).*script.*(\>|%3E) [NC]
+RewriteCond %{QUERY_STRING} GLOBALS(=|\[|\%[0-9A-Z]{0,2}) [NC]
+RewriteRule .* - [F]
+
+# PWA: MIME манифеста и WASM
+AddType application/manifest+json .webmanifest
+AddType application/javascript .js
+AddType image/svg+xml .svg
+AddType application/wasm .wasm
+
+<IfModule mod_headers.c>
+  <Files "manifest.webmanifest">
+    Header set Content-Type "application/manifest+json"
+  </Files>
+</IfModule>
+
+# Иконки: сначала в корне (рядом с index.html), иначе slides/icons/
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^icons/(icon(?:-192|-512)?\.(?:png|svg))$ $1 [L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^icons/(.+)$ slides/icons/$1 [L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^icon(-192|-512)?\.(png|svg)$ slides/icons/icon$1.$2 [L]
+
+# Перенаправление на index.html (только если файла/папки нет)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ /index.html [L]
+
+ErrorDocument 404 /index.html
+ErrorDocument 403 /index.html
+DirectorySlash Off

@@ -310,6 +310,17 @@ function startPreview(startIdx){
   po2._stageClick=function(e){
     if(e.target.closest('#p-prev,#p-next,#p-exit,#p-info'))return;
     const psa=document.getElementById('psa');
+    let tocItem=e.target.closest&&e.target.closest('[data-toc-slide]');
+    if(!tocItem&&psa&&typeof window._tocHitAtPoint==='function'){
+      tocItem=window._tocHitAtPoint(e.clientX,e.clientY,psa);
+    }
+    if(tocItem){
+      e.stopPropagation();
+      e.preventDefault();
+      const si=parseInt(tocItem.getAttribute('data-toc-slide'),10);
+      if(!isNaN(si)&&typeof gotoPreviewSlide==='function')gotoPreviewSlide(si);
+      return;
+    }
     const psel=(typeof _findElAtPoint==='function'&&psa
       ? _findElAtPoint(e.clientX,e.clientY,{container:psa,selector:'.psel',excludeDecor:true})
       : null)||e.target.closest('.psel');
@@ -1621,7 +1632,7 @@ function _pvWireElemTriggers(container, slideIdx) {
   const trigMap = new Map();
   bindings.forEach(b => {
     b.steps.forEach(step => {
-      const tid = step.triggerElId;
+      const tid = step.triggerElId || (b.targetD && b.targetD.id) || '';
       if (!tid) return;
       const arr = trigMap.get(tid) || [];
       arr.push({ targetD: b.targetD, step });
@@ -1821,8 +1832,9 @@ function buildPSlide(container,idx,transOffset,noScale){
     globalAnimList.forEach(({d, a, i}, gi) => {
       const eff = globalEffTrig[gi];
       const trig = a.trigger || 'auto';
-      // element/nav/click — не в авто-карту; element/nav также вне сценария (withPrev-цепочки)
-      if(trig === 'element' || trig === 'click' || trig === 'nav' || trig === 'counter' || trig === 'timer') return;
+      // element/nav/counter/timer — вне авто/клик-сценария (своя проводка)
+      // click — в click-map ниже (не в авто-карту)
+      if(trig === 'element' || trig === 'nav' || trig === 'counter' || trig === 'timer') return;
       if(eff === 'element' || eff === 'nav' || eff === 'counter' || eff === 'timer') return;
       if(eff === 'auto' || eff === 'withPrev') {
         const relDelay = a.delay||0;
@@ -1830,7 +1842,7 @@ function buildPSlide(container,idx,transOffset,noScale){
         const _isLive = typeof ANIM_INFO!=='undefined'&&ANIM_INFO[a.name]&&ANIM_INFO[a.name].cat==='live';
         if(gPrevStart===0 && gPrevDur===0){
           absDelay = relDelay;
-        } else if(_isLive && a.name!=='typewriter' && (a.trigger||'auto')==='auto'){
+        } else if(_isLive && a.name!=='typewriter' && a.name!=='langFade' && (a.trigger||'auto')==='auto'){
           // live (dance и др.) стартует после предыдущей анимации, как обычный afterPrev
           absDelay = gPrevStart + gPrevDur + relDelay;
         } else if((a.trigger||'auto')==='withPrev'){
@@ -1902,7 +1914,7 @@ function buildPSlide(container,idx,transOffset,noScale){
       c.className='ec tel';
       const csStr=(d.cs||'').trim();
       c.style.cssText=(csStr?(csStr.endsWith(';')?csStr:csStr+';'):'')+'overflow:hidden;'+rxStr+'pointer-events:none;user-select:none;position:relative;z-index:1;box-sizing:border-box;';
-      if(d.textColorGrad&&d.textColorGrad1){
+      if(d.textColorGrad&&d.textColorGrad1&&d.textRole!=='toc'){
         const _tcgDir=d.textColorGradDir!=null?d.textColorGradDir:90;
         c.style.background=`linear-gradient(${_tcgDir}deg,${d.textColorGrad1},${d.textColorGrad2||'transparent'})`;
         c.style.webkitBackgroundClip='text';c.style.backgroundClip='text';c.style.webkitTextFillColor='transparent';
@@ -1926,6 +1938,10 @@ function buildPSlide(container,idx,transOffset,noScale){
         : (d.html||'');
       c.innerHTML=_pvHtml;
       if (typeof _rtNormalizeTextDisplay === 'function') _rtNormalizeTextDisplay(c, csStr, d.bulletGap);
+      if (d.textRole === 'toc') {
+        if (typeof window._tocClearParentTextGrad === 'function') window._tocClearParentTextGrad(el);
+        if (typeof window._fixTocItemsVisible === 'function') window._fixTocItemsVisible(c, true);
+      }
       body.appendChild(c);
       el.appendChild(body);
       if(typeof applyTextPad==='function') applyTextPad(el);
@@ -2248,16 +2264,19 @@ function buildPSlide(container,idx,transOffset,noScale){
       }
     }
 
+    // Силуэт «Цвет» до планирования анимаций — иначе prepare сбросит уже поставленные таймеры
+    if (typeof window._recolorPrepareEl === 'function') window._recolorPrepareEl(el, d);
+
     // Auto anims — from global map (already classified)
     const autoTimed = (globalAutoMap.get(d.id) || []).filter(({ anim: a }) => {
       const trig = a.trigger || 'auto';
       return trig !== 'click' && trig !== 'element' && trig !== 'nav' && trig !== 'counter' && trig !== 'timer';
     });
     if(autoTimed.length>0){
-      const cssAnims    = autoTimed.filter(({anim:a})=>a.name!=='moveTo'&&a.name!=='orbitTo'&&a.name!=='rotate'&&a.name!=='recolor'&&a.name!=='captionSlide'&&a.name!=='splitHalf'&&a.name!=='typewriter'&&(typeof ANIM_INFO==='undefined'||!ANIM_INFO[a.name]||ANIM_INFO[a.name].cat!=='live'));
+      const cssAnims    = autoTimed.filter(({anim:a})=>a.name!=='moveTo'&&a.name!=='orbitTo'&&a.name!=='rotate'&&a.name!=='recolor'&&a.name!=='captionSlide'&&a.name!=='splitHalf'&&a.name!=='typewriter'&&a.name!=='langFade'&&(typeof ANIM_INFO==='undefined'||!ANIM_INFO[a.name]||ANIM_INFO[a.name].cat!=='live'));
       const captionAnims = autoTimed.filter(({anim:a})=>a.name==='captionSlide');
-      const liveAnims   = autoTimed.filter(({anim:a})=>typeof ANIM_INFO!=='undefined'&&ANIM_INFO[a.name]&&ANIM_INFO[a.name].cat==='live'&&a.name!=='typewriter'&&a.name!=='captionSlide');
-      const twAnims     = autoTimed.filter(({anim:a})=>a.name==='typewriter');
+      const liveAnims   = autoTimed.filter(({anim:a})=>typeof ANIM_INFO!=='undefined'&&ANIM_INFO[a.name]&&ANIM_INFO[a.name].cat==='live'&&a.name!=='typewriter'&&a.name!=='langFade'&&a.name!=='captionSlide');
+      const twAnims     = autoTimed.filter(({anim:a})=>a.name==='typewriter'||a.name==='langFade');
       const motionAnims = autoTimed.filter(({anim:a})=>a.name==='moveTo'||a.name==='orbitTo');
       const rotateAnims = autoTimed.filter(({anim:a})=>a.name==='rotate');
       const recolorAnims = autoTimed.filter(({anim:a})=>a.name==='recolor');
@@ -2436,9 +2455,14 @@ function buildPSlide(container,idx,transOffset,noScale){
     if (particlesHideSet.has(d.id) && typeof window._particlesEnsureHiddenIfNeeded === 'function') {
       window._particlesEnsureHiddenIfNeeded(el, d);
     }
-    if (typeof window._recolorPrepareEl === 'function') window._recolorPrepareEl(el, d);
 
     container.appendChild(el);
+    if(d.type==='text'){
+      const tc=el.querySelector('.ec');
+      if(tc&&tc.querySelector('[data-toc-slide]')&&typeof window._wireTocElement==='function'){
+        window._wireTocElement(el, tc, idx, si=>{ if(typeof gotoPreviewSlide==='function') gotoPreviewSlide(si); });
+      }
+    }
     if(d.type==='applet'){
       if(d.appletId==='counter'&&typeof window._wireCounterAppletClick==='function') window._wireCounterAppletClick(el);
       if(d.appletId==='generator'&&typeof window._wireGeneratorAppletClick==='function') window._wireGeneratorAppletClick(el);
@@ -3048,6 +3072,12 @@ function fireAnim(el,d,a,idx,overrideDelay,_cumTx,_cumTy){
     return;
   }
   // ── LIVE (infinite) анимации — через Web Animations API с iterations:Infinity ──
+  // ── langFade: плавная смена языка ────────────────────────────────────────
+  if(a.name==='langFade'){
+    const delay = typeof overrideDelay==='number' ? overrideDelay : (a.delay||0);
+    if(typeof window._fireLangFadeAnim==='function') window._fireLangFadeAnim(el,d,a,delay,{});
+    return;
+  }
   // ── typewriter: стираем старый текст посимвольно, печатаем новый ─────────
   if(a.name==='typewriter'){
     const dur   = a.duration || 600; // не используется напрямую — скорость через charDelay

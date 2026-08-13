@@ -11,21 +11,21 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Слайды">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
 <link rel="stylesheet" href="fonts/fonts.css">
 <script src="fonts/fonts-list.js"></script>
 <script src="fonts/fonts-data.js"></script>
-  <link rel="stylesheet" href="css/styles.css?v=44">
+  <link rel="stylesheet" href="css/styles.css?v=50">
 </head>
 <body>
 <div id="ribbon">
   <div id="ribbon-top">
     <div class="app-logo">
-      <img class="app-logo-icon" src="icons/icon.svg" alt="" width="18" height="18">
+      <svg class="app-logo-icon" viewBox="0 0 512 512" width="18" height="18" aria-hidden="true"><path fill="#3b82f6" d="M63.98 67.2C34.15 67.2 9.52 91.84 9.52 121.67v229.59c0 29.83 24.63 54.46 54.46 54.46H236v33.4h-63.68c-11.35 0-20.49 8.92-20.49 20 0 11.08 9.14 20 20.49 20h167.36c11.35 0 20.49-8.92 20.49-20 0-11.08-9.14-20-20.49-20H276v-33.4h172.02c29.83 0 54.46-24.63 54.46-54.46V121.67c0-29.83-24.63-54.47-54.46-54.47H63.98zm0 40h384.04c8.36 0 14.46 6.11 14.46 14.47v229.59c0 8.36-6.1 14.46-14.46 14.46H63.98c-8.36 0-14.46-6.1-14.46-14.46V121.67c0-8.36 6.1-14.47 14.46-14.47z"/><path fill="#3b82f6" d="M363.03 132.88a74.42 74.42 0 0 0-74.42 74.42 74.42 74.42 0 0 0 .33 4.59h73.24v69.77a74.42 74.42 0 0 0 .85.06 74.42 74.42 0 0 0 74.43-74.42 74.42 74.42 0 0 0-74.43-74.42zm-.86 148.78a74.42 74.42 0 0 1-73.24-69.77h-54.17v127.41h127.41z"/><rect fill="#3b82f6" width="207.97" height="38.28" x="66.99" y="129.5" rx="19.53" ry="19.14"/><rect fill="#3b82f6" width="132.69" height="38.28" x="66.99" y="185.64" rx="18.84" ry="19.14"/></svg>
       <span class="app-logo-title">
         <span id="app-name-span" data-i18n="appName">Слайды</span>
-        <span class="app-logo-ver" id="app-logo-ver">v 6.5</span>
+        <span class="app-logo-ver" id="app-logo-ver">v 6.6</span>
       </span>
     </div>
     <input id="pres-title" type="text" value="" data-i18n-placeholder="newPresentation" placeholder="Новая презентация" spellcheck="false">
@@ -119,6 +119,7 @@
       </button>
       <button class="rb" onclick="addVideoEl()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="4" width="20" height="16" rx="2"/><polygon points="10,8 16,12 10,16" fill="currentColor" stroke="none"/></svg><span class="rbl">Видео</span></button>
       <button class="rb" onclick="addAudioEl()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg><span class="rbl">Аудио</span></button>
+      <button class="rb" onclick="addModel3dEl()" title="Импорт OBJ"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2l9 5v10l-9 5-9-5V7l9-5z"/><path d="M12 12l9-5M12 12v10M12 12L3 7"/></svg><span class="rbl">OBJ</span></button>
       <div class="rglbl"><span data-i18n="grpInsert">Вставить</span></div>
     </div>
     <!-- DESIGN -->
@@ -238,7 +239,7 @@
   </div><!-- /ribbon-bottom -->
 </div>
 <input type="file" id="imgup" accept="image/*" style="display:none" onchange="handleImg(event)">
-<input type="file" id="fileup" accept=".html,.htm,.json,.slides.json,.pptx,.ppt,.odp,image/*,.svg,video/*,audio/*,.md,.markdown,.js,.mjs,.ts,.tsx,.py,.rs,.go,.java,.cpp,.c,.h,.cs,.css,.sql,.sh,.bash,.yml,.yaml,.txt,.xml" style="display:none" onchange="handleFileImport(event)">
+<input type="file" id="fileup" accept=".html,.htm,.json,.slides.json,.pptx,.ppt,.odp,image/*,.svg,video/*,audio/*,.obj,.md,.markdown,.js,.mjs,.ts,.tsx,.py,.rs,.go,.java,.cpp,.c,.h,.cs,.css,.sql,.sh,.bash,.yml,.yaml,.txt,.xml" style="display:none" onchange="handleFileImport(event)">
 <div id="app">
   <div id="sidebar" role="complementary" aria-label="Slides">
     <div id="sb-hdr"><span data-i18n="grpSlides">Слайды</span><span id="sb-count">0</span></div>
@@ -470,10 +471,20 @@
                 <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><path d="M6 9l6 6 6-6"/></svg>
               </button>
             </div>
-            <button type="button" class="tbtn2" id="btn-translate-text" onclick="translateSelectedText()" onmousedown="event.preventDefault()" style="width:100%;margin-top:4px;display:flex;align-items:center;justify-content:center;gap:6px" data-i18n-title="btnTranslateTitle" title="Перевести: Google, иначе локально">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" style="flex-shrink:0"><path d="M5 8l6 6"/><path d="M4 14l6-6 2-3"/><path d="M2 5h12"/><path d="M7 2v3"/><path d="M14 13l6 8"/><path d="M14 21l6-8"/><path d="M12 22h10"/></svg>
-              <span id="btn-translate-text-label">английский</span>
+            <button type="button" class="tbtn2" id="btn-fill-toc" onclick="rtFillToc()" onmousedown="event.preventDefault()" style="width:100%;margin-top:4px;display:flex;align-items:center;justify-content:center;gap:6px" data-i18n-title="btnFillTocTitle" title="Заполнить список глав из помеченных пунктов">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" style="flex-shrink:0"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+              <span data-i18n="btnFillToc">Оглавление</span>
             </button>
+            <div style="display:flex;gap:4px;margin-top:4px">
+              <button type="button" class="tbtn2" id="btn-translate-text" onclick="translateSelectedText()" onmousedown="event.preventDefault()" style="flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:4px" data-i18n-title="btnTranslateTitle" title="Перевести: Google, иначе локально">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" style="flex-shrink:0"><path d="M5 8l6 6"/><path d="M4 14l6-6 2-3"/><path d="M2 5h12"/><path d="M7 2v3"/><path d="M14 13l6 8"/><path d="M14 21l6-8"/><path d="M12 22h10"/></svg>
+                <span id="btn-translate-text-label" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">английский</span>
+              </button>
+              <button type="button" class="tbtn2" id="btn-transcribe-text" onclick="transcribeSelectedText()" onmousedown="event.preventDefault()" style="flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:4px" data-i18n-title="btnTranscribeTitle" title="Транскрипция: Google, для русского — и локально">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M7 5H5v14h2"/><path d="M17 5h2v14h-2"/><path d="M10 14c0 1.15.9 2 2 2s2-.85 2-2-.9-3-2-3"/></svg>
+                <span data-i18n="btnTranscribe" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">транскрипция</span>
+              </button>
+            </div>
           </div>
           <!-- Text role selector -->
           <div class="pr" style="margin-bottom:6px">
@@ -528,6 +539,7 @@
               <div style="display:flex;gap:2px">
                 <button class="ftbtn" id="ft-ul" onclick="rtBulletList()" title="Маркированный список" onmousedown="event.preventDefault()"><svg width="15" height="13" viewBox="0 0 15 13" fill="none"><circle cx="1.5" cy="2" r="1.5" fill="currentColor"/><line x1="5" y1="2" x2="15" y2="2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="1.5" cy="6.5" r="1.5" fill="currentColor"/><line x1="5" y1="6.5" x2="15" y2="6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="1.5" cy="11" r="1.5" fill="currentColor"/><line x1="5" y1="11" x2="15" y2="11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
                 <button class="ftbtn" id="ft-ol" onclick="rtNumberedList()" title="Нумерованный список: 1 → I → A → снять" onmousedown="event.preventDefault()"><svg width="15" height="13" viewBox="0 0 15 13" fill="none"><text x="0" y="3.5" font-size="4" fill="currentColor" font-family="monospace">1.</text><line x1="5" y1="2" x2="15" y2="2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><text x="0" y="8" font-size="4" fill="currentColor" font-family="monospace">2.</text><line x1="5" y1="6.5" x2="15" y2="6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><text x="0" y="12.5" font-size="4" fill="currentColor" font-family="monospace">3.</text><line x1="5" y1="11" x2="15" y2="11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+                <button class="ftbtn" id="ft-toc-entry" onclick="rtSetTocEntry()" title="Пункт оглавления" onmousedown="event.preventDefault()" data-i18n-title="btnTocEntryTitle"><svg width="15" height="13" viewBox="0 0 15 13" fill="none"><path d="M12 2.5v3M10.5 4h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M1 8.5h9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M1 11h5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
               </div>
             </div>
           </div>
@@ -1289,6 +1301,64 @@
               <label class="tog"><input type="checkbox" id="hf-chrome" checked onchange="updateHfChrome(this.checked)"><span class="tog-track"></span><span class="tog-thumb"></span></label>
               <span data-i18n="propHfChromeHint">Показывать шапку</span>
             </label>
+          </div>
+        </div>
+        <!-- OBJ / 3D MODEL PROPS -->
+        <div id="model3dprops" style="display:none;flex-direction:column">
+          <div class="ph">OBJ · 3D</div>
+          <div class="psec" style="display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;align-items:center;gap:6px">
+              <span id="m3d-name" style="font-size:11px;color:var(--text2);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">model.obj</span>
+              <label class="mbtn-sm" style="cursor:pointer;margin:0;flex-shrink:0">
+                Файл
+                <input type="file" accept=".obj,model/obj" style="display:none" onchange="replaceModel3dFile(this)">
+              </label>
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--text2);margin-bottom:4px">Поворот по вертикали</div>
+              <div style="display:flex;align-items:center;gap:6px">
+                <button type="button" class="mbtn-sm" style="flex:1" onclick="updateModel3dRot('x',-10)" title="-10°">▲ −10°</button>
+                <span id="m3d-rotx" style="min-width:42px;text-align:center;font-size:11px;color:var(--text)">0°</span>
+                <button type="button" class="mbtn-sm" style="flex:1" onclick="updateModel3dRot('x',10)" title="+10°">▼ +10°</button>
+              </div>
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--text2);margin-bottom:4px">Поворот по горизонтали</div>
+              <div style="display:flex;align-items:center;gap:6px">
+                <button type="button" class="mbtn-sm" style="flex:1" onclick="updateModel3dRot('y',-10)" title="-10°">◀ −10°</button>
+                <span id="m3d-roty" style="min-width:42px;text-align:center;font-size:11px;color:var(--text)">0°</span>
+                <button type="button" class="mbtn-sm" style="flex:1" onclick="updateModel3dRot('y',10)" title="+10°">▶ +10°</button>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <label class="tog"><input type="checkbox" id="m3d-autorot" onchange="setModel3dAutoRot(this.checked)"><span class="tog-track"></span><span class="tog-thumb"></span></label>
+              <span style="font-size:11px;color:var(--text2)">Вращение вокруг основания</span>
+            </div>
+            <div class="pr" id="m3d-speed-row" style="margin:0">
+              <label>Скорость</label>
+              <input type="number" id="m3d-speed" min="0" max="10" step="0.1" value="1" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="setModel3dSpeed(+this.value)">
+            </div>
+            <div class="pr" style="margin:0">
+              <label>Цвет объекта</label>
+              <div class="tprops-color-row">
+                <div class="tprops-swatch" onmousedown="event.preventDefault();openColorPanel('cp-m3d-col-slot','m3d-col',function(c,sr){setModel3dColor(c,sr);})" title="Цвет объекта"><div id="m3d-col-preview" class="tprops-swatch-inner" style="background:#7dd3fc"></div></div>
+                <div class="hex-field" style="flex:1"><input type="text" id="m3d-col-hex" class="tprops-hex hex-field-input" maxlength="7" placeholder="11 или #hex" oninput="colorFieldOnInput(this.value,'m3d-col-preview',function(c,sr){setModel3dColor(c,sr);})"></div>
+              </div>
+              <div id="cp-m3d-col-slot" class="cp-slot" style="display:none;margin-top:4px" onmousedown="event.preventDefault()"></div>
+            </div>
+            <div class="pr" style="margin:0">
+              <label>Фон</label>
+              <div class="tprops-color-row">
+                <div class="tprops-swatch" onmousedown="event.preventDefault();openColorPanel('cp-m3d-bg-slot','m3d-bg',function(c,sr){setModel3dBg(c,sr);})" title="Цвет фона"><div id="m3d-bg-preview" class="tprops-swatch-inner" style="background:#0f172a"></div></div>
+                <div class="hex-field" style="flex:1"><input type="text" id="m3d-bg-hex" class="tprops-hex hex-field-input" maxlength="7" placeholder="11 или #hex" oninput="colorFieldOnInput(this.value,'m3d-bg-preview',function(c,sr){setModel3dBg(c,sr);})"></div>
+                <button type="button" class="tprops-icon-btn" onclick="clearModel3dBg()" title="Убрать фон">&#x2715;</button>
+              </div>
+              <div id="cp-m3d-bg-slot" class="cp-slot" style="display:none;margin-top:4px" onmousedown="event.preventDefault()"></div>
+            </div>
+            <div class="pr" style="margin:0">
+              <label>Прозрачность фона</label>
+              <input type="number" id="m3d-bg-op" min="0" max="1" step="0.05" value="1" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:3px;padding:3px 5px;font-size:10px;width:100%" oninput="setModel3dBgOp(+this.value)">
+            </div>
           </div>
         </div>
         <!-- VIDEO PROPS -->
@@ -2285,7 +2355,6 @@
   <div class="modal" style="width:820px;max-width:95vw;height:620px;max-height:90vh;display:flex;flex-direction:column">
     <div class="mhdr">
       <span data-i18n="modalImages">Галерея изображений</span>
-      <button class="mclose" onclick="closeImageModal()">✕</button>
     </div>
     <div style="padding:10px 16px 6px;border-bottom:1px solid var(--border);flex-shrink:0">
       <input type="text" id="img-search" data-i18n-placeholder="imgSearch" placeholder="Поиск изображений…" oninput="filterImages(this.value)"
@@ -2542,6 +2611,7 @@
   <script src="images/image-index.js"></script>
   <script src="js/40-images-modal.js"></script>
   <script src="js/30-rich-text.js"></script>
+  <script src="js/30b-toc.js"></script>
 
   <script src="js/32-scrubber.js"></script>
   <script src="js/33-objects.js"></script>
@@ -2566,6 +2636,7 @@
   <script src="js/44-group.js"></script>
   <script src="js/46-cross-clipboard.js"></script>
   <script src="js/45-media.js"></script>
+  <script src="js/45b-model3d.js"></script>
   <script src="js/47-translate.js"></script>
   <script src="js/50-voice.js"></script>
 <script>

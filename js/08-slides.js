@@ -863,6 +863,17 @@ function save(){
         d.maTriggerElId=dd.maTriggerElId;d.maTriggerElIds=dd.maTriggerElIds;
       }
     }
+    else if(d.type==='model3d'){
+      const dd=oldElsById[d.id];
+      if(dd){
+        d.objText=dd.objText;d.objName=dd.objName;
+        d.objRotX=dd.objRotX;d.objRotY=dd.objRotY;
+        d.objAutoRot=dd.objAutoRot;d.objRotSpeed=dd.objRotSpeed;
+        d.objColor=dd.objColor;d.objColorScheme=dd.objColorScheme;
+        d.objBg=dd.objBg;d.objBgScheme=dd.objBgScheme;d.objBgOp=dd.objBgOp;d.objBgCleared=dd.objBgCleared;
+        if(dd._mesh) d._mesh=dd._mesh;
+      }
+    }
     // Restore decor flags
     if(decorMeta[d.id])Object.assign(d,decorMeta[d.id]);
     return d;

@@ -217,7 +217,7 @@ function _forwardClickThrough(e, opts) {
 
 function _elWantsPointer(el) {
   if (!el) return false;
-  if (el._isTrigger || el._hasLink || el._mAudioTrig) return true;
+  if (el._isTrigger || el._hasLink || el._hasToc || el._mAudioTrig) return true;
   if (el.classList && el.classList.contains('_ma-trig')) return true;
   if (el.dataset && el.dataset.maTrig) return true;
   const aid = el.dataset.appletId;
@@ -253,6 +253,11 @@ function _updateAlphaHoverCursor(e, opts) {
   if (opts.overlay) opts.overlay.style.cursor = '';
 
   if (e.target.closest && e.target.closest(navSel)) return;
+
+  if (typeof window._pointOverTocItem === 'function' && window._pointOverTocItem(e.clientX, e.clientY, container)) {
+    if (opts.overlay) opts.overlay.style.cursor = 'pointer';
+    return;
+  }
 
   if (_isParticleDomNode(e.target)) {
     const resolvedOnly = typeof _findElAtPoint === 'function'
@@ -1057,6 +1062,11 @@ function mkEl(d){
     const rawHtml=d.html||_defPlaceholder;
     c.innerHTML=typeof rtMigrateHtml==='function'?rtMigrateHtml(rawHtml, _fsM):rawHtml;
     if (typeof _rtNormalizeTextDisplay === 'function') _rtNormalizeTextDisplay(c, d.cs || '', d.bulletGap);
+    if (d.textRole === 'toc') {
+      el.classList.add('has-toc');
+      if (typeof window._tocClearParentTextGrad === 'function') window._tocClearParentTextGrad(el);
+      if (typeof window._fixTocItemsVisible === 'function') window._fixTocItemsVisible(c, false, el);
+    }
     // Re-attach bullet icon click handlers (onclick attr stripped by innerHTML assignment in some browsers)
     if (typeof _attachBulletClickHandlers==='function') _attachBulletClickHandlers(c);
     const _charCounter=document.createElement('div');

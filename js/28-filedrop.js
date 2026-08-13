@@ -22,7 +22,7 @@
       '<div style="font-size:15px;font-weight:700;color:#a5b4fc;text-shadow:0 2px 8px rgba(0,0,0,.6)">' +
         'Перетащите файл для импорта' +
       '</div>' +
-      '<div id="filedrop-hint" style="font-size:11px;color:rgba(165,180,252,.7)">PPTX · HTML · JSON · Изображения · Видео · Аудио · Markdown · Код</div>';
+      '<div id="filedrop-hint" style="font-size:11px;color:rgba(165,180,252,.7)">PPTX · HTML · JSON · Изображения · Видео · Аудио · OBJ · Markdown · Код</div>';
     document.body.appendChild(_overlay);
     return _overlay;
   }
@@ -68,6 +68,8 @@
         return 'Аудио — вставить на слайд';
       if(['md','markdown','mdown','mkd'].includes(ext))
         return 'Markdown — вставить блок';
+      if(ext === 'obj')
+        return 'OBJ — 3D-модель на слайд';
       if(typeof _codeLangFromFilename==='function' && _codeLangFromFilename(name) && !['html','htm'].includes(ext))
         return 'Код — вставить блок';
     }
