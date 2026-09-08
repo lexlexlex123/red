@@ -1,0 +1,26 @@
+{
+  "name": "slides",
+  "private": true,
+  "version": "8.0.0",
+  "type": "module",
+  "description": "Слайды — презентационный редактор (Vite + React)",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && node scripts/copy-dist-assets.mjs",
+    "preview": "vite preview --host 127.0.0.1 --port 8000",
+    "server": "node js/server.js",
+    "start": "vite",
+    "fonts": "powershell -NoProfile -ExecutionPolicy Bypass -File ./download-fonts.ps1 -NoPause",
+    "images": "node images/build-index.js && node tools/_gen-image-index.mjs",
+    "audio": "node audio/build-list.js"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^5.0.3"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^6.0.7"
+  }
+}

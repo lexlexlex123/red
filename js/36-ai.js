@@ -479,6 +479,27 @@ function _createUI(){
   document.body.appendChild(panel);
   _panel = panel;
 
+  window.isAiFabEnabled = function () {
+    const v = localStorage.getItem('sf-ai-fab');
+    if (v === '1') return true;
+    if (v === '0') return false;
+    if (window.CFG_UI && typeof window.CFG_UI.showAiFab === 'boolean') return !!window.CFG_UI.showAiFab;
+    return false;
+  };
+  window.setAiFab = function (on) {
+    localStorage.setItem('sf-ai-fab', on ? '1' : '0');
+    if (typeof window._syncAiFab === 'function') window._syncAiFab();
+  };
+  window._syncAiFab = function () {
+    const fab = document.getElementById('ai-fab');
+    const panelEl = document.getElementById('ai-panel');
+    if (!fab) return;
+    const show = window.isAiFabEnabled();
+    fab.style.display = show ? 'flex' : 'none';
+    if (!show && panelEl) panelEl.style.display = 'none';
+  };
+  window._syncAiFab();
+
   // Восстанавливаем историю чата из localStorage
   (function _restoreChat(){
     try{
@@ -963,17 +984,17 @@ function _execCommands(cmds){
 
         case 'addIcon':{
           if(typeof slides!=='undefined' && typeof cur!=='undefined' && typeof ICONS!=='undefined'){
-            const ic = ICONS.find(x => x.id === cmd.iconId);
+            const ic = typeof getIconById==='function' ? getIconById(cmd.iconId) : ICONS.find(x => x.id === cmd.iconId);
             if(ic){
               if(typeof pushUndo==='function') pushUndo();
               const cw2 = typeof canvasW!=='undefined' ? canvasW : 960;
               const sn2 = typeof snapV==='function' ? snapV : v=>v;
               const sz  = sn2(cmd.size || 120);
-              const color = cmd.color || '#3b82f6';
+              const defC = typeof _defaultLineColor==='function' ? _defaultLineColor() : {color:'#64748b', schemeRef:{col:0,row:4}};
+              const color = cmd.color || defC.color;
               const sw = 1.8;
-              const style = 'stroke';
               const svgContent = typeof _buildIconSVG==='function'
-                ? _buildIconSVG(ic, color, sw, style)
+                ? _buildIconSVG(ic, color, sw, null, false, null, null, null, null, 0)
                 : '';
               const ch2 = typeof canvasH!=='undefined' ? canvasH : 675;
               const d = {
@@ -981,8 +1002,10 @@ function _execCommands(cmds){
                 x: cmd.x != null ? cmd.x : sn2(cw2 - sz - 30),
                 y: cmd.y != null ? cmd.y : sn2((ch2 - sz) / 2),
                 w:sz, h:sz,
-                iconId:ic.id, iconPath:ic.p, iconColor:color, iconSw:sw, iconStyle:style,
-                svgContent, rot:0, anims:[], shadow:false, shadowBlur:8, shadowSize:3, shadowColor:'#000000'
+                iconId:ic.id, iconPath:ic.p, iconColor:color, iconSw:sw, iconFillOp:0,
+                iconColorScheme: cmd.color ? null : (defC.schemeRef||null),
+                iconColorCustom: !!cmd.color,
+                svgContent, rot:0, anims:[], shadow:false, shadowBlur:4, shadowSize:0, shadowColor:'#000000'
               };
               slides[cur].els.push(d);
               if(typeof mkEl==='function') mkEl(d);

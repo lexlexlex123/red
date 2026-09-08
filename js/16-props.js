@@ -13,6 +13,21 @@ function syncProps(){
   const ep=document.getElementById('elprops'),ns=document.getElementById('nosel');
   const tp=document.getElementById('tprops'),shp=document.getElementById('shprops'),ap=document.getElementById('animprops');
   const sp=document.getElementById('slide-props');
+  const objSec=document.getElementById('objects-panel-section');
+  const onObjectsTab=!!(objSec&&objSec.style.display!=='none');
+  const hasInk=typeof hasSelectedInk==='function'&&hasSelectedInk();
+  if(document.body.classList.contains('anim-tab-active')){
+    [sp,ep,ns,tp,shp,ap,document.getElementById('hoverprops'),document.getElementById('imgprops'),
+     document.getElementById('codeprops'),document.getElementById('mdprops'),document.getElementById('iconprops'),
+     document.getElementById('tableprops'),document.getElementById('genprops'),document.getElementById('pteprops'),
+     document.getElementById('flipprops'),document.getElementById('qrprops'),document.getElementById('formulaprops'),
+     document.getElementById('multiprops'),document.getElementById('lineangleprops')].forEach(el=>{
+      if(el) el.style.display='none';
+    });
+    const scroll=document.getElementById('props-scroll');
+    if(scroll) scroll.style.display='none';
+    return;
+  }
   const hp=document.getElementById('hoverprops');
   const imp=document.getElementById('imgprops');
   const cdp=document.getElementById('codeprops');
@@ -28,6 +43,15 @@ function syncProps(){
   const lap=document.getElementById('lineangleprops');
   if(mp) mp.style.display='none';
   if(lap) lap.style.display='none';
+
+  // Objects tab + ink only: list + drawing props (no slide / element panels)
+  if(onObjectsTab && hasInk && !sel && !(typeof multiSel!=='undefined'&&multiSel.size>1)){
+    [sp,ep,ns,tp,shp,ap,hp,imp,cdp,mdp,icp,tblp,genp,ptep,flipp,qrp,fmp,mp,lap].forEach(el=>{
+      if(el) el.style.display='none';
+    });
+    return;
+  }
+
   if(!sel || multiSel.size > 1){
     ep.style.display='none';
     if(hp)hp.style.display='none';
@@ -48,6 +72,17 @@ function syncProps(){
       }
       return;
     }
+    // Objects tab with nothing selected: list + slide properties
+    if(onObjectsTab){
+      ns.style.display='none';
+      if(sp)sp.style.display='block';
+      [tp,shp,ap,imp,cdp,mdp,icp,tblp,genp,ptep,flipp,qrp,fmp].forEach(el=>{
+        if(el) el.style.display='none';
+      });
+      if(typeof _syncSlidePropsAnimRow==='function')_syncSlidePropsAnimRow();
+      if(typeof buildSlideTplGrid==='function')buildSlideTplGrid();
+      return;
+    }
     ns.style.display='block';
     if(sp)sp.style.display='block';
     if(typeof _syncSlidePropsAnimRow==='function')_syncSlidePropsAnimRow();
@@ -60,7 +95,8 @@ function syncProps(){
   if(typeof syncHoverFxUI==='function')syncHoverFxUI();
   syncPos();
   document.getElementById('p-rot').value=sel.dataset.rot||0;
-  document.getElementById('p-link').value=sel.dataset.link||'';document.getElementById('p-linkt').value=sel.dataset.linkt||'_blank';
+  document.getElementById('p-link').value=(typeof window._readGroupLinkFromEl==='function'?window._readGroupLinkFromEl(sel,'link'):(sel.dataset.link||''));
+  document.getElementById('p-linkt').value=(typeof window._readGroupLinkFromEl==='function'?window._readGroupLinkFromEl(sel,'linkt'):(sel.dataset.linkt||'_blank'));
   const t=sel.dataset.type;
   // Определяем специальные типы ДО показа панелей
   const isGen   = t==='applet' && sel.dataset.appletId==='generator';
@@ -172,48 +208,87 @@ function syncProps(){
   if(t==='text'){
     const cs=(sel.querySelector('.tel')||sel.querySelector('.ec')).getAttribute('style')||'';
     const m=(re,fb)=>{const x=cs.match(re);return x?x[1]:fb;};
-    // Читаем font-size из cs (.tel style) как основной источник
-    // Regex с \s* — учитываем пробелы вокруг двоеточия
-    const _fsFromCs=m(/font-size\s*:\s*([\d.]+)px/,'');
+    // Читаем font-size: сначала живые span (игнорируем font-size:0 zero-strut на .tel)
     const _pxToPt = px => Math.round(parseFloat(px) * 72 / 96);
+    const _fsPxFromStyle = st => {
+      const _m = (st || '').match(/font-size\s*:\s*([\d.]+)px/i);
+      if (!_m) return null;
+      const v = parseFloat(_m[1]);
+      return (v > 0) ? v : null;
+    };
+    const _fsFromCs = _fsPxFromStyle(cs);
     const _fsInputFocused = document.activeElement === document.getElementById('p-fs');
     if (!_fsInputFocused) {
-      document.getElementById('p-fs').value=_fsFromCs?_pxToPt(_fsFromCs):'';
-      document.getElementById('p-fs').title='pt';
+      const _inp = document.getElementById('p-fs');
+      _inp.title = 'pt';
+      let _fsVals = [];
+      try {
+        const _tel = sel.querySelector('.tel') || sel.querySelector('.ec');
+        const _live = _tel ? Array.from(_tel.querySelectorAll('span[data-ch], span[style]')).filter(s =>
+          !s.hasAttribute('data-br-anchor') &&
+          !s.hasAttribute('data-list-bullet') &&
+          !s.hasAttribute('data-list-num') &&
+          !s.hasAttribute('data-toc-slide') &&
+          !(s.dataset && (s.dataset.stress === '1' || s.dataset.stress === 'true')) &&
+          !s.classList.contains('_rt-blank-strut')
+        ) : [];
+        _fsVals = [...new Set(_live.map(s => {
+          const px = _fsPxFromStyle(s.getAttribute('style') || '');
+          return px != null ? _pxToPt(px) : null;
+        }).filter(v => v != null && v > 0))];
+        if (!_fsVals.length) {
+          const _d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
+          if (_d && _d.html) {
+            const _tmp = document.createElement('div');
+            _tmp.innerHTML = _d.html;
+            _fsVals = [...new Set(Array.from(_tmp.querySelectorAll('span[data-ch]')).map(s => {
+              const px = _fsPxFromStyle(s.getAttribute('style') || '');
+              return px != null ? _pxToPt(px) : null;
+            }).filter(v => v != null && v > 0))];
+          }
+        }
+      } catch (e) {}
+      if (_fsVals.length > 1) { _inp.value = ''; _inp.placeholder = '—'; }
+      else if (_fsVals.length === 1) { _inp.value = _fsVals[0]; _inp.placeholder = ''; }
+      else if (_fsFromCs) { _inp.value = _pxToPt(_fsFromCs); _inp.placeholder = ''; }
+      else { _inp.value = ''; _inp.placeholder = '—'; }
+      if (typeof refreshNumScrubber === 'function') refreshNumScrubber(_inp);
     }
-    // Проверяем span[data-ch] — если у них свои размеры, показываем их
-    // (но не перезаписываем если span пустые — тогда cs уже верный)
-    // Check if all chars have same font size; if mixed, blank the field
-    try {
-      const _d = slides[cur] && slides[cur].els.find(e=>e.id===sel.dataset.id);
-      if (_d && _d.html && !_fsInputFocused) {
-        const _spans = document.createElement('div');
-        _spans.innerHTML = _d.html;
-        const _fsVals = [...new Set(Array.from(_spans.querySelectorAll('span[data-ch]')).map(s=>{
-          const _m = (s.getAttribute('style')||'').match(/font-size:([\d.]+)px/);
-          return _m ? Math.round(parseFloat(_m[1])) : null;
-        }).filter(v=>v!==null))];
-        const _inp = document.getElementById('p-fs');
-        if (_fsVals.length > 1) { _inp.value = ''; _inp.placeholder = '—'; }
-        else if (_fsVals.length === 1) { _inp.value = _pxToPt(_fsVals[0]); _inp.placeholder = ''; }
-        // Если span не содержат font-size — оставляем значение из cs (уже установлено выше)
-        else if (_fsVals.length === 0 && _fsFromCs) { _inp.value = _pxToPt(_fsFromCs); _inp.placeholder = ''; } // cs fallback
-      }
-    } catch(e){}
     const colFromCs=m(/(?:^|;|\s)color:(#[0-9a-fA-F]{3,8})/,'#ffffff');
     try{
-      const _dCol=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
-      const _sr=_dCol&&_dCol.textColorScheme;
-      // При scheme-цвете квадратик должен брать актуальный цвет из текущей темы,
-      // а не устаревший hex из cs (после смены схемы номер «11» верный, а swatch — нет).
-      let col=colFromCs;
-      if(_sr&&typeof _resolveSchemeColor==='function'){
-        const _th=typeof _activeThemeForScheme==='function'?_activeThemeForScheme():null;
-        const _resolved=_th?_resolveSchemeColor(_sr,_th):null;
-        if(_resolved) col=_resolved;
+      // Выделенный фрагмент — цвет и код палитры задаёт rich-text, не перезаписываем hex всего блока
+      let _fragSel=false;
+      try{
+        const _ws=window.getSelection();
+        if(_ws&&!_ws.isCollapsed&&_ws.toString().length>0&&_ws.rangeCount>0){
+          const _tel=sel.querySelector('.tel')||sel.querySelector('.ec');
+          const _anc=_ws.getRangeAt(0).commonAncestorContainer;
+          const _el=_anc.nodeType===3?_anc.parentElement:_anc;
+          if(_tel&&_el&&_tel.contains(_el)) _fragSel=true;
+        }
+      }catch(e){}
+      if(_fragSel){
+        if(typeof rtUpdateToolbarState==='function') rtUpdateToolbarState();
+      }else{
+        const _dCol=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+        const _sr=_dCol&&_dCol.textColorScheme;
+        // При scheme-цвете квадратик должен брать актуальный цвет из текущей темы,
+        // а не устаревший hex из cs (после смены схемы номер «11» верный, а swatch — нет).
+        let col=colFromCs;
+        if(_sr&&typeof _resolveSchemeColor==='function'){
+          const _th=typeof _activeThemeForScheme==='function'?_activeThemeForScheme():null;
+          let _resolved=_th?_resolveSchemeColor(_sr,_th):null;
+          if(!_resolved&&typeof THEMES!=='undefined'&&THEMES[0])
+            _resolved=_resolveSchemeColor(_sr,THEMES[0]);
+          if(_resolved) col=_resolved;
+        }
+        if(typeof _setColorFieldValue==='function')
+          _setColorFieldValue('p-hex','p-col-preview',col,_sr);
+        else{
+          const _sw=document.getElementById('p-col-preview');if(_sw)_sw.style.background=col;
+          document.getElementById('p-hex').value=(typeof _colorFieldDisplay==='function')?_colorFieldDisplay(col,_sr):col;
+        }
       }
-      const _sw=document.getElementById('p-col-preview');if(_sw)_sw.style.background=col;
-      document.getElementById('p-hex').value=(typeof _colorFieldDisplay==='function')?_colorFieldDisplay(col,_sr):col;
     }catch(e){}
     // Sync text color gradient UI
     try{
@@ -221,8 +296,19 @@ function syncProps(){
       const _tcGradChk=document.getElementById('p-tc-grad-check');if(_tcGradChk)_tcGradChk.checked=_tcGrad;
       const _tcGradRow=document.getElementById('p-tc-grad-row');if(_tcGradRow)_tcGradRow.style.display=_tcGrad?'flex':'none';
       if(_tcGrad){
-        const _tcG2=sel.dataset.textColorGrad2||'';
+        const _dTcG=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+        let _tcG2=sel.dataset.textColorGrad2||'';
+        const _tcG2Sr=_dTcG&&_dTcG.textColorGrad2Scheme;
+        if(_tcG2&&_tcG2Sr&&typeof _resolveSchemeColor==='function'){
+          const _th=typeof _activeThemeForScheme==='function'?_activeThemeForScheme():null;
+          const _resolved=_th?_resolveSchemeColor(_tcG2Sr,_th):null;
+          if(_resolved) _tcG2=_resolved;
+        }
         const _sw2=document.getElementById('p-tc-grad2-inner');if(_sw2)_sw2.style.background=_tcG2;
+        const _hx2=document.getElementById('p-tc-grad2-hex');
+        if(_hx2)_hx2.value=_tcG2
+          ? ((typeof _colorFieldDisplay==='function')?_colorFieldDisplay(_tcG2,_tcG2Sr):_tcG2)
+          : '';
         const _dirI=document.getElementById('p-tc-grad-dir');if(_dirI)_dirI.value=sel.dataset.textColorGradDir!=null?+sel.dataset.textColorGradDir:90;
       }
     }catch(e){}
@@ -291,9 +377,17 @@ function syncProps(){
       const isGrad=sel.dataset.textBgGrad==='1';
       const gradChk=document.getElementById('p-bg-grad-check');if(gradChk)gradChk.checked=isGrad;
       const gradRow=document.getElementById('p-bg-grad-row');if(gradRow)gradRow.style.display=isGrad?'flex':'none';
-      const col2=sel.dataset.textBgCol2||'';
+      let col2=sel.dataset.textBgCol2||'';
+      const _bg2Sr=_dBg&&_dBg.textBgCol2Scheme;
+      if(col2&&_bg2Sr&&typeof _resolveSchemeColor==='function'){
+        const _th2=typeof _activeThemeForScheme==='function'?_activeThemeForScheme():null;
+        const _resolved2=_th2?_resolveSchemeColor(_bg2Sr,_th2):null;
+        if(_resolved2) col2=_resolved2;
+      }
       const _bgsw2=document.getElementById('p-bg-swatch2-inner');if(_bgsw2)_bgsw2.style.background=col2;
-      document.getElementById('p-bg-hex2').value=col2;
+      document.getElementById('p-bg-hex2').value=col2
+        ? ((typeof _colorFieldDisplay==='function')?_colorFieldDisplay(col2,_bg2Sr):col2)
+        : '';
       const bgDir=sel.dataset.textBgDir!=null?+sel.dataset.textBgDir:90;
       document.querySelectorAll('.p-bg-dir-btn').forEach(b=>b.classList.toggle('on',+b.dataset.deg===bgDir));
     }catch(e){}
@@ -402,6 +496,7 @@ function syncProps(){
       const _d2 = slides[cur] && slides[cur].els.find(e=>e.id===sel.dataset.id);
       // Geometry marks — only for line segments
       const _geomSec = document.getElementById('sh-line-geom');
+      const _mkSec = document.getElementById('sh-line-markers');
       if(_geomSec){
         const _isLine = _shapeId === 'line';
         _geomSec.style.display = _isLine ? '' : 'none';
@@ -410,6 +505,19 @@ function syncProps(){
           document.querySelectorAll('#sh-line-mark-btns .la-label-btn').forEach(b=>{
             b.classList.toggle('active', b.dataset.mark === _mark);
           });
+        }
+      }
+      if(_mkSec){
+        const _isLine = _shapeId === 'line';
+        _mkSec.style.display = _isLine ? '' : 'none';
+        if(_isLine){
+          if(typeof _initLineMarkerButtons==='function') _initLineMarkerButtons();
+          if(typeof _updateLineMarkerButtons==='function'){
+            _updateLineMarkerButtons(
+              sel.dataset.lineFromMarker || (_d2 && _d2.lineFromMarker) || 'none',
+              sel.dataset.lineToMarker || (_d2 && _d2.lineToMarker) || 'none'
+            );
+          }
         }
       }
       if(typeof _syncArcUI==='function') _syncArcUI(_d2);
@@ -423,6 +531,7 @@ function syncProps(){
       if(typeof _syncChevUI==='function') _syncChevUI(_d2);
       if(typeof _syncCurveUI==='function') _syncCurveUI(_d2);
       if(typeof _syncCloudUI==='function') _syncCloudUI(_d2);
+      if(typeof _syncCalloutUI==='function') _syncCalloutUI(_d2);
       // Sync shape fill gradient UI
       try {
         const _grad = sel.dataset.fillGrad === '1' || _d2 && _d2.fillGrad;
@@ -431,8 +540,17 @@ function syncProps(){
         const _gradRow = document.getElementById('sh-fill-grad-row');
         if (_gradRow) _gradRow.style.display = _grad ? 'flex' : 'none';
         if (_d2 && _d2.fillGrad2) {
+          let _fg2=_d2.fillGrad2;
+          const _fg2Sr=_d2.fillGrad2Scheme;
+          if(_fg2Sr&&typeof _resolveSchemeColor==='function'){
+            const _th=typeof _activeThemeForScheme==='function'?_activeThemeForScheme():null;
+            const _resolved=_th?_resolveSchemeColor(_fg2Sr,_th):null;
+            if(_resolved) _fg2=_resolved;
+          }
           const _p = document.getElementById('sh-fill2-preview');
-          if (_p) _p.style.background = _d2.fillGrad2;
+          if (_p) _p.style.background = _fg2;
+          const _hx2 = document.getElementById('sh-fill2-hex');
+          if (_hx2) _hx2.value=(typeof _colorFieldDisplay==='function')?_colorFieldDisplay(_fg2,_fg2Sr):_fg2;
         }
         if (_d2 && _d2.fillGradDir != null) {
           const _dirI = document.getElementById('sh-fill-grad-dir');
@@ -454,13 +572,35 @@ function syncProps(){
     try{const _elOp=document.getElementById('sh-el-op');if(_elOp)_elOp.value=parseFloat(sel.dataset.elOpacity!=null?sel.dataset.elOpacity:1);}catch(e){}
     const st=sel.querySelector('.shape-text');
     if(st){
-      const cs=st.getAttribute('style')||'';
+      const _dTxt=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+      const cs=(_dTxt&&_dTxt.shapeTextCss)||st.getAttribute('style')||'';
       const m=(re,fb)=>{const x=cs.match(re);return x?x[1]:fb;};
-      document.getElementById('sh-fs').value=parseFloat(m(/font-size:([\d.]+)px/,'24'));
-      document.getElementById('sh-fw').value=m(/font-weight:(\d+)/,'700');
-      const tc=m(/(?:^|;)\s*color:\s*(#[0-9a-fA-F]{3,8})/,'#ffffff');
+      document.getElementById('sh-fs').value=parseFloat(m(/font-size:\s*([\d.]+)px/i,'24'));
+      let fw=(m(/font-weight:\s*([^;]+)/i,'700')||'700').trim().toLowerCase();
+      if(fw==='bold'||fw==='bolder') fw='700';
+      else if(fw==='normal'||fw==='lighter') fw='400';
+      else {
+        const n=parseInt(fw,10);
+        fw=String(n>=600?700:400);
+      }
+      document.getElementById('sh-fw').value=fw;
       try{
-        const _dTc=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+        const ffEl=document.getElementById('sh-ff');
+        if(ffEl){
+          let ff=m(/font-family:\s*([^;]+)/i,'');
+          ff=ff.replace(/^["']|["']$/g,'').trim();
+          // Если шрифта ещё нет в списке — добавить
+          if(ff&&![...ffEl.options].some(o=>o.value===ff)){
+            const opt=document.createElement('option');
+            opt.value=ff;opt.textContent=ff;opt.style.fontFamily=ff;
+            ffEl.appendChild(opt);
+          }
+          ffEl.value=ff||'';
+        }
+      }catch(e){}
+      const tc=m(/(?:^|;)\s*color:\s*(#[0-9a-fA-F]{3,8})/i,'#ffffff');
+      try{
+        const _dTc=_dTxt;
         const _tcSr=_dTc&&_dTc.shapeTextColorScheme;
         let _tcCol=tc;
         if(_tcSr&&typeof _resolveSchemeColor==='function'){
@@ -483,7 +623,7 @@ function syncProps(){
   // Code props sync
   if(t==='code'){
     const d=slides[cur].els.find(e=>e.id===sel.dataset.id);
-    if(d){try{document.getElementById('code-lang').value=d.codeLang||'js';document.getElementById('code-fs').value=d.codeFs||13;}catch(e){}}
+    if(d){try{document.getElementById('code-lang').value=d.codeLang||'js';document.getElementById('code-fs').value=d.codeFs||16;}catch(e){}}
   }
   // Markdown props sync
   if(t==='markdown'){
@@ -541,11 +681,7 @@ function setES(prop,val,u){
 }
 function setElRotation(deg){
   if(!sel)return;
-  const _rot_d=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
-  const _rfx=(_rot_d&&_rot_d.shapeFlipH)?-1:1;
-  const _rfy=(_rot_d&&_rot_d.shapeFlipV)?-1:1;
-  const _rsft=(_rfx===-1||_rfy===-1)?` scale(${_rfx},${_rfy})`:'';
-  sel.style.transform='rotate('+deg+'deg)'+_rsft;sel.dataset.rot=deg;
+  sel.style.transform=_elRotTransform(deg, sel);sel.dataset.rot=deg;
   const pRot=document.getElementById('p-rot');if(pRot)pRot.value=deg;
   if(typeof _updateHandlesOverlay==='function')_updateHandlesOverlay();
   if(typeof updateConnectorsFor==='function')updateConnectorsFor(sel.dataset.id);
@@ -643,7 +779,7 @@ function clearTextBg(){
   delete sel.dataset.textBg;delete sel.dataset.textBgOp;delete sel.dataset.textBgBlur;
   delete sel.dataset.textBgGrad;delete sel.dataset.textBgCol2;delete sel.dataset.textBgDir;
   const d=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
-  if(d){ d.textBgScheme=null; delete d.textBg; delete d.textBgOp; delete d.textBgBlur; }
+  if(d){ d.textBgScheme=null; d.textBgCol2Scheme=null; delete d.textBg; delete d.textBgOp; delete d.textBgBlur; delete d.textBgCol2; }
   // Clear both .ec and .el styles (skip .ec background if text color gradient is active — it owns that)
   const c=sel.querySelector('.ec');if(c&&sel.dataset.textColorGrad!=='1')c.style.background='';
   sel.style.background='';sel.style.backdropFilter='';sel.style.webkitBackdropFilter='';
@@ -654,6 +790,7 @@ function clearTextBg(){
     const gradRow=document.getElementById('p-bg-grad-row');if(gradRow)gradRow.style.display='none';
     const gradChk=document.getElementById('p-bg-grad-check');if(gradChk)gradChk.checked=false;
   }catch(e){}
+  if(typeof applyTextBg==='function') applyTextBg(sel);
   commitAll();
 }
 function setTextBgGrad(on){
@@ -665,9 +802,21 @@ function setTextBgGrad(on){
   const gradRow=document.getElementById('p-bg-grad-row');
   if(gradRow) gradRow.style.display=on?'flex':'none';
 }
-function setTextBgCol2(col){
+function setTextBgCol2(col, schemeRef){
   if(!sel||sel.dataset.type!=='text')return;
-  sel.dataset.textBgCol2=col;
+  if(col) sel.dataset.textBgCol2=col; else delete sel.dataset.textBgCol2;
+  const d=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
+  if(d){
+    d.textBgCol2=col||'';
+    if(!col){ d.textBgCol2Scheme=null; delete d.textBgCol2; }
+    else if(schemeRef !== undefined) d.textBgCol2Scheme = schemeRef || null;
+  }
+  try{
+    const hx=document.getElementById('p-bg-hex2');
+    if(hx) hx.value=col
+      ? ((typeof _colorFieldDisplay==='function')?_colorFieldDisplay(col, d?d.textBgCol2Scheme:schemeRef):col)
+      : '';
+  }catch(e){}
   applyTextBg(sel);
   commitAll();
 }
@@ -691,18 +840,32 @@ function setTextBgBlur(v){
   applyTextBg(sel);
   commitAll();
 }
+function _migrateTextBgLayerOut(el) {
+  if (!el) return;
+  const body = el.querySelector('._text_body');
+  const nested = body && body.querySelector('.el-bg-layer');
+  if (nested && nested.parentNode === body) {
+    el.insertBefore(nested, body);
+  }
+}
+window._migrateTextBgLayerOut = _migrateTextBgLayerOut;
+
 function _getBgLayer(el){
-  const host=el.querySelector('._text_body')||el;
-  let layer=host.querySelector('.el-bg-layer');
+  _migrateTextBgLayerOut(el);
+  let layer = el.querySelector(':scope > .el-bg-layer');
+  if (!layer) layer = el.querySelector('.el-bg-layer');
   if(!layer){
     layer=document.createElement('div');
     layer.className='el-bg-layer';
     layer.style.cssText='position:absolute;inset:0;z-index:0;pointer-events:none;border-radius:inherit;';
-    host.insertBefore(layer,host.firstChild);
+    const body = el.querySelector('._text_body');
+    if (body) el.insertBefore(layer, body);
+    else el.insertBefore(layer, el.firstChild);
   }
   return layer;
 }
 function applyTextBg(el){
+  if (typeof _migrateTextBgLayerOut === 'function') _migrateTextBgLayerOut(el);
   const c=el.querySelector('.ec');if(!c)return;
   const col=el.dataset.textBg;
   const blur=parseFloat(el.dataset.textBgBlur!=null?el.dataset.textBgBlur:0);
@@ -713,12 +876,16 @@ function applyTextBg(el){
   if(el.dataset.textColorGrad!=='1')c.style.background='';
   if(!col && !blur && !isGrad){
     const layer=el.querySelector('.el-bg-layer');
-    if(layer)layer.style.background='';
+    if(layer){
+      layer.style.background='';
+      layer.style.backdropFilter='';
+      layer.style.webkitBackdropFilter='';
+    }
     const hasBorder=+(el.dataset.textBorderW||0)>0;
     if(!hasBorder){
       if(layer)layer.remove();
-      el.style.backdropFilter='';el.style.webkitBackdropFilter='';
     }
+    el.style.backdropFilter='';el.style.webkitBackdropFilter='';
     return;
   }
   const layer=_getBgLayer(el);
@@ -735,16 +902,49 @@ function applyTextBg(el){
   } else {
     layer.style.background='';
   }
+  el.style.backdropFilter='';el.style.webkitBackdropFilter='';
   if(blur>0){
-    el.style.backdropFilter=`blur(${blur}px)`;
-    el.style.webkitBackdropFilter=`blur(${blur}px)`;
+    layer.style.backdropFilter=`blur(${blur}px)`;
+    layer.style.webkitBackdropFilter=`blur(${blur}px)`;
   } else {
-    el.style.backdropFilter='';
-    el.style.webkitBackdropFilter='';
+    layer.style.backdropFilter='';
+    layer.style.webkitBackdropFilter='';
   }
   if(typeof applyTextBlockShadowStyle==='function') applyTextBlockShadowStyle(el);
 }
 // ══════════════ TEXT COLOR GRADIENT ══════════════
+/** Current element text color as #rrggbb (scheme → cs → DOM → computed). */
+function _resolveCurrentTextColor(el, d){
+  if(d&&d.textColorScheme!=null&&typeof _resolveSchemeColor==='function'){
+    const th=typeof _activeThemeForScheme==='function'?_activeThemeForScheme():null;
+    const resolved=th?_resolveSchemeColor(d.textColorScheme,th):null;
+    if(resolved) return resolved;
+  }
+  function _norm(v){
+    if(!v) return '';
+    v=String(v).trim();
+    if(/^#[0-9a-fA-F]{6}$/.test(v)) return v.toLowerCase();
+    if(/^#[0-9a-fA-F]{3}$/.test(v)) return ('#'+v[1]+v[1]+v[2]+v[2]+v[3]+v[3]).toLowerCase();
+    if(typeof _rgbToHex==='function'&&/^rgba?\(/i.test(v)){ const h=_rgbToHex(v); if(h) return h; }
+    return '';
+  }
+  if(d&&d.cs){
+    const m=(d.cs||'').match(/(?:^|;|\s)color:\s*([^;]+)/i);
+    const n=_norm(m&&m[1]);
+    if(n) return n;
+  }
+  const ec=el&&(el.querySelector('.tel')||el.querySelector('.ec'));
+  if(ec){
+    const m=((ec.getAttribute('style')||'')).match(/(?:^|;|\s)color:\s*([^;]+)/i);
+    const n=_norm(m&&m[1]);
+    if(n) return n;
+    try{
+      const h=typeof _rgbToHex==='function'?_rgbToHex(getComputedStyle(ec).color):null;
+      if(h) return h;
+    }catch(e){}
+  }
+  return '#ffffff';
+}
 function applyTextColorGrad(el){
   const c=el.querySelector('.ec');if(!c)return;
   if(el.dataset.textRole==='toc'){
@@ -780,29 +980,48 @@ function setTextColorGrad(on){
   const d=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
   if(on){
     sel.dataset.textColorGrad='1';
-    // Init col1 from current element-level color
-    if(!sel.dataset.textColorGrad1){
-      const _ecEl=sel.querySelector('.tel')||sel.querySelector('.ec');
-      const _cs=_ecEl?(_ecEl.getAttribute('style')||''):'';
-      const _m=_cs.match(/(?:^|;)\s*color:\s*(#[0-9a-fA-F]{3,8})/);
-      sel.dataset.textColorGrad1=_m?_m[1]:'#ffffff';
-    }
+    // Always take current main text color as gradient color 1
+    const _col1=_resolveCurrentTextColor(sel,d);
+    sel.dataset.textColorGrad1=_col1;
+    if(d) d.textColorGrad1=_col1;
     const _sw2=document.getElementById('p-tc-grad2-inner');if(_sw2)_sw2.style.background=sel.dataset.textColorGrad2||'';
+    try{
+      const _hx2=document.getElementById('p-tc-grad2-hex');
+      if(_hx2){
+        const _g2=sel.dataset.textColorGrad2||'';
+        _hx2.value=_g2
+          ? ((typeof _colorFieldDisplay==='function')?_colorFieldDisplay(_g2,d&&d.textColorGrad2Scheme):_g2)
+          : '';
+      }
+    }catch(e){}
     document.getElementById('p-tc-grad-row').style.display='flex';
   } else {
     delete sel.dataset.textColorGrad;delete sel.dataset.textColorGrad1;delete sel.dataset.textColorGrad2;delete sel.dataset.textColorGradDir;
     document.getElementById('p-tc-grad-row').style.display='none';
   }
   applyTextColorGrad(sel);
-  if(d){d.textColorGrad=on||false;d.textColorGrad1=sel.dataset.textColorGrad1||'';d.textColorGrad2=sel.dataset.textColorGrad2||'';d.textColorGradDir=+(sel.dataset.textColorGradDir||90);}
+  if(d){
+    d.textColorGrad=on||false;d.textColorGrad1=sel.dataset.textColorGrad1||'';d.textColorGrad2=sel.dataset.textColorGrad2||'';d.textColorGradDir=+(sel.dataset.textColorGradDir||90);
+    if(!on){ delete d.textColorGrad2Scheme; }
+  }
   save();saveState();
 }
-function setTextColorGrad2(col){
+function setTextColorGrad2(col, schemeRef){
   if(!sel||sel.dataset.type!=='text')return;
   if(col)sel.dataset.textColorGrad2=col; else delete sel.dataset.textColorGrad2;
   applyTextColorGrad(sel);
   const d=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
-  if(d)d.textColorGrad2=col||'';
+  if(d){
+    d.textColorGrad2=col||'';
+    if(!col) d.textColorGrad2Scheme=null;
+    else if(schemeRef !== undefined) d.textColorGrad2Scheme = schemeRef || null;
+  }
+  try{
+    const hx=document.getElementById('p-tc-grad2-hex');
+    if(hx) hx.value=col
+      ? ((typeof _colorFieldDisplay==='function')?_colorFieldDisplay(col, d?d.textColorGrad2Scheme:schemeRef):col)
+      : '';
+  }catch(e){}
   save();saveState();
 }
 function setTextColorGradDir(deg){
@@ -840,6 +1059,11 @@ function setTextRole(role){
     c.setAttribute('style',cs);
     // Update bold button state
     try{document.getElementById('ft-b').classList.toggle('on',role==='heading');}catch(e){}
+  }
+  // Headings/subtitles: vertical center in the block
+  if(role==='heading'){
+    sel.dataset.valign='middle';
+    if(typeof applyTextVAlign==='function') applyTextVAlign(sel,'middle');
   }
   commitAll();
 }
@@ -905,7 +1129,9 @@ function resetTextFormatting() {
   delete d.textBg; delete d.textBgOp; delete d.textBgBlur;
   sel.dataset.textBg = ''; sel.dataset.textBgOp = ''; sel.dataset.textBgBlur = '';
   sel.style.backdropFilter=''; sel.style.webkitBackdropFilter='';
-  delete d.textColorGrad; delete d.textColorGrad1; delete d.textColorGrad2; delete d.textColorGradDir;
+  const _bgLayer=sel.querySelector('.el-bg-layer');
+  if(_bgLayer){ _bgLayer.style.backdropFilter=''; _bgLayer.style.webkitBackdropFilter=''; }
+  delete d.textColorGrad; delete d.textColorGrad1; delete d.textColorGrad2; delete d.textColorGradDir; delete d.textColorGrad2Scheme;
   delete sel.dataset.textColorGrad; delete sel.dataset.textColorGrad1; delete sel.dataset.textColorGrad2; delete sel.dataset.textColorGradDir;
   delete d.textShadowW; delete d.textShadowBlur; delete d.textShadowSize; delete d.textShadowColor; delete d.textShadowScheme;
   delete sel.dataset.textShadowW; delete sel.dataset.textShadowBlur; delete sel.dataset.textShadowSize; delete sel.dataset.textShadowColor;
@@ -1645,7 +1871,9 @@ function _syncGearUI(d) {
 
 
 function flipShape(axis) {
-  if (!sel || sel.dataset.type !== 'shape') return;
+  if (!sel) return;
+  const typ = sel.dataset.type;
+  if (typ !== 'shape' && typ !== 'icon') return;
   pushUndo();
   const d = slides[cur].els.find(e => e.id === sel.dataset.id);
   if (!d) return;
@@ -1657,22 +1885,24 @@ function flipShape(axis) {
     sel.dataset.shapeFlipV = d.shapeFlipV ? 'true' : '';
   }
   const rot = d.rot || 0;
-  const fx = d.shapeFlipH ? -1 : 1;
-  const fy = d.shapeFlipV ? -1 : 1;
-  const sft = (fx === -1 || fy === -1) ? ` scale(${fx},${fy})` : '';
-  sel.style.transform = `rotate(${rot}deg)${sft}`;
+  sel.style.transform = _elRotTransform(rot, sel, d);
   _syncShapeFlipBtns(d);
-  if (typeof renderShapeEl === 'function') renderShapeEl(sel, d);
-  if (typeof _applyShapeBlur === 'function') _applyShapeBlur(sel);
-  if (typeof _applyShapeClipPath === 'function') _applyShapeClipPath(sel, d);
+  if (typ === 'shape') {
+    if (typeof renderShapeEl === 'function') renderShapeEl(sel, d);
+    if (typeof _applyShapeBlur === 'function') _applyShapeBlur(sel);
+    if (typeof _applyShapeClipPath === 'function') _applyShapeClipPath(sel, d);
+  }
+  if (typeof _updateHandlesOverlay === 'function') _updateHandlesOverlay();
   commitAll();
 }
 
 function _syncShapeFlipBtns(d) {
-  const bh = document.getElementById('sh-flip-h');
-  const bv = document.getElementById('sh-flip-v');
-  if (bh) bh.classList.toggle('active', !!(d && d.shapeFlipH));
-  if (bv) bv.classList.toggle('active', !!(d && d.shapeFlipV));
+  const onH = !!(d && d.shapeFlipH);
+  const onV = !!(d && d.shapeFlipV);
+  [['sh-flip-h', onH], ['sh-flip-v', onV], ['ic-flip-h', onH], ['ic-flip-v', onV]].forEach(([id, on]) => {
+    const b = document.getElementById(id);
+    if (b) b.classList.toggle('active', on);
+  });
 }
 function _syncTrapUI(d) {
   const sec = document.getElementById('sh-trap-section');
@@ -1968,12 +2198,43 @@ function regenCloud() {
   else sel.dataset.cloudSeed = d.cloudSeed;
   if (typeof _cloudRegenerate === 'function') _cloudRegenerate(d, sel);
   else if (typeof _cloudBakeAndFit === 'function') _cloudBakeAndFit(d, sel);
-  if (typeof renderShapeEl === "function") renderShapeEl(sel, d);
-  else if (typeof window.renderShapeEl === "function") window.renderShapeEl(sel, d);
-  if (typeof save === "function") save();
-  if (typeof drawThumbs === "function") drawThumbs();
-  if (typeof saveState === "function") saveState();
+  if (typeof renderShapeEl === 'function') renderShapeEl(sel, d);
+  if (typeof save === 'function') save();
+  if (typeof drawThumbs === 'function') drawThumbs();
+  if (typeof saveState === 'function') saveState();
 }
+
+// ══════════════ CALLOUT FORM ══════════════
+function _syncCalloutUI(d) {
+  const sec = document.getElementById('sh-callout-section');
+  if (!sec) return;
+  const isCallout = sel && sel.dataset.type === 'shape' &&
+    (typeof SHAPES !== 'undefined') &&
+    SHAPES.find(s => s.id === sel.dataset.shape)?.special === 'callout';
+  sec.style.display = isCallout ? '' : 'none';
+  const formSel = document.getElementById('sh-callout-form');
+  if (formSel) {
+    let cf = (d && d.calloutForm) || sel?.dataset.calloutForm || 'round';
+    if (cf === 'soft') cf = 'round'; // убрана форма «Мягкая · толстый хвост»
+    formSel.value = cf;
+  }
+}
+function setCalloutForm(form) {
+  if (!sel || sel.dataset.type !== 'shape') return;
+  if (typeof pushUndo === 'function') pushUndo();
+  const d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
+  if (!d) return;
+  if (form === 'soft') form = 'round';
+  d.calloutForm = form || 'round';
+  sel.dataset.calloutForm = d.calloutForm;
+  if (typeof renderShapeEl === 'function') renderShapeEl(sel, d);
+  if (typeof _updateHandlesOverlay === 'function') _updateHandlesOverlay();
+  if (typeof save === 'function') save();
+  if (typeof drawThumbs === 'function') drawThumbs();
+  if (typeof saveState === 'function') saveState();
+}
+window._syncCalloutUI = _syncCalloutUI;
+window.setCalloutForm = setCalloutForm;
 
 // ══════════════ SHAPE FILL GRADIENT ══════════════
 function setShapeFillGrad(on) {
@@ -2014,6 +2275,8 @@ function setShapeFillGrad(on) {
   if (d.fillGrad2) {
     const _p2 = document.getElementById('sh-fill2-preview');
     if (_p2) _p2.style.background = d.fillGrad2;
+    const _hx2 = document.getElementById('sh-fill2-hex');
+    if (_hx2) _hx2.value=(typeof _colorFieldDisplay==='function')?_colorFieldDisplay(d.fillGrad2,d.fillGrad2Scheme):d.fillGrad2;
   }
   renderShapeEl(sel, d);
   save(); drawThumbs(); saveState();
@@ -2028,6 +2291,12 @@ function updateShapeFillGrad2(col, schemeRef) {
   sel.dataset.fillGrad2 = col;
   if(d.fillGrad2Scheme!=null) sel.dataset.fillGrad2Scheme=JSON.stringify(d.fillGrad2Scheme);
   else delete sel.dataset.fillGrad2Scheme;
+  try{
+    const hx=document.getElementById('sh-fill2-hex');
+    if(hx) hx.value=(col&&col!=='transparent')
+      ? ((typeof _colorFieldDisplay==='function')?_colorFieldDisplay(col,d.fillGrad2Scheme):col)
+      : '';
+  }catch(e){}
   renderShapeEl(sel, d);
   save(); drawThumbs(); saveState();
 }

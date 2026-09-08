@@ -238,8 +238,124 @@
         })));
         _info(box, 'Показывать кнопку 📋 рядом с «Голосовое» для копирования нераспознанных команд. По умолчанию скрыта.');
 
+        const aiFabOn = _safe(() => {
+          if (typeof window.isAiFabEnabled === 'function') return window.isAiFabEnabled();
+          return localStorage.getItem('sf-ai-fab') === '1';
+        }, false);
+        _row(box, 'AI-ассистент', _chk(aiFabOn, v => _safe(() => {
+          if (typeof window.setAiFab === 'function') window.setAiFab(v);
+          else {
+            localStorage.setItem('sf-ai-fab', v ? '1' : '0');
+            if (typeof window._syncAiFab === 'function') window._syncAiFab();
+          }
+        })));
+        _info(box, 'Показывать плавающую кнопку AI-ассистента. По умолчанию скрыта.');
+
+        const colorBarOn = _safe(() => {
+          if (typeof window.isColorBarEnabled === 'function') return window.isColorBarEnabled();
+          return localStorage.getItem('sf-color-bar') !== '0';
+        }, true);
+        _row(box, 'Нижняя панель с палитрой', _chk(colorBarOn, v => _safe(() => {
+          if (typeof window.setColorBar === 'function') window.setColorBar(v);
+          else {
+            localStorage.setItem('sf-color-bar', v ? '1' : '0');
+            if (typeof window._syncColorBarVisibility === 'function') window._syncColorBarVisibility();
+          }
+        })));
+        _info(box, 'Показывать нижнюю панель быстрого выбора цвета на широком экране. По умолчанию включена.');
+
         _divider(box);
         _info(box, 'ℹ ' + _get('APP_NAME','Слайды') + ' v' + _get('APP_VERSION','?') + ' · ' + _get('APP_AUTHOR',''));
+      }
+    },
+
+    // ── 5b. Переводчик ────────────────────────────────────────────
+    {
+      id: 'translate', icon: '🌐', label: 'Перевод',
+      build(box) {
+        box.innerHTML = '';
+        const langs = _safe(() => window.TRANSLATE_LANGS, null);
+        if (!langs || !langs.length) {
+          _info(box, '⚠ Модуль перевода не загружен.');
+          return;
+        }
+        const pair = _safe(() => {
+          if (typeof window.getTranslatePair === 'function') return window.getTranslatePair();
+          return { lang1: 'ru', lang2: 'en' };
+        }, { lang1: 'ru', lang2: 'en' });
+
+        const uiEn = _safe(() => {
+          if (typeof getLang === 'function') return getLang() === 'en';
+          return (localStorage.getItem('sf-lang') || 'ru') === 'en';
+        }, false);
+        const opts = langs.map(L => ({
+          value: L.code,
+          label: uiEn ? L.nameEn : L.nameRu
+        }));
+
+        let cur1 = pair.lang1;
+        let cur2 = pair.lang2;
+        let sel1, sel2;
+
+        const applyPair = (a, b) => _safe(() => {
+          if (a === b) {
+            _cfgToast(uiEn ? 'Choose two different languages' : 'Выберите два разных языка');
+            return;
+          }
+          if (typeof window.setTranslatePair === 'function') {
+            window.setTranslatePair(a, b);
+            _cfgToast(
+              (uiEn ? 'Translator: ' : 'Переводчик: ') +
+              (opts.find(o => o.value === a)?.label || a) +
+              ' ↔ ' +
+              (opts.find(o => o.value === b)?.label || b)
+            );
+          }
+        });
+
+        sel1 = _sel(opts, cur1, v => {
+          cur1 = v;
+          if (cur1 === cur2) {
+            const other = opts.find(o => o.value !== cur1);
+            if (other) {
+              cur2 = other.value;
+              if (sel2) sel2.value = cur2;
+            }
+          }
+          applyPair(cur1, cur2);
+        });
+        sel1.style.maxWidth = '180px';
+
+        sel2 = _sel(opts, cur2, v => {
+          cur2 = v;
+          if (cur1 === cur2) {
+            const other = opts.find(o => o.value !== cur2);
+            if (other) {
+              cur1 = other.value;
+              if (sel1) sel1.value = cur1;
+            }
+          }
+          applyPair(cur1, cur2);
+        });
+        sel2.style.maxWidth = '180px';
+
+        _row(box, 'Язык 1', sel1);
+        _row(box, 'Язык 2', sel2);
+
+        const deckCur = _safe(() => {
+          if (typeof window.getTranslateDeckLang === 'function') return window.getTranslateDeckLang();
+          return pair.lang2 || 'en';
+        }, pair.lang2 || 'en');
+        const selDeck = _sel(opts, deckCur, v => _safe(() => {
+          if (typeof window.setTranslateDeckLang === 'function') window.setTranslateDeckLang(v);
+          _cfgToast(
+            (uiEn ? 'Presentation language: ' : 'Язык презентации: ') +
+            (opts.find(o => o.value === v)?.label || v)
+          );
+        }));
+        selDeck.style.maxWidth = '180px';
+        _row(box, uiEn ? 'Presentation' : 'Вся презентация', selDeck);
+        _info(box, 'Кнопка перевода в свойствах текста показывает целевой язык: если текст на языке 1 — на кнопке язык 2, и наоборот. Кнопка во вкладке «Дизайн» (после «Макет») переводит все текстовые надписи на язык «Вся презентация». Google Translate и Chrome работают для любой пары; офлайн (Bergamot) — только русский ↔ английский.');
       }
     },
 

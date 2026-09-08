@@ -1,0 +1,16 @@
+        // Назад → вперёд: слой2 «19» (canopy), слой1 «18» (trees) — один цвет cForest
+        const sx=1.28, ya=0.66;
+        scene+=mistBeforeLayer2(90);
+        scene+=forestLayer(cForest,'0','1',ya,sx);
+        scene+=mistBeltMid();
+        scene+=forestLayer(cForest,'1',null,ya,sx);
+        scene+=mistBeltFront();
+      } else {
+        // +30px вправо; низ SVG = низ слайда; весь композит −20px вниз
+        const sx=1.741, xa=-0.55+40/w, yDown=20;
+        const P=contentParts||{};
+        scene+='<g transform="translate(0,'+yDown+')">';
+        scene+=forestLayer(cForest,1,null,'bottom',sx,xa,P.trees);
+        scene+=mistContentBack();
+        scene+=forestLayer(c28,1,null,'bottom',sx,xa,P.deer);
+        scene+=forestGrassLayer(cForest,sx,xa,P);

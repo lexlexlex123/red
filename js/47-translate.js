@@ -1,8 +1,9 @@
 // ══════════════════════════════════════════════════════════════════
-// 47-translate.js — EN ↔ RU перевод и транскрипция текстовых блоков
-// Перевод: подпись = целевой язык («английский» / «russian»).
+// 47-translate.js — перевод и транскрипция текстовых блоков
+// Пара языков настраивается (Конфигурация → Перевод); по умолчанию RU ↔ EN.
+// Подпись кнопки = целевой язык («английский», «китайский»…).
 // Транскрипция: EN → IPA, RU → латиница (Google dt=rm; RU также локально).
-// Движок перевода: Google Translate (сеть) → Chrome Translator → Bergamot.
+// Движок перевода: Google Translate (сеть) → Chrome Translator → Bergamot (только EN↔RU).
 // ══════════════════════════════════════════════════════════════════
 (function () {
   'use strict';
@@ -31,6 +32,32 @@
     }
   };
 
+  /** Языки для пары переводчика (коды Google / Chrome Translator) */
+  const TRANSLATE_LANGS = [
+    { code: 'ru', script: 'cyrl', nameRu: 'Русский', nameEn: 'Russian', btnRu: 'русский', btnEn: 'russian' },
+    { code: 'en', script: 'latn', nameRu: 'Английский', nameEn: 'English', btnRu: 'английский', btnEn: 'english' },
+    { code: 'zh-CN', script: 'hans', nameRu: 'Китайский', nameEn: 'Chinese', btnRu: 'китайский', btnEn: 'chinese' },
+    { code: 'de', script: 'latn', nameRu: 'Немецкий', nameEn: 'German', btnRu: 'немецкий', btnEn: 'german' },
+    { code: 'fr', script: 'latn', nameRu: 'Французский', nameEn: 'French', btnRu: 'французский', btnEn: 'french' },
+    { code: 'es', script: 'latn', nameRu: 'Испанский', nameEn: 'Spanish', btnRu: 'испанский', btnEn: 'spanish' },
+    { code: 'it', script: 'latn', nameRu: 'Итальянский', nameEn: 'Italian', btnRu: 'итальянский', btnEn: 'italian' },
+    { code: 'pt', script: 'latn', nameRu: 'Португальский', nameEn: 'Portuguese', btnRu: 'португальский', btnEn: 'portuguese' },
+    { code: 'pl', script: 'latn', nameRu: 'Польский', nameEn: 'Polish', btnRu: 'польский', btnEn: 'polish' },
+    { code: 'uk', script: 'cyrl', nameRu: 'Украинский', nameEn: 'Ukrainian', btnRu: 'украинский', btnEn: 'ukrainian' },
+    { code: 'be', script: 'cyrl', nameRu: 'Белорусский', nameEn: 'Belarusian', btnRu: 'белорусский', btnEn: 'belarusian' },
+    { code: 'ja', script: 'jpan', nameRu: 'Японский', nameEn: 'Japanese', btnRu: 'японский', btnEn: 'japanese' },
+    { code: 'ko', script: 'hang', nameRu: 'Корейский', nameEn: 'Korean', btnRu: 'корейский', btnEn: 'korean' },
+    { code: 'ar', script: 'arab', nameRu: 'Арабский', nameEn: 'Arabic', btnRu: 'арабский', btnEn: 'arabic' },
+    { code: 'tr', script: 'latn', nameRu: 'Турецкий', nameEn: 'Turkish', btnRu: 'турецкий', btnEn: 'turkish' },
+    { code: 'kk', script: 'cyrl', nameRu: 'Казахский', nameEn: 'Kazakh', btnRu: 'казахский', btnEn: 'kazakh' }
+  ];
+
+  const LS_TR1 = 'sf-tr-lang1';
+  const LS_TR2 = 'sf-tr-lang2';
+  const LS_TR_DECK = 'sf-tr-deck';
+  const DEF_TR1 = 'ru';
+  const DEF_TR2 = 'en';
+
   function _toast(msg, type) {
     if (typeof toast === 'function') toast(msg, type);
   }
@@ -45,42 +72,186 @@
     return fallback;
   }
 
+  function _uiLangIsEn() {
+    try {
+      if (typeof getLang === 'function') return getLang() === 'en';
+      return (localStorage.getItem('sf-lang') || 'ru') === 'en';
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function _langMeta(code) {
+    const c = _normLangCode(code);
+    for (let i = 0; i < TRANSLATE_LANGS.length; i++) {
+      if (TRANSLATE_LANGS[i].code === c) return TRANSLATE_LANGS[i];
+    }
+    return null;
+  }
+
+  function _normLangCode(code) {
+    const c = String(code || '').trim();
+    if (c === 'zh' || c === 'zh-Hans') return 'zh-CN';
+    if (c === 'zh-Hant' || c === 'zh-TW') return 'zh-CN';
+    return c;
+  }
+
+  function _langBtnLabel(code) {
+    const m = _langMeta(code);
+    if (!m) return String(code || '');
+    return _uiLangIsEn() ? m.btnEn : m.btnRu;
+  }
+
+  function _langDisplayName(code) {
+    const m = _langMeta(code);
+    if (!m) return String(code || '');
+    return _uiLangIsEn() ? m.nameEn : m.nameRu;
+  }
+
+  function _defaultPairFromCfg() {
+    let a = DEF_TR1, b = DEF_TR2, deck = DEF_TR2;
+    try {
+      const c = window.CFG_UI;
+      if (c && typeof c.translateLang1 === 'string') a = c.translateLang1;
+      if (c && typeof c.translateLang2 === 'string') b = c.translateLang2;
+      if (c && typeof c.translateDeckLang === 'string') deck = c.translateDeckLang;
+    } catch (e) {}
+    return { lang1: _normLangCode(a), lang2: _normLangCode(b), deck: _normLangCode(deck) };
+  }
+
+  function getTranslatePair() {
+    const def = _defaultPairFromCfg();
+    let a = DEF_TR1, b = DEF_TR2;
+    try {
+      a = localStorage.getItem(LS_TR1) || def.lang1;
+      b = localStorage.getItem(LS_TR2) || def.lang2;
+    } catch (e) {
+      a = def.lang1;
+      b = def.lang2;
+    }
+    a = _normLangCode(a);
+    b = _normLangCode(b);
+    if (!_langMeta(a)) a = DEF_TR1;
+    if (!_langMeta(b)) b = DEF_TR2;
+    if (a === b) b = a === 'en' ? 'ru' : 'en';
+    return { lang1: a, lang2: b };
+  }
+
+  function setTranslatePair(lang1, lang2) {
+    const a = _normLangCode(lang1);
+    const b = _normLangCode(lang2);
+    if (!_langMeta(a) || !_langMeta(b) || a === b) return false;
+    try {
+      localStorage.setItem(LS_TR1, a);
+      localStorage.setItem(LS_TR2, b);
+    } catch (e) {}
+    try { if (typeof syncTranslateBtn === 'function') syncTranslateBtn(); } catch (e) {}
+    return true;
+  }
+
+  function getTranslateDeckLang() {
+    const def = _defaultPairFromCfg();
+    let code = def.deck || def.lang2 || DEF_TR2;
+    try {
+      code = localStorage.getItem(LS_TR_DECK) || code;
+    } catch (e) {}
+    code = _normLangCode(code);
+    if (!_langMeta(code)) code = def.lang2 || DEF_TR2;
+    if (!_langMeta(code)) code = DEF_TR2;
+    return code;
+  }
+
+  function setTranslateDeckLang(code) {
+    const c = _normLangCode(code);
+    if (!_langMeta(c)) return false;
+    try { localStorage.setItem(LS_TR_DECK, c); } catch (e) {}
+    try { if (typeof syncTranslateBtn === 'function') syncTranslateBtn(); } catch (e) {}
+    return true;
+  }
+
+  function _scriptOfCode(code) {
+    const m = _langMeta(code);
+    return m ? m.script : 'latn';
+  }
+
+  /** Подсчёт «букв» по семействам письменностей */
+  function _scriptScores(text) {
+    const s = String(text || '');
+    const scores = { cyrl: 0, latn: 0, hans: 0, jpan: 0, hang: 0, arab: 0 };
+    for (let i = 0; i < s.length; i++) {
+      const ch = s.charAt(i);
+      const cp = s.codePointAt(i);
+      if (cp > 0xffff) i++;
+      if (/[а-яА-ЯёЁіІїЇєЄґҐўЎәӘөӨүҮңҢқҚһҺ]/.test(ch)) scores.cyrl++;
+      else if (/[a-zA-Z]/.test(ch)) scores.latn++;
+      else if (cp >= 0x4E00 && cp <= 0x9FFF) scores.hans++;
+      else if ((cp >= 0x3040 && cp <= 0x30FF) || (cp >= 0x31F0 && cp <= 0x31FF)) scores.jpan++;
+      else if (cp >= 0xAC00 && cp <= 0xD7AF) scores.hang++;
+      else if ((cp >= 0x0600 && cp <= 0x06FF) || (cp >= 0x0750 && cp <= 0x077F)) scores.arab++;
+    }
+    return scores;
+  }
+
+  /**
+   * Определяет, к какому языку пары ближе текст.
+   * @returns код lang1|lang2 | 'mixed' | 'empty'
+   */
+  function detectTextLang(text) {
+    const pair = getTranslatePair();
+    const scores = _scriptScores(text);
+    let total = 0;
+    for (const k in scores) total += scores[k];
+    if (!total) return 'empty';
+
+    const s1 = _scriptOfCode(pair.lang1);
+    const s2 = _scriptOfCode(pair.lang2);
+
+    if (s1 !== s2) {
+      const n1 = scores[s1] || 0;
+      const n2 = scores[s2] || 0;
+      if (n1 + n2 === 0) return 'mixed';
+      if (n1 / (n1 + n2) >= 0.7) return pair.lang1;
+      if (n2 / (n1 + n2) >= 0.7) return pair.lang2;
+      return 'mixed';
+    }
+
+    // Одна письменность (оба латиница и т.п.) — эвристика только для классической пары ru/en
+    if (s1 === 'latn' && (pair.lang1 === 'en' || pair.lang2 === 'en') &&
+        (pair.lang1 === 'ru' || pair.lang2 === 'ru')) {
+      // латиница → en
+      if ((scores.latn || 0) / total >= 0.7) return pair.lang1 === 'en' ? pair.lang1 : pair.lang2;
+    }
+
+    return 'mixed';
+  }
+
+  /** Цель перевода и подпись кнопки по тексту и настроенной паре */
+  function translateTargetFromText(text) {
+    const pair = getTranslatePair();
+    const det = detectTextLang(text);
+    if (det === pair.lang2) {
+      return {
+        from: pair.lang2,
+        to: pair.lang1,
+        label: _langBtnLabel(pair.lang1),
+        detected: det
+      };
+    }
+    // lang1, empty, mixed → по умолчанию переводим на lang2 (кнопка показывает lang2)
+    return {
+      from: pair.lang1,
+      to: pair.lang2,
+      label: _langBtnLabel(pair.lang2),
+      detected: det
+    };
+  }
+
   function _pageUrl(rel) {
     try {
       return new URL(rel, window.location.href).href;
     } catch (e) {
       return rel;
     }
-  }
-
-  /** Доля кириллицы/латиницы → 'ru' | 'en' | 'mixed' | 'empty' */
-  function detectTextLang(text) {
-    const raw = String(text || '');
-    const letters = raw.replace(/[^a-zA-Zа-яА-ЯёЁ]/g, '');
-    if (!letters.length) return 'empty';
-    let cyr = 0, lat = 0;
-    for (let i = 0; i < letters.length; i++) {
-      if (/[а-яА-ЯёЁ]/.test(letters[i])) cyr++;
-      else lat++;
-    }
-    const total = cyr + lat;
-    if (cyr / total >= 0.7) return 'ru';
-    if (lat / total >= 0.7) return 'en';
-    return 'mixed';
-  }
-
-  /** Цель перевода и подпись кнопки по тексту */
-  function translateTargetFromText(text) {
-    const det = detectTextLang(text);
-    if (det === 'en') {
-      return { from: 'en', to: 'ru', label: 'russian', detected: det };
-    }
-    return {
-      from: 'ru',
-      to: 'en',
-      label: 'английский',
-      detected: det
-    };
   }
 
   function _plainFromRoot(root) {
@@ -91,6 +262,22 @@
       } catch (e) {}
     }
     return (root.innerText || root.textContent || '').replace(/\u200b/g, '');
+  }
+
+  function _plainFromHtml(html) {
+    if (!html) return '';
+    if (typeof _toCharObjs === 'function') {
+      try {
+        return _toCharObjs(html).map(function (o) { return o.ch; }).join('');
+      } catch (e) {}
+    }
+    try {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = html;
+      return (tmp.innerText || tmp.textContent || '').replace(/\u200b/g, '');
+    } catch (e) {
+      return String(html).replace(/<[^>]*>/g, '').replace(/\u200b/g, '');
+    }
   }
 
   function _rebuildChars(oldChars, newText) {
@@ -128,7 +315,11 @@
     return out;
   }
 
-  async function _detectSourceApi(text, fallback) {
+  async function _detectSourceApi(text, fallback, anyLang) {
+    const pair = getTranslatePair();
+    const allowed = {};
+    allowed[pair.lang1] = true;
+    allowed[pair.lang2] = true;
     if ('LanguageDetector' in self) {
       try {
         const avail = await LanguageDetector.availability();
@@ -140,8 +331,23 @@
           });
           const results = await detector.detect(text);
           if (results && results[0]) {
-            const code = results[0].detectedLanguage;
-            if (code === 'en' || code === 'ru') return code;
+            let code = _normLangCode(results[0].detectedLanguage);
+            if (anyLang) {
+              if (_langMeta(code)) return code;
+              const baseAny = code.split('-')[0];
+              if (_langMeta(baseAny)) return baseAny;
+              if (baseAny === 'zh') return 'zh-CN';
+            }
+            if (allowed[code]) return code;
+            // zh ↔ zh-CN
+            if (code === 'zh-CN') {
+              if (allowed['zh-CN']) return 'zh-CN';
+            }
+            // en-US → en
+            const base = code.split('-')[0];
+            if (allowed[base]) return base;
+            if (base === 'zh' && allowed['zh-CN']) return 'zh-CN';
+            if (anyLang && code && code !== 'und') return code;
           }
         }
       } catch (e) {}
@@ -333,14 +539,16 @@
 
   async function _getChromeTranslator(from, to, onProgress) {
     if (!('Translator' in self)) return null;
+    const cFrom = from === 'zh-CN' ? 'zh' : from;
+    const cTo = to === 'zh-CN' ? 'zh' : to;
     // Без сети не начинаем скачивание пакета Google
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       const key = from + '|' + to;
       if (_chromeTranslators[key]) return _chromeTranslators[key];
       try {
         const avail = await Translator.availability({
-          sourceLanguage: from,
-          targetLanguage: to
+          sourceLanguage: cFrom,
+          targetLanguage: cTo
         });
         if (avail !== 'available') return null;
       } catch (e) {
@@ -350,7 +558,7 @@
     const key = from + '|' + to;
     if (_chromeTranslators[key]) return _chromeTranslators[key];
 
-    const opts = { sourceLanguage: from, targetLanguage: to };
+    const opts = { sourceLanguage: cFrom, targetLanguage: cTo };
     let availability = 'unavailable';
     try {
       availability = await Translator.availability(opts);
@@ -360,8 +568,8 @@
     if (availability === 'unavailable') return null;
 
     const translator = await Translator.create({
-      sourceLanguage: from,
-      targetLanguage: to,
+      sourceLanguage: cFrom,
+      targetLanguage: cTo,
       monitor: function (m) {
         m.addEventListener('downloadprogress', function (e) {
           const pct = e.total ? Math.round((e.loaded / e.total) * 100) : Math.round((e.loaded || 0) * 100);
@@ -762,8 +970,9 @@
     const btn = document.getElementById('btn-translate-text');
     const lab = document.getElementById('btn-translate-text-label');
     const tbtn = document.getElementById('btn-transcribe-text');
+    const pair = getTranslatePair();
     if (lab && (!sel || sel.dataset.type !== 'text')) {
-      lab.textContent = 'английский';
+      lab.textContent = _langBtnLabel(pair.lang2);
     }
     let empty = true;
     if (sel && sel.dataset.type === 'text') {
@@ -781,6 +990,19 @@
     if (tbtn) {
       tbtn.disabled = off;
       tbtn.style.opacity = off ? '0.55' : '';
+    }
+    syncTranslateDeckBtn();
+  }
+
+  function syncTranslateDeckBtn() {
+    const btn = document.getElementById('btn-translate-deck');
+    const lab = document.getElementById('btn-translate-deck-label');
+    const to = getTranslateDeckLang();
+    if (lab && !_busy) lab.textContent = _langBtnLabel(to);
+    const off = _busy;
+    if (btn) {
+      btn.disabled = off;
+      btn.style.opacity = off ? '0.55' : '';
     }
   }
 
@@ -846,10 +1068,11 @@
     }
 
     const tgt = translateTargetFromText(plain);
+    const pair = getTranslatePair();
     let from = tgt.from;
     if (tgt.detected === 'mixed' || tgt.detected === 'empty') {
-      from = await _detectSourceApi(plain, 'ru');
-      if (from === tgt.to) from = tgt.to === 'en' ? 'ru' : 'en';
+      from = await _detectSourceApi(plain, pair.lang1);
+      if (from === tgt.to) from = tgt.to === pair.lang1 ? pair.lang2 : pair.lang1;
     }
 
     const lab = document.getElementById('btn-translate-text-label');
@@ -867,9 +1090,7 @@
         _finishTextChange(
           d,
           ctx.dom,
-          tgt.to === 'en'
-            ? _t('toastTranslatedEn', 'Переведено на английский')
-            : _t('toastTranslatedRu', 'Переведено на русский')
+          _t('toastTranslatedTo', 'Переведено на') + ' ' + _langDisplayName(tgt.to)
         );
       });
     } catch (e) {
@@ -890,6 +1111,234 @@
     }
   }
 
+  function _detachTextEditorsWithoutCommit() {
+    try {
+      if (typeof _enterCommitTimer !== 'undefined' && _enterCommitTimer) {
+        clearTimeout(_enterCommitTimer);
+        _enterCommitTimer = null;
+      }
+    } catch (e) {}
+    try {
+      document.querySelectorAll('.el[data-editing="true"]').forEach(function (el) {
+        const c = el.querySelector('.tel') || el.querySelector('.ec');
+        if (c) c.contentEditable = 'false';
+        delete el.dataset.editing;
+      });
+    } catch (e) {}
+    try {
+      if (typeof _rtEl !== 'undefined' && _rtEl) {
+        _rtEl.contentEditable = 'false';
+        _rtEl = null;
+      }
+      if (typeof _rtElId !== 'undefined') _rtElId = null;
+      if (typeof _savedSelIdx !== 'undefined') _savedSelIdx = null;
+    } catch (e) {}
+  }
+
+  function _commitOpenTextEditors() {
+    try {
+      if (typeof stopTextEditing === 'function') stopTextEditing();
+    } catch (e) {}
+    try {
+      if (typeof window._blurActiveShapeText === 'function') window._blurActiveShapeText();
+    } catch (e) {}
+    try {
+      if (typeof _rtEl !== 'undefined' && _rtEl) {
+        if (typeof _toSaveMode === 'function') _toSaveMode(_rtEl);
+        if (typeof _rtCommit === 'function') _rtCommit();
+        _rtEl.contentEditable = 'false';
+        _rtEl = null;
+        if (typeof _rtElId !== 'undefined') _rtElId = null;
+        if (typeof _savedSelIdx !== 'undefined') _savedSelIdx = null;
+      }
+    } catch (e) {}
+  }
+
+  function _shapeDeckHtml(d, si) {
+    if (!d || d.type !== 'shape') return '';
+    let html = d.shapeHtml || '';
+    const plainStored = _plainFromHtml(html).trim();
+    if (plainStored) return html;
+    try {
+      if (typeof cur !== 'undefined' && si === cur) {
+        const cv = document.getElementById('canvas');
+        const dom = cv && cv.querySelector('.el[data-id="' + d.id + '"]');
+        const st = dom && dom.querySelector('.shape-text');
+        const inner = st && (st.querySelector('[contenteditable], :scope > div') || st);
+        if (inner && inner.innerHTML) html = inner.innerHTML;
+      }
+    } catch (e) {}
+    return html;
+  }
+
+  function _applyDeckShapeHtml(html, translated) {
+    const src = String(html || '');
+    if (!src.trim()) return String(translated == null ? '' : translated);
+    if (!/[<]/.test(src)) return String(translated == null ? '' : translated);
+    if (typeof window.applyTranslationToHtml === 'function') {
+      return window.applyTranslationToHtml(src, translated);
+    }
+    return String(translated == null ? '' : translated);
+  }
+
+  function _liveDeckEl(si, id) {
+    const s = (typeof slides !== 'undefined' && slides) ? slides[si] : null;
+    if (!s || !s.els) return null;
+    for (let i = 0; i < s.els.length; i++) {
+      if (s.els[i] && s.els[i].id === id) return s.els[i];
+    }
+    return null;
+  }
+
+  function _collectDeckTextJobs() {
+    const jobs = [];
+    const list = (typeof slides !== 'undefined' && slides) ? slides : [];
+    for (let si = 0; si < list.length; si++) {
+      const s = list[si];
+      const els = (s && s.els) || [];
+      for (let ei = 0; ei < els.length; ei++) {
+        const d = els[ei];
+        if (!d || !d.id) continue;
+        if (d.type === 'text' && d.html) {
+          const plain = _plainFromHtml(d.html);
+          if (plain.trim()) jobs.push({ kind: 'text', si: si, id: d.id, html: d.html, plain: plain });
+        } else if (d.type === 'shape') {
+          const html = _shapeDeckHtml(d, si);
+          const plain = _plainFromHtml(html);
+          if (plain.trim()) jobs.push({ kind: 'shape', si: si, id: d.id, html: html, plain: plain });
+        } else if (d.type === 'applet' && d.appletId === 'flip') {
+          const front = String(d.flipFrontText || '');
+          const back = String(d.flipBackText || '');
+          if (front.trim()) jobs.push({ kind: 'flip', si: si, id: d.id, field: 'flipFrontText', plain: front });
+          if (back.trim()) jobs.push({ kind: 'flip', si: si, id: d.id, field: 'flipBackText', plain: back });
+        }
+      }
+    }
+    return jobs;
+  }
+
+  async function _resolveDeckFromLang(plain, to) {
+    const scores = _scriptScores(plain);
+    let total = 0;
+    for (const k in scores) total += scores[k];
+    if (!total) return null;
+    const ts = _scriptOfCode(to);
+    if (ts && ts !== 'latn') {
+      const n = scores[ts] || 0;
+      if (n / total >= 0.7) return null;
+    }
+    const tgt = translateTargetFromText(plain);
+    if (tgt.detected === to) return null;
+    let from = tgt.from;
+    if (tgt.detected === 'mixed' || tgt.detected === 'empty' || from === to) {
+      from = await _detectSourceApi(plain, from === to ? 'auto' : (from || 'auto'), true);
+    }
+    from = _normLangCode(from);
+    if (!from || from === to) return null;
+    return from;
+  }
+
+  function _refreshFlipAppletHtml(d) {
+    if (!d || d.appletId !== 'flip' || typeof getFlipHTML !== 'function') return;
+    d.appletHtml = getFlipHTML(null, {
+      flipFace: d.flipFace,
+      flipFrontText: d.flipFrontText || '',
+      flipFrontImg: d.flipFrontImg || '',
+      flipBackText: d.flipBackText || '',
+      flipBackImg: d.flipBackImg || '',
+      flipFrontFont: d.flipFrontFont || '',
+      flipBackFont: d.flipBackFont || '',
+      flipFrontFs: d.flipFrontFs,
+      flipBackFs: d.flipBackFs,
+      w: d.w,
+      h: d.h,
+      genBg: d.genBg || '',
+      genColor: d.genColor || '',
+      genBgOp: d.genBgOp,
+      genBgBlur: d.genBgBlur,
+      genBgScheme: d.genBgScheme,
+      genColorScheme: d.genColorScheme
+    });
+  }
+
+  async function translateAllPresentationTexts() {
+    if (_busy) return;
+    _commitOpenTextEditors();
+    if (typeof pushUndo === 'function') pushUndo();
+    else if (typeof save === 'function') save();
+    const to = getTranslateDeckLang();
+    const jobs = _collectDeckTextJobs();
+    if (!jobs.length) {
+      _toast(_t('toastTranslateDeckNone', 'Нет текста для перевода'), 'err');
+      return;
+    }
+    const dlab = document.getElementById('btn-translate-deck-label');
+    _busy = true;
+    syncTranslateBtn();
+    if (dlab) dlab.textContent = '…';
+
+    let done = 0;
+    let changed = 0;
+    const flipChanged = Object.create(null);
+    try {
+      for (let i = 0; i < jobs.length; i++) {
+        const job = jobs[i];
+        const from = await _resolveDeckFromLang(job.plain, to);
+        done++;
+        if (dlab) dlab.textContent = done + '/' + jobs.length;
+        if (!from) continue;
+        const translated = await translatePlain(job.plain, from, to, function (pct) {
+          if (dlab) dlab.textContent = done + '/' + jobs.length + ' ' + pct + '%';
+        });
+        if (!translated || translated === job.plain) continue;
+        const live = _liveDeckEl(job.si, job.id);
+        if (!live) continue;
+        if (job.kind === 'text') {
+          live.html = window.applyTranslationToHtml(job.html, translated);
+        } else if (job.kind === 'shape') {
+          live.shapeHtml = _applyDeckShapeHtml(job.html, translated);
+        } else if (job.kind === 'flip') {
+          live[job.field] = translated;
+          flipChanged[job.si + ':' + job.id] = true;
+        }
+        changed++;
+      }
+      Object.keys(flipChanged).forEach(function (key) {
+        const parts = key.split(':');
+        const live = _liveDeckEl(+parts[0], parts[1]);
+        if (live) _refreshFlipAppletHtml(live);
+      });
+      if (changed) {
+        _toast(_t('toastTranslatedTo', 'Переведено на') + ' ' + _langDisplayName(to), 'ok');
+      } else {
+        _toast(_t('toastTranslateDeckNone', 'Нет текста для перевода'), 'ok');
+      }
+    } catch (e) {
+      if (e && e.message === 'NO_ENGINE') {
+        _toast(
+          _t(
+            'toastTranslateNoEngine',
+            'Нет сети и не удалось запустить локальный переводчик'
+          ),
+          'err'
+        );
+      } else {
+        console.warn('[translate-deck]', e);
+        _toast(_t('toastTranslateFail', 'Не удалось перевести'), 'err');
+      }
+    }
+    _busy = false;
+    _detachTextEditorsWithoutCommit();
+    try {
+      if (typeof load === 'function') load();
+      if (typeof drawThumbs === 'function') drawThumbs();
+      if (typeof saveState === 'function') saveState();
+      if (typeof syncFlipProps === 'function' && sel && sel.dataset.appletId === 'flip') syncFlipProps();
+      if (typeof syncProps === 'function' && sel && sel.dataset.type === 'shape') syncProps();
+    } catch (e) {}
+    syncTranslateBtn();
+  }
+
   async function transcribeSelectedText() {
     if (_busy) return;
     const ctx = _selectedTextRoot();
@@ -904,9 +1353,10 @@
     }
 
     const tgt = translateTargetFromText(plain);
+    const pair = getTranslatePair();
     let from = tgt.from;
     if (tgt.detected === 'mixed' || tgt.detected === 'empty') {
-      from = await _detectSourceApi(plain, 'ru');
+      from = await _detectSourceApi(plain, pair.lang1);
     }
 
     _busy = true;
@@ -943,10 +1393,17 @@
   if (document.readyState === 'complete') _prefetchBergamot();
   else window.addEventListener('load', _prefetchBergamot);
 
+  window.TRANSLATE_LANGS = TRANSLATE_LANGS;
+  window.getTranslatePair = getTranslatePair;
+  window.setTranslatePair = setTranslatePair;
+  window.getTranslateDeckLang = getTranslateDeckLang;
+  window.setTranslateDeckLang = setTranslateDeckLang;
   window.detectTextLang = detectTextLang;
   window.translateTargetFromText = translateTargetFromText;
   window.syncTranslateBtn = syncTranslateBtn;
+  window.syncTranslateDeckBtn = syncTranslateDeckBtn;
   window.translateSelectedText = translateSelectedText;
+  window.translateAllPresentationTexts = translateAllPresentationTexts;
   window.transcribeSelectedText = transcribeSelectedText;
   window.translatePlain = translatePlain;
 

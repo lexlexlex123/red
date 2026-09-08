@@ -185,6 +185,53 @@
     }catch(e){ toast('Ошибка восстановления'); }
   };
 
+  /** Восстановить src/imageId картинок из истории версий, если они обнулились при сохранении. */
+  window._repairMissingImages = async function(){
+    if(typeof slides==='undefined'||!slides||!slides.length) return 0;
+    const broken=[];
+    slides.forEach(function(s){
+      (s.els||[]).forEach(function(d){
+        if(d&&d.type==='image'&&!d.src&&!d.imageId) broken.push(d);
+      });
+    });
+    if(!broken.length) return 0;
+    const list=await idbList();
+    if(!list.length) return 0;
+    let repaired=0;
+    const stillBroken=function(){ return broken.filter(function(d){ return !d.src&&!d.imageId; }); };
+    for(let i=0;i<list.length;i++){
+      let data=null;
+      try{ data=JSON.parse(list[i].data); }catch(e){ continue; }
+      const byId=new Map();
+      (data.slides||[]).forEach(function(s){
+        (s.els||[]).forEach(function(d){
+          if(!d||d.type!=='image'||!d.id) return;
+          if(d.src||d.imageId) byId.set(d.id, d);
+        });
+      });
+      stillBroken().forEach(function(d){
+        const old=byId.get(d.id);
+        if(!old) return;
+        if(old.imageId) d.imageId=old.imageId;
+        const os=String(old.src||'');
+        if(os.startsWith('data:')||(os&&!os.startsWith('blob:'))) d.src=os;
+        if(d.src||d.imageId) repaired++;
+      });
+      if(!stillBroken().length) break;
+    }
+    if(repaired&&typeof MediaStore!=='undefined'&&MediaStore.hydrateSlides){
+      try{ await MediaStore.hydrateSlides(slides); }catch(e){}
+    }
+    // Перенести data: без imageId в IDB, чтобы снова не раздувать LS
+    if(typeof MediaStore!=='undefined'&&MediaStore.migrateSlideImages){
+      try{ await MediaStore.migrateSlideImages(slides); }catch(e){}
+    }
+    if(typeof MediaStore!=='undefined'&&MediaStore.migrateSlideBackgrounds){
+      try{ await MediaStore.migrateSlideBackgrounds(slides); }catch(e){}
+    }
+    return repaired;
+  };
+
   // При загрузке: если localStorage пуст — пробуем IndexedDB
   window.addEventListener('load', async ()=>{
     const lsRaw = localStorage.getItem('sf_v4');
@@ -199,7 +246,34 @@
         if(typeof pnApplyAll==='function') requestAnimationFrame(pnApplyAll);
         toast('📂 Данные восстановлены из резервной копии');
       }
+    } else if(typeof window._repairMissingImages==='function'){
+      // На случай если boot уже прошёл до определения этой функции
+      try{
+        const n=await window._repairMissingImages();
+        if(n>0){
+          if(typeof load==='function') load();
+          if(typeof renderAll==='function') renderAll();
+          if(typeof drawThumbs==='function') drawThumbs(false,'all');
+          if(typeof saveState==='function') saveState();
+          toast('Восстановлено изображений: '+n,'ok');
+        }
+      }catch(e){}
     }
+    // Одноразово перенести тяжёлые фоны/картинки из localStorage в IndexedDB (не блокировать импорт)
+    setTimeout(async function(){
+      if(window._importInProgress||typeof slides==='undefined'||!slides.length||typeof MediaStore==='undefined') return;
+      try{
+        const imgN=MediaStore.migrateSlideImagesYielding?await MediaStore.migrateSlideImagesYielding(slides):(
+          MediaStore.migrateSlideImages?await MediaStore.migrateSlideImages(slides):0);
+        const bgN=MediaStore.migrateSlideBackgroundsYielding?await MediaStore.migrateSlideBackgroundsYielding(slides):(
+          MediaStore.migrateSlideBackgrounds?await MediaStore.migrateSlideBackgrounds(slides):0);
+        if((imgN||bgN)&&typeof saveState==='function'){
+          if(typeof load==='function') load();
+          if(typeof drawThumbs==='function') drawThumbs(false,'all');
+          saveState();
+        }
+      }catch(e){}
+    },1500);
   }, {once:true});
 
   window._idbSave = idbSave;
@@ -260,7 +334,7 @@ window.openLayoutPreview = function(){
     card.className = 'lp-card';
     card.innerHTML = `
       <div class="lp-thumb">${svgPreview}</div>
-      <div class="lp-label">${theme.name}</div>
+      <div class="lp-label">${typeof _themeDisplayName==='function'?_themeDisplayName(theme):theme.name}</div>
       <div class="lp-sub">${layout ? layout.name||layout.nameEn||'Декор' : 'Без декора'}</div>
       <button class="mbtn" onclick="applyLayoutVariant(${v.tIdx},${v.lIdx},'${v.align}')">Применить</button>`;
     container.appendChild(card);

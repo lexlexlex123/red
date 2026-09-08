@@ -6,18 +6,13 @@
   "id": "/",
   "start_url": "./",
   "scope": "./",
-  "display": "standalone",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone", "minimal-ui"],
   "orientation": "any",
-  "background_color": "#1a1a2e",
-  "theme_color": "#3b82f6",
+  "background_color": "#1a1a1e",
+  "theme_color": "#1a1a1e",
   "categories": ["productivity", "education"],
   "icons": [
-    {
-      "src": "icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any"
-    },
     {
       "src": "icon-192.png",
       "sizes": "192x192",
@@ -41,7 +36,9 @@
     {
       "action": "./",
       "accept": {
-        "text/html": [".html", ".htm"]
+        "text/html": [".html", ".htm"],
+        "application/vnd.slides.project+json": [".slides.json"],
+        "application/json": [".slides.json"]
       },
       "launch_type": "single-client",
       "icons": [
@@ -49,15 +46,13 @@
           "src": "icon-192.png",
           "sizes": "192x192",
           "type": "image/png"
+        },
+        {
+          "src": "icon-512.png",
+          "sizes": "512x512",
+          "type": "image/png"
         }
       ]
-    },
-    {
-      "action": "./",
-      "accept": {
-        "application/json": [".json"]
-      },
-      "launch_type": "single-client"
     }
   ]
 }

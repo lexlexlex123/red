@@ -1,9 +1,11 @@
 // ══════════════ IMAGE CROP ══════════════
 //
-// MODEL:
-//   d.imgCropL/T/R/B — отступы от полного кадра (логические px, _cropFullW/H)
-//   В режиме обрезки .el развёрнут до полного кадра; картинка не двигается.
-//   Двигаются только рамка обрезки (pan + handles). Выход снаружи — применить.
+// MODEL (как в PowerPoint):
+//   Картинка стоит на месте; двигается только рамка обрезки.
+//   d.imgCropL/T/R/B — отступы от полного кадра (_cropFullW/H).
+//   В режиме обрезки .el = полный кадр; img на весь кадр (left/top=0).
+//   При выходе рамка элемента съезжает к видимой области, img со сдвигом
+//   (−L,−T), поэтому пиксели на экране не прыгают.
 
 let _cropEl = null;
 let _cropOrigW = 0, _cropOrigH = 0;
@@ -21,18 +23,77 @@ function _applyImgFlipTarget(c, d) {
   }
 }
 
-function _cropUiMetrics(d, curW, curH, curX, curY) {
-  const L = d.imgCropL || 0, T = d.imgCropT || 0, R = d.imgCropR || 0, B = d.imgCropB || 0;
+/** Прямоугольник картинки внутри бокса без искажения (object-fit: contain). */
+function _imgContainRect(nw, nh, boxW, boxH) {
+  const ir = (nw > 0 && nh > 0) ? (nw / nh) : (boxW / Math.max(1, boxH));
+  const br = boxW / Math.max(1, boxH);
+  if (ir > br) {
+    const w = boxW, h = boxW / ir;
+    return { x: 0, y: (boxH - h) / 2, w, h };
+  }
+  const h = boxH, w = boxH * ir;
+  return { x: (boxW - w) / 2, y: 0, w, h };
+}
+
+/** Как картинка реально нарисована в боксе (contain / cover / fill). */
+function _imgPaintedRect(img, d, boxW, boxH) {
+  const nw = img && img.naturalWidth, nh = img && img.naturalHeight;
+  const fit = (d && d.imgFit) || 'contain';
+  if (!nw || !nh || fit === 'fill') return { x: 0, y: 0, w: boxW, h: boxH };
+  if (fit === 'cover') {
+    const ir = nw / nh, br = boxW / Math.max(1, boxH);
+    if (ir > br) {
+      const h = boxH, w = h * ir;
+      return { x: (boxW - w) / 2, y: 0, w, h };
+    }
+    const w = boxW, h = w / ir;
+    return { x: 0, y: (boxH - h) / 2, w, h };
+  }
+  return _imgContainRect(nw, nh, boxW, boxH);
+}
+
+/**
+ * Метрики UI обрезки.
+ * fullX/Y — где стоит полный кадр, чтобы ВИДИМАЯ область осталась в (curX,curY).
+ * Картинка привязана к полному кадру → на экране не двигается.
+ * _cropFullW/H пишем только при успешном apply — не при входе (иначе после отмены stretch).
+ */
+function _cropUiMetrics(d, curW, curH, curX, curY, img) {
+  let L = +(d.imgCropL || 0), T = +(d.imgCropT || 0), R = +(d.imgCropR || 0), B = +(d.imgCropB || 0);
   let logW = d._cropFullW;
   let logH = d._cropFullH;
-  if (!(logW > 0 && logH > 0)) {
+  const entryVisW = curW, entryVisH = curH;
+  const noFull = !(logW > 0 && logH > 0);
+  const noCrop = !L && !T && !R && !B;
+
+  // Нет активной обрезки — кадр = уже нарисованная область (игнор stale _cropFullW)
+  if (noCrop) {
+    const disp = _imgPaintedRect(img, d, curW, curH);
+    return {
+      logW: disp.w, logH: disp.h,
+      sx: 1, sy: 1,
+      uiW: disp.w, uiH: disp.h,
+      uiL: 0, uiT: 0, uiR: 0, uiB: 0,
+      fullX: curX + disp.x,
+      fullY: curY + disp.y,
+      entryVisW, entryVisH,
+      entryX: curX, entryY: curY,
+      entryCrop: { L: 0, T: 0, R: 0, B: 0 },
+      clearFullOnCancel: true,
+    };
+  }
+
+  if (noFull) {
     logW = curW + L + R;
     logH = curH + T + B;
   }
+
   const logVisW = Math.max(1, logW - L - R);
   const logVisH = Math.max(1, logH - T - B);
+  // Масштаб видимой области → текущий бокс (обычно 1 после apply)
   const sx = curW / logVisW;
   const sy = curH / logVisH;
+
   return {
     logW, logH, sx, sy,
     uiW: logW * sx,
@@ -43,10 +104,8 @@ function _cropUiMetrics(d, curW, curH, curX, curY) {
     uiB: B * sy,
     fullX: curX - L * sx,
     fullY: curY - T * sy,
-    entryVisW: curW,
-    entryVisH: curH,
-    entryX: curX,
-    entryY: curY,
+    entryVisW, entryVisH,
+    entryX: curX, entryY: curY,
     entryCrop: { L, T, R, B },
   };
 }
@@ -98,9 +157,10 @@ function applyImgCrop(el, d) {
   const img = el.querySelector('img');
   if (!c || !img) return;
 
-  const L = d.imgCropL || 0, T = d.imgCropT || 0;
-  const R = d.imgCropR || 0, B = d.imgCropB || 0;
+  const L = +(d.imgCropL || 0), T = +(d.imgCropT || 0);
+  const R = +(d.imgCropR || 0), B = +(d.imgCropB || 0);
   const hasCrop = L || T || R || B;
+  const isPolaroid = (typeof _imgNormFrame === 'function' ? _imgNormFrame(d.imgFrame) : d.imgFrame) === 'polaroid';
 
   if (hasCrop) {
     const visW = parseInt(el.style.width)  || d.w;
@@ -109,44 +169,67 @@ function applyImgCrop(el, d) {
     const fH = (d._cropFullH > 0) ? d._cropFullH : (T + visH + B);
     const logVisW = Math.max(1, fW - L - R);
     const logVisH = Math.max(1, fH - T - B);
-    const wPct  = (fW / logVisW * 100).toFixed(4) + '%';
-    const hPct  = (fH / logVisH * 100).toFixed(4) + '%';
-    const lPct  = (-L / logVisW * 100).toFixed(4) + '%';
-    const tPct  = (-T / logVisH * 100).toFixed(4) + '%';
+    const wPct = (fW / logVisW * 100).toFixed(4) + '%';
+    const hPct = (fH / logVisH * 100).toFixed(4) + '%';
+    const lPct = (-L / logVisW * 100).toFixed(4) + '%';
+    const tPct = (-T / logVisH * 100).toFixed(4) + '%';
     const rx   = (d.imgRx || 0) + 'px';
 
     el.dataset.hasCrop = '1';
 
-    c.style.position    = 'absolute';
-    c.style.inset       = '0';
-    c.style.overflow    = 'hidden';
-    c.style.borderRadius = rx;
-    c.style.border      = 'none';
-    c.style.boxSizing   = '';
+    if (isPolaroid) {
+      // Не ломать flex-вёрстку полароида — только клип и геометрия img
+      c.style.overflow = 'hidden';
+      const wrap = c.querySelector('.img-polaroid-photo');
+      if (wrap) {
+        wrap.style.position = 'relative';
+        wrap.style.display = 'block';
+        wrap.style.width = '100%';
+        wrap.style.height = '100%';
+        wrap.style.overflow = 'hidden';
+        wrap.style.minHeight = '0';
+      }
+    } else {
+      c.style.position     = 'absolute';
+      c.style.inset        = '0';
+      c.style.overflow     = 'hidden';
+      c.style.borderRadius = rx;
+      c.style.border       = 'none';
+      c.style.boxSizing    = '';
+    }
 
     img.style.position  = 'absolute';
     img.style.left      = lPct;
     img.style.top       = tPct;
     img.style.width     = wPct;
     img.style.height    = hPct;
+    img.style.maxWidth  = 'none';
+    img.style.maxHeight = 'none';
+    img.style.margin    = '0';
     img.style.objectFit = 'fill';
+    img.style.objectPosition = 'center';
     img.style.display   = 'block';
     img.style.opacity   = d.imgOpacity != null ? d.imgOpacity : 1;
   } else {
     delete el.dataset.hasCrop;
-    const rx = (d.imgRx || 0) + 'px';
-    c.style.position    = 'absolute';
-    c.style.inset       = '0';
-    c.style.overflow    = 'hidden';
-    c.style.borderRadius = rx;
-    c.style.border      = 'none';
-    c.style.boxSizing   = '';
-    img.style.position  = '';
-    img.style.left      = '';
-    img.style.top       = '';
-    img.style.width     = '100%';
-    img.style.height    = '100%';
-    img.style.objectFit = d.imgFit || 'contain';
+    if (!isPolaroid) {
+      const rx = (d.imgRx || 0) + 'px';
+      c.style.position     = 'absolute';
+      c.style.inset        = '0';
+      c.style.overflow     = 'hidden';
+      c.style.borderRadius = rx;
+      c.style.border       = 'none';
+      c.style.boxSizing    = '';
+      img.style.position  = '';
+      img.style.left      = '';
+      img.style.top       = '';
+      img.style.width     = '100%';
+      img.style.height    = '100%';
+      img.style.maxWidth  = '';
+      img.style.maxHeight = '';
+      img.style.margin    = '';
+      img.style.objectFit = d.imgFit || 'contain';
+    }
   }
 }
 
@@ -164,23 +247,20 @@ function startImgCrop() {
   const curX = parseInt(sel.style.left)   || d.x;
   const curY = parseInt(sel.style.top)    || d.y;
 
-  const ui = _cropUiMetrics(d, curW, curH, curX, curY);
+  const img = sel.querySelector('img');
+  const ui = _cropUiMetrics(d, curW, curH, curX, curY, img);
   d._cropUi = ui;
   _cropOrigW = ui.uiW;
   _cropOrigH = ui.uiH;
+  // _cropFullW/H фиксируем только при apply — иначе отмена ломает следующий вход
 
-  if (!(d._cropFullW > 0 && d._cropFullH > 0)) {
-    d._cropFullW = ui.logW;
-    d._cropFullH = ui.logH;
-  }
-
+  // Разворачиваем элемент до полного кадра; картинка остаётся в тех же экранных координатах
   sel.style.width  = ui.uiW + 'px';
   sel.style.height = ui.uiH + 'px';
   sel.style.left   = ui.fullX + 'px';
   sel.style.top    = ui.fullY + 'px';
 
-  const c   = sel.querySelector('.iel');
-  const img = sel.querySelector('img');
+  const c = sel.querySelector('.iel');
   if (c) {
     c.style.cssText = 'position:absolute;inset:0;overflow:visible;pointer-events:none;';
     _applyImgFlipTarget(c, d);
@@ -189,8 +269,10 @@ function startImgCrop() {
     img.style.position  = 'absolute';
     img.style.left      = '0';
     img.style.top       = '0';
-    img.style.width     = ui.uiW + 'px';
-    img.style.height    = ui.uiH + 'px';
+    img.style.width     = '100%';
+    img.style.height    = '100%';
+    img.style.maxWidth  = 'none';
+    img.style.margin    = '0';
     img.style.objectFit = 'fill';
     img.style.pointerEvents = 'none';
   }
@@ -225,6 +307,7 @@ function _exitCropMode(doSave) {
     d._cropFullW = ui.logW;
     d._cropFullH = ui.logH;
 
+    // Рамка → к обрезанной области; картинка со сдвигом остаётся на месте
     const visW = ui.uiW - ui.uiL - ui.uiR;
     const visH = ui.uiH - ui.uiT - ui.uiB;
     const visX = (parseInt(el.style.left) || 0) + ui.uiL;
@@ -237,6 +320,8 @@ function _exitCropMode(doSave) {
 
     d.x = visX; d.y = visY;
     d.w = visW; d.h = visH;
+    d.imgFit = 'fill';
+    el.dataset.imgFit = 'fill';
 
     el.dataset.imgCropL = L;
     el.dataset.imgCropT = T;
@@ -257,6 +342,10 @@ function _exitCropMode(doSave) {
     el.style.top    = ui.entryY + 'px';
     d.x = ui.entryX; d.y = ui.entryY;
     d.w = ui.entryVisW; d.h = ui.entryVisH;
+    if (ui.clearFullOnCancel || (!ec.L && !ec.T && !ec.R && !ec.B)) {
+      delete d._cropFullW;
+      delete d._cropFullH;
+    }
     delete d._cropUi;
     if (typeof applyImgStyles === 'function') applyImgStyles(el, d);
     else applyImgCrop(el, d);
@@ -352,6 +441,7 @@ function _attachCropPan(panEl, el, d) {
     const mm = e2 => {
       const dx = (e2.clientX - sx0) / _z;
       const dy = (e2.clientY - sy0) / _z;
+      // Двигаем только рамку; размер видимой области и картинка не меняются
       let nL = Math.max(0, Math.min(ui.uiW - visW, sL + dx));
       let nT = Math.max(0, Math.min(ui.uiH - visH, sT + dy));
       ui.uiL = nL;
@@ -382,6 +472,7 @@ function _attachCropDrag(hEl, el, d, sides) {
     const mm = e2 => {
       const dx = (e2.clientX - sx0) / _z;
       const dy = (e2.clientY - sy0) / _z;
+      // Меняем только отступы рамки — картинка (полный кадр) не двигается
       if (sides.includes('L')) ui.uiL = Math.max(0, Math.min(fW - sR - MIN, sL + dx));
       if (sides.includes('R')) ui.uiR = Math.max(0, Math.min(fW - sL - MIN, sR - dx));
       if (sides.includes('T')) ui.uiT = Math.max(0, Math.min(fH - sB - MIN, sT + dy));
@@ -404,3 +495,4 @@ function _updateCropBtn(active) {
 }
 
 window.isImgCropActive = function() { return !!_cropEl; };
+window._imgContainRect = _imgContainRect;

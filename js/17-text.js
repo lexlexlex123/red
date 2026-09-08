@@ -427,14 +427,17 @@ function applyTextBlockShadowStyle(el,override){
 }
 window._textBorderHost=function(el){
   if(!el||el.dataset.type!=='text') return el;
-  const body=typeof window._ensureTextBodyWrap==='function'?window._ensureTextBodyWrap(el):(el.querySelector('._text_body')||el);
-  let layer=body.querySelector('.el-bg-layer');
+  if(typeof window._migrateTextBgLayerOut==='function') window._migrateTextBgLayerOut(el);
+  let layer=el.querySelector(':scope > .el-bg-layer');
+  if(!layer) layer=el.querySelector('.el-bg-layer');
   if(!layer){
     layer=document.createElement('div');
     layer.className='el-bg-layer';
     layer.style.cssText='position:absolute;inset:0;z-index:0;pointer-events:none;border-radius:inherit;';
-    body.insertBefore(layer,body.firstChild);
-    const bodyRx=body.style.borderRadius;
+    const body=el.querySelector('._text_body');
+    if(body) el.insertBefore(layer,body);
+    else el.insertBefore(layer,el.firstChild);
+    const bodyRx=body&&body.style.borderRadius;
     if(bodyRx)layer.style.borderRadius=bodyRx;
   }
   return layer;
@@ -627,7 +630,9 @@ function _applyTextBorderSVG(el, w, c, style, host) {
 function setTextElOpacity(op){
   if(!sel||sel.dataset.type!=='text')return;
   sel.dataset.elOpacity=op;
-  sel.style.opacity=op;
+  sel.style.opacity='';
+  const ec=sel.querySelector('.ec')||sel.querySelector('.tel');
+  if(ec) ec.style.opacity=(+op===1?'':op);
   save();saveState();
 }
 function setShapeElOpacity(op){
@@ -662,36 +667,403 @@ function applyHoverPreset(preset){
 }
 // ══════════════ PIPETTE (STYLE COPY) ══════════════
 let pipetteMode=false,pipetteSrc=null,pipetteSrcSlide=0;
-function togglePipetteMode(){
-  if(!sel){toast('Select a target element first');return;}
-  pipetteMode=!pipetteMode;
-  document.querySelectorAll('.pipette-btn').forEach(b=>b.classList.toggle('active',pipetteMode));
-  document.body.classList.toggle('pipette-mode',pipetteMode);
-  if(pipetteMode){
-    pipetteSrc=sel; // remember the element we're styling
-    pipetteSrcSlide=cur; // remember which slide the destination is on
-    toast('🔬 Pipette ON — click any element to copy its style','ok');
-  } else {
+/** When set: pipette paints brush/fill color instead of an object (`brush`|`fill`). */
+let pipetteDrawMode=null;
+
+function _pipetteSyncBtnActive(){
+  document.querySelectorAll('.pipette-btn').forEach(b=>{
+    const mode=b.getAttribute('data-pipette');
+    let on=false;
+    if(!pipetteMode) on=false;
+    else if(mode==='brush'||mode==='fill') on=(pipetteDrawMode===mode);
+    else on=!pipetteDrawMode; // object pipette buttons
+    b.classList.toggle('active', on);
+  });
+  document.body.classList.toggle('pipette-mode', !!pipetteMode);
+}
+
+function togglePipetteMode(mode){
+  // mode: 'brush' | 'fill' | undefined (object: text/shape/icon)
+  if(mode==='brush'||mode==='fill'){
+    if(pipetteMode&&pipetteDrawMode===mode){
+      cancelPipetteMode();
+      toast('Пипетка выкл.');
+      return;
+    }
+    pipetteMode=true;
     pipetteSrc=null;
-    toast('Pipette OFF');
+    pipetteDrawMode=mode;
+    pipetteSrcSlide=typeof cur!=='undefined'?cur:0;
+    _pipetteSyncBtnActive();
+    toast(mode==='fill'
+      ?'🔬 Пипетка заливки — клик по цвету на слайде'
+      :'🔬 Пипетка кисти — клик по цвету на слайде','ok');
+    return;
   }
+
+  if(!sel){toast('Сначала выберите объект');return;}
+  const t=sel.dataset&&sel.dataset.type;
+  if(t!=='text'&&t!=='shape'&&t!=='icon'){
+    toast('Пипетка для текста, фигуры или значка');return;
+  }
+  if(pipetteMode&&!pipetteDrawMode){
+    cancelPipetteMode();
+    toast('Пипетка выкл.');
+    return;
+  }
+  pipetteMode=true;
+  pipetteDrawMode=null;
+  pipetteSrc=sel;
+  pipetteSrcSlide=cur;
+  _pipetteSyncBtnActive();
+  const hint=t==='shape'
+    ?'🔬 Пипетка — клик по объекту, кисти или заливке (Shift → обводка)'
+    :'🔬 Пипетка — клик по объекту, кисти или заливке';
+  toast(hint,'ok');
 }
 function cancelPipetteMode(){
-  pipetteMode=false;pipetteSrc=null;pipetteSrcSlide=0;
-  document.querySelectorAll('.pipette-btn').forEach(b=>b.classList.remove('active'));
+  pipetteMode=false;pipetteSrc=null;pipetteSrcSlide=0;pipetteDrawMode=null;
+  _pipetteSyncBtnActive();
   document.body.classList.remove('pipette-mode');
+  document.querySelectorAll('.pipette-btn').forEach(b=>b.classList.remove('active'));
+  // Brush ring comes back on next pointermove once pipette-mode is off
 }
-function pipetteApply(srcEl){
+
+/** Exact palette cell for hex, or null if not a palette color. */
+function _pipetteExactScheme(hex){
+  if(!hex||typeof _closestSchemeRef!=='function') return null;
+  const th=typeof _activeThemeForScheme==='function'?_activeThemeForScheme():null;
+  if(!th) return null;
+  const sr=_closestSchemeRef(hex, th);
+  if(!sr||typeof _schemeSwatchColor!=='function') return null;
+  const got=_schemeSwatchColor(th, sr.col, sr.row);
+  const a=typeof _parseHexRgb==='function'?_parseHexRgb(hex):null;
+  const b=typeof _parseHexRgb==='function'?_parseHexRgb(got):null;
+  if(!a||!b) return null;
+  if(a[0]===b[0]&&a[1]===b[1]&&a[2]===b[2]) return sr;
+  return null;
+}
+
+function _pipetteResolveScheme(color, scheme){
+  if(scheme&&scheme.col!=null&&scheme.row!=null) return scheme;
+  return _pipetteExactScheme(color);
+}
+
+function _pipetteDone(dstEl, dstSl, msg){
+  cancelPipetteMode();
+  const okMsg=msg||'✓ Цвет скопирован';
+  if(dstEl&&dstSl!=null&&dstSl !== cur && typeof pickSlide === 'function') {
+    pickSlide(dstSl);
+    setTimeout(() => {
+      save(); drawThumbs(); saveState();
+      const destEl = document.querySelector(`.el[data-id="${dstEl?.dataset?.id}"]`) || dstEl;
+      if(destEl && typeof pick === 'function') pick(destEl);
+      toast(okMsg, 'ok');
+    }, 50);
+  } else {
+    if(typeof save==='function') save();
+    if(typeof drawThumbs==='function') drawThumbs();
+    if(typeof saveState==='function') saveState();
+    if(dstEl&&typeof pick==='function') pick(dstEl);
+    toast(okMsg, 'ok');
+  }
+}
+
+function _pipetteApplyDrawColor(color, scheme){
+  if(typeof setDrawColor!=='function') return false;
+  if(typeof pushUndo==='function') pushUndo();
+  setDrawColor(color, scheme||null);
+  // Ensure fill tool also sees it when sampling for fill
+  _pipetteDone(null, null, '✓ Цвет кисти/заливки');
+  return true;
+}
+
+/** Apply a single color to pipette destination (text / icon / shape / brush / fill). */
+function pipetteApplyColor(color, opts){
+  opts=opts||{};
+  if(!color) return false;
+  const col=String(color).trim();
+  if(!col||col==='none'||col==='transparent') return false;
+  const scheme=_pipetteResolveScheme(col, opts.colorScheme||null);
+
+  if(pipetteDrawMode){
+    return _pipetteApplyDrawColor(col, scheme);
+  }
+
+  if(!pipetteSrc) return false;
+  const dstType=pipetteSrc.dataset.type;
+  if(dstType!=='text'&&dstType!=='shape'&&dstType!=='icon') return false;
+  const dstSlide=slides[pipetteSrcSlide]||slides[cur];
+  const dstData=dstSlide&&dstSlide.els&&dstSlide.els.find(e=>e.id===pipetteSrc.dataset.id);
+  if(!dstData) return false;
+  if(typeof pushUndo==='function') pushUndo();
+
+  const dstEl=pipetteSrc;
+  const dstSl=pipetteSrcSlide;
+  const prevSel=typeof sel!=='undefined'?sel:null;
+
+  try{
+    if(typeof sel!=='undefined') sel=pipetteSrc;
+
+    if(dstType==='text'){
+      dstData.textColorScheme=scheme||null;
+      if(typeof applyTextColor==='function') applyTextColor(col, scheme||null);
+      else if(typeof setTS==='function') setTS('color', col);
+      try{
+        const prev=document.getElementById('p-col-preview');
+        if(prev){ prev.style.background=col; prev.style.backgroundColor=col; }
+        const hx=document.getElementById('p-hex');
+        if(hx) hx.value=(typeof _colorFieldDisplay==='function')?_colorFieldDisplay(col, scheme):col;
+      }catch(e){}
+    } else if(dstType==='icon'){
+      dstData.iconColor=col;
+      pipetteSrc.dataset.iconColor=col;
+      dstData.iconColorCustom=true;
+      dstData.iconColorScheme=scheme||null;
+      if(scheme) pipetteSrc.dataset.iconColorScheme=JSON.stringify(scheme);
+      else delete pipetteSrc.dataset.iconColorScheme;
+      if(typeof updateIconStyleScheme==='function') updateIconStyleScheme('iconColor', col, scheme||null);
+      else {
+        if(typeof _rebuildIconElement==='function') _rebuildIconElement(pipetteSrc,dstData);
+        if(typeof syncIconProps==='function') syncIconProps(pipetteSrc,dstData);
+      }
+    } else if(dstType==='shape'){
+      if(opts.shift){
+        dstData.stroke=col;
+        pipetteSrc.dataset.stroke=col;
+        dstData.strokeScheme=scheme||null;
+        if(typeof updateShapeStyleScheme==='function') updateShapeStyleScheme('stroke', col, scheme||null);
+        try{
+          document.getElementById('sh-stroke-preview').style.background=col;
+          const hx=document.getElementById('sh-stroke-hex');
+          if(hx) hx.value=(typeof _colorFieldDisplay==='function')?_colorFieldDisplay(col, scheme):col;
+        }catch(e){}
+      } else {
+        dstData.fill=col;
+        pipetteSrc.dataset.fill=col;
+        dstData.fillScheme=scheme||null;
+        dstData.fillGrad=false;
+        pipetteSrc.dataset.fillGrad='0';
+        if(typeof applyFillColor==='function') applyFillColor(col, scheme||null);
+        else if(typeof updateShapeStyleScheme==='function') updateShapeStyleScheme('fill', col, scheme||null);
+        try{
+          document.getElementById('sh-fill-preview').style.background=col;
+          const hx=document.getElementById('sh-fill-hex');
+          if(hx) hx.value=(typeof _colorFieldDisplay==='function')?_colorFieldDisplay(col, scheme):col;
+        }catch(e){}
+      }
+      if(typeof renderShapeEl==='function') renderShapeEl(pipetteSrc,dstData);
+    }
+  } finally {
+    if(typeof sel!=='undefined') sel=prevSel;
+  }
+
+  _pipetteDone(dstEl, dstSl);
+  return true;
+}
+window.pipetteApplyColor=pipetteApplyColor;
+
+function _pipetteColorFromInkItem(item){
+  if(!item) return null;
+  const c=item.color;
+  if(c&&c!=='none'&&c!=='transparent') return {color:c, colorScheme:item.colorScheme||null};
+  return null;
+}
+
+function _pipetteColorFromElement(srcEl, srcData){
+  if(!srcEl) return null;
+  const t=srcEl.dataset&&srcEl.dataset.type;
+  srcData=srcData||(typeof slides!=='undefined'&&slides[cur]&&slides[cur].els&&slides[cur].els.find(e=>e.id===srcEl.dataset.id));
+  if(t==='inkhost') return _pipetteColorFromInkHost(srcData);
+  if(t==='text'){
+    let col=null;
+    const ec=srcEl.querySelector('.ec');
+    if(ec){
+      const cs=ec.getAttribute('style')||'';
+      const m=cs.match(/(?:^|;|\s)color:\s*(#[0-9a-fA-F]{3,8}|rgb\([^)]+\))/i);
+      if(m) col=m[1];
+      if(!col) try{ col=getComputedStyle(ec).color; }catch(e){}
+    }
+    if(col&&/^rgb/i.test(col)&&typeof _rgbToHex==='function'){
+      col=_rgbToHex(col)||col;
+    } else if(col&&/^#([0-9a-f]{3})$/i.test(col)){
+      const h=RegExp.$1; col='#'+h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+    }
+    if(!col) return null;
+    return {color:col, colorScheme:(srcData&&srcData.textColorScheme)||null};
+  }
+  if(t==='shape'){
+    const fill=(srcData&&srcData.fill)||srcEl.dataset.fill;
+    if(fill&&fill!=='none') return {color:fill, colorScheme:(srcData&&srcData.fillScheme)||null};
+    const stroke=(srcData&&srcData.stroke)||srcEl.dataset.stroke;
+    if(stroke) return {color:stroke, colorScheme:(srcData&&srcData.strokeScheme)||null};
+    return null;
+  }
+  if(t==='icon'){
+    let c=(srcData&&srcData.iconColor)||srcEl.dataset.iconColor||null;
+    let scheme=(srcData&&srcData.iconColorScheme)!=null?srcData.iconColorScheme:null;
+    if(scheme==null&&srcEl.dataset.iconColorScheme){
+      try{ scheme=JSON.parse(srcEl.dataset.iconColorScheme); }catch(e){ scheme=null; }
+    }
+    // Fallback: paint colour from SVG (stroke-only / legacy icons)
+    if(!c||c==='none'||c==='transparent'||c==='currentColor'){
+      const nodes=srcEl.querySelectorAll('path,circle,rect,ellipse,polygon,polyline,line');
+      for(let i=0;i<nodes.length;i++){
+        const n=nodes[i];
+        let f=n.getAttribute('fill');
+        if(f&&f!=='none'&&f!=='transparent'&&f!=='currentColor'){ c=f; break; }
+        let s=n.getAttribute('stroke');
+        if(s&&s!=='none'&&s!=='transparent'&&s!=='currentColor'){ c=s; break; }
+      }
+    }
+    if(!c){
+      try{
+        const p=srcEl.querySelector('path,circle,rect,ellipse,polygon');
+        if(p){
+          const cs=getComputedStyle(p);
+          c=cs.fill&&cs.fill!=='none'?cs.fill:(cs.stroke&&cs.stroke!=='none'?cs.stroke:null);
+        }
+      }catch(e){}
+    }
+    if(c&&/^rgb/i.test(c)&&typeof _rgbToHex==='function') c=_rgbToHex(c)||c;
+    else if(c&&/^#([0-9a-f]{3})$/i.test(c)){ const h=RegExp.$1; c='#'+h[0]+h[0]+h[1]+h[1]+h[2]+h[2]; }
+    if(!c||c==='none'||c==='transparent') return null;
+    return {color:c, colorScheme:scheme||null};
+  }
+  if(t==='image'){
+    const c=(srcData&&srcData.imgBc)||srcEl.dataset.imgBc;
+    if(!c) return null;
+    return {color:c, colorScheme:null};
+  }
+  return null;
+}
+
+function _pipetteColorFromInkHost(hostData){
+  if(!hostData) return null;
+  const ids=new Set(hostData.inkIds||[]);
+  if(hostData.groupId&&typeof slides!=='undefined'&&slides[cur]){
+    (slides[cur].ink||[]).forEach(s=>{ if(s&&s.groupId===hostData.groupId&&s.id) ids.add(s.id); });
+    (slides[cur].inkFills||[]).forEach(f=>{ if(f&&f.groupId===hostData.groupId&&f.id) ids.add(f.id); });
+  }
+  const fills=(slides[cur]&&slides[cur].inkFills)||[];
+  for(let i=fills.length-1;i>=0;i--){
+    if(fills[i]&&ids.has(fills[i].id)){
+      const r=_pipetteColorFromInkItem(fills[i]);
+      if(r) return r;
+    }
+  }
+  const ink=(slides[cur]&&slides[cur].ink)||[];
+  for(let i=ink.length-1;i>=0;i--){
+    if(ink[i]&&ids.has(ink[i].id)){
+      const r=_pipetteColorFromInkItem(ink[i]);
+      if(r) return r;
+    }
+  }
+  return null;
+}
+
+/** Sample brush/fill under canvas point while pipette is active. */
+function pipetteSampleInkAt(x, y, ev){
+  if(!pipetteMode) return false;
+  if(!pipetteSrc&&!pipetteDrawMode) return false;
+  if(typeof window._pipettePickInk!=='function') return false;
+  const hit=window._pipettePickInk(x, y, ev);
+  if(!hit) return false;
+  const sampled=_pipetteColorFromInkItem(hit);
+  if(!sampled) return false;
+  return pipetteApplyColor(sampled.color, {
+    shift: !!(ev&&ev.shiftKey),
+    colorScheme: sampled.colorScheme
+  });
+}
+window.pipetteSampleInkAt=pipetteSampleInkAt;
+
+function pipetteApply(srcEl, opts){
   // srcEl = element clicked while in pipette mode
-  // pipetteSrc = element to apply styles TO
-  if(!pipetteSrc||!srcEl||srcEl===pipetteSrc)return;
+  // pipetteSrc = element to apply styles TO (or pipetteDrawMode for brush/fill)
+  opts=opts||{};
+  if(!srcEl) return;
+  if(pipetteDrawMode){
+    const sampled=_pipetteColorFromElement(srcEl);
+    if(sampled) pipetteApplyColor(sampled.color, {shift:!!opts.shift, colorScheme:sampled.colorScheme});
+    return;
+  }
+  if(!pipetteSrc||srcEl===pipetteSrc)return;
   const srcType=srcEl.dataset.type;
   const dstType=pipetteSrc.dataset.type;
+  // Ink host / free ink → color only
+  if(srcType==='inkhost'){
+    const srcData=slides[cur]?.els.find(e=>e.id===srcEl.dataset.id);
+    const sampled=_pipetteColorFromInkHost(srcData);
+    if(sampled) pipetteApplyColor(sampled.color, {shift:!!opts.shift, colorScheme:sampled.colorScheme});
+    return;
+  }
   // srcEl is on current slide, pipetteSrc may be on a different slide
   const srcData=slides[cur]?.els.find(e=>e.id===srcEl.dataset.id);
   const dstSlide=slides[pipetteSrcSlide]||slides[cur];
   const dstData=dstSlide.els.find(e=>e.id===pipetteSrc.dataset.id);
   if(!srcData||!dstData)return;
+
+  // Shape destination + Shift: apply source color to stroke only
+  if(dstType==='shape'&&opts.shift){
+    const sampled=_pipetteColorFromElement(srcEl, srcData);
+    if(sampled){ pipetteApplyColor(sampled.color, {shift:true, colorScheme:sampled.colorScheme}); return; }
+  }
+
+  // Color-only cross-type: keep palette scheme codes (85), not raw hex
+  if(srcType==='shape'&&dstType==='text'){
+    const sampled=_pipetteColorFromElement(srcEl, srcData);
+    if(sampled){ pipetteApplyColor(sampled.color, {colorScheme:sampled.colorScheme}); return; }
+  }
+  if(srcType==='text'&&dstType==='shape'){
+    const sampled=_pipetteColorFromElement(srcEl, srcData);
+    if(sampled){ pipetteApplyColor(sampled.color, {shift:!!opts.shift, colorScheme:sampled.colorScheme}); return; }
+  }
+  if(srcType==='icon'&&dstType==='shape'){
+    const sampled=_pipetteColorFromElement(srcEl, srcData);
+    if(sampled){ pipetteApplyColor(sampled.color, {shift:!!opts.shift, colorScheme:sampled.colorScheme}); return; }
+  }
+  if(srcType==='icon'&&dstType==='text'){
+    const sampled=_pipetteColorFromElement(srcEl, srcData);
+    if(sampled){ pipetteApplyColor(sampled.color, {colorScheme:sampled.colorScheme}); return; }
+  }
+  if(srcType==='text'&&dstType==='icon'){
+    const sampled=_pipetteColorFromElement(srcEl, srcData);
+    if(sampled){ pipetteApplyColor(sampled.color, {colorScheme:sampled.colorScheme}); return; }
+  }
+  if(srcType==='shape'&&dstType==='icon'){
+    const sampled=_pipetteColorFromElement(srcEl, srcData);
+    if(sampled){
+      const prevSel=sel;
+      sel=pipetteSrc;
+      try{
+        dstData.iconColor=sampled.color;
+        pipetteSrc.dataset.iconColor=sampled.color;
+        dstData.iconColorCustom=true;
+        dstData.iconColorScheme=sampled.colorScheme||null;
+        if(srcData.sw!=null||srcEl.dataset.sw!=null){
+          const w=+(srcData.sw!=null?srcData.sw:srcEl.dataset.sw);
+          dstData.iconSw=Math.max(0.5,Math.min(5,w));pipetteSrc.dataset.iconSw=dstData.iconSw;
+        }
+        ['shadow','shadowBlur','shadowSize','shadowColor'].forEach(sk=>{
+          let val=srcData[sk]!=null?srcData[sk]:srcEl.dataset[sk];
+          if(sk==='shadow'){val=val===true||val==='true';dstData.shadow=val;pipetteSrc.dataset.shadow=val?'true':'false';}
+          else if(val!=null&&val!==''){if(sk!=='shadowColor')val=+val;dstData[sk]=val;pipetteSrc.dataset[sk]=String(val);}
+        });
+        if(typeof updateIconStyleScheme==='function') updateIconStyleScheme('iconColor', sampled.color, sampled.colorScheme||null);
+        else {
+          if(typeof _rebuildIconElement==='function') _rebuildIconElement(pipetteSrc,dstData);
+          if(typeof syncIconProps==='function') syncIconProps(pipetteSrc,dstData);
+        }
+      } finally { sel=prevSel; }
+      const dstEl=pipetteSrc, dstSl=pipetteSrcSlide;
+      cancelPipetteMode();
+      save(); drawThumbs(); saveState();
+      if(typeof pick==='function') pick(dstEl);
+      toast('✓ Стиль скопирован', 'ok');
+      return;
+    }
+  }
 
   if(srcType==='text'&&dstType==='text'){
     // Copy all text styles: font, color, bg, border, opacity, valign, role
@@ -701,6 +1073,19 @@ function pipetteApply(srcEl){
       dstC.setAttribute('style',srcC.getAttribute('style')||'');
       dstData.cs=srcC.getAttribute('style')||'';
     }
+    dstData.textColorScheme=(srcData.textColorScheme!==undefined)?(srcData.textColorScheme||null):null;
+    try{
+      const hx=document.getElementById('p-hex');
+      const prev=document.getElementById('p-col-preview');
+      let col=null;
+      if(srcC){
+        const cs=srcC.getAttribute('style')||'';
+        const m=cs.match(/(?:^|;|\s)color:\s*(#[0-9a-fA-F]{3,8})/i);
+        if(m) col=m[1];
+      }
+      if(prev&&col) prev.style.background=col;
+      if(hx) hx.value=(typeof _colorFieldDisplay==='function')?_colorFieldDisplay(col||'', dstData.textColorScheme): (col||'');
+    }catch(e){}
     if(srcEl.dataset.textBg){pipetteSrc.dataset.textBg=srcEl.dataset.textBg;dstData.textBg=srcEl.dataset.textBg;}
     else{delete pipetteSrc.dataset.textBg;delete dstData.textBg;}
     if(srcEl.dataset.textBgOp!=null){pipetteSrc.dataset.textBgOp=srcEl.dataset.textBgOp;dstData.textBgOp=+srcEl.dataset.textBgOp;}
@@ -719,8 +1104,8 @@ function pipetteApply(srcEl){
     if(srcEl.dataset.elOpacity){pipetteSrc.dataset.elOpacity=srcEl.dataset.elOpacity;pipetteSrc.style.opacity=srcEl.dataset.elOpacity;dstData.elOpacity=+srcEl.dataset.elOpacity;}
     if(srcEl.dataset.rx_tl){['tl','tr','bl','br'].forEach(c=>{pipetteSrc.dataset['rx_'+c]=srcEl.dataset['rx_'+c]||0;dstData['rx_'+c]=+(srcEl.dataset['rx_'+c]||0);});pipetteSrc.dataset.rxUnit=srcEl.dataset.rxUnit||'px';dstData.rxUnit=srcEl.dataset.rxUnit||'px';applyTextRadius(pipetteSrc);}
   } else if(srcType==='shape'&&dstType==='shape'){
-    // Copy all shape styles: fill, stroke, sw, rx, shadow, fillOp, gradient
-    const props=['fill','stroke','sw','rx','fillOp','shadow','shadowBlur','shadowSize','shadowColor','strokeStyle','fillGrad','fillGrad2','fillGradDir'];
+    // Copy all shape styles: fill, stroke, sw, rx, shadow, fillOp, gradient + palette schemes
+    const props=['fill','stroke','sw','rx','fillOp','shadow','shadowBlur','shadowSize','shadowColor','strokeStyle','fillGrad','fillGrad2','fillGradDir','fillScheme','strokeScheme','shadowColorScheme'];
     props.forEach(p=>{
       // Read from srcData (source of truth) first, fall back to dataset
       const val = srcData[p] != null ? srcData[p] : srcEl.dataset[p];
@@ -728,6 +1113,7 @@ function pipetteApply(srcEl){
         dstData[p] = typeof val==='string' ? (val==='true'?true:val==='false'?false:isNaN(val)?val:+val) : val;
         // fillGrad must be stored as '1'/'0' in dataset (syncProps checks === '1')
         if(p==='fillGrad') pipetteSrc.dataset[p] = (val===true||val==='true'||val==='1') ? '1' : '0';
+        else if(p==='fillScheme'||p==='strokeScheme'||p==='shadowColorScheme'){ /* data only */ }
         else pipetteSrc.dataset[p] = String(val);
       } else if(p==='fillGrad'){
         dstData.fillGrad=false; pipetteSrc.dataset.fillGrad='0';
@@ -735,6 +1121,8 @@ function pipetteApply(srcEl){
         delete dstData.fillGrad2; delete pipetteSrc.dataset.fillGrad2;
       } else if(p==='fillGradDir'){
         delete dstData.fillGradDir; delete pipetteSrc.dataset.fillGradDir;
+      } else if(p==='fillScheme'||p==='strokeScheme'||p==='shadowColorScheme'){
+        dstData[p]=null;
       }
     });
     // Copy shape text style too
@@ -745,7 +1133,9 @@ function pipetteApply(srcEl){
     try{
       const _pFill=pipetteSrc.dataset.fill;
       document.getElementById('sh-fill-preview').style.background=(_pFill&&_pFill!=='none')?_pFill:'';
+      document.getElementById('sh-fill-hex').value=(typeof _colorFieldDisplay==='function')?_colorFieldDisplay(_pFill, dstData.fillScheme):_pFill;
       document.getElementById('sh-stroke-preview').style.background=pipetteSrc.dataset.stroke||'#1d4ed8';
+      document.getElementById('sh-stroke-hex').value=(typeof _colorFieldDisplay==='function')?_colorFieldDisplay(pipetteSrc.dataset.stroke, dstData.strokeScheme):(pipetteSrc.dataset.stroke||'');
       document.getElementById('sh-sw').value=pipetteSrc.dataset.sw||2;
       document.getElementById('sh-fill-op').value=pipetteSrc.dataset.fillOp||1;
       const _sst=pipetteSrc.dataset.strokeStyle||'solid';
@@ -764,16 +1154,22 @@ function pipetteApply(srcEl){
       if(_shOpts)_shOpts.style.display=(dstData.shadow===true||dstData.shadow==='true'||pipetteSrc.dataset.shadow==='true')?'flex':'none';
     }catch(e){}
   } else if(srcType==='icon'&&dstType==='icon'){
-    const props=['iconColor','iconSw','iconStyle','shadow','shadowBlur','shadowSize','shadowColor','elOpacity'];
+    const props=['iconColor','iconSw','iconFillOp','shadow','shadowBlur','shadowSize','shadowColor','elOpacity','iconColorScheme'];
     props.forEach(p=>{
       let val=srcData[p]!=null?srcData[p]:srcEl.dataset[p];
-      if(val==null||val==='')return;
+      if(val==null||val===''){
+        if(p==='iconColorScheme') dstData.iconColorScheme=null;
+        return;
+      }
       if(p==='shadow'){
         val=val===true||val==='true';
         dstData.shadow=val;pipetteSrc.dataset.shadow=val?'true':'false';
-      }else if(p==='iconSw'||p==='shadowBlur'||p==='shadowSize'||p==='elOpacity'){
+      }else if(p==='iconSw'||p==='shadowBlur'||p==='shadowSize'||p==='elOpacity'||p==='iconFillOp'){
         val=+val;dstData[p]=val;pipetteSrc.dataset[p]=String(val);
         if(p==='elOpacity'){pipetteSrc.style.opacity=val;}
+      }else if(p==='iconColorScheme'){
+        if(typeof val==='string'){ try{ val=JSON.parse(val); }catch(e){ val=null; } }
+        dstData.iconColorScheme=val;
       }else{
         dstData[p]=val;pipetteSrc.dataset[p]=String(val);
       }
@@ -812,20 +1208,6 @@ function pipetteApply(srcEl){
     }
     applyImgStyles(pipetteSrc,dstData);
     syncImgProps(pipetteSrc,dstData);
-  } else if(srcType==='shape'&&dstType==='icon'){
-    const fill=srcData.fill||srcEl.dataset.fill;
-    if(fill&&fill!=='none'){dstData.iconColor=fill;pipetteSrc.dataset.iconColor=fill;dstData.iconColorCustom=true;}
-    if(srcData.sw!=null||srcEl.dataset.sw!=null){
-      const w=+(srcData.sw!=null?srcData.sw:srcEl.dataset.sw);
-      dstData.iconSw=Math.max(0.5,Math.min(5,w));pipetteSrc.dataset.iconSw=dstData.iconSw;
-    }
-    ['shadow','shadowBlur','shadowSize','shadowColor'].forEach(sk=>{
-      let val=srcData[sk]!=null?srcData[sk]:srcEl.dataset[sk];
-      if(sk==='shadow'){val=val===true||val==='true';dstData.shadow=val;pipetteSrc.dataset.shadow=val?'true':'false';}
-      else if(val!=null&&val!==''){if(sk!=='shadowColor')val=+val;dstData[sk]=val;pipetteSrc.dataset[sk]=String(val);}
-    });
-    if(typeof _rebuildIconElement==='function') _rebuildIconElement(pipetteSrc,dstData);
-    if(typeof syncIconProps==='function') syncIconProps(pipetteSrc,dstData);
   } else if(srcType==='image'&&dstType==='icon'){
     dstData.iconColor=srcData.imgBc||srcEl.dataset.imgBc||'#3b82f6';
     pipetteSrc.dataset.iconColor=dstData.iconColor;
@@ -900,40 +1282,6 @@ function pipetteApply(srcEl){
       document.getElementById('sh-sc-preview').style.background=dstData.shadowColor;
       const _shOpts=document.getElementById('shadow-options');if(_shOpts)_shOpts.style.display=dstData.shadow?'flex':'none';
     }catch(e){}
-  } else if(srcType==='icon'&&dstType==='shape'){
-    dstData.fill=srcData.iconColor||srcEl.dataset.iconColor||'#3b82f6';
-    pipetteSrc.dataset.fill=dstData.fill;
-    ['shadow','shadowBlur','shadowSize','shadowColor'].forEach(sk=>{
-      let val=srcData[sk]!=null?srcData[sk]:srcEl.dataset[sk];
-      if(sk==='shadow'){val=val===true||val==='true';dstData.shadow=val;pipetteSrc.dataset.shadow=val?'true':'false';}
-      else if(val!=null&&val!==''){if(sk!=='shadowColor')val=+val;dstData[sk]=val;pipetteSrc.dataset[sk]=String(val);}
-    });
-    renderShapeEl(pipetteSrc,dstData);
-    try{
-      document.getElementById('sh-fill-preview').style.background=dstData.fill;
-      const _fh=document.getElementById('sh-fill-hex');if(_fh)_fh.value=dstData.fill;
-      document.getElementById('sh-shadow').checked=!!dstData.shadow;
-      document.getElementById('sh-sb').value=dstData.shadowBlur!=null?dstData.shadowBlur:8;
-      document.getElementById('sh-ss').value=dstData.shadowSize!=null?dstData.shadowSize:3;
-      document.getElementById('sh-sc-preview').style.background=dstData.shadowColor||'#000000';
-      const _shOpts=document.getElementById('shadow-options');if(_shOpts)_shOpts.style.display=dstData.shadow?'flex':'none';
-    }catch(e){}
-  } else if(srcType==='text'&&dstType==='icon'){
-    const srcC=srcEl.querySelector('.ec');
-    if(srcC){
-      const cs=srcC.getAttribute('style')||'';
-      const m=cs.match(/(?:^|;|\s)color:(#[0-9a-fA-F]{3,8})/);
-      if(m){dstData.iconColor=m[1];pipetteSrc.dataset.iconColor=m[1];dstData.iconColorCustom=true;}
-    }
-    if(typeof _rebuildIconElement==='function') _rebuildIconElement(pipetteSrc,dstData);
-    if(typeof syncIconProps==='function') syncIconProps(pipetteSrc,dstData);
-  } else if(srcType==='text'&&dstType==='shape'){
-    // Cross-type: copy just color to fill
-    const srcC=srcEl.querySelector('.ec');
-    if(srcC){const cs=srcC.getAttribute('style')||'';const m=cs.match(/(?:^|;|\s)color:(#[0-9a-fA-F]{3,8})/);if(m){dstData.fill=m[1];pipetteSrc.dataset.fill=m[1];renderShapeEl(pipetteSrc,dstData);}}
-  } else if(srcType==='shape'&&dstType==='text'){
-    // Cross-type: copy fill color to text color
-    if(srcEl.dataset.fill){const c=srcEl.dataset.fill;pipetteSrc.querySelector('.ec')&&setTS('color',c);try{document.getElementById('p-col').value=c;document.getElementById('p-hex').value=c;}catch(e){}}
   }
   // Copy hover effect regardless
   if(srcEl.dataset.hoverFx&&srcEl.dataset.hoverFx!=='{}'){
@@ -967,22 +1315,45 @@ function _textDimRef(el, kind){
   const h=parseInt(el.style.height)||100;
   return kind==='rx'?Math.min(w,h):w;
 }
+function _padTextBoxSize(el){
+  el=el||(sel&&sel.dataset.type==='text'?sel:null);
+  if(!el) return {w:200,h:100};
+  const w=parseInt(el.style.width,10)||el.offsetWidth||200;
+  const h=parseInt(el.style.height,10)||el.offsetHeight||100;
+  return {w:Math.max(1,w), h:Math.max(1,h)};
+}
+function _padSideDim(side, box){
+  return (side==='l'||side==='r') ? box.w : box.h;
+}
+function _padOpposite(side){
+  return {l:'r', r:'l', t:'b', b:'t'}[side];
+}
 function _convertTextDimUnit(el, kind, fromU, toU){
   if(!el||fromU===toU)return;
+  const box=_padTextBoxSize(el);
   const ref=_textDimRef(el,kind);
-  if(!ref)return;
+  if(!ref&&kind==='rx')return;
   const sides=kind==='rx'?['tl','tr','bl','br']:['t','r','b','l'];
-  const max=toU==='%'?100:(kind==='rx'?999:500);
   const pref=kind==='rx'?'rx_':'pad_';
   sides.forEach(s=>{
+    const axis=kind==='pad'?_padSideDim(s,box):ref;
+    const max=toU==='%'?100:(kind==='rx'?999:axis);
     let v=+(el.dataset[pref+s]||0);
-    if(fromU==='px'&&toU==='%')v=Math.round(v/ref*100);
-    else if(fromU==='%'&&toU==='px')v=Math.round(v/100*ref);
+    if(fromU==='px'&&toU==='%')v=Math.round(v/Math.max(1,axis)*100);
+    else if(fromU==='%'&&toU==='px')v=Math.round(v/100*axis);
     v=Math.max(0,Math.min(max,v));
     el.dataset[pref+s]=v;
   });
 }
-function _dimInputMax(unit,kind){return unit==='%'?100:(kind==='rx'?999:500);}
+function _dimInputMax(unit,kind,side){
+  if(unit==='%') return 100;
+  if(kind==='rx') return 999;
+  if(kind==='pad'){
+    const box=_padTextBoxSize();
+    return _padSideDim(side||'l', box);
+  }
+  return 500;
+}
 function setTextRxUnit(u){
   if(sel&&sel.dataset.type==='text'){
     const oldU=sel.dataset.rxUnit||textRxUnit||'px';
@@ -1157,13 +1528,25 @@ function setTextPadUnit(u){
   document.getElementById('pad-unit-pct').classList.toggle('active', u==='%');
   if(sel) syncTextPadUI();
 }
+function _padClampVal(side, val, u, linked){
+  val=Math.max(0,+val||0);
+  const box=_padTextBoxSize();
+  if(linked){
+    const maxW=u==='%'?50:Math.floor(box.w/2);
+    const maxH=u==='%'?50:Math.floor(box.h/2);
+    return Math.min(val, Math.min(maxW, maxH));
+  }
+  const opp=_padReadVal(_padOpposite(side));
+  const dim=_padSideDim(side, box);
+  const maxAll=u==='%'?100:dim;
+  return Math.min(val, Math.max(0, maxAll - Math.max(0,+opp||0)));
+}
 function setTextPad(side, val, opts){
   opts=opts||{};
   if(!sel||sel.dataset.type!=='text')return;
   const linked = document.getElementById('pad-linked')&&document.getElementById('pad-linked').checked;
   const u=sel.dataset.padUnit||textPadUnit||'px';
-  const max=_dimInputMax(u,'pad');
-  val=Math.max(0,Math.min(max,+val||0));
+  val=_padClampVal(side, +val||0, u, linked);
   if(linked){
     ['t','r','b','l'].forEach(s=>{
       sel.dataset['pad_'+s] = val;
@@ -1188,7 +1571,15 @@ function applyTextPad(el){
   const r=el.dataset.pad_r!==undefined&&el.dataset.pad_r!==''?+el.dataset.pad_r:0;
   const b=el.dataset.pad_b!==undefined&&el.dataset.pad_b!==''?+el.dataset.pad_b:0;
   const l=el.dataset.pad_l!==undefined&&el.dataset.pad_l!==''?+el.dataset.pad_l:0;
-  const padStr = `${t}${u} ${r}${u} ${b}${u} ${l}${u}`;
+  const box=_padTextBoxSize(el);
+  let padStr;
+  if(u==='%'){
+    const tPx=Math.round(t/100*box.h);
+    const bPx=Math.round(b/100*box.h);
+    padStr = tPx+'px '+r+'% '+bPx+'px '+l+'%';
+  } else {
+    padStr = t+'px '+r+'px '+b+'px '+l+'px';
+  }
   const c2 = el.querySelector('.tel')||el.querySelector('.ec'); if(!c2) return;
   let cs = c2.getAttribute('style')||'';
   cs = cs.replace(/\bpadding\s*:[^;]+;?/gi,'').trim();
@@ -1204,28 +1595,23 @@ function _padReadVal(s){
   const inp=document.getElementById('p-pad-'+s);
   return inp?+(inp.value||0):0;
 }
+function _padValToPos(side, val, u, box, previewW, previewH){
+  const dim=_padSideDim(side, box);
+  const frac=u==='%' ? Math.max(0,+val||0)/100 : Math.max(0,+val||0)/Math.max(1,dim);
+  const axis=(side==='l'||side==='r')?previewW:previewH;
+  return Math.max(0, Math.min(axis, frac*axis));
+}
 function _syncPadBoxPreview(){
   const prev=document.getElementById('pad-box-preview');
   const inner=document.getElementById('pad-box-inner');
   if(!prev)return;
   const u=(sel&&sel.dataset.type==='text'?(sel.dataset.padUnit||textPadUnit):textPadUnit)||'px';
-  const max=_dimInputMax(u,'pad');
+  const box=_padTextBoxSize();
   const w=prev.clientWidth||1, h=prev.clientHeight||1;
-  const maxVisX=Math.max(8, w/2 - 4);
-  const maxVisY=Math.max(8, h/2 - 4);
-  // px — 1:1 до половины превью; % — доля половины
-  const toVisX=function(v){
-    v=Math.max(0,+v||0);
-    if(u==='%') return Math.max(0, Math.min(maxVisX, v/100*maxVisX));
-    return Math.max(0, Math.min(maxVisX, v));
-  };
-  const toVisY=function(v){
-    v=Math.max(0,+v||0);
-    if(u==='%') return Math.max(0, Math.min(maxVisY, v/100*maxVisY));
-    return Math.max(0, Math.min(maxVisY, v));
-  };
-  const vt=toVisY(_padReadVal('t')), vr=toVisX(_padReadVal('r'));
-  const vb=toVisY(_padReadVal('b')), vl=toVisX(_padReadVal('l'));
+  const vt=_padValToPos('t', _padReadVal('t'), u, box, w, h);
+  const vr=_padValToPos('r', _padReadVal('r'), u, box, w, h);
+  const vb=_padValToPos('b', _padReadVal('b'), u, box, w, h);
+  const vl=_padValToPos('l', _padReadVal('l'), u, box, w, h);
   if(inner){
     inner.style.top=vt+'px';
     inner.style.right=vr+'px';
@@ -1254,16 +1640,16 @@ function _padDragOnMove(e){
   const y=Math.max(0, Math.min(rect.height, (e.clientY!=null?e.clientY:_padDrag.lastY)-rect.top));
   if(e.clientX!=null){ _padDrag.lastX=e.clientX; _padDrag.lastY=e.clientY; }
   const s=_padDrag.side;
-  let dist=0, maxVis=0;
-  if(s==='t'){ dist=y; maxVis=Math.max(8, rect.height/2 - 4); }
-  else if(s==='b'){ dist=rect.height-y; maxVis=Math.max(8, rect.height/2 - 4); }
-  else if(s==='l'){ dist=x; maxVis=Math.max(8, rect.width/2 - 4); }
-  else { dist=rect.width-x; maxVis=Math.max(8, rect.width/2 - 4); }
+  let dist=0, axis=0;
+  if(s==='t'){ dist=y; axis=rect.height; }
+  else if(s==='b'){ dist=rect.height-y; axis=rect.height; }
+  else if(s==='l'){ dist=x; axis=rect.width; }
+  else { dist=rect.width-x; axis=rect.width; }
   const u=(sel&&sel.dataset.padUnit)||textPadUnit||'px';
-  const max=_dimInputMax(u,'pad');
-  let val;
-  if(u==='%') val=Math.round(Math.max(0, Math.min(max, (dist/maxVis)*100)));
-  else val=Math.round(Math.max(0, Math.min(max, dist)));
+  const box=_padTextBoxSize();
+  const dim=_padSideDim(s, box);
+  const frac=axis>0 ? dist/axis : 0;
+  const val=u==='%' ? Math.round(frac*100) : Math.round(frac*dim);
   setTextPad(s, val, {silent:true});
 }
 function _padDragOnUp(){
@@ -1303,11 +1689,11 @@ function syncTextPadUI(){
   if(!sel||sel.dataset.type!=='text') return;
   const u = sel.dataset.padUnit || textPadUnit || 'px';
   textPadUnit=u;
-  const max=_dimInputMax(u,'pad');
   document.getElementById('pad-unit-px')?.classList.toggle('active', u==='px');
   document.getElementById('pad-unit-pct')?.classList.toggle('active', u==='%');
   ['t','r','b','l'].forEach(s=>{
     const inp=document.getElementById('p-pad-'+s);
+    const max=_dimInputMax(u,'pad',s);
     if(inp){inp.value = sel.dataset['pad_'+s]!==undefined?sel.dataset['pad_'+s]:0;inp.min=0;inp.max=max;}
     if(inp&&typeof refreshNumScrubber==='function')refreshNumScrubber(inp);
   });

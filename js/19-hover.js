@@ -103,6 +103,7 @@
       }
     } else if(d.type === 'image'){
       st.imgOpacity = d.imgOpacity != null ? +d.imgOpacity : 1;
+      st.imgAccent = d.imgAccent || 'color';
     } else if(d.type === 'svg'){
       st.svgOpacity = d.svgOpacity != null ? +d.svgOpacity : 1;
     }
@@ -150,11 +151,38 @@
     return 'left '+dur+' ease,top '+dur+' ease,width '+dur+' ease,height '+dur+' ease,transform '+dur+' ease,opacity '+dur+' ease,filter '+dur+' ease,box-shadow '+dur+' ease,color '+dur+' ease';
   }
 
+  function _imgAccentCss(accent){
+    if(typeof window._imgAccentCss === 'function') return window._imgAccentCss(accent);
+    accent = accent || 'color';
+    if(accent === 'bw') return 'grayscale(1)';
+    if(accent === 'sepia') return 'sepia(1)';
+    return '';
+  }
+
+  function _isImgAccentPreset(p){
+    return p === 'imgColor' || p === 'imgBw' || p === 'imgSepia';
+  }
+
+  function _imgHoverFilter(fx, d, isHover){
+    const base = _imgAccentCss(d && d.imgAccent);
+    if(!isHover || !fx) return base;
+    const p = fx.preset;
+    if(p === 'imgBw') return 'grayscale(1)';
+    if(p === 'imgSepia') return 'sepia(1)';
+    if(p === 'imgColor') return '';
+    const pf = _presetFilter(fx);
+    if(pf) return [base, pf].filter(Boolean).join(' ') || '';
+    return base;
+  }
+
   function _presetFilter(fx){
     if(!fx || !fx.preset) return '';
     if(fx.preset === 'lighter') return 'brightness(1.25)';
     if(fx.preset === 'darker') return 'brightness(0.75)';
     if(fx.preset === 'hue') return 'hue-rotate(28deg)';
+    if(fx.preset === 'imgBw') return 'grayscale(1)';
+    if(fx.preset === 'imgSepia') return 'sepia(1)';
+    if(fx.preset === 'imgColor') return '';
     return '';
   }
 
@@ -164,6 +192,13 @@
   // while the editor canvas gives svg its own ".ec" wrapper instead. Hover
   // code must never blindly overwrite el.style.filter without folding this
   // back in, or enabling hover effect silently erases the shadow.
+  function _polaroidDropShadow(d){
+    if(d && d.imgFrame === 'polaroid' && typeof window._imgPolaroidDropShadow === 'function'){
+      return window._imgPolaroidDropShadow();
+    }
+    return '';
+  }
+
   function _ownShadowFilterForEl(el, d){
     if(!d) return '';
     if(d.type === 'image' && d.imgShadow) return 'url(#imgsh_' + (d.id || 'x') + ')';
@@ -183,7 +218,7 @@
     el.style.transition = '';
     const d = _getElData(el);
     el.style.filter = _ownShadowFilterForEl(el, d);
-    el.style.boxShadow = '';
+    el.style.boxShadow = _polaroidDropShadow(d);
     if(d){
       el.style.left = (d.x || 0) + 'px';
       el.style.top = (d.y || 0) + 'px';
@@ -192,10 +227,14 @@
       const op = d.elOpacity != null ? +d.elOpacity : 1;
       el.style.opacity = op === 1 ? '' : String(op);
       const rot = d.rot != null ? d.rot : (el.dataset.rot || 0);
-      el.style.transform = 'rotate('+rot+'deg)';
+      el.style.transform = _elRotTransform(rot, el, d);
     }
     if(el.dataset.type === 'text' && typeof window._restoreTextBlockVisuals === 'function'){
       window._restoreTextBlockVisuals(el);
+    }
+    if(el.dataset.type === 'image'){
+      const img = el.querySelector('img');
+      if(img) img.style.filter = _imgAccentCss(d && d.imgAccent);
     }
   }
 
@@ -277,10 +316,10 @@
     const op = state.elOpacity != null ? +state.elOpacity : 1;
     el.style.opacity = op === 1 ? '' : String(op);
 
-    const presetF = isHover ? _presetFilter(fx) : '';
+    const presetF = (isHover && !(d && d.type === 'image')) ? _presetFilter(fx) : '';
     const ownShadowF = _ownShadowFilterForEl(el, d);
     el.style.filter = [presetF, ownShadowF].filter(Boolean).join(' ');
-    el.style.boxShadow = '';
+    el.style.boxShadow = _polaroidDropShadow(d);
 
     if(d && d.type === 'text'){
       _applyTextHoverVisuals(el, state, d, isHover);
@@ -291,6 +330,8 @@
       if(img){
         const iop = state.imgOpacity != null ? +state.imgOpacity : 1;
         img.style.opacity = iop === 1 ? '' : String(iop);
+        img.style.transition = el.style.transition || '';
+        img.style.filter = _imgHoverFilter(fx, d, isHover);
       }
     }
 
@@ -423,12 +464,39 @@
     }catch(e){ console.warn('[19-hover] setHoverFx:', e.message); }
   };
 
+  function _syncHfxPresetOptions(d){
+    const sel = document.getElementById('hfx-preset');
+    if(!sel) return;
+    const cur = sel.value;
+    const opts = [
+      ['none', typeof t === 'function' ? t('propHfxNone') : 'Без эффекта'],
+      ['lighter', typeof t === 'function' ? t('propHfxLighter') : 'Светлее'],
+      ['darker', typeof t === 'function' ? t('propHfxDarker') : 'Темнее'],
+      ['hue', typeof t === 'function' ? t('propHfxHue') : 'Сместить цвет'],
+      ['right', typeof t === 'function' ? t('propHfxRight') : 'Вправо'],
+      ['up', typeof t === 'function' ? t('propHfxUp') : 'Вверх']
+    ];
+    if(d && d.type === 'image'){
+      opts.push(
+        ['imgColor', typeof t === 'function' ? t('propHfxImgColor') : 'Акцент: цвет'],
+        ['imgBw', typeof t === 'function' ? t('propHfxImgBw') : 'Акцент: Ч/Б'],
+        ['imgSepia', typeof t === 'function' ? t('propHfxImgSepia') : 'Акцент: сепия']
+      );
+    }
+    sel.innerHTML = opts.map(function(o){ return '<option value="'+o[0]+'">'+o[1]+'</option>'; }).join('');
+    sel.value = opts.some(function(o){ return o[0] === cur; }) ? cur : 'none';
+  }
+
   window.applyHoverFxEditor = function(el, fx){
     try{
       if(el._hfxEnter){ el.removeEventListener('mouseenter', el._hfxEnter); el._hfxEnter = null; }
       if(el._hfxLeave){ el.removeEventListener('mouseleave', el._hfxLeave); el._hfxLeave = null; }
       el.classList.toggle('has-hover-fx', !!(fx && fx.enabled));
       _restoreEditorHoverVisuals(el);
+      if(fx && fx.enabled){
+        const d = _getElData(el);
+        applyHoverFxPreview(el, fx, d);
+      }
     }catch(e){}
   };
 
@@ -459,10 +527,11 @@
       if(!fx.enabled && d) fx.base = _hoverVisualSnapshot(el, d);
       fx = normalizeHoverFx(el, fx, d);
       const hover = fx.hover || {};
-      const filterOnly = fx.preset === 'lighter' || fx.preset === 'darker';
+      const filterOnly = fx.preset === 'lighter' || fx.preset === 'darker' || _isImgAccentPreset(fx.preset);
       const enabled = !!fx.enabled;
       _syncHfxBodyVisibility(enabled);
       _syncHfxSettingsVisibility(enabled);
+      _syncHfxPresetOptions(d);
       const isText = d && d.type === 'text';
       ['hfx-text-row','hfx-bg-row','hfx-border-row','hfx-text-shadow-row','hfx-block-shadow-row'].forEach(id=>{
         const row = document.getElementById(id);

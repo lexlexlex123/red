@@ -71,19 +71,54 @@ function insertHtmlFrame(){
       d.hfSrc=src;d.hfScroll=scroll;
       const domEl=document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
       if(domEl)renderHtmlFrameEl(domEl,d);
+      _hfSyncLinkedCode(d);
     }
   } else {
     const d={id:'e'+(++ec),type:'htmlframe',x:snapV(60),y:snapV(60),
       w:snapV(fw),h:snapV(fh),rot:0,anims:[],
       hfSrc:src,hfScroll:scroll,hfChrome:true,hfLinkedCodeId:null};
+    if(typeof _insertGeom==='function'){ const g=_insertGeom(d.w,d.h); d.x=g.x;d.y=g.y;d.w=g.w;d.h=g.h; }
     slides[cur].els.push(d);mkEl(d);
   }
   save();drawThumbs();saveState();
-  if(_hfEditId){
-    const d2=slides[cur].els.find(e=>e.id===_hfEditId);
-    if(d2)_hfSyncLinkedCode(d2);
-  }
 }
+
+/** Похоже на HTML-документ (не просто URL и не кусок текста). */
+function _looksLikeHtmlDocument(text){
+  const t=String(text||'').trim();
+  if(t.length<40) return false;
+  if(/^<!DOCTYPE\s+html\b/i.test(t)) return true;
+  if(/^<html[\s>]/i.test(t)) return true;
+  if(/<html[\s>]/i.test(t) && /<\/html\s*>/i.test(t)) return true;
+  if(/<html[\s>]/i.test(t) && /<body[\s>]/i.test(t)) return true;
+  return false;
+}
+window._looksLikeHtmlDocument=_looksLikeHtmlDocument;
+
+/** Вставить HTML-блок из текста буфера. */
+function insertHtmlFrameFromText(src, opts){
+  src=String(src||'').trim();
+  if(!src||!slides||!slides[cur]) return false;
+  if(typeof pushUndo==='function') pushUndo();
+  const fw=(opts&&opts.w)||640;
+  const fh=(opts&&opts.h)||400;
+  const d={id:'e'+(++ec),type:'htmlframe',x:snapV(60),y:snapV(60),
+    w:snapV(fw),h:snapV(fh),rot:0,anims:[],
+    hfSrc:src,hfScroll:opts&&opts.scroll!=null?!!opts.scroll:true,hfChrome:true,hfLinkedCodeId:null};
+  if(typeof _insertGeom==='function'){ const g=_insertGeom(d.w,d.h); d.x=g.x;d.y=g.y;d.w=g.w;d.h=g.h; }
+  slides[cur].els.push(d);
+  if(typeof mkEl==='function') mkEl(d);
+  const el=document.getElementById('canvas')&&document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
+  if(el&&typeof pick==='function') pick(el);
+  if(typeof save==='function') save();
+  if(typeof drawThumbs==='function') drawThumbs();
+  if(typeof saveState==='function') saveState();
+  if(typeof toast==='function'){
+    toast(typeof t==='function'?(t('toastHtmlPasted')||'HTML вставлен'):'HTML вставлен','ok');
+  }
+  return true;
+}
+window.insertHtmlFrameFromText=insertHtmlFrameFromText;
 
 // ── Shared: build srcdoc ─────────────────────────
 function _hfBuildSrcdoc(src){
@@ -251,12 +286,33 @@ function _hfBuildPreview(el, d){
 }
 
 // ── Linked code block ────────────────────────────
+function _hfLinkedCodeFor(d){
+  if(!d||!slides||!slides[cur]) return null;
+  if(d.hfLinkedCodeId){
+    const byId=slides[cur].els.find(e=>e&&e.id===d.hfLinkedCodeId);
+    if(byId) return byId;
+  }
+  return slides[cur].els.find(e=>e&&e.type==='code'&&e.hfParentId===d.id)||null;
+}
+
 function _hfSyncCodeBtn(){
   const btn=document.getElementById('hf-codebtn');
   if(!btn||!sel||sel.dataset.type!=='htmlframe')return;
   const d=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);if(!d)return;
-  const linked=d.hfLinkedCodeId&&slides[cur].els.find(e=>e.id===d.hfLinkedCodeId);
-  btn.textContent=linked?'\uD83D\uDDD1 Hide code':'📄 Show code';
+  const linked=_hfLinkedCodeFor(d);
+  // Восстановить обратную связь, если save() потерял hfLinkedCodeId
+  if(linked&&d.hfLinkedCodeId!==linked.id){
+    d.hfLinkedCodeId=linked.id;
+    sel.dataset.hfLinkedCodeId=linked.id;
+  }
+  if(!linked&&d.hfLinkedCodeId){
+    d.hfLinkedCodeId=null;
+    sel.dataset.hfLinkedCodeId='';
+  }
+  const showLbl=(typeof t==='function'&&t('hfShowCode'))||'📄 Показать код';
+  const hideLbl=(typeof t==='function'&&t('hfHideCode'))||'📄 Скрыть код';
+  // Код на слайде → кнопка «Скрыть»; нет кода → «Показать»
+  btn.textContent=linked?hideLbl:showLbl;
 }
 
 function hfToggleLinkedCode(){
@@ -264,8 +320,11 @@ function hfToggleLinkedCode(){
   const d=slides[cur].els.find(e=>e.id===sel.dataset.id);if(!d)return;
   const src=d.hfSrc||'';
   const isUrl=/^https?:\/\//i.test(src);
-  if(isUrl){if(typeof toast==='function')toast('Code view only works for HTML blocks','warn');return;}
-  const existing=d.hfLinkedCodeId&&slides[cur].els.find(e=>e.id===d.hfLinkedCodeId);
+  if(isUrl){
+    if(typeof toast==='function') toast((typeof t==='function'&&t('hfCodeUrlOnly'))||'Code view only works for HTML blocks','warn');
+    return;
+  }
+  const existing=_hfLinkedCodeFor(d);
   pushUndo();
   if(existing){
     const idx=slides[cur].els.indexOf(existing);
@@ -282,14 +341,14 @@ function hfToggleLinkedCode(){
       x:snapV(d.x+d.w+20),y:snapV(d.y),w:snapV(Math.min(d.w,560)),h:snapV(d.h),
       codeLang:'html',codeTheme:theme,codeRaw:src,
       codeHtml:typeof syntaxHighlight==='function'?syntaxHighlight(src,'html',theme):src,
-      codeBg:T.bg,codeFs:12,rot:0,anims:[],hfParentId:d.id};
+      codeBg:T.bg,codeFs:16,rot:0,anims:[],hfParentId:d.id};
     d.hfLinkedCodeId=cd.id;
     const hfDom=document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
     if(hfDom)hfDom.dataset.hfLinkedCodeId=cd.id;
     slides[cur].els.push(cd);mkEl(cd);
   }
-  _hfSyncCodeBtn();
   save();drawThumbs();saveState();
+  _hfSyncCodeBtn();
 }
 
 function _hfSyncLinkedCode(d){
@@ -297,13 +356,34 @@ function _hfSyncLinkedCode(d){
   const cd=slides[cur].els.find(e=>e.id===d.hfLinkedCodeId);if(!cd)return;
   const src=d.hfSrc||'';
   if(/^https?:\/\//i.test(src))return;
-  const theme=typeof getCodeThemeForPresTheme==='function'?getCodeThemeForPresTheme():'dark';
+  const theme=cd.codeTheme||(typeof getCodeThemeForPresTheme==='function'?getCodeThemeForPresTheme():'dark');
   cd.codeRaw=src;
-  cd.codeHtml=typeof syntaxHighlight==='function'?syntaxHighlight(src,'html',theme):src;
+  cd.codeLang=cd.codeLang||'html';
+  cd.codeHtml=typeof syntaxHighlight==='function'?syntaxHighlight(src,cd.codeLang||'html',theme):src;
   cd.codeTheme=theme;
   const domEl=document.getElementById('canvas').querySelector('[data-id="'+cd.id+'"]');
   if(domEl&&typeof renderCodeEl==='function')renderCodeEl(domEl,cd);
 }
+
+/** Код → HTML-фрейм: после правки связанного блока кода. */
+function _hfSyncFromLinkedCode(cd){
+  if(!cd||!slides||!slides[cur])return;
+  let parent=cd.hfParentId?slides[cur].els.find(e=>e.id===cd.hfParentId):null;
+  if(!parent||parent.type!=='htmlframe'){
+    parent=slides[cur].els.find(e=>e&&e.type==='htmlframe'&&e.hfLinkedCodeId===cd.id)||null;
+    if(parent) cd.hfParentId=parent.id;
+  }
+  if(!parent||parent.type!=='htmlframe')return;
+  const src=String(cd.codeRaw!=null?cd.codeRaw:'');
+  if(/^https?:\/\//i.test(src.trim()))return;
+  parent.hfSrc=src;
+  const hfDom=document.getElementById('canvas')&&document.getElementById('canvas').querySelector('[data-id="'+parent.id+'"]');
+  if(hfDom){
+    hfDom.dataset.hfSrc=src;
+    if(typeof renderHtmlFrameEl==='function') renderHtmlFrameEl(hfDom, parent);
+  }
+}
+window._hfSyncFromLinkedCode=_hfSyncFromLinkedCode;
 
 // ── Delete hook ──────────────────────────────────
 function _hfOnDelete(elData){

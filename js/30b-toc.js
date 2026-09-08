@@ -209,7 +209,10 @@
       return;
     }
     if (typeof gotoPreviewSlide === 'function') gotoPreviewSlide(si);
-    else if (typeof window._followSlideLink === 'function') window._followSlideLink('#slide-' + (si + 1), curIdx);
+    else if (typeof window._followSlideLink === 'function') {
+      const href = typeof slideLinkHrefForIndex === 'function' ? slideLinkHrefForIndex(si) : '#slide-' + (si + 1);
+      window._followSlideLink(href, curIdx);
+    }
   }
 
   window._wireTocElement = function (el, root, curIdx, gotoFn) {

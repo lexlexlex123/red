@@ -1,0 +1,5 @@
+        '<linearGradient id="'+uid+'fogG" x1="0" y1="1" x2="0" y2="0">'+
+          '<stop offset="0%" stop-color="'+cFog+'" stop-opacity="1"/>'+
+          '<stop offset="35%" stop-color="'+cFog+'" stop-opacity="1"/>'+
+          '<stop offset="100%" stop-color="'+cFog+'" stop-opacity="0.65"/>'+
+        '</linearGradient>'+

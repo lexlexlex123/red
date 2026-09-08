@@ -902,12 +902,13 @@ function _defaultColorAndScheme() {
     const idx = (typeof appliedThemeIdx !== 'undefined' && appliedThemeIdx >= 0) ? appliedThemeIdx
               : (typeof selTheme !== 'undefined' && selTheme >= 0) ? selTheme : -1;
     if (idx >= 0 && THEMES[idx]) {
-      const scheme = { col: 0, row: 0 };
+      // Palette code "15"
+      const scheme = { col: 0, row: 4 };
       const color = _resolveSchemeColor(scheme, THEMES[idx]);
       return { color: color || _themeColors(THEMES[idx])[0], colorScheme: scheme };
     }
   } catch(e) {}
-  return { color: '#60a5fa', colorScheme: { col: 0, row: 0 } };
+  return { color: '#64748b', colorScheme: { col: 0, row: 4 } };
 }
 
 function _addConnector(fromId, toId, type) {
@@ -963,6 +964,7 @@ function _selectConn(id) {
   _showConnProps(id);
   _showHandles(id);
   if (typeof renderObjectsPanel === 'function') renderObjectsPanel();
+  if (typeof syncColorBar === 'function') syncColorBar();
 }
 window._selectConn = _selectConn;
 
@@ -977,6 +979,7 @@ function _deselectConn(restorePanel = true) {
     const sp = document.getElementById('slide-props'); if (sp) sp.style.display = 'block';
   }
   if (typeof renderObjectsPanel === 'function') renderObjectsPanel();
+  if (typeof syncColorBar === 'function') syncColorBar();
 }
 
 function _highlightConn(id) {

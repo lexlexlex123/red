@@ -14,6 +14,7 @@
     mediavideo: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="12" height="8" rx="1.5"/><polygon points="7,6.5 10.5,8 7,9.5" fill="currentColor" stroke="none"/></svg>',
     mediaaudio: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 12V5l7-1v7"/><circle cx="4.5" cy="12" r="1.5"/><circle cx="11.5" cy="11" r="1.5"/></svg>',
     model3d:  '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2l6 3.5v7L8 16l-6-3.5v-7L8 2z"/><path d="M8 9l6-3.5M8 9v7M8 9L2 5.5"/></svg>',
+    inkhost:  '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 12c2-4 8-4 10 0"/><path d="M5 9c1.5-2 4.5-2 6 0"/><circle cx="8" cy="5" r="1.5"/></svg>',
     connector: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 12 C6 12 10 4 14 4"/><circle cx="2" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="14" cy="4" r="1.5" fill="currentColor" stroke="none"/></svg>',
   };
 
@@ -50,6 +51,10 @@
       return lbl + sfx;
     }
     if (d.type === 'pagenum')  return 'Номер страницы';
+    if (d.type === 'inkhost') {
+      const isEn = typeof getLang === 'function' && getLang() !== 'ru';
+      return (isEn ? 'Drawing' : 'Рисунок') + sfx;
+    }
     if (d.type === 'model3d')  return 'OBJ' + sfx;
     if (d.type === 'mediavideo') return 'Видео' + sfx;
     if (d.type === 'mediaaudio') return 'Аудио' + sfx;
@@ -143,7 +148,8 @@
       const d      = slides[cur] && slides[cur].els.find(e => e.id === id);
       if (!d) return;
       const hidden  = el.dataset.objHidden === '1';
-      const isSel   = (typeof sel !== 'undefined') && el === sel;
+      const inkHostSel = d.type === 'inkhost' && typeof inkHostIsSelected === 'function' && inkHostIsSelected(d);
+      const isSel   = ((typeof sel !== 'undefined') && el === sel) || inkHostSel;
 
       const row = document.createElement('div');
       row.className = 'obj-row' +
@@ -211,7 +217,14 @@
           return;
         }
         e.preventDefault(); e.stopPropagation();
-        if (!hidden && typeof pick === 'function') pick(el);
+        if (hidden) return;
+        // Drawing host → select ink strokes (props panel shows list + stroke settings)
+        if (d.type === 'inkhost' && Array.isArray(d.inkIds) && d.inkIds.length && typeof selectInkIds === 'function') {
+          selectInkIds(d.inkIds.slice(), { expandGroup: !!d.groupId, keepObjectSel: false });
+          renderObjectsPanel();
+          return;
+        }
+        if (typeof pick === 'function') pick(el);
         renderObjectsPanel();
       });
 

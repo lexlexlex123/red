@@ -1,9 +1,12 @@
-/* Service worker — офлайн-кэш для PWA «Слайды» */
+/* Service worker — офлайн-кэш для PWA «Слайды» (React v8 shell + on-demand legacy) */
 importScripts('./pwa-precache-images.js');
 
-const CACHE = 'slides-pwa-v66';
+const CACHE = 'slides-pwa-v384';
 
-/** Критичные файлы оболочки (галерея — в PRECACHE_IMAGES). */
+/**
+ * Shell-only install precache. Themes/fonts/js load via fetch→cache
+ * (stale-while-revalidate). legacy.html is not on the React editor path.
+ */
 const PRECACHE = [
   './',
   './index.html',
@@ -12,112 +15,24 @@ const PRECACHE = [
   './fonts/fonts.css',
   './fonts/fonts-list.js',
   './fonts/fonts-data.js',
-  './icon.svg',
   './icon-192.png',
   './icon-512.png',
+  './icon.svg',
+  './icons/icon.svg',
+  './icons/file-document-192.png',
+  './icons/file-document-512.png',
   './libs/qrcode.min.js',
   './libs/jszip.min.js',
-  './libs/jquery.min.js',
-  './libs/turn.min.js',
+  './libs/snapdom.min.js',
   './images/image-index.js',
-  './js/00-file-protocol.js',
-  './js/00-pwa.js',
-  './js/00-i18n.js',
-  './js/00-bus.js',
-  './js/00-guard.js',
-  './js/01-state.js',
-  './js/01b-media-store.js',
-  './js/02-applets.js',
-  './js/02b-periodic.js',
-  './js/02b-flip.js',
-  './js/02b-quotes-data.js',
-  './js/02b-quotes.js',
-  './js/02b-icons.js',
-  './js/03-boot.js',
-  './js/04-ui.js',
-  './js/05-backgrounds.js',
-  './js/06-themes.js',
-  './js/07-transitions.js',
-  './js/08-serialize.js',
-  './js/08-slides.js',
-  './js/09-shapes.js',
-  './js/10-animations.js',
-  './js/10c-anim-engine.js',
-  './js/11-elements.js',
-  './js/12-markdown.js',
-  './js/13-images.js',
-  './js/13b-imgcrop.js',
-  './js/14-drag.js',
-  './js/15-align.js',
-  './js/16-props.js',
-  './js/17-text.js',
-  './js/18-motion.js',
-  './js/19-hover.js',
-  './js/20-thumbnails.js',
-  './js/21-keyboard.js',
-  './js/22-undo.js',
-  './js/23-layout.js',
-  './js/23b-crystal-webgl.js',
-  './js/23d-dna-webgl.js',
-  './js/23e-galaxy-webgl.js',
-  './js/23f-caustics-webgl.js',
-  './js/24-preview.js',
-  './js/25-links.js',
-  './js/26-export.js',
-  './js/26b-ppt-binary.js',
-  './js/26c-import-gallery.js',
-  './js/27-persist.js',
-  './js/28-multisel.js',
-  './js/28-filedrop.js',
-  './js/29-icons.js',
-  './js/30-rich-text.js',
-  './js/30b-toc.js',
-  './js/31-table.js',
-  './js/32-scrubber.js',
-  './js/33-objects.js',
-  './js/33-pagenum.js',
-  './js/33b-autoplace.js',
-  './js/33c-autofit.js',
-  './js/34-config.js',
-  './js/35-htmlframe.js',
-  './js/35-ai.js',
-  './js/36-formula.js',
-  './js/36-ai.js',
-  './js/37b-chem.js',
-  './js/37c-logic.js',
-  './js/37-graph.js',
-  './js/38-connectors.js',
-  './js/39-improvements.js',
-  './js/40-images-modal.js',
-  './js/40-local-ai.js',
-  './js/41-lego.js',
-  './js/42-dictation.js',
-  './js/44-group.js',
-  './js/45-media.js',
-  './js/45b-model3d.js',
-  './js/46-cross-clipboard.js',
-  './js/47-translate.js',
-  './js/50-voice.js',
-  './config/canvas.js',
-  './config/animations.js',
-  './config/themes.js',
-  './config/shapes.js',
-  './config/ui.js',
-  './config/persist.js',
-  './config/loader.js',
-  './config/backgrounds.js',
-  './config/transitions.js',
-  './config/pagenum.js',
-  './config/applets.js',
-  './config/images.js',
-  './config/code.js',
-  './config/drag.js',
-  './config/export.js',
-  './config/preview.js',
-  './config/text.js'
+  './audio/audio-list.js',
 ];
 
 const HEAVY_PRECACHE = [
+  './libs/mathjax/tex-svg.js',
+  './libs/mathlive/mathlive.min.js',
+  './libs/mathlive/mathlive-static.css',
+  './libs/mathlive/mathlive-fonts.css',
   './libs/bergamot/translator-worker.js',
   './libs/bergamot/bergamot-translator-worker.js',
   './libs/bergamot/bergamot-translator-worker.wasm',
@@ -126,7 +41,7 @@ const HEAVY_PRECACHE = [
   './libs/translate-models/enru/vocab.enru.spm',
   './libs/translate-models/ruen/model.ruen.intgemm.alphas.bin',
   './libs/translate-models/ruen/lex.50.50.ruen.s2t.bin',
-  './libs/translate-models/ruen/vocab.ruen.spm'
+  './libs/translate-models/ruen/vocab.ruen.spm',
 ];
 
 function shellPrecacheUrls() {
@@ -138,42 +53,146 @@ function heavyPrecacheUrls() {
   return HEAVY_PRECACHE.concat(extra);
 }
 
+function stripSearchHash(url) {
+  try {
+    const u = new URL(url);
+    u.search = '';
+    u.hash = '';
+    return u.href;
+  } catch (e) {
+    return String(url).split('#')[0].split('?')[0];
+  }
+}
+
+function isNavigationRequest(req) {
+  const accept = req.headers.get('accept') || '';
+  return req.mode === 'navigate' || accept.includes('text/html');
+}
+
+function cacheLookupUrls(req) {
+  const out = [];
+  const add = (u) => {
+    if (u && out.indexOf(u) === -1) out.push(u);
+  };
+  add(req.url);
+  add(stripSearchHash(req.url));
+  try {
+    const u = new URL(req.url);
+    const dec = u.pathname
+      .split('/')
+      .map((s) => {
+        try {
+          return decodeURIComponent(s);
+        } catch (e) {
+          return s;
+        }
+      })
+      .join('/');
+    add(u.origin + dec);
+    add(u.origin + dec + u.search);
+    if (isNavigationRequest(req)) {
+      add(new URL('./index.html', self.location).href);
+      add(new URL('./', self.location).href);
+      add(u.origin + '/index.html');
+      add(u.origin + '/');
+    }
+  } catch (e) {}
+  return out;
+}
+
 function cacheMatchUrl(cache, req) {
-  return cache.match(req).then((hit) => {
-    if (hit) return hit;
-    try {
-      const u = new URL(req.url);
-      const dec = u.pathname
-        .split('/')
-        .map((s) => {
-          try {
-            return decodeURIComponent(s);
-          } catch (e) {
-            return s;
-          }
-        })
-        .join('/');
-      if (dec !== u.pathname) {
-        return cache.match(u.origin + dec + u.search);
+  const urls = cacheLookupUrls(req);
+  let i = 0;
+  function next() {
+    if (i >= urls.length) return Promise.resolve(null);
+    const url = urls[i++];
+    return cache.match(url).then((hit) => (hit ? hit : next()));
+  }
+  return next();
+}
+
+function cachePutNormalized(cache, req, res) {
+  // Keep ?v= for theme/renderers so version bumps are not collapsed onto one stale entry.
+  const u = String(req.url || '');
+  const key = /\/themes\//i.test(u) ? stripHashOnly(u) : stripSearchHash(u);
+  return cache.put(key, res);
+}
+
+function stripHashOnly(url) {
+  try {
+    const u = new URL(url);
+    u.hash = '';
+    return u.href;
+  } catch (e) {
+    return String(url).split('#')[0];
+  }
+}
+
+/** Network first for theme scripts — SW must not serve yesterday's dna-webgl.js. */
+function networkFirst(req) {
+  return fetch(req, { cache: 'no-store' })
+    .then((res) => {
+      if (res && res.ok) {
+        caches.open(CACHE).then((cache) => cachePutNormalized(cache, req, res.clone())).catch(() => {});
       }
-    } catch (e) {}
-    return null;
-  });
+      return res;
+    })
+    .catch(() =>
+      caches.open(CACHE).then((cache) =>
+        cache.match(req.url).then((hit) => hit || cacheMatchUrl(cache, req))
+      )
+    );
+}
+
+/** Кэш сразу (офлайн), сеть — для обновления в фоне. */
+function staleWhileRevalidate(req) {
+  return caches.open(CACHE).then((cache) =>
+    cacheMatchUrl(cache, req).then((cached) => {
+      const net = fetch(req, { cache: 'no-store' })
+        .then((res) => {
+          if (res && res.ok) cachePutNormalized(cache, req, res.clone());
+          return res;
+        })
+        .catch(() => null);
+      if (cached) {
+        net;
+        return cached;
+      }
+      return net.then((r) => r);
+    })
+  );
+}
+
+function respondNavigation(req) {
+  return caches.open(CACHE).then((cache) =>
+    cacheMatchUrl(cache, req).then((cached) => {
+      const net = fetch(req, { cache: 'no-store' })
+        .then((res) => {
+          if (res && res.ok) cachePutNormalized(cache, req, res.clone());
+          return res;
+        })
+        .catch(() => null);
+      if (cached) {
+        net;
+        return cached;
+      }
+      return net.then((r) => {
+        if (r) return r;
+        return cacheMatchUrl(cache, new Request(new URL('./index.html', self.location).href));
+      });
+    })
+  );
 }
 
 function precacheAll(cache, urls) {
   return Promise.allSettled(
-    urls.map((u) =>
-      cache.add(u).catch(() => cache.add(new URL(u, self.location).href))
-    )
+    urls.map((u) => cache.add(u).catch(() => cache.add(new URL(u, self.location).href)))
   );
 }
 
 self.addEventListener('install', (ev) => {
-  // Только оболочка — иначе на хостинге install зависает на галерее/WASM и PWA не ставится
   ev.waitUntil(
     caches.open(CACHE).then((cache) => precacheAll(cache, shellPrecacheUrls())).then(() => {
-      // Первая установка — сразу активируем. Обновление ждёт кнопку «Обновить».
       if (!self.registration.active) return self.skipWaiting();
     })
   );
@@ -185,11 +204,13 @@ self.addEventListener('message', (ev) => {
 
 self.addEventListener('activate', (ev) => {
   ev.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
-    ).then(() => self.clients.claim()).then(() => {
-      caches.open(CACHE).then((cache) => precacheAll(cache, heavyPrecacheUrls()));
-    })
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
+      .then(() => {
+        caches.open(CACHE).then((cache) => precacheAll(cache, heavyPrecacheUrls()));
+      })
   );
 });
 
@@ -210,50 +231,34 @@ function isCacheable(req) {
   return true;
 }
 
-/** JS/CSS — сначала сеть, иначе кэш (чтобы обновления AI и логики доходили сразу). */
-function isNetworkFirst(req) {
+/** JS/CSS/HTML-оболочка — кэш первым (офлайн), сеть обновляет в фоне. */
+function isShellAsset(req) {
   const p = new URL(req.url).pathname.toLowerCase();
   return p.endsWith('.js') || p.endsWith('.css');
+}
+
+function isThemeAsset(req) {
+  const p = new URL(req.url).pathname.toLowerCase();
+  return p.includes('/themes/');
 }
 
 self.addEventListener('fetch', (ev) => {
   const req = ev.request;
   if (!isCacheable(req)) return;
 
-  const accept = req.headers.get('accept') || '';
-  const nav = req.mode === 'navigate' || accept.includes('text/html');
-
-  if (nav) {
-    ev.respondWith(
-      fetch(req)
-        .then((res) => {
-          if (res && res.ok) {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(req, copy));
-          }
-          return res;
-        })
-        .catch(() =>
-          caches.match(req).then((r) => r || caches.match('./index.html'))
-        )
-    );
+  if (isNavigationRequest(req)) {
+    ev.respondWith(respondNavigation(req));
     return;
   }
 
-  if (isNetworkFirst(req)) {
-    ev.respondWith(
-      fetch(req)
-        .then((res) => {
-          if (res && res.ok) {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(req, copy));
-          }
-          return res;
-        })
-        .catch(() =>
-          caches.open(CACHE).then((cache) => cacheMatchUrl(cache, req))
-        )
-    );
+  // Theme/WebGL renderers change often — never serve stripped-query stale JS first.
+  if (isThemeAsset(req)) {
+    ev.respondWith(networkFirst(req));
+    return;
+  }
+
+  if (isShellAsset(req)) {
+    ev.respondWith(staleWhileRevalidate(req));
     return;
   }
 
@@ -263,10 +268,7 @@ self.addEventListener('fetch', (ev) => {
         if (cached) return cached;
         return fetch(req)
           .then((res) => {
-            if (res && res.ok) {
-              const copy = res.clone();
-              cache.put(req, copy);
-            }
+            if (res && res.ok) cachePutNormalized(cache, req, res.clone());
             return res;
           })
           .catch(() => cacheMatchUrl(cache, req));

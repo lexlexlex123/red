@@ -653,6 +653,10 @@
         objText: text,
         objName: file.name || 'model.obj'
       });
+      if (typeof _insertGeom === 'function') {
+        const g = _insertGeom(d.w, d.h);
+        d.x = g.x; d.y = g.y; d.w = g.w; d.h = g.h;
+      }
       d._mesh = mesh;
       slides[cur].els.push(d);
       if (typeof mkEl === 'function') mkEl(d);

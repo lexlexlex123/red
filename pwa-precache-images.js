@@ -1,5 +1,5 @@
 // Автогенерация: node images/build-index.js — не редактировать вручную
-// Дата: 2026-08-13T04:52:27.179Z
+// Дата: 2026-09-02T16:36:40.745Z
 self.PRECACHE_IMAGES = [
   "./images/nature/wild (14).png",
   "./images/nature/wild (15).png",

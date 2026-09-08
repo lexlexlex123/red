@@ -12,6 +12,8 @@ function mkDrag(el,c){
     if (e._fromCurvePassthrough) { /* skip curve checks, proceed to drag */ }
     // If rotation drag is already active — block everything
     if (window._rotDragging) return;
+    if (e.target && e.target.closest && e.target.closest('[data-cam-move],[data-cam-corner],[data-cam-rot]')) return;
+    if (typeof window._cameraHandleAt==='function' && window._cameraHandleAt(e.clientX, e.clientY)) return;
     // If selected element exists and click is in its rotation zone — block pick
     if (typeof sel !== 'undefined' && sel && sel !== el && typeof _nearCorner === 'function') {
       const p = typeof _toCanvasCoords === 'function' ? _toCanvasCoords(e.clientX, e.clientY) : null;
@@ -19,6 +21,15 @@ function mkDrag(el,c){
     }
     // В режиме соединения объектов — не выбираем элемент, клик обработает 38-connectors.js
     if (typeof window._connectorModeActive === 'function' && window._connectorModeActive()) return;
+    // Пипетка: скопировать стиль и НЕ переключать выделение на источник клика
+    // (stopImmediatePropagation — иначе второй mousedown на el вызовет pick уже без pipetteMode)
+    if (typeof pipetteMode !== 'undefined' && pipetteMode) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (typeof pickMulti === 'function') pickMulti(el, !!e.shiftKey);
+      else if (typeof pipetteApply === 'function') pipetteApply(el, { shift: !!e.shiftKey });
+      return;
+    }
     const cn=e.target.className||'';
     // Exit text editing when clicking any element (different or same, outside the .tel)
     const clickedInsideTel = e.target && e.target.closest && e.target.closest('.tel');
@@ -136,8 +147,8 @@ function mkDrag(el,c){
         if(!isSvgPart&&!e.target.closest('.shape-text')&&!isHitArea&&!isNoFillSelf&&!isLineStroke)return;
       }
     }
-    // PNG/SVG alpha hit test: pass click/drag through transparent regions
-    if((el.dataset.type==='image'||el.dataset.type==='svg') &&
+    // PNG/SVG/icon alpha hit test: pass click/drag through transparent regions
+    if((el.dataset.type==='image'||el.dataset.type==='svg'||el.dataset.type==='icon') &&
        !(typeof multiSel!=='undefined' && multiSel && multiSel.size>1 && multiSel.has(el))){
       const _hitBelow = typeof _findElAtPoint==='function'
         ? _findElAtPoint(e.clientX, e.clientY, { container: document.getElementById('canvas'), selector: '.el', excludeDecor: true })
@@ -171,6 +182,9 @@ function mkDrag(el,c){
       if(el.dataset.type==='svg' && typeof _pointHitsEl==='function' && !_pointHitsEl(el, e.clientX, e.clientY)){
         return;
       }
+      if(el.dataset.type==='icon' && typeof _pointHitsEl==='function' && !_pointHitsEl(el, e.clientX, e.clientY)){
+        return;
+      }
     }
     // For lego: allow drag/click on any SVG content inside .ec
     if(el.dataset.type==='lego'){
@@ -183,11 +197,13 @@ function mkDrag(el,c){
       pickMulti(el, true);
       e.preventDefault();
       return;
-    } else if(!el.classList.contains('sel')&&!(multiSel.size>1&&multiSel.has(el))){
+    } else if(!el.classList.contains('sel')&&!(multiSel.size>=1&&multiSel.has(el))){
       // Don't switch selection if rotation or pivot is active
       if(window._rotDragging || window._pivotDragging) return;
       if(typeof pickMulti==='function') pickMulti(el, false);
       else pick(el);
+      // New sole object pick — drop ink unless Shift (handled above)
+      if(typeof clearInkSelection==='function') clearInkSelection();
     }
     if(window._pivotDragging) return;
     if(window._rotDragging) return;
@@ -202,7 +218,9 @@ function mkDrag(el,c){
       e.target.tagName==='path'||
       (e.target.tagName==='svg'&&e.target.classList&&e.target.classList.contains('shape-hit-area'))
     );
-    if(multiSel.size>1&&multiSel.has(el)&&(!_curveStrokeDrag||window._explicitMultiSel)){
+    // Include size===1 when ink is co-selected so group+ink stay in sync
+    const _withInk=typeof hasSelectedInk==='function'&&hasSelectedInk();
+    if(multiSel.size>=1&&multiSel.has(el)&&(multiSel.size>1||_withInk)&&(!_curveStrokeDrag||window._explicitMultiSel)){
       groupStart=new Map();
       multiSel.forEach(mEl=>groupStart.set(mEl,{x:parseInt(mEl.style.left),y:parseInt(mEl.style.top)}));
     } else {
@@ -249,6 +267,11 @@ function mkDrag(el,c){
           mEl.style.left=(pos.x+moveDx)+'px';
           mEl.style.top=(pos.y+moveDy)+'px';
         });
+        if(typeof moveSelectedInkBy==='function'&&typeof hasSelectedInk==='function'&&hasSelectedInk()){
+          const stepDx=moveDx-(_inkDragLastDx||0), stepDy=moveDy-(_inkDragLastDy||0);
+          _inkDragLastDx=moveDx; _inkDragLastDy=moveDy;
+          if(stepDx||stepDy) moveSelectedInkBy(stepDx, stepDy);
+        }
         if(typeof refreshAllLineAngles==='function') refreshAllLineAngles();
         if(typeof renderMotionOverlay==='function') renderMotionOverlay();
         if(typeof _scheduleHandlesOverlayUpdate==='function') _scheduleHandlesOverlayUpdate();
@@ -257,6 +280,11 @@ function mkDrag(el,c){
         let nx=ol+dx,ny=ot+dy;
         if(document.getElementById('snap-chk').checked){nx=snapV(nx);ny=snapV(ny);}
         el.style.left=nx+'px';el.style.top=ny+'px';showGuides(el);syncPos();
+        if(typeof moveSelectedInkBy==='function'&&typeof hasSelectedInk==='function'&&hasSelectedInk()){
+          const stepDx=(nx-ol)-(_inkDragLastDx||0), stepDy=(ny-ot)-(_inkDragLastDy||0);
+          _inkDragLastDx=nx-ol; _inkDragLastDy=ny-ot;
+          if(stepDx||stepDy) moveSelectedInkBy(stepDx, stepDy);
+        }
         // Only stretch partners when this line alone moved (partners not in the drag group)
         if(el.dataset.shape==='line'&&typeof _syncLineJoinsAfterMove==='function') _syncLineJoinsAfterMove(el);
         if(typeof refreshAllLineAngles==='function') refreshAllLineAngles();
@@ -265,6 +293,7 @@ function mkDrag(el,c){
         else if(typeof _updateHandlesOverlay==='function' && !window._curveDragging)_updateHandlesOverlay();
       }
     };
+    let _inkDragLastDx=0, _inkDragLastDy=0;
     const mu=()=>{
       on=false;window._anyDragging=false;groupStart=null;clearGuides();
       document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);
@@ -274,6 +303,33 @@ function mkDrag(el,c){
     document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
   });
 
+  if (typeof wireTouchMouseDrag === 'function') {
+    var touchDragOpts = {
+      moveOnly: el.dataset.type === 'text',
+      guard: function (pe) {
+        if (window._mobilePinchActive) return false;
+        if (window._mobileRubberMode) return false;
+        if (pe.target && pe.target.closest && pe.target.closest('.rh')) return false;
+        if (pe.target && pe.target.closest && pe.target.closest('.tbl-drag-border')) return false;
+        const telEl = el.querySelector('.tel');
+        const isEditing = el.contentEditable === 'true' ||
+          (telEl && telEl.contentEditable === 'true');
+        if (isEditing) return false;
+        const cn = pe.target.className || '';
+        if (typeof cn === 'string' && (cn.includes('rh') || cn.includes('db'))) return false;
+        if (el.dataset.type === 'table' &&
+            (pe.target.tagName === 'TD' || pe.target.tagName === 'TH')) return false;
+        return true;
+      }
+    };
+    wireTouchMouseDrag(el, touchDragOpts);
+    var telDrag = el.querySelector('.tel');
+    if (telDrag && el.dataset.type === 'text') {
+      wireTouchMouseDrag(telDrag, Object.assign({}, touchDragOpts, {
+        target: function () { return el; }
+      }));
+    }
+  }
 }
 function mkResize(el,rh,cfg){
   rh.addEventListener('mousedown',e=>{
@@ -288,7 +344,14 @@ function mkResize(el,rh,cfg){
     const sx=e.clientX,sy=e.clientY,sw=parseInt(el.style.width),sh=parseInt(el.style.height),sl=parseInt(el.style.left),st=parseInt(el.style.top);
     const aspect=sw/sh; // for proportional resize
     const isCorner=cfg.dx!==0&&cfg.dy!==0;
-    const isImgCorner=el.dataset.type==='image'&&isCorner;
+    // Callout: жёлтый tip — сохраняем отступ от ближайшего края при смене высоты/ширины
+    const _calloutStartD=el.dataset.type==='shape'&&slides[cur]?slides[cur].els.find(x=>x.id===el.dataset.id):null;
+    const _calloutSh=_calloutStartD&&typeof SHAPES!=='undefined'&&SHAPES.find(s=>s.id===_calloutStartD.shape);
+    const _isCalloutResize=_calloutSh&&_calloutSh.special==='callout';
+    const _cStartTY=_isCalloutResize?(_calloutStartD.tailY!==undefined?+_calloutStartD.tailY:(sh/2+30)):0;
+    const _cStartTX=_isCalloutResize?+(_calloutStartD.tailX||0):0;
+    const _cStartRY=_isCalloutResize?+(_calloutStartD.tailRoundY||0):0;
+    const _cStartRX=_isCalloutResize?+(_calloutStartD.tailRoundX||0):0;
     // Applets with stored aspect ratio always resize proportionally from corners
     const _appletD=el.dataset.type==='applet'&&slides[cur]?slides[cur].els.find(x=>x.id===el.dataset.id):null;
     const appletAspect=_appletD&&_appletD._appletAspect||null;
@@ -312,18 +375,16 @@ function mkResize(el,rh,cfg){
       const localDx= _rdx*cosR + _rdy*sinR;
       const localDy=-_rdx*sinR + _rdy*cosR;
 
-      if(isImgCorner){
-        const rawDx=cfg.dx*localDx;
-        const rawDy=cfg.dy*localDy;
-        const delta=Math.abs(rawDx)>=Math.abs(rawDy)?rawDx:rawDy*aspect;
-        nw=Math.max(40,sw+delta);
-        nh=Math.max(20,nw/aspect);
-      } else if(appletAspect&&isCorner){
+      if(appletAspect&&isCorner){
         const rawDx=cfg.dx*localDx;
         const rawDy=cfg.dy*localDy;
         const delta=Math.abs(rawDx)>=Math.abs(rawDy)?rawDx:rawDy*appletAspect;
-        nw=Math.max(120,sw+delta);
-        nh=Math.max(80,nw/appletAspect);
+        // Flip / periodic: allow tiny cards (slide zoom up to 4000%)
+        const _tinyApplet=_appletD&&(_appletD.appletId==='flip'||_appletD.appletId==='periodic');
+        const _minAw=_tinyApplet?16:120;
+        const _minAh=_tinyApplet?16:80;
+        nw=Math.max(_minAw,sw+delta);
+        nh=Math.max(_minAh,nw/appletAspect);
       } else if(isChemGraph){
         // Always proportional — formula and structure must not stretch
         if(isCorner){
@@ -353,6 +414,9 @@ function mkResize(el,rh,cfg){
 
       if(document.getElementById('snap-chk').checked&&_rot===0){nw=snapV(nw);nh=snapV(nh);}
       el.style.width=nw+'px';el.style.height=nh+'px';
+      if(el.dataset.type==='image'&&Math.abs(nw/Math.max(1,nh)-aspect)>0.008){
+        const img=el.querySelector('img');if(img)img.style.objectFit='fill';
+      }
 
       // Adjust position so the anchored corner stays visually fixed
       // The element rotates around its CSS top-left, but visually around its center.
@@ -392,7 +456,47 @@ function mkResize(el,rh,cfg){
         el.style.left = Math.round(newCx - nw/2)+'px';
         el.style.top  = Math.round(newCy - nh/2)+'px';
       }
+      if(document.getElementById('snap-chk')?.checked && typeof showGuidesResize==='function'){
+        showGuidesResize(el, cfg);
+        nw=parseInt(el.style.width)||nw;
+        nh=parseInt(el.style.height)||nh;
+      }
       const d=slides[cur]&&slides[cur].els.find(x=>x.id===el.dataset.id);
+      if(d&&_isCalloutResize){
+        const edgeBand=Math.max(12, Math.min(48, Math.min(sw, sh) * 0.22));
+        // Высота: tip у низа → тот же отступ от нижней линии; у верха — от верхней
+        if(nh!==sh){
+          const tipY=sh/2+_cStartTY;
+          const nearBot=tipY>sh-edgeBand;
+          const nearTop=tipY<edgeBand;
+          let newTipY=tipY;
+          if(nearBot&&!nearTop) newTipY=nh+(tipY-sh);
+          else if(nearTop&&!nearBot) newTipY=tipY;
+          else newTipY=nh/2+_cStartTY; // середина / сбоку — относительно центра
+          const newTY=newTipY-nh/2;
+          d.tailY=newTY; el.dataset.tailY=newTY;
+          d.tailRoundY=_cStartRY+(newTY-_cStartTY); el.dataset.tailRoundY=d.tailRoundY;
+        } else {
+          d.tailY=_cStartTY; el.dataset.tailY=_cStartTY;
+          d.tailRoundY=_cStartRY; el.dataset.tailRoundY=_cStartRY;
+        }
+        // Ширина: аналогично для левого/правого края
+        if(nw!==sw){
+          const tipX=sw/2+_cStartTX;
+          const nearRight=tipX>sw-edgeBand;
+          const nearLeft=tipX<edgeBand;
+          let newTipX=tipX;
+          if(nearRight&&!nearLeft) newTipX=nw+(tipX-sw);
+          else if(nearLeft&&!nearRight) newTipX=tipX;
+          else newTipX=nw/2+_cStartTX;
+          const newTX=newTipX-nw/2;
+          d.tailX=newTX; el.dataset.tailX=newTX;
+          d.tailRoundX=_cStartRX+(newTX-_cStartTX); el.dataset.tailRoundX=d.tailRoundX;
+        } else {
+          d.tailX=_cStartTX; el.dataset.tailX=_cStartTX;
+          d.tailRoundX=_cStartRX; el.dataset.tailRoundX=_cStartRX;
+        }
+      }
       if(d&&el.dataset.type==='shape')renderShapeEl(el,d,{remapCloud:true});
       if(d&&el.dataset.type==='table'){d.w=nw;d.h=nh;if(typeof renderTableEl==='function'){if(d.showChart){const sv=el.querySelector('.ec svg');if(sv){sv.setAttribute('width',nw);sv.setAttribute('height',nh);sv.setAttribute('viewBox','0 0 '+nw+' '+nh);}}else{renderTableEl(el,d);}}}
       // For image side-handle drag: show stretch in real time
@@ -400,19 +504,40 @@ function mkResize(el,rh,cfg){
         const img=el.querySelector('img');if(img)img.style.objectFit='fill';
       }
       syncPos();
+      if(el.dataset.type==='text'&&typeof applyTextPad==='function'&&el.dataset.pad_t!==undefined) applyTextPad(el);
+      if(el.dataset.appletId==='flip'&&typeof _layoutFlipIframe==='function'){
+        _layoutFlipIframe(el, d);
+      }
+      if(el.dataset.appletId==='periodic'&&typeof _layoutPeriodicIframe==='function'){
+        _layoutPeriodicIframe(el, d);
+      }
       if(typeof _scheduleHandlesOverlayUpdate==='function') _scheduleHandlesOverlayUpdate();
       else if(typeof _updateHandlesOverlay==='function' && !window._curveDragging)_updateHandlesOverlay();
     };
     const mu=()=>{
       window._resizeDragging=false;window._anyDragging=false;
+      clearGuides();
       const _cw=document.getElementById('cwrap');if(_cw)_cw.style.cursor='';
       document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);
       cv.querySelectorAll('.el').forEach(other=>{other.style.pointerEvents='';})  ;
       // If resizing image with a side handle (not corner), stretch image to fill new dimensions
       const isSideHandle=cfg.dx===0||cfg.dy===0;
-      if(el.dataset.type==='image'&&isSideHandle){
+      const finalW=parseInt(el.style.width)||0;
+      const finalH=parseInt(el.style.height)||0;
+      const aspectChanged=finalW>0&&finalH>0&&Math.abs(finalW/finalH-aspect)>0.008;
+      if(el.dataset.type==='image'&&(isSideHandle||aspectChanged)){
         const d=slides[cur]&&slides[cur].els.find(x=>x.id===el.dataset.id);
-        if(d){d.imgFit='fill';el.dataset.imgFit='fill';el.querySelector('img').style.objectFit='fill';}
+        if(d){d.imgFit='fill';el.dataset.imgFit='fill';const img=el.querySelector('img');if(img)img.style.objectFit='fill';}
+      }
+      if(el.dataset.type==='image'){
+        const dImg=slides[cur]&&slides[cur].els.find(x=>x.id===el.dataset.id);
+        if(dImg){
+          if(dImg.imgFrame==='polaroid'&&typeof applyImgFrame==='function'){
+            applyImgFrame(el,dImg);
+          }else if(typeof applyImgStyles==='function'){
+            applyImgStyles(el,dImg);
+          }
+        }
       }
       // Recalculate valign padding after resize (text height may have changed)
       if(el.dataset.type==='text'&&el.dataset.valign&&typeof applyTextVAlign==='function'){
@@ -453,6 +578,16 @@ function mkResize(el,rh,cfg){
         _dmu2.y=_newY;
         _dmu2.w=_newW;
         _dmu2.h=_newH;
+        if(el.dataset.appletId==='flip'&&typeof _layoutFlipIframe==='function'){
+          _layoutFlipIframe(el, _dmu2);
+          if(typeof getFlipHTML==='function'&&typeof _flipCfgFromData==='function'){
+            _dmu2.appletHtml=getFlipHTML(null,_flipCfgFromData(_dmu2));
+            el.dataset.appletHtml=_dmu2.appletHtml;
+          }
+        }
+        if(el.dataset.appletId==='periodic'&&typeof _layoutPeriodicIframe==='function'){
+          _layoutPeriodicIframe(el, _dmu2);
+        }
         // Clamp pivot so it stays inside new bounds
         const _nw=_dmu2.w, _nh=_dmu2.h;
         const _px=+(el.dataset.rotPivotX||0), _py=+(el.dataset.rotPivotY||0);
@@ -469,4 +604,10 @@ function mkResize(el,rh,cfg){
     };
     document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
   });
+  if (typeof wireTouchMouseDrag === 'function') {
+    wireTouchMouseDrag(rh, {
+      guard: function () { return !window._mobilePinchActive; },
+      bubbles: false
+    });
+  }
 }

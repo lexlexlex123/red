@@ -5,12 +5,49 @@
   if (location.protocol !== 'http:' && location.protocol !== 'https:') return;
   if (!('serviceWorker' in navigator)) return;
 
+  function _pwaIsLocalDev() {
+    const h = location.hostname;
+    return h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h === '::1';
+  }
+
+  function _pwaIsStandalone() {
+    return (
+      window.matchMedia('(display-mode: standalone)').matches ||
+      window.matchMedia('(display-mode: fullscreen)').matches ||
+      window.navigator.standalone === true
+    );
+  }
+
+  // Вкладка браузера на localhost: SW нужен для установки PWA; панель обновления не показываем.
+  const _pwaLocalBrowserTab = _pwaIsLocalDev() && !_pwaIsStandalone();
+
+  if (_pwaLocalBrowserTab) {
+    const _killBar = function () {
+      const bar = document.getElementById('pwa-update-bar');
+      if (bar) bar.remove();
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _killBar);
+    else _killBar();
+  }
+
   let _deferredInstall = null;
+
+  function _pwaShowRibbonInstall() {
+    if (_pwaIsStandalone()) return;
+    const btn = document.getElementById('ribbon-pwa-install');
+    if (btn) btn.style.display = '';
+  }
+
+  function _pwaHideRibbonInstall() {
+    const btn = document.getElementById('ribbon-pwa-install');
+    if (btn) btn.style.display = 'none';
+  }
 
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     _deferredInstall = e;
     document.dispatchEvent(new CustomEvent('pwa-installable'));
+    _pwaShowRibbonInstall();
   });
 
   window.installPwaApp = function () {
@@ -19,7 +56,7 @@
         toast(
           typeof t === 'function'
             ? t('pwaInstallHint')
-            : 'Установка: меню браузера → «Установить приложение»',
+            : 'Установка: иконка ⊕ в адресной строке или меню → «Установить приложение»',
           ''
         );
       }
@@ -28,7 +65,10 @@
     _deferredInstall.prompt();
     return _deferredInstall.userChoice.then((choice) => {
       const ok = choice.outcome === 'accepted';
-      if (ok) _deferredInstall = null;
+      if (ok) {
+        _deferredInstall = null;
+        _pwaHideRibbonInstall();
+      }
       return ok;
     });
   };
@@ -37,12 +77,7 @@
     return !!_deferredInstall;
   };
 
-  window.isPwaStandalone = function () {
-    return (
-      window.matchMedia('(display-mode: standalone)').matches ||
-      window.navigator.standalone === true
-    );
-  };
+  window.isPwaStandalone = _pwaIsStandalone;
 
   function _pwaT(key, fallback) {
     try {
@@ -69,7 +104,13 @@
     if (!_swUserReload) return;
     if (sessionStorage.getItem('pwa-sw-reload')) return;
     sessionStorage.setItem('pwa-sw-reload', '1');
-    location.reload();
+    try {
+      const u = new URL(location.href);
+      u.searchParams.set('_pwa', String(Date.now()));
+      location.replace(u.pathname + u.search + u.hash);
+    } catch (e) {
+      location.reload();
+    }
   });
 
   function _pwaDismissKey(ver) {
@@ -103,7 +144,18 @@
     return bar;
   }
 
+  function _pwaJustReloadedForUpdate() {
+    try {
+      return new URL(location.href).searchParams.has('_pwa');
+    } catch (e) {
+      return false;
+    }
+  }
+
   function _pwaShowUpdateBar(newVer) {
+    if (_pwaLocalBrowserTab) return;
+    if (_pwaJustReloadedForUpdate()) return;
+    if (sessionStorage.getItem('pwa-sw-reload')) return;
     if (sessionStorage.getItem(_pwaDismissKey(newVer || 'sw'))) return;
     const bar = _pwaEnsureBar();
     const msg = bar.querySelector('.pwa-upd-msg');
@@ -125,18 +177,41 @@
     _swUserReload = true;
     sessionStorage.removeItem('pwa-sw-reload');
     _pwaHideUpdateBar();
-    navigator.serviceWorker.getRegistration().then(function (reg) {
-      if (reg && reg.waiting) {
-        reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-        setTimeout(function () {
-          if (!sessionStorage.getItem('pwa-sw-reload')) location.reload();
-        }, 1200);
-        return;
+
+    function _hardReload() {
+      try {
+        const u = new URL(location.href);
+        u.searchParams.set('_pwa', String(Date.now()));
+        location.replace(u.pathname + u.search + u.hash);
+      } catch (e) {
+        location.reload();
       }
-      location.reload();
-    }).catch(function () {
-      location.reload();
-    });
+    }
+
+    function _afterCachesCleared() {
+      navigator.serviceWorker.getRegistration().then(function (reg) {
+        if (reg && reg.waiting) {
+          reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+          setTimeout(function () {
+            if (!sessionStorage.getItem('pwa-sw-reload')) _hardReload();
+          }, 800);
+          return;
+        }
+        _hardReload();
+      }).catch(_hardReload);
+    }
+
+    // Drop Cache Storage so reload cannot fall back to stale shell/JS
+    if (typeof caches !== 'undefined' && caches.keys) {
+      caches.keys()
+        .then(function (keys) {
+          return Promise.all(keys.map(function (k) { return caches.delete(k); }));
+        })
+        .then(_afterCachesCleared)
+        .catch(_afterCachesCleared);
+    } else {
+      _afterCachesCleared();
+    }
   };
 
   function _pwaParseAppVersion(src) {
@@ -155,11 +230,23 @@
         if (!ver) return;
         _remoteAppVersion = ver;
         if (ver !== running) _pwaShowUpdateBar(ver);
+        else {
+          // Clean temporary update query params from the address bar
+          try {
+            const u = new URL(location.href);
+            if (u.searchParams.has('_pwa') || u.searchParams.has('_pwa_retry')) {
+              u.searchParams.delete('_pwa');
+              u.searchParams.delete('_pwa_retry');
+              history.replaceState(null, '', u.pathname + u.search + u.hash);
+            }
+          } catch (e) {}
+        }
       })
       .catch(function () {});
   }
 
   function _pwaWatchWaiting(reg) {
+    if (_pwaLocalBrowserTab) return;
     if (!reg) return;
     if (reg.waiting && navigator.serviceWorker.controller) {
       _pwaShowUpdateBar(_remoteAppVersion);
@@ -178,9 +265,26 @@
 
   function registerSw() {
     navigator.serviceWorker
-      .register('sw.js?v=11', { scope: './' })
+      .register('sw.js?v=40', { scope: './' })
       .then((reg) => {
-        _pwaWatchWaiting(reg);
+        if (!navigator.serviceWorker.controller) {
+          try {
+            if (!sessionStorage.getItem('pwa-sw-reload-hint')) {
+              sessionStorage.setItem('pwa-sw-reload-hint', '1');
+              navigator.serviceWorker.ready.then(function () {
+                if (!navigator.serviceWorker.controller && typeof toast === 'function') {
+                  toast('Для установки обновите страницу (F5)', '');
+                }
+              });
+            }
+          } catch (e) {}
+        }
+        if (_pwaJustReloadedForUpdate() && reg.waiting) {
+          _swUserReload = true;
+          reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+        } else {
+          _pwaWatchWaiting(reg);
+        }
         reg.update();
         _pwaCheckRemoteVersion();
         setInterval(function () {
@@ -250,6 +354,10 @@
     if (!file) return;
     const name = (file.name || '').toLowerCase();
     const ext = name.includes('.') ? name.split('.').pop() : '';
+    if (name.endsWith('.slides.json') && typeof importLiteFile === 'function') {
+      importLiteFile(file);
+      return;
+    }
     if (ext === 'html' || ext === 'htm' || file.type === 'text/html') {
       if (typeof importHTMLFile === 'function') {
         importHTMLFile(file);
@@ -258,7 +366,7 @@
       }
       return;
     }
-    if (ext === 'json' || file.type === 'application/json') {
+    if (ext === 'json' || file.type === 'application/json' || file.type === 'application/vnd.slides.project+json') {
       _pwaImportJsonFile(file);
       return;
     }

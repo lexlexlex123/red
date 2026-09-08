@@ -62,6 +62,14 @@ window._pvCleanupPreviewStage = function(container, slideIdx) {
     container._pvStageTimers = [];
   }
   container.querySelectorAll('._particles_layer,._particle,#motion-ghosts,#motion-svg,.motion-ghost').forEach(n => n.remove());
+  if (typeof window._resetInkDrawAnim === 'function') {
+    container.querySelectorAll('.psel').forEach(el => {
+      try { window._resetInkDrawAnim(el); } catch (e) {}
+    });
+  }
+  if (typeof window._resetCameraAnim === 'function') {
+    try { window._resetCameraAnim(container); } catch (e) {}
+  }
   const s = typeof slides !== 'undefined' ? slides[slideIdx] : null;
   if (s && s.els) {
     s.els.forEach(d => {
@@ -73,7 +81,9 @@ window._pvCleanupPreviewStage = function(container, slideIdx) {
     container._rideAnimCancels.forEach(fn => { try { fn(); } catch (e) {} });
     container._rideAnimCancels = [];
   }
+  if (typeof window._stopAllIconAnims === 'function') window._stopAllIconAnims(container);
   delete container._fireNextStep;
+  delete container._firePrevStep;
   delete container._hasSteps;
   delete container._elemTrigBindings;
 };
@@ -198,9 +208,25 @@ function _pvGetDecorTime(slideIdx){
   return t!=null?t:0;
 }
 function _pvCaptureDecorTime(container,slideIdx){
+  const d=_pvDecorElData(slideIdx);
+  if(d && typeof _isGlDecorRenderer==='function' && _isGlDecorRenderer(d._decorRenderer)){
+    const Gl=typeof _glDecorByRenderer==='function'?_glDecorByRenderer(d._decorRenderer):null;
+    if(Gl && typeof Gl.getElapsed==='function'){
+      const t=Gl.getElapsed(d.id+'_pv');
+      if(t!=null){ _pvDecorTimes[slideIdx]=t; return; }
+    }
+  }
   const svg=_pvDecorSvg(container,slideIdx);
   if(!svg) return;
   try{ _pvDecorTimes[slideIdx]=svg.getCurrentTime(); }catch(e){}
+}
+function _pvCarryDecorTimeIfSameTpl(fromIdx,toIdx){
+  if(fromIdx==null||toIdx==null||fromIdx===toIdx) return;
+  if(Math.abs(toIdx-fromIdx)!==1) return;
+  if(typeof _decorSameTemplate!=='function'||!_decorSameTemplate(fromIdx,toIdx)) return;
+  if(typeof _decorSlideAnimated==='function'&&!_decorSlideAnimated(fromIdx)) return;
+  const t=_pvDecorTimes[fromIdx];
+  if(t!=null) _pvDecorTimes[toIdx]=t;
 }
 function _pvSeedDecorTimeFromEditor(){
   _pvDecorTimes={};
@@ -328,9 +354,11 @@ function startPreview(startIdx){
     if(psel&&psel._isTrigger)return;
     if(psel&&(psel.dataset.appletId==='counter'||psel.dataset.appletId==='generator'||psel.dataset.appletId==='flip'))return;
     // Check per-slide clickNav (default true)
-    if(slides[pidx]&&slides[pidx].clickNav===false){
+      if(slides[pidx]&&slides[pidx].clickNav===false){
       // Still fire click-triggered animations, just don't advance to next slide
       const psa=document.getElementById('psa');
+      if(typeof window._replayCameraAnim==='function'&&window._replayCameraAnim(psa))return;
+      if(typeof window._skipToNextPendingCamera==='function'&&window._skipToNextPendingCamera(psa))return;
       if(psa._fireNextStep)psa._fireNextStep();
       return;
     }
@@ -557,14 +585,21 @@ function stopPreview(){
         const d=slides[cur].els.find(function(e){return e.id===el.dataset.id;});
         if(!d)return;
         // If icon was fitted (tight viewBox saved in svgContent), use that directly
-        const svg=d.iconFitted&&d.svgContent
-          ? d.svgContent
-          : (()=>{ const ic=typeof ICONS!=='undefined'?ICONS.find(function(x){return x.id===d.iconId;}):null;
-              return (ic&&typeof _buildIconSVG!=='undefined')
-                ?_buildIconSVG(ic,d.iconColor||'#3b82f6',d.iconSw!=null?d.iconSw:1.8,d.iconStyle||'stroke',d.shadow,d.shadowBlur,d.shadowColor)
-                :(d.svgContent||''); })();
+        const _restoreAnimOn=d.iconAnim===true||d.iconAnim==='true';
+        let svg;
+        if(d.iconFitted&&d.svgContent&&!_restoreAnimOn){
+          svg=d.svgContent;
+        }else{
+          const ic=typeof getIconById==='function'?getIconById(d.iconId):(typeof ICONS!=='undefined'?ICONS.find(function(x){return x.id===d.iconId;}):null);
+          const _path=(ic&&typeof _iconStaticPath==='function')?_iconStaticPath(ic,_restoreAnimOn):null;
+          svg=(ic&&typeof _buildIconSVG!=='undefined')
+            ?_buildIconSVG(ic,d.iconColor||'#3b82f6',d.iconSw!=null?d.iconSw:1.8,d.iconStyle,d.shadow,d.shadowBlur,d.shadowColor,d.shadowSize,d.id,d.iconFillOp,_path)
+            :(d.svgContent||'');
+          if(typeof _stampIconFitViewBox==='function') svg=_stampIconFitViewBox(svg,d);
+        }
         const c=el.querySelector('.ec');
         if(c){c.innerHTML=svg;const s=c.querySelector('svg');if(s){s.style.width='100%';s.style.height='100%';}}
+        if(typeof _syncIconAnim==='function') _syncIconAnim(el,d);
       }
     });
   });
@@ -599,7 +634,15 @@ function resizePStage(){
   _pResetStageZoom();
   [document.getElementById('psa'),document.getElementById('psb')].forEach(s=>{
     if(!s) return;
-    s.style.width=canvasW+'px';s.style.height=canvasH+'px';s.style.transform='scale('+sc+')';s.style.transformOrigin='top left';
+    s.style.width=canvasW+'px';s.style.height=canvasH+'px';
+    s._pvFitScale=sc;
+    s.style.transformOrigin='top left';
+    // Keep Prezi camera framing after resize/fullscreen — never fall back to a stale smaller scale
+    if(s._pvCamState && typeof window._cameraCssTransform==='function'){
+      s.style.transform=window._cameraCssTransform(s._pvCamState, sc);
+    } else {
+      s.style.transform='scale('+sc+')';
+    }
   });
 }
 function pViewport(){
@@ -779,6 +822,7 @@ function gotoPreview(to,dir){
     // Stop non-persistent audio from current slide
     if(typeof _mediaStopAllPreviewAudio==='function') _mediaStopAllPreviewAudio();
     _pvCaptureDecorTime(document.getElementById('psa'),pidx);
+    _pvCarryDecorTimeIfSameTpl(pidx,to);
     buildPSlide(document.getElementById('psa'),to);
     pidx=to;updatePUI();scheduleAuto();return;
   }
@@ -789,6 +833,7 @@ function gotoPreview(to,dir){
   pTransiting=true;
   pTransitionTo=to;
   _pvCaptureDecorTime(document.getElementById('psa'),pidx);
+  _pvCarryDecorTimeIfSameTpl(pidx,to);
   const a=document.getElementById('psa'),b=document.getElementById('psb');buildPSlide(b,to,dur);
   if(trans==='flip'&&_turnFlipAvailable()) doTurnJsFlip(a,b,pidx,to,dir==='next',flipDur,()=>{finalizePreview(a,b,to);});
   else if(trans==='flipV') doBookFlipV(a,b,dir==='next',flipDur,()=>{finalizePreview(a,b,to);});
@@ -1298,6 +1343,8 @@ function togglePresLoop(){
 function nextPreview(){
   if(pTransiting){ skipPreviewTransition(); return; }
   const psa=document.getElementById('psa');
+  if(typeof window._replayCameraAnim==='function'&&window._replayCameraAnim(psa))return;
+  if(typeof window._skipToNextPendingCamera==='function'&&window._skipToNextPendingCamera(psa))return;
   if(psa._fireNextStep&&psa._fireNextStep())return;
   if(presShuffle){
     const available=slides.map((_,i)=>i).filter(i=>i!==pidx);
@@ -1314,6 +1361,9 @@ function nextPreview(){
 }
 function prevPreview(){
   if(pTransiting){ skipPreviewTransition(); return; }
+  const psa=document.getElementById('psa');
+  if(psa&&psa._firePrevStep&&psa._firePrevStep())return;
+  if(typeof window._rewindCameraAnim==='function'&&window._rewindCameraAnim(psa))return;
   if(presShuffle&&_shuffleHistory.length>1){
     _shuffleHistory.pop();
     clearAutoTimer();gotoPreview(_shuffleHistory[_shuffleHistory.length-1],'prev');
@@ -1371,6 +1421,155 @@ function _pvGroupLeader(d, slide) {
     if (members.some(m => m.id === slide.els[i].id)) return slide.els[i];
   }
   return d;
+}
+function _pvGroupLink(d, slide) {
+  if (d && d.link) return { link: d.link, linkt: d.linkt };
+  if (!d || !d.groupId || !slide || !slide.els) return null;
+  const mate = slide.els.find(x => x.groupId === d.groupId && x.link);
+  return mate ? { link: mate.link, linkt: mate.linkt } : null;
+}
+function _pvHasNavTrigger(d, slide) {
+  if (!d) return false;
+  if ((d.anims || []).some(a => a && a.trigger === 'nav')) return true;
+  if (!d.groupId || !slide || !slide.els) return false;
+  const owner = _pvGroupLeader(d, slide);
+  return !!(owner && (owner.anims || []).some(a => a && a.trigger === 'nav'));
+}
+function _pvMarkGroupHidden(slideIdx, d, slide) {
+  if (slideIdx == null || !d) return;
+  if (!hiddenElsPerSlide[slideIdx]) hiddenElsPerSlide[slideIdx] = new Set();
+  _pvGroupMembers(d, slide || (slides[slideIdx] || null)).forEach(md => {
+    hiddenElsPerSlide[slideIdx].add(md.id);
+  });
+}
+function _pvScheduleNavTrigger(container, slideIdx, d, a, waitMs) {
+  if (!a || a.navTarget == null) return;
+  const target = typeof resolveNavTargetSlideIndex === 'function'
+    ? resolveNavTargetSlideIndex(a.navTarget)
+    : (typeof a.navTarget === 'number' ? a.navTarget : null);
+  if (target == null || target < 0) return;
+  const sched = (fn, ms) => {
+    if (container && typeof window._pvScheduleOnStage === 'function') window._pvScheduleOnStage(container, fn, ms);
+    else setTimeout(fn, ms);
+  };
+  sched(() => {
+    _pvMarkGroupHidden(slideIdx, d, slides[slideIdx]);
+    clearAutoTimer();
+    gotoPreview(target, target > slideIdx ? 'next' : 'prev');
+  }, Math.max(0, waitMs || 0));
+}
+function _pvFollowLink(link, linkt, slideIdx) {
+  if (!link) return false;
+  if (link.startsWith('#slide-')) {
+    if (typeof window._followSlideLink === 'function' && window._followSlideLink(link, slideIdx)) return true;
+    clearAutoTimer();
+    if (typeof gotoPreviewSlide === 'function') gotoPreviewSlide(parseInt(link.replace('#slide-', ''), 10) - 1);
+    return true;
+  }
+  window.open(link, linkt || '_blank');
+  return true;
+}
+function _pvGroupUnionBounds(members) {
+  if (!members || !members.length) return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  members.forEach(d => {
+    const x = d.x || 0, y = d.y || 0, w = d.w || 0, h = d.h || 0;
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x + w);
+    maxY = Math.max(maxY, y + h);
+  });
+  if (!isFinite(minX)) return null;
+  return { x: minX, y: minY, w: Math.max(0, maxX - minX), h: Math.max(0, maxY - minY) };
+}
+function _pvWireGroupHitAreas(container, s, slideIdx, globalClickMap) {
+  if (!container || !s || !s.els) return;
+  const hiddenSet = hiddenElsPerSlide[slideIdx] || new Set();
+  const seen = new Set();
+  s.els.forEach(d => {
+    if (!d || !d.groupId || seen.has(d.groupId)) return;
+    const members = _pvGroupMembers(d, s);
+    if (members.length < 2) return;
+    seen.add(d.groupId);
+    if (members.every(m => hiddenSet.has(m.id))) return;
+
+    const leader = _pvGroupLeader(d, s);
+    if (!leader) return;
+    const lnk = _pvGroupLink(leader, s);
+    const hasLink = !!(lnk && lnk.link);
+    const isTrigger = !!(leader.isTrigger || _pvHasNavTrigger(leader, s));
+    const clickAnimsGlobal = globalClickMap.get(leader.id) || [];
+    const ownerAnims = leader.anims || [];
+    const navAnims = ownerAnims.filter(a => a && a.trigger === 'nav');
+    const allClickEntries = [...clickAnimsGlobal, ...navAnims.filter(a => !clickAnimsGlobal.find(x => x.anim === a)).map(a => ({ anim: a, autoAfter: false }))];
+    const clickAnims = allClickEntries.filter(x => !x.autoAfter).map(x => x.anim);
+    const autoAfterAnims = allClickEntries.filter(x => x.autoAfter).map(x => x.anim);
+    const hasNavClick = navAnims.length > 0 || (isTrigger && clickAnims.length > 0);
+    if (!hasLink && !hasNavClick) return;
+
+    const bounds = _pvGroupUnionBounds(members);
+    if (!bounds || bounds.w < 1 || bounds.h < 1) return;
+
+    const hit = document.createElement('div');
+    hit.className = 'psel psel-group-hit psel-clickable';
+    hit.dataset.groupId = String(d.groupId);
+    hit.style.cssText = 'position:absolute;left:' + bounds.x + 'px;top:' + bounds.y + 'px;width:' + bounds.w + 'px;height:' + bounds.h + 'px;z-index:40;cursor:pointer;background:transparent;';
+    if (hasLink) hit._hasLink = true;
+    if (hasNavClick) hit._isTrigger = true;
+
+    hit.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (hasNavClick) {
+        const sched = (fn, ms) => {
+          if (container && typeof window._pvScheduleOnStage === 'function') window._pvScheduleOnStage(container, fn, ms);
+          else setTimeout(fn, ms);
+        };
+        const timed = typeof computeAbsDelays === 'function' ? computeAbsDelays(clickAnims) : clickAnims.map(a => ({ anim: a, absDelay: a.delay || 0 }));
+        timed.forEach(({ anim: a, absDelay }) => {
+          const animIdx = (leader.anims || []).indexOf(a);
+          _pvGroupMembers(leader, s).forEach(md => {
+            const mel = container.querySelector('.psel[data-id="' + md.id + '"]');
+            const ma = animIdx >= 0 && md.anims ? md.anims[animIdx] : a;
+            if (!mel || !ma) return;
+            if (_pvIsElSpecificAnim(ma.name) && md.id !== leader.id) return;
+            sched(() => fireAnim(mel, md, ma, slideIdx), absDelay);
+          });
+        });
+        let autoDelay = Math.max(...timed.map(({ anim: a, absDelay }) => (absDelay || 0) + (a.duration || 600)), 0);
+        autoAfterAnims.forEach(a => {
+          const t = autoDelay;
+          autoDelay += a.duration || 600;
+          const animIdx = (leader.anims || []).indexOf(a);
+          _pvGroupMembers(leader, s).forEach(md => {
+            const mel = container.querySelector('.psel[data-id="' + md.id + '"]');
+            const ma = animIdx >= 0 && md.anims ? md.anims[animIdx] : a;
+            if (!mel || !ma) return;
+            if (_pvIsElSpecificAnim(ma.name) && md.id !== leader.id) return;
+            sched(() => fireAnim(mel, md, ma, slideIdx, 0), t);
+          });
+        });
+        const navA = clickAnims.find(a => a.trigger === 'nav' && a.navTarget != null && (
+          typeof resolveNavTargetSlideIndex === 'function' ? resolveNavTargetSlideIndex(a.navTarget) != null : typeof a.navTarget === 'number'
+        ));
+        if (navA && navA.name !== 'splitHalf') {
+          _pvScheduleNavTrigger(container, slideIdx, leader, navA, autoDelay);
+          return;
+        }
+      }
+      if (hasLink) _pvFollowLink(lnk.link, lnk.linkt, slideIdx);
+    });
+
+    container.appendChild(hit);
+    members.forEach(md => {
+      const mel = container.querySelector('.psel[data-id="' + md.id + '"]');
+      if (!mel) return;
+      if (hasLink) mel._hasLink = true;
+      if (hasNavClick) mel._isTrigger = true;
+      mel.classList.add('psel-clickable');
+      mel.style.cursor = 'pointer';
+    });
+  });
 }
 function _pvIsGroupFollower(d, slide) {
   return !!(d && d.groupId && _pvGroupLeader(d, slide).id !== d.id);
@@ -1432,29 +1631,35 @@ function _pvBuildParticlesHideSet(s, globalAutoMap, globalClickMap, hiddenSet) {
     });
     if (!d.groupId && window._particlesHasAnim && window._particlesHasAnim(d)) hide.add(d.id);
   });
-  const byGroupParticles = {};
+  // Группа с частицами — скрыть всех участников (одна анимация на группу)
+  const particleGroups = new Set();
   s.els.forEach(d => {
     if (!d.groupId || !window._particlesHasAnim || !window._particlesHasAnim(d)) return;
-    if (!byGroupParticles[d.groupId]) byGroupParticles[d.groupId] = [];
-    byGroupParticles[d.groupId].push(d.id);
+    particleGroups.add(d.groupId);
   });
-  Object.keys(byGroupParticles).forEach(gid => {
-    const ids = byGroupParticles[gid];
-    if (ids.length === 1) hide.add(ids[0]);
-  });
+  if (particleGroups.size) {
+    s.els.forEach(d => {
+      if (d.groupId && particleGroups.has(d.groupId)) hide.add(d.id);
+    });
+  }
   return hide;
 }
-function _pvPushAnimToMap(map, elId, anim, absDelay, autoAfter) {
+function _pvPushAnimToMap(map, elId, anim, absDelay, autoAfter, flags) {
   const arr = map.get(elId) || [];
-  arr.push(autoAfter != null ? { anim, autoAfter } : { anim, absDelay });
+  const entry = autoAfter != null ? { anim, autoAfter } : { anim, absDelay };
+  if (flags) {
+    if (flags.repLoopEnter) entry.repLoopEnter = true;
+    if (flags.repLoopStart) entry.repLoopStart = true;
+  }
+  arr.push(entry);
   map.set(elId, arr);
 }
-function _pvDistributeScheduledAnim(s, d, a, i, absDelay, autoMap, clickMap, eff) {
+function _pvDistributeScheduledAnim(s, d, a, i, absDelay, autoMap, clickMap, eff, flags) {
   if (_pvIsElSpecificAnim(a.name)) {
     if (eff === 'click' || eff === 'autoAfter' || eff === 'nav') {
-      _pvPushAnimToMap(clickMap, d.id, a, null, eff === 'autoAfter');
+      _pvPushAnimToMap(clickMap, d.id, a, null, eff === 'autoAfter', flags);
     } else {
-      _pvPushAnimToMap(autoMap, d.id, a, absDelay);
+      _pvPushAnimToMap(autoMap, d.id, a, absDelay, null, flags);
     }
     return;
   }
@@ -1462,9 +1667,9 @@ function _pvDistributeScheduledAnim(s, d, a, i, absDelay, autoMap, clickMap, eff
     const ma = (md.anims || [])[i];
     if (!ma) return;
     if (eff === 'click' || eff === 'autoAfter' || eff === 'nav') {
-      _pvPushAnimToMap(clickMap, md.id, ma, null, eff === 'autoAfter');
+      _pvPushAnimToMap(clickMap, md.id, ma, null, eff === 'autoAfter', flags);
     } else {
-      _pvPushAnimToMap(autoMap, md.id, ma, absDelay);
+      _pvPushAnimToMap(autoMap, md.id, ma, absDelay, null, flags);
     }
   });
 }
@@ -1476,6 +1681,7 @@ function _pvFlushCaptionAnims(container, s, transOffset) {
   const offset = transOffset || 0;
   queue.forEach(({ d, a, absDelay }) => {
     const delay = (absDelay || 0) + offset;
+    const isCosmos = a && a.name === 'cosmosTitle';
     if (d.groupId) {
       const leader = _pvGroupLeader(d, s);
       if (d.id !== leader.id) return;
@@ -1484,17 +1690,69 @@ function _pvFlushCaptionAnims(container, s, transOffset) {
       seen.add(key);
       const entries = _pvGroupMembers(d, s).map(md => {
         const mel = container.querySelector('.psel[data-id="' + md.id + '"]');
-        return mel ? { el: mel, x: md.x || 0, y: md.y || 0, w: md.w || 200, h: md.h || 200 } : null;
+        return mel ? { el: mel, d: md, x: md.x || 0, y: md.y || 0, w: md.w || 200, h: md.h || 200 } : null;
       }).filter(Boolean);
-      if (entries.length && typeof _fireCaptionSlideAnimGroup === 'function') {
+      if (!entries.length) return;
+      // Скрыть до старта crawl — без кадра с исходной позицией
+      if (isCosmos) {
+        entries.forEach(e => {
+          e.el.style.visibility = 'hidden';
+          e.el.style.pointerEvents = 'none';
+        });
+        if (typeof _fireCosmosTitleAnimGroup === 'function') {
+          _fireCosmosTitleAnimGroup(entries, a, delay, { hideAfter: true });
+        }
+      } else if (typeof _fireCaptionSlideAnimGroup === 'function') {
         _fireCaptionSlideAnimGroup(entries, a, delay, { hideAfter: true });
       }
     } else {
       const mel = container.querySelector('.psel[data-id="' + d.id + '"]');
-      if (mel && typeof _fireCaptionSlideAnim === 'function') {
-        _fireCaptionSlideAnim(mel, a, delay, d.w, d.h, { hideAfter: true });
+      if (!mel) return;
+      if (isCosmos) {
+        mel.style.visibility = 'hidden';
+        mel.style.pointerEvents = 'none';
+        if (typeof _fireCosmosTitleAnim === 'function') {
+          _fireCosmosTitleAnim(mel, a, delay, d.w, d.h, { hideAfter: true });
+        }
+      } else if (typeof _fireCaptionSlideAnim === 'function') {
+        _fireCaptionSlideAnim(mel, a, delay, d.w, d.h, { hideAfter: true, d });
       }
     }
+  });
+}
+
+function _pvFlushCameraAnims(container, transOffset) {
+  const queue = container._pendingCameraAnims;
+  if (!queue || !queue.length || typeof window._fireCameraAnim !== 'function') return;
+  const list = queue.slice();
+  delete container._pendingCameraAnims;
+  const offset = transOffset || 0;
+  // Always resolve live fit (fullscreen may have changed size after buildPSlide)
+  const fit = (typeof pScale === 'function' ? pScale() : null) || container._pvFitScale || 1;
+  container._pvFitScale = fit;
+  if (typeof window._resetCameraAnim === 'function') {
+    try { window._resetCameraAnim(container); } catch (e) {}
+  }
+  list.sort((a, b) => (a.absDelay || 0) - (b.absDelay || 0));
+  const pendingOf = (start) => list.slice(start).map(({ cam, a }) => {
+    const t = cam || a;
+    return { cx:t.cx, cy:t.cy, w:t.w, h:t.h, rot:t.rot||0, duration:t.duration, _auto:true };
+  });
+  container._pvCamPendingAuto = pendingOf(0);
+  if (!container._pvCamTimers) container._pvCamTimers = [];
+  if (!container._pvStageTimers) container._pvStageTimers = [];
+  list.forEach(({ cam, a, absDelay }, i) => {
+    const target = cam || a;
+    const delay = (absDelay || 0) + offset;
+    const t = setTimeout(() => {
+      if (container._pvStageAborted) return;
+      container._pvCamPendingAuto = pendingOf(i + 1);
+      const from = container._pvCamState || (typeof window._fullSlideCamState === 'function' ? window._fullSlideCamState() : null);
+      // fitScale omitted → _fireCameraAnim reads live pScale each frame
+      window._fireCameraAnim(container, target, { delay: 0, from: from, auto: true });
+    }, delay);
+    container._pvCamTimers.push(t);
+    container._pvStageTimers.push(t);
   });
 }
 function _pvBuildStepFromAnimIndex(anims, startAi){
@@ -1505,7 +1763,7 @@ function _pvBuildStepFromAnimIndex(anims, startAi){
     const b = anims[j];
     step.anims.push(b);
     if(b.cat === 'exit') step.willHide = true;
-    if(typeof b.navTarget === 'number') step.navTarget = b.navTarget;
+    if (b.navTarget != null) step.navTarget = b.navTarget;
     j++;
   }
   return step;
@@ -1556,10 +1814,7 @@ function _pvFireAppletAnim(ref, container, slideIdx){
   const step = _pvBuildStepFromAnimIndex(d.anims, ai);
   const totalDur = _pvFireElemTrigStep(targetEl, d, step, slideIdx);
   if(!isCanvas && step.navTarget !== null){
-    setTimeout(() => {
-      clearAutoTimer();
-      gotoPreview(step.navTarget, step.navTarget > slideIdx ? 'next' : 'prev');
-    }, totalDur);
+    _pvScheduleNavTrigger(container, slideIdx, d, { trigger: 'nav', navTarget: step.navTarget }, totalDur);
   }
 }
 
@@ -1587,13 +1842,13 @@ function _pvBuildElemClickSteps(anims) {
     if (a.trigger === 'element') {
       const step = { anims: [a], willHide: false, navTarget: null, triggerElId: a.triggerElId || '' };
       if (a.cat === 'exit') step.willHide = true;
-      if (typeof a.navTarget === 'number') step.navTarget = a.navTarget;
+      if (a.navTarget != null) step.navTarget = a.navTarget;
       let j = i2 + 1;
       while (j < anims.length && anims[j].trigger === 'withPrev') {
         const b = anims[j];
         step.anims.push(b);
         if (b.cat === 'exit') step.willHide = true;
-        if (typeof b.navTarget === 'number') step.navTarget = b.navTarget;
+        if (b.navTarget != null) step.navTarget = b.navTarget;
         j++;
       }
       steps.push(step);
@@ -1651,10 +1906,7 @@ function _pvWireElemTriggers(container, slideIdx) {
         if (!targetPsel) return;
         const totalDur = _pvFireElemTrigStep(targetPsel, targetD, step, slideIdx);
         if (step.navTarget !== null) {
-          setTimeout(() => {
-            clearAutoTimer();
-            gotoPreview(step.navTarget, step.navTarget > slideIdx ? 'next' : 'prev');
-          }, totalDur);
+          _pvScheduleNavTrigger(container, slideIdx, targetD, { trigger: 'nav', navTarget: step.navTarget }, totalDur);
         }
       });
     });
@@ -1663,6 +1915,10 @@ function _pvWireElemTriggers(container, slideIdx) {
 
 function _pvAnimContentEl(el, d) {
   if (d.type === 'text') {
+    if (typeof window._cssAnimTargets === 'function') {
+      const targets = window._cssAnimTargets(el, d, { cat: 'entrance' });
+      if (targets && targets.length) return targets[0];
+    }
     return el.querySelector('._text_body') || el.querySelector('.ec') || el;
   }
   return el.querySelector('.ec') || el;
@@ -1701,8 +1957,7 @@ function _pvScheduleExitHide(el, ms, opts) {
     el.style.visibility = 'hidden';
     el.style.pointerEvents = 'none';
     if (opts.permanent && opts.idx != null && opts.d) {
-      if (!hiddenElsPerSlide[opts.idx]) hiddenElsPerSlide[opts.idx] = new Set();
-      hiddenElsPerSlide[opts.idx].add(opts.d.id);
+      _pvMarkGroupHidden(opts.idx, opts.d, slides[opts.idx]);
     }
   }, ms);
 }
@@ -1718,6 +1973,7 @@ function _pvRevealForEntrance(el, d, idx) {
   } else if (typeof window._particlesHideOriginal === 'function') {
     window._particlesHideOriginal(el);
   }
+  if (typeof window._revealBackdropBlurLayers === 'function') window._revealBackdropBlurLayers(el, d);
   if (idx != null && d && hiddenElsPerSlide[idx]) hiddenElsPerSlide[idx].delete(d.id);
 }
 
@@ -1776,7 +2032,7 @@ function buildPSlide(container,idx,transOffset,noScale){
   // Rule: if any anim in the global sequence is 'click', all following auto/withPrev
   // anims (on any element) are also treated as click until a new explicit non-withPrev auto appears
   const globalAnimList = typeof window._buildSlideAnimGlobalList === 'function'
-    ? window._buildSlideAnimGlobalList(s).filter(({ d }) => !hiddenSet.has(d.id))
+    ? window._buildSlideAnimGlobalList(s).filter(({ d }) => d && (d._isCamera || !hiddenSet.has(d.id)))
     : [];
   if (!globalAnimList.length) {
     s.els.forEach(d => {
@@ -1784,6 +2040,17 @@ function buildPSlide(container,idx,transOffset,noScale){
       if (_pvIsGroupFollower(d, s)) return;
       (d.anims||[]).forEach((a, i) => globalAnimList.push({d, a, i}));
     });
+  }
+
+  container._pendingCameraAnims = [];
+  // Fit scale for Prezi camera — prefer live pScale(); style may be overwritten later
+  try{
+    container._pvFitScale=noScale?1:(typeof pScale==='function'?pScale():1);
+    if(!(container._pvFitScale>0)) container._pvFitScale=1;
+  }catch(e){ container._pvFitScale=1; }
+  container.style.overflow='hidden';
+  if(typeof window._resetCameraAnim==='function'){
+    try{ window._resetCameraAnim(container); }catch(e){}
   }
 
   // Compute effective trigger for each anim globally
@@ -1828,45 +2095,73 @@ function buildPSlide(container,idx,transOffset,noScale){
   const globalAutoMap = new Map();  // elId -> [{anim, absDelay}]
   const globalClickMap = new Map(); // elId -> [{anim, autoAfter?}]
   {
-    let gPrevStart = 0, gPrevDur = 0;
-    globalAnimList.forEach(({d, a, i}, gi) => {
+    let gPrevStart = 0, gPrevDur = 0, gGroupStart = 0;
+    let pendingLoopFlags = null;
+    globalAnimList.forEach(({d, a, i, cam, repLoopEnter, repLoopStart}, gi) => {
       const eff = globalEffTrig[gi];
       const trig = a.trigger || 'auto';
       // element/nav/counter/timer — вне авто/клик-сценария (своя проводка)
       // click — в click-map ниже (не в авто-карту)
       if(trig === 'element' || trig === 'nav' || trig === 'counter' || trig === 'timer') return;
       if(eff === 'element' || eff === 'nav' || eff === 'counter' || eff === 'timer') return;
+      let _loopFlags = (repLoopEnter || repLoopStart) ? { repLoopEnter: !!repLoopEnter, repLoopStart: !!repLoopStart } : null;
+      if (_loopFlags) pendingLoopFlags = _loopFlags;
       if(eff === 'auto' || eff === 'withPrev') {
         const relDelay = a.delay||0;
         let absDelay;
         const _isLive = typeof ANIM_INFO!=='undefined'&&ANIM_INFO[a.name]&&ANIM_INFO[a.name].cat==='live';
-        if(gPrevStart===0 && gPrevDur===0){
+        const _isCam = typeof window._animIsCameraEntry==='function' ? window._animIsCameraEntry(d,a) : (a.name==='camera'||(d&&d._isCamera));
+        const _camTrig = _isCam && (a.trigger||'auto') === 'withPrev';
+        const _isWithPrev = (a.trigger||'auto')==='withPrev' && !_camTrig;
+        if(gGroupStart===0 && gPrevDur===0){
           absDelay = relDelay;
-        } else if(_isLive && a.name!=='typewriter' && a.name!=='langFade' && (a.trigger||'auto')==='auto'){
-          // live (dance и др.) стартует после предыдущей анимации, как обычный afterPrev
-          absDelay = gPrevStart + gPrevDur + relDelay;
-        } else if((a.trigger||'auto')==='withPrev'){
+        } else if(_isLive && a.name!=='typewriter' && a.name!=='langFade' && a.name!=='camera' && (a.trigger||'auto')==='auto'){
+          absDelay = gGroupStart + gPrevDur + relDelay;
+        } else if(_isWithPrev){
           absDelay = gPrevStart + relDelay;
         } else {
-          absDelay = gPrevStart + gPrevDur + relDelay;
+          absDelay = gGroupStart + gPrevDur + relDelay;
         }
-        // Обновляем gPrevStart/gPrevDur для всех анимаций включая live
-        // Это гарантирует что следующая анимация стартует после текущей
+        // Обновляем окно группы: withPrev расширяет max(конец), не сбрасывает старт группы
+        let stepDur;
         if(a.name==='typewriter'){
           const _fromLen = (a.fromHtml||'').replace(/<[^>]*>/g,'').length;
           const _toLen   = (a.toHtml  ||'').replace(/<[^>]*>/g,'').length;
           const _cd = a.charDelay||40;
-          const _twDur = (_fromLen + _toLen) * _cd;
-          gPrevStart = absDelay;
-          gPrevDur   = _twDur;
+          stepDur = (_fromLen + _toLen) * _cd;
         } else {
-          // live тоже сдвигает цепочку — иначе две live подряд стартуют одновременно
-          gPrevStart = absDelay;
-          gPrevDur   = typeof _animChainDuration === 'function' ? _animChainDuration(a) : (a.duration||600);
+          stepDur = typeof _animChainDuration === 'function' ? _animChainDuration(a) : (a.duration||600);
         }
-        _pvDistributeScheduledAnim(s, d, a, i, absDelay, globalAutoMap, globalClickMap, eff);
+        if(_isWithPrev){
+          gPrevDur = Math.max(gGroupStart + gPrevDur, absDelay + stepDur) - gGroupStart;
+          gPrevStart = absDelay;
+        } else {
+          gGroupStart = absDelay;
+          gPrevStart = absDelay;
+          gPrevDur = stepDur;
+        }
+        if(a.name==='pause' || (d && d._isPause)){
+          // only advances the chain; loop flags stay in pendingLoopFlags
+        } else if(a.name==='camera' || (d && d._isCamera)){
+          container._pendingCameraAnims.push({ cam: cam || a, a, absDelay });
+          pendingLoopFlags = null;
+        } else {
+          _pvDistributeScheduledAnim(s, d, a, i, absDelay, globalAutoMap, globalClickMap, eff, pendingLoopFlags);
+          pendingLoopFlags = null;
+        }
       } else if(eff === 'click' || eff === 'autoAfter' || eff === 'nav') {
-        _pvDistributeScheduledAnim(s, d, a, i, absDelay, globalAutoMap, globalClickMap, eff);
+        if(a.name==='camera' || (d && d._isCamera)){
+          globalClickSteps.push({
+            el: container, d, a, absDelay: 0, wasHidden: false,
+            autoAfter: eff === 'autoAfter', animIdx: 0, _isCamera: true, cam: cam || a
+          });
+          pendingLoopFlags = null;
+        } else if(a.name==='pause' || (d && d._isPause)){
+          /* skip */
+        } else {
+          _pvDistributeScheduledAnim(s, d, a, i, 0, globalAutoMap, globalClickMap, eff, pendingLoopFlags);
+          pendingLoopFlags = null;
+        }
       }
     });
   }
@@ -1878,6 +2173,7 @@ function buildPSlide(container,idx,transOffset,noScale){
     const el=document.createElement('div');el.className='psel';
     el.dataset.id=d.id;
     el.dataset.type=d.type||'';
+    if(d.shape) el.dataset.shape=d.shape;
     const rot=d.rot||0;
     // Build border-radius string (text boxes use rx_tl etc, shapes use d.rx)
     let rxStr='';
@@ -1886,19 +2182,21 @@ function buildPSlide(container,idx,transOffset,noScale){
       rxStr='border-radius:'+(d.rx_tl||0)+u+' '+(d.rx_tr||0)+u+' '+(d.rx_br||0)+u+' '+(d.rx_bl||0)+u+';';
     }
     // Determine cursor
-    const hasCursor=(d.link||( d.hoverFx&&d.hoverFx.enabled)||(d.type==='applet'&&d.appletId==='flip')||(d.type==='applet'&&d.appletId==='counter')||(d.type==='applet'&&d.appletId==='generator'));
+    const _pvLnkCur = _pvGroupLink(d, s);
+    const _pvNavCur = _pvHasNavTrigger(d, s);
+    const hasCursor=(_pvLnkCur&&_pvLnkCur.link)||_pvNavCur||d.isTrigger||(d.hoverFx&&d.hoverFx.enabled)||(d.type==='applet'&&d.appletId==='flip')||(d.type==='applet'&&d.appletId==='counter')||(d.type==='applet'&&d.appletId==='generator');
     const elOp=d.elOpacity!=null?d.elOpacity:1;
-    const _previewBdBlur=(d.type==='text'&&d.textBgBlur>0)?'backdrop-filter:blur('+d.textBgBlur+'px);-webkit-backdrop-filter:blur('+d.textBgBlur+'px);':'';
     const _hasSwing = (d.anims||[]).some(a=>a.name==='swing');
     const _hasFloat = (d.anims||[]).some(a=>a.name==='float');
     const _hasDance = (d.anims||[]).some(a=>a.name==='dance');
-    const _hasParticles = (d.anims||[]).some(a=>a.name==='particles');
-    const _hasCaption = (d.anims||[]).some(a=>a.name==='captionSlide');
+    const _hasParticles = particlesHideSet.has(d.id) || (d.anims||[]).some(a=>a.name==='particles');
+    const _hasCaption = (d.anims||[]).some(a=>a.name==='captionSlide'||a.name==='cosmosTitle');
     const _hasTextShadow = d.type==='text'&&window._textShadowActive&&window._textShadowActive(d);
     const _sfSft=(d.shapeFlipH||d.shapeFlipV)?' scale('+(d.shapeFlipH?-1:1)+','+(d.shapeFlipV?-1:1)+')':'';
     if(d._isDecor) el.classList.add('is-decor');
     const _pvZ=d._isDecor?'1':'2';
-    el.style.cssText='position:absolute;left:'+d.x+'px;top:'+d.y+'px;width:'+d.w+'px;height:'+d.h+'px;z-index:'+_pvZ+';'+(d.type==='lego'||d.type==='lineangle'||_hasSwing||_hasFloat||_hasDance||_hasParticles||_hasCaption||_hasTextShadow?'overflow:visible;':'overflow:hidden;')+'transform:rotate('+rot+'deg)'+_sfSft+';'+rxStr+(hasCursor?'cursor:pointer;':'cursor:default;')+(elOp!==1?'opacity:'+elOp+';':'')+_previewBdBlur;
+    el.style.cssText='position:absolute;left:'+d.x+'px;top:'+d.y+'px;width:'+d.w+'px;height:'+d.h+'px;z-index:'+_pvZ+';'+(d.type==='lego'||d.type==='lineangle'||d.type==='inkhost'||_hasSwing||_hasFloat||_hasDance||_hasParticles||_hasCaption||_hasTextShadow?'overflow:visible;':'overflow:hidden;')+'transform:rotate('+rot+'deg)'+_sfSft+';'+rxStr+(hasCursor?'cursor:pointer;':'cursor:default;')+(elOp!==1?'opacity:'+elOp+';':'')+(hasCursor&&d.type==='icon'?'pointer-events:auto;':'');
+    if(hasCursor) el.classList.add('psel-clickable');
     if(_hasDance) el.classList.add('has-dance');
 
     // Build content
@@ -1944,6 +2242,7 @@ function buildPSlide(container,idx,transOffset,noScale){
       }
       body.appendChild(c);
       el.appendChild(body);
+      if(typeof applyTextBg==='function') applyTextBg(el);
       if(typeof applyTextPad==='function') applyTextPad(el);
       if(d.valign&&typeof applyTextVAlign==='function') applyTextVAlign(el,d.valign);
       if(window._textShadowActive&&window._textShadowActive(d)){
@@ -1971,35 +2270,30 @@ function buildPSlide(container,idx,transOffset,noScale){
       }
       if((d.rx_tl||d.rx_tr||d.rx_bl||d.rx_br)&&typeof applyTextRadius==='function') applyTextRadius(el);
     }else if(d.type==='image'){
-      const img=document.createElement('img');img.src=typeof assetUrl==='function'?assetUrl(d.src):d.src;
+      const iel=document.createElement('div');
+      iel.className='iel';
+      el.appendChild(iel);
+      const img=document.createElement('img');
+      let _pvImgSrc=d.src||'';
+      if(d.imageId&&typeof MediaStore!=='undefined'){
+        const _pvStored=MediaStore.getPlayUrl(d.imageId,_pvImgSrc);
+        if(_pvStored) _pvImgSrc=_pvStored;
+        else if(!_pvImgSrc||_pvImgSrc.startsWith('blob:')){
+          MediaStore.hydrate(d.imageId).then(u=>{
+            if(u){ d.src=u; try{ img.setAttribute('src', typeof assetUrl==='function'?assetUrl(u):u); }catch(e){} }
+          }).catch(()=>{});
+        }
+      }
+      if(_pvImgSrc) img.src=typeof assetUrl==='function'?assetUrl(_pvImgSrc):_pvImgSrc;
       img.onload=function(){if(typeof _preloadAlphaCanvas==='function')_preloadAlphaCanvas(img);};
       if(img.complete&&img.naturalWidth&&typeof _preloadAlphaCanvas==='function')_preloadAlphaCanvas(img);
-      const cL=d.imgCropL||0,cT=d.imgCropT||0,cR=d.imgCropR||0,cB=d.imgCropB||0;
-      const hasCrop=cL||cT||cR||cB;
-      if(hasCrop){
-        const fW=(d._cropFullW>0)?d._cropFullW:(d.w+cL+cR);
-        const fH=(d._cropFullH>0)?d._cropFullH:(d.h+cT+cB);
-        const logVisW=Math.max(1,fW-cL-cR);
-        const logVisH=Math.max(1,fH-cT-cB);
-        const wPct=(fW/logVisW*100).toFixed(4)+'%';
-        const hPct=(fH/logVisH*100).toFixed(4)+'%';
-        const lPct=(-cL/logVisW*100).toFixed(4)+'%';
-        const tPct=(-cT/logVisH*100).toFixed(4)+'%';
-        const _fxp=d.imgFlipH?-1:1,_fyp=d.imgFlipV?-1:1;
-        const _trp=(_fxp===-1||_fyp===-1)?`scale(${_fxp},${_fyp})`:'';
-        img.style.cssText=`position:absolute;left:${lPct};top:${tPct};width:${wPct};height:${hPct};object-fit:fill;display:block;opacity:${d.imgOpacity!=null?d.imgOpacity:1};transform:${_trp};transform-origin:center;`;
-        if(!_hasDance) el.style.overflow='hidden';
-      } else {
-        const _fxp=d.imgFlipH?-1:1,_fyp=d.imgFlipV?-1:1;
-        const _trp=(_fxp===-1||_fyp===-1)?`scale(${_fxp},${_fyp})`:'';
-        img.style.cssText=`width:100%;height:100%;object-fit:${d.imgFit||'contain'};object-position:${d.imgPosX||'center'} ${d.imgPosY||'center'};display:block;opacity:${d.imgOpacity!=null?d.imgOpacity:1};transform:${_trp};transform-origin:center;`;
+      iel.appendChild(img);
+      if(typeof applyImgStyles==='function') applyImgStyles(el,d);
+      else{
+        const rx=+(d.imgRx||0);
+        if(rx>0){ iel.style.borderRadius=rx+'px'; iel.style.overflow='hidden'; }
+        if(d.imgBw&&+d.imgBw>0){ iel.style.border=`${d.imgBw}px solid ${d.imgBc||'#fff'}`; iel.style.boxSizing='border-box'; }
       }
-      if(d.imgShadow){if(typeof window._applyImgShadowFilter==='function')window._applyImgShadowFilter(el,d);if(!hasCrop)el.style.overflow='visible';}
-      else if(_hasDance){el.style.overflow='visible';el.style.filter='';}
-      else{el.style.filter='';}
-      if(d.imgRx)el.style.borderRadius=d.imgRx+'px';
-      if(d.imgBw&&+d.imgBw>0){el.style.border=`${d.imgBw}px solid ${d.imgBc||'#fff'}`;el.style.boxSizing='border-box';}
-      el.appendChild(img);
     }else if(d.type==='shape'){
       // Mirror editor DOM: el > blur_overlay? > ec > sel-el > shape-svg + shape-text
       el.style.overflow='visible';
@@ -2007,6 +2301,7 @@ function buildPSlide(container,idx,transOffset,noScale){
       if(d.shapeBlur>0){
         const _pcp=_shapeClipPath(d,d.w,d.h);
         const _pov=document.createElement('div');
+        _pov.className='shape-blur-overlay';
         _pov.style.cssText='position:absolute;inset:0;pointer-events:none;z-index:0;backdrop-filter:blur('+d.shapeBlur+'px);-webkit-backdrop-filter:blur('+d.shapeBlur+'px);'+(_pcp!=='none'?'clip-path:'+_pcp+';-webkit-clip-path:'+_pcp+';':'');
         el.appendChild(_pov);
       }
@@ -2029,18 +2324,23 @@ function buildPSlide(container,idx,transOffset,noScale){
       if(typeof window._syncShapeShadowLayout==='function')window._syncShapeShadowLayout(el,d,d.w,d.h);
     }else if(d.type==='svg'){
       el.style.overflow='visible';
-      const _svgStr2=d.svgContent||'';
-      try{const _dp2=new DOMParser();const _doc2=_dp2.parseFromString(_svgStr2,'image/svg+xml');const _p2=_doc2.documentElement;if(_p2&&_p2.tagName!=='parsererror'){el.appendChild(document.adoptNode(_p2));}else{el.innerHTML=_svgStr2;}}catch(e){el.innerHTML=_svgStr2;}
-      const svgEl=el.querySelector('svg');if(svgEl){svgEl.style.width='100%';svgEl.style.height='100%';
-        if(d._isDecor) _pvApplyDecorTime(svgEl, idx);
+      if(d._isDecor){
+        if(typeof _ensureGlDecorCfg==='function') _ensureGlDecorCfg(d);
+        else if(typeof _ensureCrystalCfg==='function') _ensureCrystalCfg(d);
       }
+      const _svgStr2=typeof _resolveSvgContent==='function'?_resolveSvgContent(d,true):(d.svgContent||'');
+      const svgEl=typeof _mountSvgString==='function'?_mountSvgString(el,_svgStr2):null;
+      if(svgEl){svgEl.style.width='100%';svgEl.style.height='100%';}
+      if(svgEl&&d._isDecor) _pvApplyDecorTime(svgEl, idx);
       if(d.svgOpacity!=null)el.style.opacity=d.svgOpacity;
       if(d.svgShadow&&typeof window._applySvgShadowFilter==='function')window._applySvgShadowFilter(el,d);
-      if(d._isDecor && (typeof _isGlDecorRenderer==='function'?_isGlDecorRenderer(d._decorRenderer):(d._decorRenderer==='crystal'||d._decorRenderer==='dna'))){
+      if(d._isDecor && (typeof _isGlDecorRenderer==='function'?_isGlDecorRenderer(d._decorRenderer):(d._decorRenderer==='crystal'||d._decorRenderer==='dna'||d._decorRenderer==='warp'))){
+        if(typeof _ensureGlDecorCfg==='function') _ensureGlDecorCfg(d);
         const _pvCfg=d._glCfg||d._crystalCfg;
         const _Decor=typeof _glDecorByRenderer==='function'?_glDecorByRenderer(d._decorRenderer)
           :(d._decorRenderer==='crystal'&&typeof CrystalDecor!=='undefined'?CrystalDecor
-          :(d._decorRenderer==='dna'&&typeof DnaDecor!=='undefined'?DnaDecor:null));
+          :(d._decorRenderer==='dna'&&typeof DnaDecor!=='undefined'?DnaDecor
+          :(d._decorRenderer==='warp'&&typeof WarpDecor!=='undefined'?WarpDecor:null)));
         if(_pvCfg && _Decor){
           el.style.position='relative';
           const _pvGl=document.createElement('div');
@@ -2053,14 +2353,22 @@ function buildPSlide(container,idx,transOffset,noScale){
       }
     }else if(d.type==='icon'){
       el.style.overflow='visible';el.style.display='flex';el.style.alignItems='center';el.style.justifyContent='center';
-      const _pvSvg=d.iconFitted&&d.svgContent
-        ? d.svgContent
-        : (()=>{const _pvIc=typeof ICONS!=='undefined'?ICONS.find(function(x){return x.id===d.iconId;}):null;
-            return (_pvIc&&typeof _buildIconSVG==='function')
-              ?_buildIconSVG(_pvIc,d.iconColor||'#3b82f6',d.iconSw!=null?d.iconSw:1.8,d.iconStyle||'stroke',d.shadow,d.shadowBlur,d.shadowColor)
-              :(d.svgContent||'');})();
+      const _pvIc=typeof getIconById==='function'?getIconById(d.iconId):(typeof ICONS!=='undefined'?ICONS.find(function(x){return x.id===d.iconId;}):null);
+      const _pvAnimOn=typeof _iconAnimEnabled==='function'?_iconAnimEnabled(d,el):(d.iconAnim===true||d.iconAnim==='true');
+      const _pvPath=(_pvIc&&typeof _iconStaticPath==='function')?_iconStaticPath(_pvIc,_pvAnimOn):null;
+      let _pvSvg;
+      if(d.iconFitted&&d.svgContent&&!_pvAnimOn){
+        _pvSvg=d.svgContent;
+      }else if(_pvIc&&typeof _buildIconSVG==='function'){
+        _pvSvg=_buildIconSVG(_pvIc,d.iconColor||'#3b82f6',d.iconSw!=null?d.iconSw:1.8,d.iconStyle,d.shadow,d.shadowBlur,d.shadowColor,d.shadowSize,d.id,d.iconFillOp,_pvPath);
+        if(typeof _stampIconFitViewBox==='function') _pvSvg=_stampIconFitViewBox(_pvSvg,d);
+      }else{
+        _pvSvg=d.svgContent||'';
+      }
       el.innerHTML=_pvSvg;
+      el.dataset.iconAnim=_pvAnimOn?'true':'false';
       var svgI=el.querySelector('svg');if(svgI){svgI.style.width='100%';svgI.style.height='100%';}
+      if(typeof _syncIconAnim==='function') _syncIconAnim(el,d);
     }else if(d.type==='formula'){
       el.style.overflow='visible';el.style.display='flex';el.style.alignItems='center';el.style.justifyContent='center';
       el.style.color=d.formulaColor||'#ffffff';
@@ -2121,6 +2429,8 @@ function buildPSlide(container,idx,transOffset,noScale){
       _aClip.appendChild(iframe);
       el.appendChild(_aClip);
       if(d.appletId==='flip'&&typeof _layoutFlipIframe==='function') _layoutFlipIframe(el, d);
+      if(d.appletId==='periodic'&&typeof _layoutPeriodicIframe==='function') _layoutPeriodicIframe(el, d);
+      if(d.appletId==='flip'&&typeof _flipInjectFontsIntoIframe==='function') _flipInjectFontsIntoIframe(iframe, d);
       if(d.appletId==='counter'||d.appletId==='generator'||d.appletId==='flip') el.style.cursor = 'pointer';
       // Layer 2: border overlay — after clip in DOM, not clipped by anything
       if(d.appletId==='generator'||d.appletId==='timer'||d.appletId==='counter'){
@@ -2141,7 +2451,7 @@ function buildPSlide(container,idx,transOffset,noScale){
     }else if(d.type==='code'){
       const T=CODE_THEMES[d.codeTheme||'dark']||CODE_THEMES.dark;
       const c=document.createElement('div');
-      c.style.cssText=typeof codeBlockSurfaceCss==='function'?codeBlockSurfaceCss(d,T):`width:100%;height:100%;overflow:auto;border-radius:6px;font-family:'JetBrains Mono',monospace;font-size:${d.codeFs||13}px;line-height:1.6;padding:14px 16px;box-sizing:border-box;background:${T.bg};color:${T.text};border:1px solid rgba(128,128,128,.15);`;
+      c.style.cssText=typeof codeBlockSurfaceCss==='function'?codeBlockSurfaceCss(d,T):`width:100%;height:100%;overflow:auto;border-radius:6px;font-family:'JetBrains Mono',monospace;font-size:${d.codeFs||16}px;line-height:1.6;padding:14px 16px;box-sizing:border-box;background:${T.bg};color:${T.text};border:1px solid rgba(128,128,128,.15);`;
       c.innerHTML=`<div style="font-size:9px;color:${T.cmt};margin-bottom:8px;text-transform:uppercase;letter-spacing:.8px">${d.codeLang||''}</div><pre style="margin:0;white-space:pre;overflow:visible">${d.codeHtml||''}</pre>`;
       el.appendChild(c);
     }else if(d.type==='table'){
@@ -2216,6 +2526,11 @@ function buildPSlide(container,idx,transOffset,noScale){
       c.style.cssText='width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:visible;';
       c.innerHTML=d.html||'';
       el.appendChild(c);
+    }else if(d.type==='inkhost'){
+      el.style.overflow='visible';
+      el.style.background='transparent';
+      el.style.pointerEvents='none';
+      // Ink SVG injected later by renderInkInto into this psel
     }else if(d.type==='lineangle'){
       el.style.overflow='visible';
       el.style.pointerEvents='none';
@@ -2233,7 +2548,7 @@ function buildPSlide(container,idx,transOffset,noScale){
     }
 
     const anims=d.anims||[];
-    const isTrigger=d.isTrigger||anims.some(a=>a.trigger==='nav');
+    const isTrigger=d.isTrigger||_pvHasNavTrigger(d, s);
 
     const _deferCapAnim=typeof window._captionAnimDeferredByTrigger==='function'
       ?window._captionAnimDeferredByTrigger(anims):null;
@@ -2273,25 +2588,34 @@ function buildPSlide(container,idx,transOffset,noScale){
       return trig !== 'click' && trig !== 'element' && trig !== 'nav' && trig !== 'counter' && trig !== 'timer';
     });
     if(autoTimed.length>0){
-      const cssAnims    = autoTimed.filter(({anim:a})=>a.name!=='moveTo'&&a.name!=='orbitTo'&&a.name!=='rotate'&&a.name!=='recolor'&&a.name!=='captionSlide'&&a.name!=='splitHalf'&&a.name!=='typewriter'&&a.name!=='langFade'&&(typeof ANIM_INFO==='undefined'||!ANIM_INFO[a.name]||ANIM_INFO[a.name].cat!=='live'));
-      const captionAnims = autoTimed.filter(({anim:a})=>a.name==='captionSlide');
-      const liveAnims   = autoTimed.filter(({anim:a})=>typeof ANIM_INFO!=='undefined'&&ANIM_INFO[a.name]&&ANIM_INFO[a.name].cat==='live'&&a.name!=='typewriter'&&a.name!=='langFade'&&a.name!=='captionSlide');
+      const cssAnims    = autoTimed.filter(({anim:a})=>a.name!=='moveTo'&&a.name!=='orbitTo'&&a.name!=='rotate'&&a.name!=='mirror'&&a.name!=='recolor'&&a.name!=='captionSlide'&&a.name!=='cosmosTitle'&&a.name!=='splitHalf'&&a.name!=='typewriter'&&a.name!=='langFade'&&(typeof ANIM_INFO==='undefined'||!ANIM_INFO[a.name]||ANIM_INFO[a.name].cat!=='live'));
+      const captionAnims = autoTimed.filter(({anim:a})=>a.name==='captionSlide'||a.name==='cosmosTitle');
+      const liveAnims   = autoTimed.filter(({anim:a})=>typeof ANIM_INFO!=='undefined'&&ANIM_INFO[a.name]&&ANIM_INFO[a.name].cat==='live'&&a.name!=='typewriter'&&a.name!=='langFade'&&a.name!=='captionSlide'&&a.name!=='cosmosTitle');
       const twAnims     = autoTimed.filter(({anim:a})=>a.name==='typewriter'||a.name==='langFade');
       const motionAnims = autoTimed.filter(({anim:a})=>a.name==='moveTo'||a.name==='orbitTo');
-      const rotateAnims = autoTimed.filter(({anim:a})=>a.name==='rotate');
+      const rotateAnims = autoTimed.filter(({anim:a})=>a.name==='rotate'||a.name==='mirror');
       const recolorAnims = autoTimed.filter(({anim:a})=>a.name==='recolor');
 
-      // Титр в сторону — скрыть до запуска (если это первая авто-анимация)
-      if(captionAnims.length&&autoTimed[0]&&autoTimed[0].anim.name==='captionSlide'){
-        el.style.visibility='hidden';
-        el.style.pointerEvents='none';
+      // Титр в космос — скрыть сразу (и всю группу), иначе мигает исходная позиция
+      const hasCosmos = captionAnims.some(({anim:a}) => a && a.name === 'cosmosTitle');
+      if (hasCosmos) {
+        el.style.visibility = 'hidden';
+        el.style.pointerEvents = 'none';
+      } else if (captionAnims.length && autoTimed[0] && autoTimed[0].anim.name === 'captionSlide') {
+        el.style.visibility = 'hidden';
+        el.style.pointerEvents = 'none';
         el.classList.add('has-caption');
       }
 
       // If first auto anim is entrance — hide element until it starts
       const firstCss = cssAnims[0];
       if(firstCss && firstCss.anim.cat==='entrance'){
-        el.style.visibility='hidden';
+        const firstAuto = autoTimed[0];
+        const firstAbs = firstAuto ? (firstAuto.absDelay||0) : 0;
+        // Don't hide if a live/motion anim (inkDraw etc.) should play first
+        if((firstCss.absDelay||0) <= firstAbs){
+          el.style.visibility='hidden';
+        }
       }
 
       // Group cssAnims by absDelay; text uses ._text_body like fireAnim
@@ -2321,11 +2645,19 @@ function buildPSlide(container,idx,transOffset,noScale){
           void _animTarget.offsetWidth;
           if (hasEntrance) _pvRevealForEntrance(el, d, idx);
           else if (!hasExit && !(typeof window._particlesHasAnim === 'function' && window._particlesHasAnim(d))) el.style.visibility='';
-          _animTarget.style.animation=grp.map(a=>{
+          const animStr = grp.map(a=>{
             const cssName=ANIM_CSS[a.name]||'el-fadein';
             const dur=(a.duration||600)/1000;
             return `${cssName} ${dur}s ease-out 0s both`;
           }).join(',');
+          _animTarget.style.animation = animStr;
+          if (typeof window._cssAnimBgLayers === 'function') {
+            window._cssAnimBgLayers(el, d).forEach(t => {
+              t.style.animation = 'none';
+              void t.offsetWidth;
+              t.style.animation = animStr;
+            });
+          }
           _pvFinishCssAnimGroup(el, _animTarget, grp);
         }, absDelay + transOffset);
       });
@@ -2348,9 +2680,15 @@ function buildPSlide(container,idx,transOffset,noScale){
       // Fire motion anims in original order
       // withPrev: анимация стартует одновременно с предыдущей —
       // её baseTx/baseTy = позиция ДО предыдущей, не после
+      // Повтор: флаги входа/старта итерации могут стоять на любом шаге (пауза, fade…) —
+      // учитываем их по всему autoTimed, двигаем только moveTo/orbitTo
       {
         let cumTx=0, cumTy=0;
-        motionAnims.forEach(({anim:a,absDelay})=>{
+        let loopBaseTx=0, loopBaseTy=0;
+        autoTimed.forEach(({anim:a,absDelay,repLoopEnter,repLoopStart})=>{
+          if(repLoopStart){ cumTx=loopBaseTx; cumTy=loopBaseTy; }
+          else if(repLoopEnter){ loopBaseTx=cumTx; loopBaseTy=cumTy; }
+          if(a.name!=='moveTo' && a.name!=='orbitTo') return;
           fireAnim(el,d,a,idx,absDelay + transOffset,cumTx,cumTy);
           if(a.name==='moveTo'){
             // tx/ty — абсолютные смещения от исходной позиции объекта (не дельты)
@@ -2377,7 +2715,8 @@ function buildPSlide(container,idx,transOffset,noScale){
     // Click anims — from global click map + nav triggers
     const animOwner = _pvGroupLeader(d, s);
     const clickAnimsGlobal = globalClickMap.get(animOwner.id) || [];
-    const navAnims = anims.filter(a=>a.trigger==='nav');
+    const ownerAnims = animOwner.anims || [];
+    const navAnims = ownerAnims.filter(a => a.trigger === 'nav');
     const allClickEntries = [...clickAnimsGlobal, ...navAnims.filter(a=>!clickAnimsGlobal.find(x=>x.anim===a)).map(a=>({anim:a,autoAfter:false}))];
     const clickAnims = allClickEntries.filter(x=>!x.autoAfter).map(x=>x.anim);
     const autoAfterAnims = allClickEntries.filter(x=>x.autoAfter).map(x=>x.anim);
@@ -2386,8 +2725,7 @@ function buildPSlide(container,idx,transOffset,noScale){
       const firstIsEntrance = pendingAnims[0].cat==='entrance';
       if(firstIsEntrance) el.style.visibility='hidden';
       if(isTrigger && clickAnims.length>0){
-        el.style.cursor='pointer';
-        el.addEventListener('click',(e)=>{
+        const _pvNavClickHandler = (e) => {
           e.stopPropagation();
           const timed=typeof computeAbsDelays==='function'?computeAbsDelays(clickAnims):clickAnims.map(a=>({anim:a,absDelay:a.delay||0}));
           timed.forEach(({anim:a,absDelay})=>{
@@ -2400,8 +2738,7 @@ function buildPSlide(container,idx,transOffset,noScale){
               sched(()=>fireAnim(mel, md, ma, idx), absDelay);
             });
           });
-          // fire autoAfter anims after click group
-          let autoDelay = Math.max(...timed.map(({anim:a,absDelay})=>(absDelay||0)+(a.duration||600)));
+          let autoDelay = Math.max(...timed.map(({anim:a,absDelay})=>(absDelay||0)+(a.duration||600)), 0);
           autoAfterAnims.forEach(a=>{
             const t=autoDelay; autoDelay+=a.duration||600;
             const animIdx = (animOwner.anims||[]).indexOf(a);
@@ -2413,7 +2750,14 @@ function buildPSlide(container,idx,transOffset,noScale){
               sched(()=>fireAnim(mel, md, ma, idx, 0), t);
             });
           });
-        });
+          const navA = clickAnims.find(a => a.trigger === 'nav' && a.navTarget != null && (
+          typeof resolveNavTargetSlideIndex === 'function' ? resolveNavTargetSlideIndex(a.navTarget) != null : typeof a.navTarget === 'number'
+        ));
+          if (navA && navA.name !== 'splitHalf') _pvScheduleNavTrigger(container, idx, animOwner, navA, autoDelay);
+        };
+        el.style.cursor = 'pointer';
+        el._isTrigger = true;
+        el.addEventListener('click', _pvNavClickHandler);
       } else if (d.id === animOwner.id) {
         const timed=typeof computeAbsDelays==='function'?computeAbsDelays(clickAnims):clickAnims.map(a=>({anim:a,absDelay:a.delay||0}));
         timed.forEach(({anim:a,absDelay})=>{
@@ -2428,24 +2772,25 @@ function buildPSlide(container,idx,transOffset,noScale){
     }
 
     // Link navigation — always attach if link is set (works alongside animations)
-    if(d.link){
-      el._hasLink=true;
-      el.style.cursor='pointer';
-      (function(link,linkt,pidxAtBind){el.addEventListener('click',(e)=>{
-        // Don't fire if this element already handled it as a trigger (nav trigger does its own navigation)
-        if(isTrigger&&(d.anims||[]).some(a=>a.trigger==='nav'))return;
-        if(link.startsWith('#slide-')){
+    const _pvLnk = _pvGroupLink(d, s);
+    if(_pvLnk && _pvLnk.link){
+      el._hasLink = true;
+      el.style.cursor = 'pointer';
+      (function(link, linkt, pidxAtBind, navBlocksLink){
+        el.addEventListener('click', (e) => {
+          if (navBlocksLink) return;
+          if (link.startsWith('#slide-')) {
+            e.stopPropagation();
+            e.preventDefault();
+            _pvFollowLink(link, linkt, pidxAtBind);
+            return;
+          }
           e.stopPropagation();
-          e.preventDefault();
-          if(typeof window._followSlideLink==='function'&&window._followSlideLink(link,pidxAtBind))return;
-          clearAutoTimer();
-          if(typeof gotoPreviewSlide==='function') gotoPreviewSlide(parseInt(link.replace('#slide-',''),10)-1);
-          return;
-        }
-        window.open(link,linkt||'_blank');
-      });})(d.link,d.linkt,pidx);
+          window.open(link, linkt || '_blank');
+        });
+      })(_pvLnk.link, _pvLnk.linkt, pidx, isTrigger && clickAnims.length > 0);
     }
-    if(isTrigger)el._isTrigger=true;
+    if(isTrigger) el._isTrigger = true;
 
     // Apply hover effects
     if(d.hoverFx&&d.hoverFx.enabled){
@@ -2453,7 +2798,7 @@ function buildPSlide(container,idx,transOffset,noScale){
     }
 
     if (particlesHideSet.has(d.id) && typeof window._particlesEnsureHiddenIfNeeded === 'function') {
-      window._particlesEnsureHiddenIfNeeded(el, d);
+      window._particlesEnsureHiddenIfNeeded(el, d, true);
     }
 
     container.appendChild(el);
@@ -2490,8 +2835,27 @@ function buildPSlide(container,idx,transOffset,noScale){
     }
   });
 
+  _pvWireGroupHitAreas(container, s, idx, globalClickMap);
   _pvWireElemTriggers(container, idx);
+  // До flush: скрыть все участники групп с «титром в космос» (в расписании часто только лидер)
+  if (container._pendingCaptionQueue && container._pendingCaptionQueue.length) {
+    const seenG = {};
+    container._pendingCaptionQueue.forEach(({ d, a }) => {
+      if (!a || a.name !== 'cosmosTitle' || !d) return;
+      const members = d.groupId ? _pvGroupMembers(d, s) : [d];
+      const gk = d.groupId || d.id;
+      if (seenG[gk]) return;
+      seenG[gk] = 1;
+      members.forEach(md => {
+        const mel = container.querySelector('.psel[data-id="' + md.id + '"]');
+        if (!mel) return;
+        mel.style.visibility = 'hidden';
+        mel.style.pointerEvents = 'none';
+      });
+    });
+  }
   _pvFlushCaptionAnims(container, s, transOffset);
+  _pvFlushCameraAnims(container, transOffset);
 
   // ── Draw connectors on top of elements ───────────────────────────────────
   if (s.connectors && s.connectors.length) {
@@ -2862,6 +3226,21 @@ function buildPSlide(container,idx,transOffset,noScale){
       });
     };
   }
+
+  // Handwritten ink (always, not only when connectors exist)
+  if (((s.ink && s.ink.length) || (s.inkFills && s.inkFills.length)) && typeof window.renderInkInto === 'function') {
+    try { window.renderInkInto(container, s.ink, null, null, s.inkFills, s.els); } catch (e) {}
+    // Hide ink that will be revealed by inkDraw live anim
+    try {
+      (s.els || []).forEach(function (d) {
+        if (!d || d.type !== 'inkhost') return;
+        if (!(d.anims || []).some(function (a) { return a && a.name === 'inkDraw'; })) return;
+        const hel = container.querySelector('.psel[data-id="' + d.id + '"]');
+        if (hel && typeof window._prepareInkDrawHost === 'function') window._prepareInkDrawHost(hel, d);
+      });
+    } catch (e2) {}
+  }
+
   globalClickSteps.sort((a,b)=>(a.absDelay||0)-(b.absDelay||0));
 
   // Group into click-steps: each explicit 'click' starts a new group,
@@ -2886,7 +3265,18 @@ function buildPSlide(container,idx,transOffset,noScale){
     const group=clickGroups[groupIdx];
     // Find base delay of group (first item's absDelay)
     const baseDelay = group.items.length>0 ? (group.items[0].absDelay||0) : 0;
-    group.items.forEach(({el,d,a,absDelay,wasHidden,animIdx})=>{
+    group.items.forEach(({el,d,a,absDelay,wasHidden,animIdx,_isCamera,cam})=>{
+      if (_isCamera || (a && a.name === 'camera')) {
+        if (typeof window._fireCameraAnim === 'function') {
+          const from = container._pvCamState || (typeof window._fullSlideCamState === 'function' ? window._fullSlideCamState() : null);
+          window._fireCameraAnim(container, cam || a, {
+            delay: Math.max(0, (absDelay || 0) - baseDelay),
+            from: from,
+            stepIdx: groupIdx
+          });
+        }
+        return;
+      }
       _pvGroupMembers(d, s).forEach(md => {
         const mel = container.querySelector('.psel[data-id="'+md.id+'"]');
         if (!mel) return;
@@ -2932,7 +3322,7 @@ function buildPSlide(container,idx,transOffset,noScale){
         });
       }, t);
       if(!isLive) {
-        prevAutoDur = a.duration||600;
+        prevAutoDur = typeof _animChainDuration === 'function' ? _animChainDuration(a) : (a.duration||600);
         if(origTrig !== 'withPrev') autoDelay = t + prevAutoDur;
         else autoDelay = Math.max(autoDelay, t + prevAutoDur);
       }
@@ -2940,10 +3330,19 @@ function buildPSlide(container,idx,transOffset,noScale){
     groupIdx++;
     return true;
   };
+  container._firePrevStep=function(){
+    if(typeof window._rewindCameraAnim!=='function') return false;
+    const popped=window._rewindCameraAnim(container);
+    if(!popped) return false;
+    if(typeof popped.stepIdx==='number') groupIdx=popped.stepIdx;
+    return true;
+  };
   container._hasSteps=()=>groupIdx<clickGroups.length;
+  if(typeof _syncAllIconAnims==='function') _syncAllIconAnims(container, idx);
 }
 
 function fireAnim(el,d,a,idx,overrideDelay,_cumTx,_cumTy){
+  if (!a || a.name === 'pause' || (d && d._isPause)) return;
   const stage = el && el.parentElement;
   if (stage && stage._pvStageAborted) return;
   if(a.name==='moveTo'){
@@ -2962,7 +3361,7 @@ function fireAnim(el,d,a,idx,overrideDelay,_cumTx,_cumTy){
           const _anim = el.animate(
             [{transform:`translate(${baseTx.toFixed(2)}px,${baseTy.toFixed(2)}px)${_rotOnlyStr}`},
              {transform:`translate(${tx.toFixed(2)}px,${ty.toFixed(2)}px)${_rotOnlyStr}`}],
-            {duration:dur, easing:'cubic-bezier(0.4,0,0.2,1)', fill:'forwards', composite:'replace'}
+            {duration:dur, easing:'linear', fill:'forwards', composite:'replace'}
           );
           _anim.onfinish = ()=>{ 
             try{ _anim.commitStyles(); } catch(e){}
@@ -2992,7 +3391,7 @@ function fireAnim(el,d,a,idx,overrideDelay,_cumTx,_cumTy){
         });
       } else {
         requestAnimationFrame(()=>{
-          el.style.transition=`transform ${dur}ms cubic-bezier(0.4,0,0.2,1)`;
+          el.style.transition=`transform ${dur}ms linear`;
           el.style.transform=`translate(${tx}px,${ty}px)${_rotStr}`; // _rotStr уже содержит flip
         });
       }
@@ -3062,6 +3461,13 @@ function fireAnim(el,d,a,idx,overrideDelay,_cumTx,_cumTy){
         anim.onfinish = ()=>{ try{ anim.commitStyles(); }catch(e){} anim.cancel(); };
       }
     }, delay);
+    return;
+  }
+  if(a.name==='mirror'){
+    const delay = typeof overrideDelay==='number' ? overrideDelay : (a.delay||0);
+    if(typeof window._fireMirrorAnim==='function'){
+      window._fireMirrorAnim(el, a, delay, {});
+    }
     return;
   }
   if(a.name==='recolor'){
@@ -3256,12 +3662,38 @@ function fireAnim(el,d,a,idx,overrideDelay,_cumTx,_cumTy){
     return;
   }
 
+  if(a.name==='inkDraw'){
+    const delay = typeof overrideDelay==='number' ? overrideDelay : (a.delay||0);
+    window._pvStageLater(stage, ()=>{
+      if(typeof window._fireInkDrawAnim==='function'){
+        window._fireInkDrawAnim(el, a, {delay:0, d:d});
+      }
+      if(!el._liveAnims) el._liveAnims=[];
+      el._liveAnims.push({
+        cancel: function(){
+          if(typeof window._resetInkDrawAnim==='function') window._resetInkDrawAnim(el);
+        }
+      });
+    }, delay);
+    return;
+  }
+
   if(a.name==='particles'){
     const capDelay = typeof overrideDelay === 'number' ? overrideDelay : (a.delay || 0);
     window._pvStageLater(stage, () => {
-      if (typeof window._fireParticlesAnim === 'function') {
-        window._fireParticlesAnim(el, a, 0, d);
+      if (typeof window._fireParticlesAnim !== 'function') return;
+      if (d.groupId) {
+        const slide = slides[idx];
+        const leader = _pvGroupLeader(d, slide);
+        if (d.id !== leader.id) return;
+        const container = el.parentElement;
+        _pvGroupMembers(d, slide).forEach(md => {
+          const mel = container && container.querySelector('.psel[data-id="' + md.id + '"]');
+          if (mel) window._fireParticlesAnim(mel, a, 0, md);
+        });
+        return;
       }
+      window._fireParticlesAnim(el, a, 0, d);
     }, capDelay);
     return;
   }
@@ -3277,6 +3709,9 @@ function fireAnim(el,d,a,idx,overrideDelay,_cumTx,_cumTy){
         hideAfter: true,
         onHide: () => {
           _pvScheduleExitHide(el, 0, (laterEntrance || isElemTrig) ? null : { permanent: true, idx, d });
+          if ((a.trigger || 'auto') === 'nav' && a.navTarget != null) {
+            _pvScheduleNavTrigger(stage, idx, d, a, 0);
+          }
         }
       });
     }
@@ -3292,13 +3727,32 @@ function fireAnim(el,d,a,idx,overrideDelay,_cumTx,_cumTy){
       const container = el.parentElement;
       const entries = _pvGroupMembers(d, slide).map(md => {
         const mel = container && container.querySelector('.psel[data-id="' + md.id + '"]');
-        return mel ? { el: mel, x: md.x || 0, y: md.y || 0, w: md.w || 200, h: md.h || 200 } : null;
+        return mel ? { el: mel, d: md, x: md.x || 0, y: md.y || 0, w: md.w || 200, h: md.h || 200 } : null;
       }).filter(Boolean);
       if (entries.length) _fireCaptionSlideAnimGroup(entries, a, capDelay, { hideAfter: true });
       return;
     }
     if (typeof _fireCaptionSlideAnim === 'function') {
-      _fireCaptionSlideAnim(el, a, capDelay, d.w, d.h, { hideAfter: true });
+      _fireCaptionSlideAnim(el, a, capDelay, d.w, d.h, { hideAfter: true, d });
+    }
+    return;
+  }
+  if(a.name==='cosmosTitle'){
+    const capDelay = typeof overrideDelay === 'number' ? overrideDelay : (a.delay || 0);
+    if (d.groupId && typeof _fireCosmosTitleAnimGroup === 'function') {
+      const slide = slides[idx];
+      const leader = _pvGroupLeader(d, slide);
+      if (d.id !== leader.id) return;
+      const container = el.parentElement;
+      const entries = _pvGroupMembers(d, slide).map(md => {
+        const mel = container && container.querySelector('.psel[data-id="' + md.id + '"]');
+        return mel ? { el: mel, d: md, x: md.x || 0, y: md.y || 0, w: md.w || 200, h: md.h || 200 } : null;
+      }).filter(Boolean);
+      if (entries.length) _fireCosmosTitleAnimGroup(entries, a, capDelay, { hideAfter: true });
+      return;
+    }
+    if (typeof _fireCosmosTitleAnim === 'function') {
+      _fireCosmosTitleAnim(el, a, capDelay, d.w, d.h, { hideAfter: true });
     }
     return;
   }
@@ -3353,19 +3807,18 @@ function fireAnim(el,d,a,idx,overrideDelay,_cumTx,_cumTy){
   const cssName=ANIM_CSS[a.name]||'el-fadein';
   const dur=(a.duration||600)/1000;
   const delay=typeof overrideDelay==='number' ? overrideDelay/1000 : (a.delay||0)/1000;
-  let _animEl;
-  if(d.type==='text' && typeof window._ensureTextBodyWrap==='function'){
-    _animEl = window._ensureTextBodyWrap(el);
-  } else if(a.cat==='emphasis' || a.cat==='entrance' || a.cat==='exit'){
-    _animEl = el.querySelector('.ec') || el;
+  if (typeof window._applyCssAnim === 'function') {
+    if (a.cat === 'entrance') _pvRevealForEntrance(el, d, idx);
+    window._applyCssAnim(el, d, a, typeof overrideDelay === 'number' ? overrideDelay : undefined);
   } else {
-    _animEl = el;
+    const animCss = `${cssName} ${dur}s ease-out ${delay}s both`;
+    const animTargets = (d.type === 'text' && typeof window._ensureTextBodyWrap === 'function')
+      ? [window._ensureTextBodyWrap(el)]
+      : [((a.cat === 'emphasis' || a.cat === 'entrance' || a.cat === 'exit') ? (el.querySelector('.ec') || el) : el)];
+    animTargets.forEach(t => { t.style.animation = ''; });
+    if (a.cat === 'entrance') _pvRevealForEntrance(el, d, idx);
+    requestAnimationFrame(() => { animTargets.forEach(t => { t.style.animation = animCss; }); });
   }
-  _animEl.style.animation='';
-  if (a.cat === 'entrance') _pvRevealForEntrance(el, d, idx);
-  requestAnimationFrame(()=>{
-    _animEl.style.animation=`${cssName} ${dur}s ease-out ${delay}s both`;
-  });
   if(a.cat==='exit'){
     const waitMs=(typeof overrideDelay==='number'?overrideDelay:(a.delay||0))+(a.duration||600);
     const animIdx = (d.anims || []).indexOf(a);
@@ -3374,14 +3827,8 @@ function fireAnim(el,d,a,idx,overrideDelay,_cumTx,_cumTy){
     _pvScheduleExitHide(el, waitMs, (laterEntrance || isElemTrig) ? null : { permanent: true, idx, d });
   }
   if(a.trigger==='nav'){
-    const navTarget=typeof a.navTarget==='number'?a.navTarget:0;
-    const wait=(a.delay||0)+(a.duration||600);
-    window._pvStageLater(stage, ()=>{
-      if(!hiddenElsPerSlide[idx])hiddenElsPerSlide[idx]=new Set();
-      hiddenElsPerSlide[idx].add(d.id);
-      clearAutoTimer();
-      gotoPreview(navTarget,navTarget>pidx?'next':'prev');
-    },wait);
+    const wait=(typeof overrideDelay==='number'?overrideDelay:(a.delay||0))+(a.duration||600);
+    _pvScheduleNavTrigger(stage, idx, d, a, wait);
   }
 }
 function _ensureFlipWrap(slide,hinge,vertical,fwd){

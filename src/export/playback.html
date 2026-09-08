@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Слайды — просмотр</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0d0d12; color: #e8eef7; font-family: system-ui, sans-serif; }
+    #playback-root { height: 100%; display: flex; flex-direction: column; }
+    .pb-bar { display: flex; gap: 8px; padding: 10px; background: #1a1a1e; border-bottom: 1px solid #333; flex-shrink: 0; }
+    .pb-bar button { background: #2563eb; color: #fff; border: 0; border-radius: 6px; padding: 8px 12px; cursor: pointer; }
+    .pb-bar button:disabled { opacity: 0.4; cursor: default; }
+    .pb-stage { flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; cursor: pointer; }
+    .pb-slide { position: absolute; overflow: hidden; box-sizing: border-box; }
+    .pb-slide .el { position: absolute; box-sizing: border-box; }
+    .pb-slide .el svg { width: 100%; height: 100%; display: block; }
+  </style>
+</head>
+<body>
+  <div id="playback-root"></div>
+  <script type="module" src="./playbackEntry.jsx"></script>
+</body>
+</html>

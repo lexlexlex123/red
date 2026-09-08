@@ -70,10 +70,11 @@ function _rtApplyMarkerVerticalAlign(root, baseFs, gapPx) {
     sp.style.transform = 'translateY(' + Math.max(1, Math.round(lineFs * 0.06)) + 'px)';
     const iconId = sp.getAttribute('data-icon-id');
     if (iconId && typeof _getBulletSvg === 'function') {
+      const iconFillOp = sp.getAttribute('data-icon-fill-op');
       const iconStyle = sp.getAttribute('data-icon-style') || 'stroke';
       const iconColor = sp.getAttribute('data-icon-color') || 'currentColor';
       const iconSw = parseFloat(sp.getAttribute('data-icon-sw')) || 1.8;
-      sp.innerHTML = _getBulletSvg(iconId, sz, iconStyle, iconColor, iconSw);
+      sp.innerHTML = _getBulletSvg(iconId, sz, iconStyle, iconColor, iconSw, iconFillOp);
     }
   });
   root.querySelectorAll('span[data-list-num]').forEach(sp => {
@@ -93,9 +94,10 @@ window._rtApplyMarkerVerticalAlign = _rtApplyMarkerVerticalAlign;
 // (avoids relying on outerHTML which Chrome corrupts when contenteditable=true)
 function _rebuildMarkerHtml(m) {
   if (m.type === 'bullet') {
-    const svg = _getBulletSvg(m.iconId, _lastBulletFontSize || 24, m.iconStyle, m.iconColor, parseFloat(m.iconSw) || 1.8);
+    const svg = _getBulletSvg(m.iconId, _lastBulletFontSize || 24, m.iconStyle, m.iconColor, parseFloat(m.iconSw) || 1.8, m.iconFillOp);
     const schemeAttr = m.iconSchemeRef ? ` data-icon-schemeref="${JSON.stringify(m.iconSchemeRef).replace(/"/g,'&quot;')}"` : '';
-    return `<span data-list-bullet data-icon-id="${m.iconId}" data-icon-style="${m.iconStyle}" data-icon-color="${m.iconColor}" data-icon-sw="${m.iconSw}"${schemeAttr} contenteditable="false" style="${_rtMarkerBulletCss(null, null)}" onclick="rtChangeBulletIcon(this)">${svg}</span>`;
+    const fillAttr = m.iconFillOp!=null && m.iconFillOp!=='' ? ` data-icon-fill-op="${m.iconFillOp}"` : '';
+    return `<span data-list-bullet data-icon-id="${m.iconId}" data-icon-color="${m.iconColor}" data-icon-sw="${m.iconSw}"${fillAttr}${schemeAttr} contenteditable="false" style="${_rtMarkerBulletCss(null, null)}" onclick="rtChangeBulletIcon(this)">${svg}</span>`;
   } else {
     const schemeAttr = m.numSchemeRef ? ` data-num-schemeref="${JSON.stringify(m.numSchemeRef).replace(/"/g,'&quot;')}"` : '';
     return `<span data-list-num data-num-style="${m.numStyle || 'decimal'}" data-num-color="${m.color||''}"${schemeAttr} contenteditable="false" style="${_rtMarkerNumCss(null, null, m.color)}">${m.text}</span>`;
@@ -110,7 +112,10 @@ let _lastBulletFontSize = 24;
 
 function _rtFontSizeFromCs(cs) {
   const m = (cs || '').match(/font-size:\s*([\d.]+)px/);
-  return m ? parseFloat(m[1]) : null;
+  if (!m) return null;
+  const v = parseFloat(m[1]);
+  // font-size:0 — служебный zero-strut, не реальный размер текста
+  return (v > 0) ? v : null;
 }
 window._rtFontSizeFromCs = _rtFontSizeFromCs;
 
@@ -151,6 +156,7 @@ function _rtNormalizeTextDisplay(tel, cs, gapPx) {
   const spans = _rtStyleSpansInTel(tel);
   const hasMarkers = tel.querySelector('span[data-list-bullet], span[data-list-num]');
 
+  let markerFs = baseFs;
   if (spans.length) {
     const usedSizes = new Set();
     spans.forEach(sp => {
@@ -171,9 +177,15 @@ function _rtNormalizeTextDisplay(tel, cs, gapPx) {
       if (sp.style && sp.style.verticalAlign) sp.style.verticalAlign = '';
     });
 
-    const needsZeroStrut = usedSizes.size > 1 ||
-      (usedSizes.size === 1 && Math.round(baseFs) !== [...usedSizes][0]);
-    if (needsZeroStrut) {
+    // Один размер у всех букв — синхронизируем контейнер (не zero-strut),
+    // иначе в панели показывается «0 пт» из font-size:0 на .tel
+    if (usedSizes.size === 1) {
+      const only = [...usedSizes][0];
+      markerFs = only;
+      tel.style.fontSize = only + 'px';
+      tel.style.lineHeight = '';
+      tel.querySelectorAll('span._rt-blank-strut').forEach(s => s.remove());
+    } else if (usedSizes.size > 1) {
       tel.style.fontSize = '0';
       tel.style.lineHeight = '0';
       // Bare <br> elements (representing blank lines with no text of their
@@ -209,7 +221,7 @@ function _rtNormalizeTextDisplay(tel, cs, gapPx) {
     }
   }
 
-  if (hasMarkers) _rtApplyMarkerVerticalAlign(tel, baseFs, gapPx);
+  if (hasMarkers) _rtApplyMarkerVerticalAlign(tel, markerFs, gapPx);
 
   // TOC / quote: пункты оглавления не попадают в spans — сбросить font-size:0 от цитаты
   if (tel.querySelector('[data-toc-slide]') && !spans.length) {
@@ -270,6 +282,7 @@ function _toCharObjs(html) {
         type: 'bullet',
         iconId:    node.getAttribute('data-icon-id') || '',
         iconStyle: node.getAttribute('data-icon-style') || 'stroke',
+        iconFillOp: node.getAttribute('data-icon-fill-op'),
         iconColor: node.getAttribute('data-icon-color') || 'currentColor',
         iconSw:    node.getAttribute('data-icon-sw') || '1.8',
         iconSchemeRef: iconSchemeRef ? (() => { try { return JSON.parse(iconSchemeRef); } catch(e) { return null; } })() : null,
@@ -869,11 +882,14 @@ function _rtGrowEditBox(){
   const d = slides[cur] && slides[cur].els.find(e => e.id === _rtElId);
   if(!d || d.type !== 'text') return;
   if(typeof window._fitTextHeight !== 'function') return;
-  if(window._fitTextHeight(d)){
+  const grow = () => {
+    if(!window._fitTextHeight(d)) return;
     const wrap = _rtEl.closest('.el');
     if(wrap) wrap.style.height = d.h + 'px';
     if(typeof _updateHandlesOverlay === 'function') _updateHandlesOverlay();
-  }
+  };
+  if(typeof window._preserveCwrapScroll === 'function') window._preserveCwrapScroll(grow);
+  else grow();
 }
 
 // ─── Selection: char-index based ──────────────────────────────────
@@ -1047,6 +1063,17 @@ function _restoreCaretToCharIndex(targetIdx, root) {
 // Saved Range object for visual highlight restoration
 let _savedRange = null;
 
+function _rtElIsEditing() {
+  const wrap = _rtEl && _rtEl.closest('.el');
+  return !!(wrap && wrap.dataset.editing === 'true');
+}
+
+function _rtClearSavedSelection() {
+  _savedSelIdx = null;
+  _savedRange = null;
+}
+window._rtClearSavedSelection = _rtClearSavedSelection;
+
 function _rtSaveRange() {
   if (!_rtEl) return;
   const s = window.getSelection();
@@ -1094,6 +1121,14 @@ document.addEventListener('mousedown', function(e) {
     setTimeout(() => { _rtModalInteracting = false; window._rtModalInteracting = false; }, 300);
   }
 }, true);
+
+function _rtPropsFieldActive() {
+  const ae = document.activeElement;
+  if (!ae || !ae.closest) return false;
+  if (!ae.closest('#props')) return false;
+  const tag = ae.tagName;
+  return tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
+}
 
 function _rtOnPanelMousedown(e) {
   if (!_rtEl) return;
@@ -1189,6 +1224,8 @@ function rtAttachSelectionTracking(wrapEl, telEl) {
   telEl.addEventListener('blur', (e) => {
     // _toSaveMode is called by 13-images.js blur handler which fires first
     if (_rtModalInteracting) return;
+    const rel = e.relatedTarget;
+    if (rel && rel.closest && rel.closest('#props')) return;
     if (!_rtColorPickInProgress) _rtCommit();
     // Clear saved selection when leaving text editing without clicking props panel
     // _rtPanelInteracting is set synchronously in capture phase before this blur fires
@@ -1256,7 +1293,7 @@ function _applyToSelection(prop, val) {
   if (!_rtEl) return false;
   const root = _rtContent(_rtEl);
   let idx = _readSelFromDOM(root);
-  if (!idx) idx = _savedSelIdx;
+  if (!idx && _rtElIsEditing()) idx = _savedSelIdx;
   if (!idx) return false;
 
   const chars = _toCharObjs(root.innerHTML);
@@ -1315,10 +1352,11 @@ function _applyToSelection(prop, val) {
   const _idxToRestore = idx;
   const _rootToRestore = root;
   requestAnimationFrame(() => {
-    if (_rtEl && _rtEl.contentEditable === 'true' && document.activeElement !== _rtEl) {
+    const keepPropsFocus = _rtPropsFieldActive();
+    if (_rtEl && _rtEl.contentEditable === 'true' && !keepPropsFocus && document.activeElement !== _rtEl) {
       _rtEl.focus({ preventScroll: true });
     }
-    _restoreSelToDOM(_idxToRestore, _rootToRestore);
+    if (!keepPropsFocus) _restoreSelToDOM(_idxToRestore, _rootToRestore);
     if (typeof rtUpdateToolbarState === 'function') rtUpdateToolbarState();
   });
   _savedSelIdx = idx;
@@ -1747,7 +1785,7 @@ function rtColor(color, schemeRef) {
   // hasSelection: live selection OR saved selection from before color picker click
   const wSel = window.getSelection();
   const hasLive = wSel && !wSel.isCollapsed && wSel.toString().length > 0;
-  const hasSaved = !!_savedSelIdx;
+  const hasSaved = _rtElIsEditing() && !!_savedSelIdx;
   const hasSelection = hasLive || hasSaved;
   // Debug: log state to console
   if (window._rtDebug) console.log('[rtColor]', {color, hasLive, hasSaved, _rtEl: !!_rtEl, _savedSelIdx});
@@ -1779,7 +1817,7 @@ function rtFontSize(size) {
     const idx = _readSelFromDOM(root);
     return !!(idx && idx.end > idx.start);
   })();
-  const hasSaved = !!_savedSelIdx && !!_rtEl;
+  const hasSaved = _rtElIsEditing() && !!_savedSelIdx && !!_rtEl;
 
   if (hasLive || hasSaved) {
     _applyToSelection('font-size', size + 'px');
@@ -1789,6 +1827,13 @@ function rtFontSize(size) {
     _setTSWhole('font-size', size + 'px');
   }
   if (typeof rtUpdateListIconSize === 'function') rtUpdateListIconSize();
+}
+
+function rtFontSizeFromInput(inp) {
+  if (!inp) return;
+  const pt = parseFloat(inp.value);
+  if (!isFinite(pt) || pt <= 0) return;
+  rtFontSize(pt);
 }
 
 function rtFontFamily(family) {
@@ -1982,18 +2027,23 @@ function rtUpdateToolbarState() {
     _updateListButtonState();
     if (hasSel) {
       try {
-        const swEl = document.getElementById('p-col-preview');
-        const hexEl = document.getElementById('p-hex');
         const colors = _rtColorsInSelection(s);
+        const root = _rtEl ? _rtContent(_rtEl) : null;
+        let sr = root ? _rtSelectionSchemeRef(root) : null;
+        if (!sr && typeof sel !== 'undefined' && sel) {
+          const d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
+          if (d && d.textColorScheme) sr = d.textColorScheme;
+        }
         if (colors && colors.length === 1) {
-          if (swEl) swEl.style.background = colors[0];
-          if (hexEl) hexEl.value = colors[0];
+          _rtSetTextColorField(colors[0], sr);
         } else if (colors && colors.length > 1) {
+          const swEl = document.getElementById('p-col-preview');
+          const hexEl = document.getElementById('p-hex');
           if (swEl) swEl.style.background = '';
           if (hexEl) hexEl.value = '';
         } else {
           const hex = _rgbToHex(cs.color);
-          if (hex) { if (swEl) swEl.style.background = hex; if (hexEl) hexEl.value = hex; }
+          if (hex) _rtSetTextColorField(hex, sr);
         }
       } catch(e) {}
       // Font size: show value only if all selected chars are same size, else blank
@@ -2018,6 +2068,46 @@ function rtUpdateToolbarState() {
 }
 
 // Returns array of char span elements currently selected (via browser selection in _rtEl)
+// Sync text-color swatch + field. Prefer scheme position code ("81") over raw hex.
+function _rtSetTextColorField(displayColor, schemeRef) {
+  try {
+    let col = displayColor || '';
+    let sr = schemeRef || null;
+    // Placeholder: field shows ink color (cs/scheme), not gray #888 on canvas
+    if (typeof sel !== 'undefined' && sel && sel.dataset && sel.dataset.type === 'text'
+        && typeof window._isTextPlaceholder === 'function') {
+      const dPh = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
+      if (window._isTextPlaceholder(sel, dPh)) {
+        sr = (dPh && dPh.textColorScheme !== undefined) ? dPh.textColorScheme : sr;
+        if (sr && typeof _resolveSchemeColor === 'function') {
+          const th = typeof _activeThemeForScheme === 'function' ? _activeThemeForScheme() : null;
+          const resolved = th ? _resolveSchemeColor(sr, th) : null;
+          if (resolved) col = resolved;
+        } else {
+          const tel = sel.querySelector('.tel') || sel.querySelector('.ec');
+          const cs = (tel && tel.getAttribute('style')) || (dPh && dPh.cs) || '';
+          const m = cs.match(/(?:^|;|\s)color:(#[0-9a-fA-F]{3,8}|rgb[^;]+)/i);
+          if (m) col = m[1];
+        }
+      }
+    }
+    if (sr && typeof _resolveSchemeColor === 'function') {
+      const th = typeof _activeThemeForScheme === 'function' ? _activeThemeForScheme() : null;
+      let resolved = th ? _resolveSchemeColor(sr, th) : null;
+      if (!resolved && typeof THEMES !== 'undefined' && THEMES[0])
+        resolved = _resolveSchemeColor(sr, THEMES[0]);
+      if (resolved) col = resolved;
+    }
+    const swEl = document.getElementById('p-col-preview');
+    const hexEl = document.getElementById('p-hex');
+    if (swEl && col) swEl.style.background = col;
+    if (hexEl) {
+      hexEl.value = (typeof _colorFieldDisplay === 'function')
+        ? _colorFieldDisplay(col, sr) : (col || '');
+    }
+  } catch (e) {}
+}
+
 // Sync the text-color swatch/hex field to the color at the caret (collapsed
 // selection — no text highlighted). Looks at the char immediately before the
 // caret first (matches how typing/IME and most editors define "current
@@ -2025,6 +2115,14 @@ function rtUpdateToolbarState() {
 function _rtUpdateColorInputForCaret(s, root) {
   try {
     if (!s || s.rangeCount === 0) return;
+    // Placeholder block: always show ink scheme/cs, never #888
+    if (typeof sel !== 'undefined' && sel && typeof window._isTextPlaceholder === 'function') {
+      const dPh = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
+      if (window._isTextPlaceholder(sel, dPh)) {
+        _rtSetTextColorField(null, dPh && dPh.textColorScheme);
+        return;
+      }
+    }
     const r = s.getRangeAt(0);
     const node = r.startContainer;
     const offset = r.startOffset;
@@ -2052,15 +2150,26 @@ function _rtUpdateColorInputForCaret(s, root) {
       charSpan = nearestColoredAncestor(before) || nearestColoredAncestor(after);
     }
 
-    const swEl = document.getElementById('p-col-preview');
-    const hexEl = document.getElementById('p-hex');
     if (charSpan) {
       const hex = _rgbToHex(window.getComputedStyle(charSpan).color);
-      if (hex) { if (swEl) swEl.style.background = hex; if (hexEl) hexEl.value = hex; }
+      let sr = null;
+      if (charSpan.dataset && charSpan.dataset.scheme) {
+        try { sr = JSON.parse(charSpan.dataset.scheme); } catch (e) {}
+      }
+      if (!sr && typeof sel !== 'undefined' && sel) {
+        const d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
+        if (d && d.textColorScheme) sr = d.textColorScheme;
+      }
+      _rtSetTextColorField(hex, sr);
     } else if (root) {
       // No explicitly-colored ancestor here — fall back to the block's base color.
       const hex = _rgbToHex(window.getComputedStyle(root).color);
-      if (hex) { if (swEl) swEl.style.background = hex; if (hexEl) hexEl.value = hex; }
+      let sr = null;
+      if (typeof sel !== 'undefined' && sel) {
+        const d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id);
+        if (d && d.textColorScheme) sr = d.textColorScheme;
+      }
+      _rtSetTextColorField(hex, sr);
     }
   } catch(e) {}
 }
@@ -2087,13 +2196,53 @@ function _rtColorsInSelection(s) {
   return [...colors];
 }
 
+// Scheme ref for highlighted fragment — char objects (edit mode) or span[data-scheme].
+function _rtSelectionSchemeRef(root) {
+  if (!root) return null;
+  const idx = _readSelFromDOM(root) || _savedSelIdx;
+  if (idx && idx.end > idx.start) {
+    try {
+      const chars = _toCharObjs(root.innerHTML).slice(idx.start, idx.end);
+      const refs = chars.map(c => c.style && c.style._schemeRef)
+        .filter(r => r && r.col != null && r.row != null);
+      if (refs.length && refs.every(r => r.col === refs[0].col && r.row === refs[0].row))
+        return refs[0];
+    } catch (e) {}
+  }
+  const s = window.getSelection();
+  if (!s || s.rangeCount === 0 || s.isCollapsed) return null;
+  const range = s.getRangeAt(0);
+  const schemes = new Set();
+  root.querySelectorAll('span[data-scheme]').forEach(sp => {
+    if (!range.intersectsNode(sp)) return;
+    try {
+      const r = JSON.parse(sp.dataset.scheme);
+      if (r && r.col != null && r.row != null) schemes.add(JSON.stringify(r));
+    } catch (e) {}
+  });
+  if (schemes.size === 1) {
+    try { return JSON.parse([...schemes][0]); } catch (e) {}
+  }
+  const selChars = _getSelectionCharEls();
+  if (selChars && selChars.length) {
+    const fromSpans = selChars.map(sp => {
+      if (!sp.dataset || !sp.dataset.scheme) return null;
+      try { return JSON.stringify(JSON.parse(sp.dataset.scheme)); } catch (e) { return null; }
+    });
+    if (fromSpans.length && fromSpans.every(x => x && x === fromSpans[0])) {
+      try { return JSON.parse(fromSpans[0]); } catch (e) {}
+    }
+  }
+  return null;
+}
+
 function _getSelectionCharEls() {
   if (!_rtEl) return null;
   const root = _rtContent(_rtEl);
   const sel = window.getSelection();
   if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
   const range = sel.getRangeAt(0);
-  const spans = Array.from(root.querySelectorAll('span[data-ch]'));
+  const spans = Array.from(root.querySelectorAll('span[data-ch], span[data-scheme]'));
   return spans.filter(sp => range.intersectsNode(sp));
 }
 
@@ -2114,14 +2263,14 @@ function _getBulletIconId() {
   return (d && d.bulletIconId) || (typeof ICONS !== 'undefined' && ICONS[0] ? ICONS[0].id : null);
 }
 
-function _getBulletSvg(iconId, fontSize, style, color, sw) {
+function _getBulletSvg(iconId, fontSize, style, color, sw, fillOp) {
   if (typeof ICONS === 'undefined') return '•';
-  const ic = ICONS.find(i => i.id === iconId) || ICONS[0];
+  const ic = (typeof getIconById === 'function' ? getIconById(iconId) : ICONS.find(i => i.id === iconId)) || ICONS[0];
   if (!ic) return '•';
   const sz = Math.round(parseFloat(fontSize) || 24);
   // Use _buildBulletIconSVG if available (from 29-icons.js), fallback to simple SVG
   if (typeof _buildBulletIconSVG === 'function') {
-    return _buildBulletIconSVG(ic, sz, style || 'stroke', color || 'currentColor', sw || 1.8);
+    return _buildBulletIconSVG(ic, sz, style, color || 'currentColor', sw || 1.8, fillOp);
   }
   // Fallback: simple stroke SVG using ic.p
   const paths = (ic.p || '').split('||').map(p => p.trim()).filter(Boolean);
@@ -2319,7 +2468,7 @@ function _applyListToElement(listType) {
   _lastBulletFontSize = parseFloat(fontSize);
 
   // Bullet markers always use currentColor so they inherit text color from scheme
-  const iconStyle = document.getElementById('ic-style') ? document.getElementById('ic-style').value : 'stroke';
+  const iconFillOp = document.getElementById('ic-fill-op') ? document.getElementById('ic-fill-op').value : '0';
   const iconColor = 'currentColor';
   const iconSw = parseFloat(document.getElementById('ic-sw') ? document.getElementById('ic-sw').value : '1.8') || 1.8;
   const iconId = _getBulletIconId();
@@ -2408,8 +2557,8 @@ function _applyListToElement(listType) {
     numIdx++;
     let marker;
     if (listType === 'bullet') {
-      const svg = _getBulletSvg(iconId, fontSize, iconStyle, iconColor, iconSw);
-      marker = `<span data-list-bullet data-icon-id="${iconId}" data-icon-style="${iconStyle}" data-icon-color="${iconColor}" data-icon-sw="${iconSw}" contenteditable="false" style="${_rtMarkerBulletCss(null, root)}" onclick="rtChangeBulletIcon(this)">${svg}</span>`;
+      const svg = _getBulletSvg(iconId, fontSize, null, iconColor, iconSw, iconFillOp);
+      marker = `<span data-list-bullet data-icon-id="${iconId}" data-icon-fill-op="${iconFillOp}" data-icon-color="${iconColor}" data-icon-sw="${iconSw}" contenteditable="false" style="${_rtMarkerBulletCss(null, root)}" onclick="rtChangeBulletIcon(this)">${svg}</span>`;
     } else {
       const prevColor = _lineNumColor(line);
       const prevScheme = _lineNumSchemeRef(line);

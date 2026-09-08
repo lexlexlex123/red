@@ -917,6 +917,7 @@ function _commitFormula(existingEl, latex, lines, svg, color, scheme){
       rot:0, anims:[],
       formulaRaw:latex, formulaLines:lines, formulaSvg:svg, formulaColor:color, formulaColorScheme:finalScheme,
     };
+    if(typeof _insertGeom==='function'){ const g=_insertGeom(d.w,d.h); d.x=g.x;d.y=g.y;d.w=g.w;d.h=g.h; }
     slides[cur].els.push(d);
     mkEl(d);
     const el = document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');

@@ -7,9 +7,11 @@ RewriteCond %{QUERY_STRING} (\<|%3C).*script.*(\>|%3E) [NC]
 RewriteCond %{QUERY_STRING} GLOBALS(=|\[|\%[0-9A-Z]{0,2}) [NC]
 RewriteRule .* - [F]
 
-# PWA: MIME манифеста и WASM
+# PWA: MIME
 AddType application/manifest+json .webmanifest
+AddType application/vnd.slides.project+json .slides.json
 AddType application/javascript .js
+AddType image/png .png
 AddType image/svg+xml .svg
 AddType application/wasm .wasm
 
@@ -19,17 +21,35 @@ AddType application/wasm .wasm
   </Files>
 </IfModule>
 
-# Иконки: сначала в корне (рядом с index.html), иначе slides/icons/
+# Корневые PNG ↔ icons/ (только если файл есть в другом месте)
 RewriteCond %{REQUEST_FILENAME} !-f
-RewriteRule ^icons/(icon(?:-192|-512)?\.(?:png|svg))$ $1 [L]
-RewriteCond %{REQUEST_FILENAME} !-f
-RewriteRule ^icons/(.+)$ slides/icons/$1 [L]
-RewriteCond %{REQUEST_FILENAME} !-f
-RewriteRule ^icon(-192|-512)?\.(png|svg)$ slides/icons/icon$1.$2 [L]
+RewriteCond %{DOCUMENT_ROOT}/icons/icon-192.png -f
+RewriteRule ^icon-192\.png$ icons/icon-192.png [L]
 
-# Перенаправление на index.html (только если файла/папки нет)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{DOCUMENT_ROOT}/icons/icon-512.png -f
+RewriteRule ^icon-512\.png$ icons/icon-512.png [L]
+
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{DOCUMENT_ROOT}/icon-192.png -f
+RewriteRule ^icons/icon-192\.png$ icon-192.png [L]
+
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{DOCUMENT_ROOT}/icon-512.png -f
+RewriteRule ^icons/icon-512\.png$ icon-512.png [L]
+
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{DOCUMENT_ROOT}/icons/icon.svg -f
+RewriteRule ^icon\.svg$ icons/icon.svg [L]
+
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{DOCUMENT_ROOT}/icon.svg -f
+RewriteRule ^icons/icon\.svg$ icon.svg [L]
+
+# SPA fallback — не подменять отсутствующие статические файлы HTML-страницей
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_URI} !\.(png|jpg|jpeg|gif|svg|ico|webp|webmanifest|wasm|css|js|json|woff2?|ttf|eot|mp3|mp4|webm|pdf|pptx?|zip)$ [NC]
 RewriteRule ^(.*)$ /index.html [L]
 
 ErrorDocument 404 /index.html

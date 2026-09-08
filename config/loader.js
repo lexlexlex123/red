@@ -192,6 +192,18 @@
       if (typeof setLang === 'function') setLang(c.language);
     }
 
+    // Пара языков переводчика (если пользователь ещё не выбирал)
+    if (typeof c.translateLang1 === 'string' && localStorage.getItem('sf-tr-lang1') == null) {
+      localStorage.setItem('sf-tr-lang1', c.translateLang1);
+    }
+    if (typeof c.translateLang2 === 'string' && localStorage.getItem('sf-tr-lang2') == null) {
+      localStorage.setItem('sf-tr-lang2', c.translateLang2);
+    }
+    if (typeof c.translateDeckLang === 'string' && localStorage.getItem('sf-tr-deck') == null) {
+      localStorage.setItem('sf-tr-deck', c.translateDeckLang);
+    }
+    if (typeof window.syncTranslateBtn === 'function') window.syncTranslateBtn();
+
     // Undo лимит
     if (typeof c.undoMaxSteps === 'number') {
       window._CFG_UNDO_MAX = c.undoMaxSteps;
@@ -220,6 +232,18 @@
       localStorage.setItem('sf-voice-log-btn', c.showVoiceUnknownBtn ? '1' : '0');
     }
     if (typeof window._syncVoiceExportBtn === 'function') window._syncVoiceExportBtn();
+
+    // Кнопка AI-ассистента (если ещё нет выбора в localStorage)
+    if (typeof c.showAiFab === 'boolean' && localStorage.getItem('sf-ai-fab') == null) {
+      localStorage.setItem('sf-ai-fab', c.showAiFab ? '1' : '0');
+    }
+    if (typeof window._syncAiFab === 'function') window._syncAiFab();
+
+    // Нижняя панель палитры (если ещё нет выбора в localStorage)
+    if (typeof c.showColorBar === 'boolean' && localStorage.getItem('sf-color-bar') == null) {
+      localStorage.setItem('sf-color-bar', c.showColorBar ? '1' : '0');
+    }
+    if (typeof window._syncColorBarVisibility === 'function') window._syncColorBarVisibility();
   });
 
   // ─────────────────────────────────────────────────────────────

@@ -337,7 +337,7 @@ function _startDictation(targetEl) {
   _dictMode = true;
   _dictEl = targetEl;
   _dictText = '';
-  const btn = document.getElementById('voice-tab-btn');
+  const btn = _primaryVoiceBtn();
   if (btn) btn.style.outline = '2px solid #f59e0b';
   _voiceMsg('🎤 Диктовка. Говорите... «стоп» для завершения', 'ok');
 }
@@ -345,8 +345,7 @@ function _startDictation(targetEl) {
 function _stopDictation() {
   if (!_dictMode) return;
   _dictMode = false;
-  const btn = document.getElementById('voice-tab-btn');
-  if (btn) btn.style.outline = '';
+  _voiceBtns().forEach(function (btn) { if (btn) btn.style.outline = ''; });
   if (typeof save === 'function') save();
   if (typeof drawThumbs === 'function') drawThumbs();
   if (typeof saveState === 'function') saveState();
@@ -1070,7 +1069,7 @@ function _handleCommand(raw) {
   // ── Голосовое управление ──
   if (t === 'голос выкл') {
     if (_active) {
-      const btn = document.getElementById('voice-tab-btn');
+      const btn = _primaryVoiceBtn();
       if (typeof window.toggleVoiceControl === 'function') window.toggleVoiceControl(btn);
     }
     return;
@@ -1084,7 +1083,7 @@ function _handleCommand(raw) {
     if (inPreview()) {
       if (typeof stopPreview === 'function') stopPreview();
     } else if (_active) {
-      const btn = document.getElementById('voice-tab-btn');
+      const btn = _primaryVoiceBtn();
       if (typeof window.toggleVoiceControl === 'function') window.toggleVoiceControl(btn);
     }
     return;
@@ -1217,21 +1216,28 @@ function _handleCommand(raw) {
     if (!cv) return;
     // Не через pickMulti: pick() у группы очищает multiSel и оставляет только одну группу
     if (typeof clearMultiSel === 'function') clearMultiSel();
+    if (typeof clearInkSelection === 'function') clearInkSelection();
     const els = Array.from(cv.querySelectorAll('.el:not(.decor-el)')).filter(el => el.dataset.objHidden !== '1');
     els.forEach(el => { if (typeof addToMultiSel === 'function') addToMultiSel(el); });
-    if (!multiSel.size) return;
-    if (multiSel.size === 1) {
+    let inkN = 0;
+    if (typeof selectAllInk === 'function') {
+      inkN = selectAllInk({ keepObjectSel: true, silent: true }) || 0;
+    }
+    if (!multiSel.size && !inkN) return;
+    if (multiSel.size === 1 && !inkN) {
       const only = [...multiSel][0];
       clearMultiSel();
       if (typeof pick === 'function') pick(only);
     } else {
       window._explicitMultiSel = true;
-      const frozen = [...multiSel];
-      const last = frozen[frozen.length - 1];
-      window._rbSelecting = true;
-      if (typeof pick === 'function') pick(last);
-      window._rbSelecting = false;
-      frozen.forEach(el => { if (!multiSel.has(el)) addToMultiSel(el); });
+      if (multiSel.size >= 1) {
+        const frozen = [...multiSel];
+        const last = frozen[frozen.length - 1];
+        window._rbSelecting = true;
+        if (typeof pick === 'function') pick(last);
+        window._rbSelecting = false;
+        frozen.forEach(el => { if (!multiSel.has(el)) addToMultiSel(el); });
+      }
       if (typeof _updateHandlesOverlay === 'function') _updateHandlesOverlay();
       if (typeof _updateSelFrames === 'function') _updateSelFrames();
     }
@@ -1475,12 +1481,10 @@ function _handleCommand(raw) {
     }
     const sh = typeof SHAPES !== 'undefined' ? SHAPES.find(s => s.id === shapeId) : null;
     if (!sh || !slides[cur]) return;
-    // Get colors from theme or defaults
-    let fill = '#3b82f6', stroke = '#1d4ed8';
-    if (typeof appliedThemeIdx !== 'undefined' && appliedThemeIdx >= 0 && typeof THEMES !== 'undefined') {
-      const th = THEMES[appliedThemeIdx];
-      if (th) { fill = th.shapeFill || fill; stroke = th.shapeStroke || stroke; }
-    }
+    const fillDef = typeof _defaultShapeFill === 'function' ? _defaultShapeFill() : {color:'#64748b', schemeRef:{col:0,row:4}};
+    const strokeDef = typeof _defaultShapeStroke === 'function' ? _defaultShapeStroke() : {color:'#475569', schemeRef:{col:0,row:3}};
+    const fill = fillDef.color;
+    const stroke = strokeDef.color;
     const _isCallout = sh.special === 'callout';
     const _isCloud = sh.special === 'cloud';
     const _size = _isCloud ? (window._CLOUD_INSERT_SIZE || 1000) : 200;
@@ -1492,11 +1496,16 @@ function _handleCommand(raw) {
       w: _size, h: _size, shape: sh.id,
       fill: _isCloud ? '#b5d5f0' : fill,
       stroke: _isCloud ? '#1d4ed8' : stroke,
-      sw: _isCloud ? 0 : 2,
-      rx: _isCallout ? 12 : 0, fillOp: 1,
+      sw: _isCloud ? 0 : (sh.noFill ? 2 : (typeof DEFAULT_SHAPE_STROKE_W === 'number' ? DEFAULT_SHAPE_STROKE_W : 0)),
+      fillScheme: _isCloud ? null : fillDef.schemeRef,
+      strokeScheme: _isCloud ? null : strokeDef.schemeRef,
+      rx: _isCallout ? 35 : 0, fillOp: 1,
       shadow: false, shadowBlur: 8, shadowColor: '#000000',
-      shapeHtml: '', shapeTextCss: 'font-size:24px;font-weight:700;color:#ffffff;text-align:center;',
+      shapeHtml: '', shapeTextCss: _isCallout
+        ? 'font-size:24px;font-weight:400;color:#ffffff;text-align:center;font-family:Boingster;'
+        : 'font-size:24px;font-weight:700;color:#ffffff;text-align:center;',
       tailX: _isCallout ? 0 : undefined, tailY: _isCallout ? 130 : undefined,
+      tailRoundX: _isCallout ? 0 : undefined, tailRoundY: _isCallout ? 94 : undefined,
       rot: 0, anims: [],
       cloudSeed: _isCloud ? (Math.floor(Math.random() * 999999) + 1) : undefined,
       cloudForm: _isCloud ? 'puff' : undefined
@@ -1580,7 +1589,7 @@ function _handleCommand(raw) {
     if(d){
       if(typeof pushUndo==='function')pushUndo();
       d.rot=((d.rot||0)+deg)%360;
-      sel.style.transform=`rotate(${d.rot}deg)`;
+      sel.style.transform=_elRotTransform(d.rot, sel, d);
       sel.dataset.rot=d.rot;
       if(typeof save==='function')save();
       if(typeof syncProps==='function')syncProps();
@@ -1690,14 +1699,20 @@ function _handleCommand(raw) {
   // ── Отразить ──
   if (t === 'отразить горизонтально' && hasSel()) {
     const d = slides[cur]?.els.find(e => e.id === sel.dataset.id);
-    if (d && typeof pushUndo==='function') pushUndo();
-    if (d && d.type === 'image') { d.imgFlipH = !d.imgFlipH; if (typeof mkEl==='function'&&typeof load==='function') load(); }
+    if (d && d.type === 'image') {
+      if (typeof pushUndo==='function') pushUndo();
+      d.imgFlipH = !d.imgFlipH;
+      if (typeof mkEl==='function'&&typeof load==='function') load();
+    } else if (typeof flipShape==='function') flipShape('h');
     return;
   }
   if (t === 'отразить вертикально' && hasSel()) {
     const d = slides[cur]?.els.find(e => e.id === sel.dataset.id);
-    if (d && typeof pushUndo==='function') pushUndo();
-    if (d && d.type === 'image') { d.imgFlipV = !d.imgFlipV; if (typeof load==='function') load(); }
+    if (d && d.type === 'image') {
+      if (typeof pushUndo==='function') pushUndo();
+      d.imgFlipV = !d.imgFlipV;
+      if (typeof load==='function') load();
+    } else if (typeof flipShape==='function') flipShape('v');
     return;
   }
 
@@ -2430,6 +2445,34 @@ function _stopRecognition() {
   }
 }
 
+function _voiceBtns() {
+  return [document.getElementById('voice-tab-btn'), document.getElementById('btn-mobile-voice')].filter(Boolean);
+}
+function _voiceLevelEls() {
+  return _voiceBtns().map(function (b) { return b.querySelector('.voice-mic-level'); }).filter(Boolean);
+}
+function _primaryVoiceBtn() {
+  const mob = document.getElementById('btn-mobile-voice');
+  if (mob && mob.offsetParent !== null) return mob;
+  return document.getElementById('voice-tab-btn');
+}
+function _setVoiceBtnOn(on) {
+  _voiceBtns().forEach(function (btn) {
+    if (!btn) return;
+    if (on) {
+      btn.classList.add('voice-on');
+      if (btn.id === 'voice-tab-btn') {
+        btn.classList.add('active');
+        btn.style.color = 'var(--accent)';
+      }
+    } else {
+      btn.classList.remove('voice-on', 'active');
+      btn.style.color = '';
+      btn.style.outline = '';
+    }
+  });
+}
+
 // ── Mic level visualizer (volume → green ring scale) ───────────────
 let _micStream = null;
 let _micCtx = null;
@@ -2439,9 +2482,8 @@ let _micLevelSmooth = 0;
 
 function _startMicLevel() {
   _stopMicLevel();
-  const levelEl = document.getElementById('voice-mic-level');
-  const btn = document.getElementById('voice-tab-btn');
-  if (btn) btn.classList.add('voice-on');
+  const levelEls = _voiceLevelEls();
+  _setVoiceBtnOn(true);
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
 
   navigator.mediaDevices.getUserMedia({ audio: true, video: false }).then(stream => {
@@ -2472,11 +2514,11 @@ function _startMicLevel() {
       // Чувствительность: тихий голос тоже виден, пики не улетают слишком далеко
       const target = Math.min(1, Math.pow(rms * 5.5, 0.85));
       _micLevelSmooth += (target - _micLevelSmooth) * 0.35;
-      if (levelEl) {
+      levelEls.forEach(function (levelEl) {
         const scale = 1 + _micLevelSmooth * 2.8; // радиус ~1×…3.8×
         levelEl.style.transform = 'scale(' + scale.toFixed(3) + ')';
         levelEl.style.opacity = String(0.25 + _micLevelSmooth * 0.55);
-      }
+      });
       _micRaf = requestAnimationFrame(tick);
     };
     _micRaf = requestAnimationFrame(tick);
@@ -2497,13 +2539,11 @@ function _stopMicLevel() {
   }
   _micAnalyser = null;
   _micLevelSmooth = 0;
-  const levelEl = document.getElementById('voice-mic-level');
-  if (levelEl) {
+  _voiceLevelEls().forEach(function (levelEl) {
     levelEl.style.transform = 'scale(1)';
     levelEl.style.opacity = '';
-  }
-  const btn = document.getElementById('voice-tab-btn');
-  if (btn) btn.classList.remove('voice-on');
+  });
+  _setVoiceBtnOn(false);
 }
 
 /** Sync recognition language when UI language changes */
@@ -2596,7 +2636,7 @@ window.toggleVoiceControl = function(btn) {
     }
     _voiceMsg(_voiceUiLang() === 'en' ? 'Voice control on' : 'Голосовое управление включено', 'ok');
     if (typeof window._syncVoiceExportBtn === 'function') window._syncVoiceExportBtn();
-    if (btn) { btn.classList.add('active'); btn.classList.add('voice-on'); btn.style.color = 'var(--accent)'; }
+    _setVoiceBtnOn(true);
     const propsPanel = document.getElementById('props-voice-panel');
     if (propsPanel) {
       propsPanel.style.display = '';
@@ -2606,7 +2646,8 @@ window.toggleVoiceControl = function(btn) {
   } else {
     _stopRecognition();
     _voiceMsg(_voiceUiLang() === 'en' ? 'Voice control off' : 'Голосовое управление выключено');
-    if (btn) { btn.classList.remove('active'); btn.classList.remove('voice-on'); btn.style.color = ''; btn.style.outline = ''; btn.blur(); }
+    _setVoiceBtnOn(false);
+    _voiceBtns().forEach(function (b) { if (b) b.blur(); });
     const propsPanel = document.getElementById('props-voice-panel');
     if (propsPanel) propsPanel.style.display = 'none';
     if (typeof window._syncVoiceExportBtn === 'function') window._syncVoiceExportBtn();

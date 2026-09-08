@@ -188,7 +188,10 @@ function _applySlideBgToEl(el,s,W,H){
   const colorBg=_resolveSlideColorBg(s);
   el.style.background=colorBg;
 
-  if(!s.bgImg||!s.bgImg.src) return;
+  if(!s.bgImg||!s.bgImg.src){
+    if(typeof _birdsThemeSyncForSlide==='function') _birdsThemeSyncForSlide(el, s);
+    return;
+  }
   W=W||(typeof canvasW!=='undefined'?canvasW:1200);
   H=H||(typeof canvasH!=='undefined'?canvasH:675);
 
@@ -203,6 +206,7 @@ function _applySlideBgToEl(el,s,W,H){
   wrap.appendChild(canvas);
   el.appendChild(wrap);
   _paintBgImgLayer(canvas,s.bgImg,W,H);
+  if(typeof _birdsThemeSyncForSlide==='function') _birdsThemeSyncForSlide(el, s);
 }
 
 function _applySlideBgToCanvas(s){
@@ -238,6 +242,7 @@ function setSlideBgFromPalette(c, schemeRef){
   setCustomBg(c);
   const sw = document.getElementById('slide-bg-preview');
   if(sw) sw.style.background = c;
+  if(typeof syncColorBar==='function') syncColorBar();
 }
 
 function resetSlideBgToTheme(){
@@ -249,13 +254,25 @@ function resetSlideBgToTheme(){
   delete slides[cur].bgScheme;
   _applySlideBgToCanvas(slides[cur]);
   hilBg(null);
-  const sw = document.getElementById('slide-bg-preview');
-  if(sw){
-    const hex = bgVal.match(/#[0-9a-fA-F]{6}/);
-    sw.style.background = hex ? hex[0] : bgVal;
-  }
+  syncSlideBgPreview();
   syncSlideBgImageUI();
   save(); drawThumbs(); saveState();
+  if(typeof syncColorBar==='function') syncColorBar();
+}
+
+function _syncSlideBgIconColorFields(bg){
+  const row=document.getElementById('slide-bg-icon-color-row');
+  const isIcon=!!(bg&&bg.fromIcon);
+  if(row) row.style.display=isIcon?'block':'none';
+  if(!isIcon) return;
+  const sw=document.getElementById('sbg-color-preview');
+  const hex=document.getElementById('sbg-color-hex');
+  const col=bg.iconColor||'#3b82f6';
+  if(sw) sw.style.background=col;
+  if(hex){
+    if(typeof _colorFieldDisplay==='function') hex.value=_colorFieldDisplay(col,bg.iconColorScheme);
+    else hex.value=col;
+  }
 }
 
 function syncSlideBgPreview(){
@@ -264,9 +281,13 @@ function syncSlideBgPreview(){
   if(s.bg === 'custom' && s.bgc){
     const hex = s.bgc.match(/#[0-9a-fA-F]{6}/);
     sw.style.background = hex ? hex[0] : (s.bgc.includes('gradient') ? s.bgc : s.bgc);
+  } else if(typeof _resolveSlideColorBg === 'function'){
+    const resolved = _resolveSlideColorBg(s);
+    sw.style.background = resolved || '';
   } else {
     sw.style.background = '';
   }
+  if(typeof refreshSlideTplPreviewBgs === 'function') refreshSlideTplPreviewBgs();
 }
 
 function _syncNumScrubber(inp,val){
@@ -330,6 +351,7 @@ function syncSlideBgImageUI(){
 
   if(hasBg){
     const bg=_normalizeBgImg(s.bgImg);
+    _syncSlideBgIconColorFields(bg);
     ['stretch','cover','tile','custom'].forEach(m=>{
       const btn=document.getElementById('sbg-'+m);
       if(btn) btn.classList.toggle('active',m===bg.mode);
@@ -338,6 +360,8 @@ function syncSlideBgImageUI(){
     _syncNumScrubber(opInp, Math.round((bg.opacity!=null?bg.opacity:1)*100));
     const blurInp=document.getElementById('sbg-blur');
     _syncNumScrubber(blurInp, bg.blur!=null?bg.blur:0);
+  } else {
+    _syncSlideBgIconColorFields(null);
   }
 }
 
@@ -351,8 +375,19 @@ function setSlideBgImage(src,name){
   _applySlideBgToCanvas(slides[cur]);
   syncSlideBgPreview();
   syncSlideBgImageUI();
-  save();drawThumbs();saveState();
-  if(typeof toast==='function')toast(t('toastImgBg'),'ok');
+  const _flushBg=function(){
+    save();drawThumbs();saveState();
+    if(typeof toast==='function')toast(t('toastImgBg'),'ok');
+  };
+  if(typeof MediaStore!=='undefined'&&MediaStore.persistBgImg&&slides[cur].bgImg){
+    MediaStore.persistBgImg(slides[cur].bgImg).then(function(){
+      _applySlideBgToCanvas(slides[cur]);
+      syncSlideBgPreview();
+      _flushBg();
+    }).catch(_flushBg);
+    return;
+  }
+  _flushBg();
 }
 
 function setSlideBgImgMode(mode){
@@ -384,7 +419,7 @@ function setSlideBgCustomProp(prop,val){
   if(typeof debouncedPushUndo==='function') debouncedPushUndo();
   else pushUndo();
   if(prop==='customSize') slides[cur].bgImg.customSize=Math.max(20,Math.min(maxSize,Math.round(val)||Math.round(Math.min(refW,refH)*0.5)));
-  else if(prop==='customMargin') slides[cur].bgImg.customMargin=Math.max(0,Math.min(Math.round(maxSize/2),Math.round(val)||0));
+  else if(prop==='customMargin') slides[cur].bgImg.customMargin=Math.max(0,Math.min(300,Math.round(val)||0));
   _applySlideBgToCanvas(slides[cur]);
   save();drawThumbs();saveState();
 }

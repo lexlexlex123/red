@@ -45,13 +45,16 @@ function _bootDeferredUI(){
     const sel = document.getElementById('p-ff');
     if (!sel) return;
     function addFamilies(families) {
-      const existing = new Set(Array.from(sel.options).map(o => o.value));
-      for (const fam of families) {
-        if (fam && !existing.has(fam)) {
-          const opt = document.createElement('option');
-          opt.value = fam; opt.textContent = fam; opt.style.fontFamily = fam;
-          sel.appendChild(opt);
-          existing.add(fam);
+      const targets = [sel, document.getElementById('flip-ff'), document.getElementById('sh-ff'), document.getElementById('tbl-ff')].filter(Boolean);
+      for (const target of targets) {
+        const existing = new Set(Array.from(target.options).map(o => o.value));
+        for (const fam of families) {
+          if (fam && !existing.has(fam)) {
+            const opt = document.createElement('option');
+            opt.value = fam; opt.textContent = fam; opt.style.fontFamily = fam;
+            target.appendChild(opt);
+            existing.add(fam);
+          }
         }
       }
     }
@@ -78,12 +81,17 @@ function _bootDeferredUI(){
   })();
   buildSwatches('bgswatches');buildSwatches('bgswatches2'); // no-op if elements removed
   buildThemeGrid();buildShapeGallery();buildAppletGallery();
+  if(typeof _initLineMarkerButtons==='function') _initLineMarkerButtons();
   buildPalette('cp-text-palette','text');
   buildPalette('cp-fill-palette','fill');
 }
 
 function boot(){
   // Init i18n first
+  if(typeof showLoading==='function'){
+    const b=(typeof _bootStorageBytes==='function')?_bootStorageBytes():0;
+    showLoading('Инициализация…',12,0,b||undefined);
+  }
   applyI18n();
   if(typeof initHexFields==='function')initHexFields();
   syncLangButtons();
@@ -180,6 +188,10 @@ function boot(){
   },true); // capture phase so it fires before other handlers
   window.addEventListener('resize',drawGrid);
   document.addEventListener('keydown',onKey);
+  if(typeof showLoading==='function'){
+    const b=(typeof _bootStorageBytes==='function')?_bootStorageBytes():0;
+    showLoading('Восстановление…',28,0,b||undefined);
+  }
   loadState();
   if(typeof restoreSnapPref==='function') restoreSnapPref();
   if(typeof refreshDecorColors==='function'){
@@ -187,17 +199,25 @@ function boot(){
     refreshDecorColors(_a1,_a2,true);
   }
   if(!slides.length){
-    addSlide();
-    // First launch — apply first theme automatically
-    _applyThemeByIdx(0);
-    const titleEl=document.getElementById('pres-title');
-    if(titleEl && !titleEl.value.trim() && typeof defaultPresentationTitle==='function'){
-      titleEl.value=defaultPresentationTitle();
+    const pendingImport=typeof window._igHasPendingImportUrl==='function'&&window._igHasPendingImportUrl();
+    if(!pendingImport){
+      addSlide();
+      // First launch — apply first theme automatically
+      _applyThemeByIdx(0);
+      const titleEl=document.getElementById('pres-title');
+      if(titleEl && !titleEl.value.trim() && typeof defaultPresentationTitle==='function'){
+        titleEl.value=defaultPresentationTitle();
+      }
     }
   }
+  if(typeof showLoading==='function'){
+    const b=(typeof _bootStorageBytes==='function')?_bootStorageBytes():0;
+    showLoading('Отрисовка…',85,b,b||undefined);
+  }
   renderAll();
-  if(typeof _applyCanvasZoom==='function') _applyCanvasZoom();
-  if(typeof _centerSlide==='function') _centerSlide();
+  if(typeof _refreshCanvasViewport==='function') _refreshCanvasViewport();
+  else if(typeof _applyCanvasZoom==='function') _applyCanvasZoom();
+  if(typeof _centerSlide==='function' && typeof _refreshCanvasViewport!=='function') _centerSlide();
   requestAnimationFrame(()=>requestAnimationFrame(()=>drawGrid()));
   requestAnimationFrame(()=>_bootDeferredUI());
   // Sync animation toggle UI state after restore
@@ -208,8 +228,25 @@ function boot(){
   if(typeof pnApplyAll==='function') pnApplyAll();
   // Кнопки «Отображение» на вкладке Показ — из localStorage
   if(typeof _syncPreviewPlaybackBtns==='function') _syncPreviewPlaybackBtns();
+  if(typeof _syncArBtn==='function') _syncArBtn();
   window._propsScrollMem && window._propsScrollMem.wire();
-  toast(APP_NAME+' v'+APP_VERSION+' · Ctrl+Z · F5','ok');
+  window._bootMainDone=true;
+  try {
+    if (typeof window.__slidesEmbedNotifyBoot === 'function') window.__slidesEmbedNotifyBoot();
+  } catch (e) {}
+  if(typeof _maybeHideBootLoading==='function') _maybeHideBootLoading();
+  // Welcome toast after splash closes
+  setTimeout(function(){
+    if(typeof toast!=='function') return;
+    let msg=APP_NAME+' v'+APP_VERSION+' · Ctrl+Z · F5';
+    try{
+      if(slides.length&&localStorage.getItem('sf_v4')){
+        const restored=(typeof t==='function')?t('toastRestored'):'';
+        if(restored&&restored!=='toastRestored') msg=restored;
+      }
+    }catch(e){}
+    toast(msg,'ok');
+  }, 450);
 }
 
 function newPresentation(){
@@ -258,7 +295,12 @@ function _applyThemeByIdx(idx){
         if(el.strokeScheme!==null&&el.strokeScheme!==undefined){const r=typeof _resolveSchemeColor==='function'?_resolveSchemeColor(el.strokeScheme,theme):null;if(r)el.stroke=r;}
         else if(el.strokeScheme===undefined&&theme.shapeStroke)el.stroke=theme.shapeStroke;
       }
-      if(el.type==='icon'&&!el.iconColorCustom){const newColor=theme.shapeFill||theme.tc||'#3b82f6';el.iconColor=newColor;}
+      if(el.type==='icon'&&!el.iconColorCustom){
+        const def=typeof _defaultIconColor==='function'?_defaultIconColor():null;
+        const newColor=(def&&def.color)||theme.shapeFill||theme.tc||'#6366f1';
+        el.iconColor=newColor;
+        if(def&&def.schemeRef) el.iconColorScheme={col:def.schemeRef.col,row:def.schemeRef.row};
+      }
     });
   });
   if(typeof refreshDecorColors==='function') refreshDecorColors(theme.ac1||'#6366f1',theme.ac2||'#818cf8',true);
@@ -312,7 +354,7 @@ function buildThemeGrid(){
       bg.style.background=t.bg;
       // Start birds animation if theme has bgAnim
       if(t.bgAnim==='birds' && typeof _birdsThemeStart==='function'){
-        setTimeout(()=>_birdsThemeStart(bg.parentElement||bg),50);
+        setTimeout(()=>_birdsThemeStart(bg.parentElement||bg,{color:t.birdColor||t.ac1||'#2563eb'}),50);
       } else if(typeof _birdsThemeStop==='function' && _birdsThemeActive && _birdsThemeActive()){
         _birdsThemeStop();
       }
@@ -333,22 +375,28 @@ function buildThemeGrid(){
       mshape.style.cssText='margin-top:4%;height:18%;width:22%;border-radius:3px;background:'+t.shapeFill+';opacity:.85;';
       mock.append(mh,mb1,mb2,mshape);
 
-      // 7 colour strips — vertical rectangles side by side, bottom-right corner
+      // 7 colour strips: first two = thumbnail stripes (heading + shape), then palette cols 3–7
       const swatches=document.createElement('div');
       swatches.style.cssText='position:absolute;bottom:20px;right:5px;display:flex;flex-direction:row;gap:2px;align-items:flex-end;pointer-events:none;';
-      const base7=(typeof _themeColors==='function'?_themeColors(t):Object.values(t)).slice(0,7);
-      base7.forEach(col=>{
+      const midRow = 4;
+      const baseCols=typeof _themeColors==='function'?_themeColors(t):[];
+      for(let col=0; col<7; col++){
+        let hex=null;
+        if(col===0 && t.headingColor) hex=t.headingColor;
+        else if(col===1 && t.shapeFill) hex=t.shapeFill;
+        else if(typeof _schemeSwatchColor==='function') hex=_schemeSwatchColor(t, col, midRow);
+        if(!hex) hex=baseCols[col];
+        if(!hex) continue;
         const sw=document.createElement('div');
-        const hex=_solidColor(col);
-        sw.title=hex;
-        sw.style.cssText='width:5px;height:18px;border-radius:2px;background:'+hex+';';
+        sw.title=(typeof _schemePosCode==='function'?_schemePosCode(col, midRow)+' · ':'')+hex;
+        sw.style.cssText='width:5px;height:18px;border-radius:2px;background:'+_solidColor(hex)+';';
         swatches.appendChild(sw);
-      });
+      }
 
       // Label
       const lbl=document.createElement('div');
       lbl.className='tc-label';
-      lbl.textContent=t.name;
+      lbl.textContent=typeof _themeDisplayName==='function'?_themeDisplayName(t):t.name;
 
       inner.append(bg,mock,swatches,lbl);
       card.appendChild(inner);
@@ -392,6 +440,13 @@ function buildShapeGallery(){
     else if(s.special==='curve'){
       el=document.createElementNS('http://www.w3.org/2000/svg','path');
       el.setAttribute('d','M 10 70 C 10 20 45 20 50 50 C 55 80 90 20 90 30');
+      el.setAttribute('fill','none');
+      el.setAttribute('stroke-width','5');
+      el.setAttribute('stroke-linecap','round');
+    }
+    else if(s.noFill && s.path){
+      el=document.createElementNS('http://www.w3.org/2000/svg','path');
+      el.setAttribute('d', s.path);
       el.setAttribute('fill','none');
       el.setAttribute('stroke-width','5');
       el.setAttribute('stroke-linecap','round');
@@ -455,7 +510,14 @@ function buildShapeGallery(){
     else if(s.path){el=document.createElementNS('http://www.w3.org/2000/svg','path');el.setAttribute('d',s.path);}
     else{el=document.createElementNS('http://www.w3.org/2000/svg','rect');el.setAttribute('x','5');el.setAttribute('y','5');el.setAttribute('width','90');el.setAttribute('height','90');}
     const _smFill=document.getElementById('sm-fill');const _fc=(_smFill&&_smFill.value)||'#3b82f6';
-    el.setAttribute('fill',_fc);el.setAttribute('stroke','none');el.classList.add('sg-fill');svg.appendChild(el);
+    if(s.noFill || s.special==='curve'){
+      el.setAttribute('fill','none');
+      el.setAttribute('stroke',_fc);
+    } else {
+      el.setAttribute('fill',_fc);
+      el.setAttribute('stroke','none');
+    }
+    el.classList.add('sg-fill');svg.appendChild(el);
     const span=document.createElement('span');span.textContent=s.name;
     card.append(svg,span);
     card.onclick=()=>{
@@ -561,6 +623,9 @@ function _cpRenderPanel(panelId, mode, onPick) {
         s.onmouseover = () => { s.style.outline = '2px solid var(--accent)'; };
         s.onmouseout  = () => { s.style.outline = ''; };
         s.onmousedown = e => { e.preventDefault(); e.stopPropagation();
+          // Sync "Свой цвет" so reopening / picker shows the palette hex
+          try{ customSwatch.style.background = color; }catch(err){}
+          try{ if(pickerWrap && typeof pickerWrap._cpSetHex==='function') pickerWrap._cpSetHex(color); }catch(err){}
           onPick(color, {col: colIdx, row: rowIdx}); closeColorPanel(panelId); };
         grid.appendChild(s);
       }
@@ -569,10 +634,23 @@ function _cpRenderPanel(panelId, mode, onPick) {
   }
 
   // ── Custom color: full-width bar (same inset as palette via .cp-slot padding) ──
+  // Init from the current swatch in this property row so palette picks show their hex here
+  let _cpCustomInit = '#3b82f6';
+  try{
+    const row = slot.closest('.pr') || slot.parentElement;
+    const prev = row && row.querySelector('.tprops-swatch-inner, [id$="-preview"]');
+    if(prev){
+      const bg = (prev.style && prev.style.background) || getComputedStyle(prev).backgroundColor;
+      if(bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)'){
+        if(/^#/.test(bg)) _cpCustomInit = bg;
+        else if(typeof _rgbToHex === 'function'){ const h = _rgbToHex(bg); if(h) _cpCustomInit = h; }
+      }
+    }
+  }catch(e){}
   const customSwatch = document.createElement('div');
   customSwatch.id = panelId + '-swatch';
   customSwatch.title = 'Свой цвет';
-  customSwatch.style.cssText = 'width:100%;height:14px;border-radius:3px;border:1px solid var(--border2);background:#3b82f6;cursor:pointer;box-sizing:border-box;';
+  customSwatch.style.cssText = 'width:100%;height:14px;border-radius:3px;border:1px solid var(--border2);background:'+_cpCustomInit+';cursor:pointer;box-sizing:border-box;';
   slot.appendChild(customSwatch);
 
   const pickerWrap = document.createElement('div');
@@ -597,9 +675,12 @@ function _cpBuildPhotoshopPicker(container, swatchEl, onPick, panelId) {
   container.innerHTML = '';
 
   // ── Размеры ──
-  const SIZE = 180, RING = 15;
+  const PAD = 6;             // запас под маркер оттенка (не обрезать по краю)
+  const INNER = 180;
+  const SIZE = INNER + PAD * 2;
+  const RING = 15;
   const cx = SIZE / 2, cy = SIZE / 2;
-  const Ro = SIZE / 2 - 2;   // внешний радиус кольца
+  const Ro = INNER / 2 - 2;   // внешний радиус кольца
   const Ri = Ro - RING;      // внутренний радиус кольца
   const Tr = Ri - 5;         // радиус описанной окружности треугольника
 
@@ -609,20 +690,6 @@ function _cpBuildPhotoshopPicker(container, swatchEl, onPick, panelId) {
   cv.style.cssText = 'display:block;margin:0 auto;cursor:crosshair;touch-action:none;border-radius:50%;';
   container.appendChild(cv);
   const ctx = cv.getContext('2d');
-
-  // ── Hex-поле ──
-  const hexRow = document.createElement('div');
-  hexRow.style.cssText = 'display:flex;align-items:center;gap:5px;margin-top:8px;';
-  const hexHash = document.createElement('span');
-  hexHash.textContent = '#';
-  hexHash.style.cssText = 'font-size:12px;color:var(--text3);font-family:monospace;font-weight:600;';
-  const hexInp = document.createElement('input');
-  hexInp.type = 'text'; hexInp.maxLength = 6; hexInp.spellcheck = false;
-  hexInp.style.cssText = 'flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 7px;font-size:12px;font-family:monospace;letter-spacing:1px;';
-  hexInp.placeholder = 'RRGGBB';
-  hexRow.appendChild(hexHash);
-  hexRow.appendChild(hexInp);
-  container.appendChild(hexRow);
 
   // ── State ──
   let hue = 210, sat = 0.65, val = 0.9;
@@ -686,59 +753,96 @@ function _cpBuildPhotoshopPicker(container, swatchEl, onPick, panelId) {
     ctx.putImageData(img, 0, 0);
   }
 
-  // ── Draw triangle via canvas gradients (надёжно, без артефактов) ──
+  // ── Draw triangle: pixel HSV + edge AA (must match applyTri / drawSVIndicator) ──
+  function triBaryAt(x, y, v0, v1, v2, denom) {
+    const b0 = ((v1[1] - v2[1]) * (x - v2[0]) + (v2[0] - v1[0]) * (y - v2[1])) / denom;
+    const b1 = ((v2[1] - v0[1]) * (x - v2[0]) + (v0[0] - v2[0]) * (y - v2[1])) / denom;
+    return [b0, b1, 1 - b0 - b1];
+  }
+  function triInside(b0, b1, b2) {
+    return b0 >= 0 && b1 >= 0 && b2 >= 0;
+  }
+
   function drawTriangle() {
-    const [v0, v1, v2] = triVerts(); // v0=white, v1=black, v2=hue
-    const [hr, hg, hb] = hsv2rgb(hue, 1, 1);
-    const hueColor = `rgb(${hr},${hg},${hb})`;
+    const [v0, v1, v2] = triVerts();
+    const SS = 2;
+    const w = SIZE * SS;
+    const h = SIZE * SS;
+    const off = document.createElement('canvas');
+    off.width = w;
+    off.height = h;
+    const offCtx = off.getContext('2d');
+    const img = offCtx.createImageData(w, h);
+    const data = img.data;
+    const denom = (v1[1] - v2[1]) * (v0[0] - v2[0]) + (v2[0] - v1[0]) * (v0[1] - v2[1]);
+    if (Math.abs(denom) < 0.001) return;
 
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(v0[0], v0[1]);
-    ctx.lineTo(v1[0], v1[1]);
-    ctx.lineTo(v2[0], v2[1]);
-    ctx.closePath();
-    ctx.clip();
+    const samp = [[0.25, 0.25], [0.75, 0.25], [0.25, 0.75], [0.75, 0.75]];
 
-    // Слой 1: градиент от белого (v0) до чистого оттенка (v2)
-    const g1 = ctx.createLinearGradient(v0[0], v0[1], v2[0], v2[1]);
-    g1.addColorStop(0, '#ffffff');
-    g1.addColorStop(1, hueColor);
-    ctx.fillStyle = g1;
-    ctx.fillRect(0, 0, SIZE, SIZE);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        let cov = 0;
+        for (let i = 0; i < 4; i++) {
+          const [b0, b1, b2] = triBaryAt((x + samp[i][0]) / SS, (y + samp[i][1]) / SS, v0, v1, v2, denom);
+          if (triInside(b0, b1, b2)) cov += 0.25;
+        }
+        if (cov <= 0) continue;
 
-    // Слой 2: градиент от прозрачного (v0) до чёрного (v1), перпендикулярно
-    const g2 = ctx.createLinearGradient(v0[0], v0[1], v1[0], v1[1]);
-    g2.addColorStop(0, 'rgba(0,0,0,0)');
-    g2.addColorStop(1, 'rgba(0,0,0,1)');
-    ctx.fillStyle = g2;
-    ctx.fillRect(0, 0, SIZE, SIZE);
+        const [b0, b1, b2] = triBaryAt((x + 0.5) / SS, (y + 0.5) / SS, v0, v1, v2, denom);
+        const v = b0 + b2;
+        const s = v > 0.0001 ? b2 / v : 0;
+        const [r, g, b] = hsv2rgb(hue, s, v);
+        const idx = (y * w + x) * 4;
+        data[idx] = r;
+        data[idx + 1] = g;
+        data[idx + 2] = b;
+        data[idx + 3] = Math.round(cov * 255);
+      }
+    }
+    offCtx.putImageData(img, 0, 0);
 
-    ctx.restore();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(off, 0, 0, SIZE, SIZE);
   }
 
   // ── Draw indicators ──
   function drawHueIndicator() {
     const ha = (hue - 90) * Math.PI / 180;
-    const hx = cx + (Ri + RING/2) * Math.cos(ha);
-    const hy = cy + (Ri + RING/2) * Math.sin(ha);
-    const r = RING / 2 - 1;
-    ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI*2);
-    ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 3; ctx.stroke();
-    ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI*2);
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+    const half = 11 * Math.PI / 180;
+    const midR = (Ri + Ro) / 2;
+    const thick = RING + 6;
+    const [hr, hg, hb] = hsv2rgb(hue, 1, 1);
+    const fill = `rgb(${hr},${hg},${hb})`;
+
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(cx, cy, midR, ha - half, ha + half);
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    ctx.lineWidth = thick + 3;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy, midR, ha - half, ha + half);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = thick + 1;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy, midR, ha - half, ha + half);
+    ctx.strokeStyle = fill;
+    ctx.lineWidth = thick - 2;
+    ctx.stroke();
+    ctx.restore();
   }
 
   function drawSVIndicator() {
-    const [v0,v1,v2] = triVerts(); // v0=white, v1=black, v2=hue
-    // Позиция = линейная интерполяция барицентрических весов:
-    // b0=white=(1-sat)*val, b1=black=(1-sat)*(1-val), b2=hue=sat
-    // b2=sat, b0=val-sat, b1=1-val
-    const b2 = sat;
-    const b0 = val - sat;
+    const [v0, v1, v2] = triVerts();
+    // b0=white, b1=black, b2=hue → c=b2=s·v, a=b0=v(1-s), b=b1=1-v
+    const b2 = sat * val;
+    const b0 = val * (1 - sat);
     const b1 = 1 - val;
-    const px = b0*v0[0] + b1*v1[0] + b2*v2[0];
-    const py = b0*v0[1] + b1*v1[1] + b2*v2[1];
+    const px = b0 * v0[0] + b1 * v1[0] + b2 * v2[0];
+    const py = b0 * v0[1] + b1 * v1[1] + b2 * v2[1];
 
     // Тень
     ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI*2);
@@ -790,7 +894,6 @@ function _cpBuildPhotoshopPicker(container, swatchEl, onPick, panelId) {
   function emit() {
     const [r,g,b] = hsv2rgb(hue, sat, val);
     const hex = rgb2hex(r,g,b);
-    hexInp.value = hex.slice(1).toUpperCase();
     if (swatchEl) swatchEl.style.background = hex;
     onPick(hex, null);
   }
@@ -821,10 +924,11 @@ function _cpBuildPhotoshopPicker(container, swatchEl, onPick, panelId) {
     const sum=b0+b1+b2;
     if(sum<0.0001) return;
     b0/=sum; b1/=sum; b2/=sum;
-    // v0=white(sat=0,val=1), v1=black(sat=0,val=0), v2=hue(sat=1,val=1)
-    // sat = b2,  val = b0 + b2
-    sat = Math.max(0, Math.min(1, b2));
-    val = Math.max(0, Math.min(1, b0 + b2));
+    // v0=white(s=0,v=1), v1=black(s=0,v=0), v2=hue(s=1,v=1)
+    // V=a+c=b0+b2,  S=c/(a+c)=b2/(b0+b2)
+    const v = b0 + b2;
+    sat = v > 0.0001 ? Math.max(0, Math.min(1, b2 / v)) : 0;
+    val = Math.max(0, Math.min(1, v));
   }
 
   // ── Pointer events с RAF ──
@@ -862,27 +966,69 @@ function _cpBuildPhotoshopPicker(container, swatchEl, onPick, panelId) {
     window._cpCleanup = origClose;
   };
 
-  // ── Hex input ──
-  hexInp.addEventListener('keydown', e=>e.stopPropagation());
-  hexInp.addEventListener('mousedown', e=>e.stopPropagation());
-  hexInp.addEventListener('input', e=>{
-    let v=e.target.value.replace(/[^0-9a-fA-F]/g,'');
-    if(v.length>6) v=v.slice(0,6);
-    e.target.value=v;
-    if(v.length===6){
-      [hue,sat,val]=hex2hsv('#'+v);
-      if(rafId) cancelAnimationFrame(rafId);
-      rafId=requestAnimationFrame(()=>{ draw(); emit(); rafId=null; });
-    }
-  });
-
-  // ── Init ──
-  if(swatchEl){
-    const bg=swatchEl.style.background;
-    if(bg&&bg.match(/^#[0-9a-fA-F]{6}$/)) [hue,sat,val]=hex2hsv(bg);
+  // ── Init: place ring/triangle on current swatch color; do NOT onPick
+  // (emit on open was replacing palette color with the triangle default).
+  function _resolveInitHex(){
+    if(!swatchEl) return null;
+    let bg=(swatchEl.style&&(swatchEl.style.backgroundColor||swatchEl.style.background))||'';
+    let m=String(bg).match(/#([0-9a-fA-F]{6})\b/);
+    if(m) return '#'+m[1];
+    m=String(bg).match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+    if(m) return rgb2hex(+m[1],+m[2],+m[3]);
+    try{
+      const cs=getComputedStyle(swatchEl).backgroundColor;
+      m=cs&&cs.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+      if(m) return rgb2hex(+m[1],+m[2],+m[3]);
+    }catch(e){}
+    return null;
   }
-  draw(); emit();
+  const initHex=_resolveInitHex();
+  if(initHex) [hue,sat,val]=hex2hsv(initHex);
+  draw();
+  {
+    const [r,g,b]=hsv2rgb(hue,sat,val);
+    const hex=rgb2hex(r,g,b);
+    if(swatchEl) swatchEl.style.background=hex;
+  }
+
+  // Sync picker UI from an external hex (e.g. palette cell click → show code in "свой цвет")
+  container._cpSetHex = function(hex){
+    if(!hex) return;
+    let h=String(hex).trim();
+    if(/^[0-9a-fA-F]{6}$/i.test(h)) h='#'+h;
+    if(!/^#[0-9a-fA-F]{6}$/i.test(h)) return;
+    [hue,sat,val]=hex2hsv(h);
+    if(swatchEl) swatchEl.style.background=h;
+    draw();
+  };
 }
+
+/** Sync «Свой цвет» swatch + open triangle from hex field / paste / palette code. */
+function _cpSyncCustomColor(color, panelId) {
+  if (!color) return;
+  let h = String(color).trim();
+  if (/^[0-9a-fA-F]{6}$/i.test(h)) h = '#' + h;
+  if (!/^#[0-9a-fA-F]{6}$/i.test(h)) {
+    if (typeof _rgbToHex === 'function') {
+      const c = _rgbToHex(color);
+      if (c) h = c; else return;
+    } else return;
+  }
+
+  const syncSlot = (slot) => {
+    if (!slot || slot.style.display === 'none') return;
+    const swatch = slot.querySelector('[id$="-swatch"], .draw-custom-swatch');
+    if (swatch) swatch.style.background = h;
+    const pickerWrap = swatch && swatch.nextElementSibling;
+    if (pickerWrap && typeof pickerWrap._cpSetHex === 'function') pickerWrap._cpSetHex(h);
+  };
+
+  const ids = [];
+  if (panelId) ids.push(panelId);
+  else if (_cpActivePanelId) ids.push(_cpActivePanelId);
+  ids.forEach(id => syncSlot(document.getElementById(id)));
+}
+window._cpSyncCustomColor = _cpSyncCustomColor;
 
 function closeColorPanel(panelId) {
   if (typeof window._cpCleanup === 'function') { window._cpCleanup(); }
@@ -944,6 +1090,28 @@ function applyTextColor(c, schemeRef){
   // Only update element-level textColorScheme when coloring the whole element
   // When coloring a fragment, per-char data-scheme handles it
   if(d && !_isFragment) d.textColorScheme = schemeRef || null;
+
+  // Placeholder: keep gray #888 on canvas, store ink color on .cs / scheme
+  if(!_isFragment && d && typeof window._isTextPlaceholder==='function' && window._isTextPlaceholder(sel, d)){
+    const tel=sel.querySelector('.tel')||sel.querySelector('.ec');
+    if(tel){
+      let cs=tel.getAttribute('style')||'';
+      const re=/color\s*:[^;]+;?/i;
+      cs=re.test(cs)?cs.replace(re,'color:'+c+';'):(cs+(cs&&!cs.endsWith(';')?';':'')+'color:'+c+';');
+      tel.setAttribute('style',cs);
+      d.cs=cs;
+    }
+    if(typeof window._restoreTextPlaceholder==='function')
+      window._restoreTextPlaceholder(sel, d, tel||sel.querySelector('.tel'));
+    try{
+      const _sw=document.getElementById('p-col-preview');if(_sw)_sw.style.background=c;
+      document.getElementById('p-hex').value=(typeof _colorFieldDisplay==='function')
+        ?_colorFieldDisplay(c, d.textColorScheme):c;
+    }catch(e){}
+    if(typeof commitAll==='function') commitAll(); else { save(); saveState(); }
+    return;
+  }
+
   if(typeof rtColor==='function'){
     if(typeof _rtColorPickInProgress!=='undefined') _rtColorPickInProgress=true;
     rtColor(c, schemeRef || null);

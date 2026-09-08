@@ -62,6 +62,22 @@ function applyTheme(){
     } else {
       s.bg='custom'; s.bgc=theme.bg;
     }
+    if(s.bgImg&&s.bgImg.fromIcon){
+      let rebuild=false;
+      if(s.bgImg.iconColorScheme!=null&&s.bgImg.iconColorScheme!==undefined){
+        const resolved=_resolveSchemeColor(s.bgImg.iconColorScheme,theme);
+        if(resolved){s.bgImg.iconColor=resolved;s.bgImg.iconColorCustom=false;rebuild=true;}
+      }else if(!s.bgImg.iconColorCustom){
+        const defScheme=(typeof DEFAULT_ICON_COLOR_SCHEME!=='undefined')
+          ?{col:DEFAULT_ICON_COLOR_SCHEME.col,row:DEFAULT_ICON_COLOR_SCHEME.row}
+          :{col:0,row:2};
+        s.bgImg.iconColorScheme=defScheme;
+        const resolved=_resolveSchemeColor(defScheme,theme);
+        s.bgImg.iconColor=resolved||theme.shapeFill||theme.tc||'#6366f1';
+        rebuild=true;
+      }
+      if(rebuild&&typeof window._rebuildIconBgImgSrc==='function') window._rebuildIconBgImgSrc(s.bgImg);
+    }
     s.els.forEach(el=>{
       if(el.type==='text'){
         const isHeading=el.textRole==='heading';
@@ -86,7 +102,8 @@ function applyTheme(){
         if(!el.cs)el.cs='font-size:36px;';
 
         // Update per-char colors: remap scheme-pinned, leave custom, leave uncolored
-        if(typeof _toCharObjs==='function' && el.html){
+        // Placeholder stays #888 — ink color lives on .cs / textColorScheme only
+        if(typeof _toCharObjs==='function' && el.html && !el.textPlaceholder){
           const chars=_toCharObjs(el.html);
           let changed=false;
           chars.forEach(ch=>{
@@ -107,6 +124,10 @@ function applyTheme(){
             // Custom color (no _schemeRef) → leave as-is
           });
           if(changed) el.html=_charObjsToHtml(chars);
+        }
+        if(el.textPlaceholder && typeof window._paintTextPlaceholderHtml==='function'){
+          const label=el.textPlaceholderLabel||(typeof window._textPlaceholderLabel==='function'?window._textPlaceholderLabel(el,null):'');
+          if(label) el.html=window._paintTextPlaceholderHtml(label);
         }
         // Update .cs so chars without explicit color inherit the new default
         if(newColor){
@@ -142,6 +163,14 @@ function applyTheme(){
           delete el.textBg; delete el.textBgOp;
         }
         // textBgScheme===null: custom color — leave textBg unchanged
+        if(el.textBgCol2Scheme !== null && el.textBgCol2Scheme !== undefined){
+          const resolvedBg2 = _resolveSchemeColor(el.textBgCol2Scheme, theme);
+          if(resolvedBg2) el.textBgCol2 = resolvedBg2;
+        }
+        if(el.textColorGrad2Scheme !== null && el.textColorGrad2Scheme !== undefined){
+          const resolvedTc2 = _resolveSchemeColor(el.textColorGrad2Scheme, theme);
+          if(resolvedTc2) el.textColorGrad2 = resolvedTc2;
+        }
 
         // Border color: remap if scheme-pinned, keep if custom
         if(el.borderScheme !== null && el.borderScheme !== undefined){
@@ -232,11 +261,28 @@ function applyTheme(){
         const tc=theme.ac1||'#3b82f6';
         const tc2=theme.ac2||'#1d4ed8';
         const textC=theme.bodyColor||'#ffffff';
-        el.headerBg=tc;
-        el.cellBg=tc2+'20';
-        el.altBg=tc+'12';
-        el.borderColor=tc+'80';
-        el.textColor=textC;
+        if(el.borderColorScheme!=null&&el.borderColorScheme!==undefined){
+          const resolved=_resolveSchemeColor(el.borderColorScheme,theme);
+          if(resolved) el.borderColor=resolved.length===7?resolved+'80':resolved;
+        }else el.borderColor=tc+'80';
+        if(el.headerBgScheme!=null&&el.headerBgScheme!==undefined){
+          const resolved=_resolveSchemeColor(el.headerBgScheme,theme);
+          if(resolved) el.headerBg=resolved;
+        }else el.headerBg=tc;
+        if(el.cellBgScheme!=null&&el.cellBgScheme!==undefined){
+          const resolved=_resolveSchemeColor(el.cellBgScheme,theme);
+          if(resolved) el.cellBg=resolved.length===7?resolved+'20':resolved;
+        }else el.cellBg=tc2+'20';
+        if(el.textColorScheme!=null&&el.textColorScheme!==undefined){
+          const resolved=_resolveSchemeColor(el.textColorScheme,theme);
+          if(resolved) el.textColor=resolved;
+        }else el.textColor=textC;
+        if(el.altBg){
+          if(el.altBgScheme!=null&&el.altBgScheme!==undefined){
+            const resolved=_resolveSchemeColor(el.altBgScheme,theme);
+            if(resolved) el.altBg=resolved.length===7?resolved+'12':resolved;
+          }else el.altBg=tc+'12';
+        }
         // Remap chart bg/stroke scheme colors
         if(el.chartBgScheme!=null && el.chartBgScheme!==undefined){
           const resolved=_resolveSchemeColor(el.chartBgScheme,theme);
@@ -257,7 +303,12 @@ function applyTheme(){
           const resolved = _resolveSchemeColor(el.iconColorScheme, theme);
           if(resolved){ newColor = resolved; el.iconColor = resolved; el.iconColorCustom = false; }
         } else if(!el.iconColorCustom){
-          newColor = theme.shapeFill||theme.tc||'#3b82f6';
+          const defScheme = (typeof DEFAULT_ICON_COLOR_SCHEME !== 'undefined')
+            ? {col: DEFAULT_ICON_COLOR_SCHEME.col, row: DEFAULT_ICON_COLOR_SCHEME.row}
+            : {col:0, row:2};
+          el.iconColorScheme = defScheme;
+          const resolved = _resolveSchemeColor(defScheme, theme);
+          newColor = resolved || theme.shapeFill || theme.tc || '#6366f1';
           el.iconColor = newColor;
         }
         if(el.shadow){
@@ -268,27 +319,33 @@ function applyTheme(){
           // shadowColorScheme===null: custom shadow — leave unchanged
         }
         if(newColor){
-          const ic=ICONS.find(function(x){return x.id===el.iconId;});
+          const ic=typeof getIconById==='function'?getIconById(el.iconId):ICONS.find(function(x){return x.id===el.iconId;});
           if(ic){
-            const _newSvg=_buildIconSVG(ic,newColor,el.iconSw!=null?el.iconSw:1.8,el.iconStyle||'stroke',el.shadow,el.shadowBlur,el.shadowColor,el.shadowSize,el.id);
-            // Re-fit viewBox after color change to preserve tight bounds
-            try{
-              const _pm=[..._newSvg.matchAll(/(?<=[\s<])d="([^"]+)"/g)].map(m=>m[1]);
-              if(_pm.length>0){
-                const _wr=document.createElement('div');_wr.style.cssText='position:fixed;left:-9999px;top:-9999px;width:200px;height:200px;';
-                const _ts=document.createElementNS('http://www.w3.org/2000/svg','svg');_ts.setAttribute('viewBox','0 0 24 24');_ts.style.cssText='width:200px;height:200px;';
-                const _g=document.createElementNS('http://www.w3.org/2000/svg','g');
-                _pm.forEach(pd=>{const _p=document.createElementNS('http://www.w3.org/2000/svg','path');_p.setAttribute('d',pd);_g.appendChild(_p);});
-                _ts.appendChild(_g);_wr.appendChild(_ts);document.body.appendChild(_wr);
-                const bb=_g.getBBox();document.body.removeChild(_wr);
-                if(bb&&bb.width>0&&bb.height>0){
-                  const sw2=(parseFloat(el.iconSw)||1.8)/2;
-                  const vx=bb.x-sw2,vy=bb.y-sw2,vw=bb.width+sw2*2,vh=bb.height+sw2*2;
-                  el.svgContent=_newSvg.replace(/viewBox="[^"]*"/,'viewBox="'+vx+' '+vy+' '+vw+' '+vh+'"');
-                  el.iconFitted=true;
+            const _newSvg=_buildIconSVG(ic,newColor,el.iconSw!=null?el.iconSw:1.8,el.iconStyle,el.shadow,el.shadowBlur,el.shadowColor,el.shadowSize,el.id,el.iconFillOp);
+            // Raw SVG icons (герб и т.п.): keep native viewBox — path-fit breaks nested transforms.
+            if(typeof _iconIsRaw==='function'&&_iconIsRaw(ic)){
+              el.svgContent=(typeof _stampIconFitViewBox==='function'?_stampIconFitViewBox(_newSvg,el):null)||_newSvg;
+              el.iconFitted=true;
+            } else {
+              // Re-fit viewBox after color change to preserve tight bounds
+              try{
+                const _pm=[..._newSvg.matchAll(/(?<=[\s<])d="([^"]+)"/g)].map(m=>m[1]);
+                if(_pm.length>0){
+                  const _wr=document.createElement('div');_wr.style.cssText='position:fixed;left:-9999px;top:-9999px;width:200px;height:200px;';
+                  const _ts=document.createElementNS('http://www.w3.org/2000/svg','svg');_ts.setAttribute('viewBox','0 0 24 24');_ts.style.cssText='width:200px;height:200px;';
+                  const _g=document.createElementNS('http://www.w3.org/2000/svg','g');
+                  _pm.forEach(pd=>{const _p=document.createElementNS('http://www.w3.org/2000/svg','path');_p.setAttribute('d',pd);_g.appendChild(_p);});
+                  _ts.appendChild(_g);_wr.appendChild(_ts);document.body.appendChild(_wr);
+                  const bb=_g.getBBox();document.body.removeChild(_wr);
+                  if(bb&&bb.width>0&&bb.height>0){
+                    const sw2=(parseFloat(el.iconSw)||1.8)/2;
+                    const vx=bb.x-sw2,vy=bb.y-sw2,vw=bb.width+sw2*2,vh=bb.height+sw2*2;
+                    el.svgContent=_newSvg.replace(/viewBox="[^"]*"/,'viewBox="'+vx+' '+vy+' '+vw+' '+vh+'"');
+                    el.iconFitted=true;
+                  } else { el.svgContent=_newSvg; el.iconFitted=false; }
                 } else { el.svgContent=_newSvg; el.iconFitted=false; }
-              } else { el.svgContent=_newSvg; el.iconFitted=false; }
-            }catch(_e){ el.svgContent=_newSvg; el.iconFitted=false; }
+              }catch(_e){ el.svgContent=_newSvg; el.iconFitted=false; }
+            }
           }
         }
       }
@@ -363,6 +420,8 @@ function applyTheme(){
   });
   // Set theme index FIRST so all refresh functions use correct colors
   appliedThemeIdx=selTheme;
+  // Remap handwritten ink pinned to palette swatches
+  if(typeof remapInkForTheme==='function') remapInkForTheme(theme);
   // Refresh decor SVGs with new accent colors (layout stays the same)
   refreshDecorColors(theme.ac1||'#6366f1', theme.ac2||'#818cf8', true);
   if(typeof buildSlideTplGrid === 'function') buildSlideTplGrid();
@@ -434,14 +493,17 @@ function applyTheme(){
     if(d.graphColor) domEl.dataset.graphColor=d.graphColor;
     if(typeof window._applyChemGraphStyle==='function') window._applyChemGraphStyle(domEl, d);
   });
-  invalidateThumbCache();
+  invalidateThumbCache({keepDom:true});
   saveState();
-  drawThumbs(true);
+  drawThumbs(false, 'all');
   // Обновить квадратики цветов в панели, если элемент уже снова выбран
   if(typeof syncProps==='function') syncProps();
+  // Brush color swatch / draw palette follow the new scheme
+  if(typeof window.refreshDrawColorUI==='function') window.refreshDrawColorUI();
   // Если палитра уже была открыта — пересобрать сетку под новую схему
   if(typeof refreshOpenColorPanel==='function') refreshOpenColorPanel();
-  toast(t('toastThemeApplied')+': '+theme.name,'ok');
+  if(typeof refreshColorBarPalette==='function') refreshColorBarPalette();
+  toast(t('toastThemeApplied')+': '+(typeof _themeDisplayName==='function'?_themeDisplayName(theme):theme.name),'ok');
 }
 
 /** Средняя яркость фона (0…1) по hex-цветам в CSS. */

@@ -51,6 +51,10 @@ window._serializeAppletFromDom = function(el, d){
     }
     if(el.dataset.flipFrontImg !== undefined) d.flipFrontImg = el.dataset.flipFrontImg;
     if(el.dataset.flipBackImg !== undefined) d.flipBackImg = el.dataset.flipBackImg;
+    if(el.dataset.flipFrontFont !== undefined) d.flipFrontFont = el.dataset.flipFrontFont;
+    if(el.dataset.flipBackFont !== undefined) d.flipBackFont = el.dataset.flipBackFont;
+    if(el.dataset.flipFrontFs !== undefined) d.flipFrontFs = +el.dataset.flipFrontFs || 20;
+    if(el.dataset.flipBackFs !== undefined) d.flipBackFs = +el.dataset.flipBackFs || 20;
   }
 
   if(el.dataset.genRx !== undefined) d.rx = +el.dataset.genRx;

@@ -698,13 +698,20 @@ function urlFromElementData(d){
 }
 
 function _qrPosFromClient(clientX, clientY, w, h){
-  let x=Math.round((canvasW-w)/2), y=Math.round((canvasH-h)/2);
   if(clientX!=null&&clientY!=null&&typeof _toCanvasCoords==='function'){
     const pos=_toCanvasCoords(clientX, clientY);
-    x=Math.max(0, Math.min(canvasW-w, Math.round(pos.x-w/2)));
-    y=Math.max(0, Math.min(canvasH-h, Math.round(pos.y-h/2)));
+    const x=Math.max(0, Math.min(canvasW-w, Math.round(pos.x-w/2)));
+    const y=Math.max(0, Math.min(canvasH-h, Math.round(pos.y-h/2)));
+    return {x, y, w, h};
   }
-  return {x, y};
+  if(typeof _insertGeom==='function'){
+    return _insertGeom(w, h);
+  }
+  return {
+    x:Math.round((canvasW-w)/2),
+    y:Math.round((canvasH-h)/2),
+    w, h
+  };
 }
 
 // Editable QR applet (_isQR image with props panel)
@@ -740,10 +747,12 @@ function insertApplet(a, opts){
   }
   if(typeof pushUndo==="function")pushUndo();
   const aspect=a.aspectRatio||null;
-  const w=300, h=aspect?Math.round(w/aspect):320;
+  let w=300, h=aspect?Math.round(w/aspect):320;
   const pos=_qrPosFromClient(opts.clientX, opts.clientY, w, h);
   const x=pos.x;
   const y=pos.y;
+  if(pos.w!=null) w=pos.w;
+  if(pos.h!=null) h=pos.h;
   // Generator defaults
   const cfg = (a.id==='generator'||a.id==='timer') ? {genMin:1,genMax:100,genStep:1,palette:_appletTheme()} : null;
   const html=typeof a.htmlFn==='function'?a.htmlFn(_appletTheme(),cfg):a.html||'';
@@ -1211,12 +1220,16 @@ window.ensureAppletHtmlFromData = function(d){
     });
   }
   else if(d.appletId==='flip' && typeof getFlipHTML==='function'){
-    d.appletHtml=getFlipHTML(p,{
+    const cfg=typeof _flipCfgFromData==='function'?_flipCfgFromData(d):{
       flipFace:d.flipFace,flipFrontText:d.flipFrontText,flipFrontImg:d.flipFrontImg,
       flipBackText:d.flipBackText,flipBackImg:d.flipBackImg,
+      flipFrontFont:d.flipFrontFont,flipBackFont:d.flipBackFont,
+      flipFrontFs:d.flipFrontFs,flipBackFs:d.flipBackFs,
       genBg:d.genBg,genColor:d.genColor,genBgOp:d.genBgOp,genBgBlur:d.genBgBlur,
       genBgScheme:d.genBgScheme,genColorScheme:d.genColorScheme
-    });
+    };
+    cfg.w=d.w; cfg.h=d.h;
+    d.appletHtml=getFlipHTML(p,cfg);
   }
   else if(d.appletId==='notes' && typeof getNotesHTML==='function'){
     d.appletHtml=getNotesHTML(p,{notesText:d.notesText,notesBg:d.notesBg});

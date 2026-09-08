@@ -1,0 +1,20 @@
+        function grassSwayChunk(markup,seed){
+          const painted='<g fill="'+fill+'">'+paintForestMarkup(markup,fill)+'</g>';
+          // Без анимации — тот же groupTransform, что у деревьев/оленя (без pivot-сдвига).
+          if(!doAnimate){
+            return '<g'+(gxf?' transform="'+gxf+'"':'')+'>'+painted+'</g>';
+          }
+          const innerTf='translate('+f(-pivotX)+','+f(-pivotY)+')'+(gxf?' '+gxf:'');
+          const amp=(0.7+rng(seed)*1.1).toFixed(2);
+          const dur=(3.2+rng(seed+3)*3.8).toFixed(2);
+          const beg=(-rng(seed+5)*parseFloat(dur)).toFixed(2);
+          const v0='0';
+          const v1=amp;
+          const v2=(-amp*0.82).toFixed(2);
+          const v3=(amp*0.45).toFixed(2);
+          return '<g transform="translate('+f(pivotX)+','+f(pivotY)+')">'+
+            '<g>'+
+            '<animateTransform attributeName="transform" type="skewX" values="'+v0+';'+v1+';'+v2+';'+v3+';'+v0+'" keyTimes="0;0.25;0.5;0.75;1" dur="'+dur+'s" begin="'+beg+'s" repeatCount="indefinite" calcMode="spline" keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1"/>'+
+            '<g transform="'+innerTf+'">'+painted+'</g>'+
+            '</g></g>';
+        }

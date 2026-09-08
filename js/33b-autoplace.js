@@ -245,7 +245,18 @@ function _apVisualDefaults(el,zw,zh){
 }
 
 // ── Проход 1: классификация + сброс ─────────────────────────────────
+function _apResetSlideVisuals(s){
+  if(!s) return;
+  s.bg='theme';
+  delete s.bgc; delete s.bgScheme; delete s.bgImg;
+}
+function _apClearTextBoxStyle(el){
+  delete el.textBg; delete el.textBgOp; delete el.textBgBlur;
+  delete el.textBgGrad; delete el.textBgCol2; delete el.textBgDir; delete el.textBgScheme; delete el.textBgCol2Scheme;
+  delete el.textBorderW; delete el.textBorderColor; delete el.textBorderStyle;
+}
 function _apSlide_prep(s,isTitle,gentle){
+  _apResetSlideVisuals(s);
   const H=canvasH;
   const els=(s.els||[]).filter(e=>!e._isDecor);
   if(!els.length) return;
@@ -275,6 +286,7 @@ function _apSlide_prep(s,isTitle,gentle){
 }
 
 function _apGentleReset(el){
+  _apClearTextBoxStyle(el);
   if(el.cs){
     el.cs=el.cs
       .replace(/font-size\s*:\s*[^;]+;?/gi,'')
@@ -329,6 +341,7 @@ function _apSlide(s,isTitle,headAlign){
 // СБРОС ФОРМАТИРОВАНИЯ — убирает font-size/weight из cs И из span
 // ══════════════════════════════════════════════════════════════════
 function _apReset(el){
+  _apClearTextBoxStyle(el);
   if(el.cs){
     el.cs=el.cs
       .replace(/font-size\s*:\s*[^;]+;?/gi,'')
@@ -373,6 +386,7 @@ function _apReset(el){
     tag.replaceWith(f);
   });
   el.html=tmp.innerHTML;
+  _apClearHtmlColors(el);
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -597,12 +611,14 @@ function _apHStyle(el,fs,noUppercase){
     .replace(/font-weight\s*:\s*[^;]+;?/gi,'')
     .replace(/text-transform\s*:\s*[^;]+;?/gi,'')
     .replace(/\bcolor\s*:\s*[^;]+;?/gi,'');
-  const _tc=_apThemeColor();
+  const headScheme={col:0,row:2};
+  const resolved=typeof _resolveSchemeColor==='function'&&typeof _activeThemeForScheme==='function'
+    ?(_resolveSchemeColor(headScheme,_activeThemeForScheme())||'#ffffff')
+    :'#ffffff';
   el.cs=(el.cs?el.cs.replace(/;$/,'')+';':'')
-    +'font-size:'+fs+'px;font-weight:700;'+(noUppercase?'':'text-transform:uppercase;')+'color:'+_tc;
+    +'font-size:'+fs+'px;font-weight:700;'+(noUppercase?'':'text-transform:uppercase;')+'color:'+resolved;
   el.textRole='heading';
-  // null = зафиксировать цвет (не перебивать белым из тёмной темы)
-  el.textColorScheme = null;
+  el.textColorScheme=headScheme;
   delete el.textColorGrad; delete el.textColorGrad1; delete el.textColorGrad2; delete el.textColorGradDir;
   _apClearHtmlColors(el);
 }
@@ -787,9 +803,9 @@ function _apCaptionFs(){
 }
 function _apCaptionStyle(cap,x,y,w,h){
   const fs=_apCaptionFs();
-  const color=_apThemeColor();
+  const capScheme={col:7,row:0};
   _apSetFs(cap,fs);
-  _apSetColor(cap,color);
+  _apSetSchemeTextColor(cap,capScheme);
   _apAlign(cap,'center');
   cap.textRole='caption';
   cap.valign='top';
@@ -849,7 +865,7 @@ function _apCalcGlobalFs(allSlides, W, H, PAD, GAP){
 function _apTexts(texts,ax,ay,aw,ah,gap){
   if(!texts.length) return;
   const MIN=12;
-  const color=_apThemeColor();
+  const bodyScheme={col:7,row:0};
 
   // Используем глобальный шрифт (одинаковый для всей презентации)
   // но дополнительно проверяем что он влезает в эту зону
@@ -873,7 +889,7 @@ function _apTexts(texts,ax,ay,aw,ah,gap){
   texts.forEach((el,i)=>{
     const blockH=Math.max(MIN*2, Math.round(heights[i]*scaleH));
     _apSetFs(el,fs);
-    _apSetColor(el,color);
+    _apSetSchemeTextColor(el,bodyScheme);
     // Preserve element's own width if it fits within available area, else use full aw
     const elW = (el.w && el.w >= 100 && el.w <= aw) ? el.w : aw;
     const elX = ax + Math.round((aw - elW) / 2); // center within available area
@@ -951,6 +967,20 @@ function _apSetFs(el,fs){
   el.cs=el.cs.match(/font-size\s*:/i)
     ? el.cs.replace(/font-size\s*:\s*[^;]+/i,'font-size:'+fs+'px')
     : (el.cs?el.cs.replace(/;$/,'')+';':'')+'font-size:'+fs+'px';
+}
+function _apSetSchemeTextColor(el,schemeRef){
+  if(!schemeRef) return;
+  const theme=typeof _activeThemeForScheme==='function'?_activeThemeForScheme():null;
+  const resolved=(theme&&typeof _resolveSchemeColor==='function')
+    ?_resolveSchemeColor(schemeRef,theme):null;
+  if(!el.cs) el.cs='';
+  el.cs=el.cs.replace(/\bcolor\s*:\s*[^;]+;?/gi,'').replace(/;;+/g,';').replace(/^;+|;+$/g,'').trim();
+  if(resolved){
+    el.cs=(el.cs?el.cs.replace(/;$/,'')+';':'')+'color:'+resolved;
+  }
+  el.textColorScheme=schemeRef;
+  delete el.textColorGrad; delete el.textColorGrad1; delete el.textColorGrad2; delete el.textColorGradDir;
+  _apClearHtmlColors(el);
 }
 function _apSetColor(el,color){
   if(!el.cs) el.cs='';

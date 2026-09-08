@@ -18,6 +18,29 @@ function _tblColors() {
 function _tblMakeCells(rows, cols) {
   return Array.from({length:rows*cols}, ()=>({html:'',align:'left',valign:'middle',bg:'',colspan:1,rowspan:1,hidden:false}));
 }
+function _tblTheme(){
+  return typeof _activeThemeForScheme==='function'?_activeThemeForScheme():null;
+}
+function _tblResolved(hex, scheme, fb){
+  if(scheme!=null&&scheme!==undefined&&typeof _resolveSchemeColor==='function'){
+    const th=_tblTheme();
+    const r=th?_resolveSchemeColor(scheme,th):null;
+    if(r) return r;
+  }
+  return hex||fb||'';
+}
+function _syncTblColorField(inputId, previewId, hex, scheme, fb){
+  const c=_tblResolved(hex, scheme, fb);
+  if(typeof _setColorFieldValue==='function') _setColorFieldValue(inputId, previewId, c, scheme);
+  else{
+    try{
+      const inp=document.getElementById(inputId);
+      if(inp) inp.value=hex||'';
+      const prev=document.getElementById(previewId);
+      if(prev) prev.style.background=c||'transparent';
+    }catch(e){}
+  }
+}
 function _tblEqCols(n){ return Array(n).fill(1/n); }
 function _tblEqRows(n){ return Array(n).fill(1/n); }
 
@@ -36,11 +59,18 @@ function addTable(rows, cols) {
     cells:_tblMakeCells(rows,cols),
     colWidths:_tblEqCols(cols),
     rowHeights:_tblEqRows(rows),
-    borderW:1, borderColor:tc.ac1+'80',
+    borderW:1, borderColor:tc.ac1+'80', borderColorScheme:{col:0,row:4},
     headerRow:true, rx:8, fs:15,
-    textColor:tc.text, headerBg:tc.ac1,
-    cellBg:tc.ac2+'20', altBg:tc.ac1+'12',
+    textColor:tc.text, textColorScheme:{col:0,row:2},
+    headerBg:tc.ac1, headerBgScheme:{col:0,row:6},
+    cellBg:tc.ac2+'20', cellBgScheme:{col:0,row:8},
+    altBg:tc.ac1+'12', altBgScheme:{col:0,row:7},
   };
+  if(typeof _insertGeom==='function'){
+    const g=_insertGeom(d.w,d.h);
+    d.x=g.x; d.y=g.y; d.w=g.w; d.h=g.h;
+    d.fs=Math.max(8, Math.round(15*(g.scale||1)));
+  }
   for(let c=0;c<cols;c++) d.cells[c].html=String.fromCharCode(65+c);
   slides[cur].els.push(d);
   mkEl(d);
@@ -50,7 +80,7 @@ function addTable(rows, cols) {
 }
 
 
-const _TBL_FIELDS=['cells','colWidths','rowHeights','rows','cols','borderW','borderColor','headerRow','rx','fs','textColor','headerBg','cellBg','altBg','tableBgOp','tableBgBlur','showChart','chartType','chartLegend','chartLegendPos','chartLabels','chartLabelOffset','chartBg','chartBgScheme','chartBgOp','chartBgBlur','chartStroke','chartStrokeScheme','chartSw','chartRx','chartLabelColor','chartLabelColorScheme','chartLabelFs','chartSliceGap','chartSliceRadius'];
+const _TBL_FIELDS=['cells','colWidths','rowHeights','rows','cols','borderW','borderColor','borderColorScheme','headerRow','rx','fs','ff','textColor','textColorScheme','headerBg','headerBgScheme','cellBg','cellBgScheme','altBg','altBgScheme','tableBgOp','tableBgBlur','showChart','chartType','chartLegend','chartLegendPos','chartLabels','chartLabelOffset','chartBg','chartBgScheme','chartBgOp','chartBgBlur','chartStroke','chartStrokeScheme','chartSw','chartRx','chartLabelColor','chartLabelColorScheme','chartLabelFs','chartSliceGap','chartSliceRadius'];
 function _tblSaveToDataset(el, d){
   const data={};
   _TBL_FIELDS.forEach(k=>{ if(d[k]!==undefined) data[k]=d[k]; });
@@ -72,9 +102,13 @@ function renderTableEl(el, d) {
   if((!d.cells||!d.colWidths)&&el.dataset.tableData){
     try{const td=JSON.parse(el.dataset.tableData);Object.assign(d,td);}catch(e){}
   }
-  const bw=d.borderW||1, bc=d.borderColor||'#3b82f680';
+  const bw=d.borderW||1;
+  const bc=(!d.borderColor||d.borderColor==='transparent')&&!d.borderColorScheme
+    ?'transparent'
+    :_tblResolved(d.borderColor,d.borderColorScheme,'#3b82f680');
   const rx=d.rx||0, fs=d.fs||15;
-  const textColor=d.textColor||'#fff';
+  const tableFf=d.ff?`font-family:${d.ff};`:'';
+  const textColor=_tblResolved(d.textColor,d.textColorScheme,'#fff');
   const _tblOp=d.tableBgOp!=null?+d.tableBgOp:1;
   // Apply tableBgOp by converting hex colors to rgba — so opacity and backdrop-filter coexist
   function _tblRgba(hex,extraOp){
@@ -88,9 +122,9 @@ function renderTableEl(el, d) {
     a=a*(extraOp!=null?extraOp:_tblOp);
     return `rgba(${r},${g},${b},${a.toFixed(3)})`;
   }
-  const headerBg=_tblRgba(d.headerBg||'#3b82f6');
-  const cellBg=_tblRgba(d.cellBg||'#1e293b');
-  const altBg=d.altBg?_tblRgba(d.altBg):'';
+  const headerBg=_tblRgba(_tblResolved(d.headerBg,d.headerBgScheme,'#3b82f6'));
+  const cellBg=_tblRgba(_tblResolved(d.cellBg,d.cellBgScheme,'#1e293b'));
+  const altBg=d.altBg?_tblRgba(_tblResolved(d.altBg,d.altBgScheme,d.altBg)):'';
 
   // Guard: all essential fields must be valid numbers/arrays
   if(!d.rows||d.rows<1) d.rows=1;
@@ -105,7 +139,7 @@ function renderTableEl(el, d) {
   const cws=d.colWidths.map(f=>Math.max(20,Math.round(f*W)));
   const rhs=d.rowHeights.map(f=>Math.max(14,Math.round(f*H)));
 
-  let t=`<table style="width:100%;height:100%;border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:${fs}px;color:${textColor};user-select:none;">`; 
+  let t=`<table style="width:100%;height:100%;border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:${fs}px;color:${textColor};${tableFf}user-select:none;">`; 
   t+=`<colgroup>${cws.map(w=>`<col style="width:${w}px">`).join('')}</colgroup><tbody>`;
 
   let ci=0;
@@ -117,7 +151,8 @@ function renderTableEl(el, d) {
       if(cell.hidden) continue;
       const isH=d.headerRow&&r===0;
       const isAlt=!isH&&altBg&&r%2===0;
-      const bg=cell.bg?_tblRgba(cell.bg):(isH?headerBg:isAlt?altBg:cellBg);
+      const cellBgRaw=cell.bg||cell.bgScheme!=null?_tblResolved(cell.bg,cell.bgScheme,''):'';
+      const bg=cellBgRaw?_tblRgba(cellBgRaw):(isH?headerBg:isAlt?altBg:cellBg);
       const selected=sel&&sel.dataset.id===d.id&&_tblSel&&_tblSel.elId===d.id&&_tblSelSet.has(r+':'+c);
       const cs=cell.colspan||1,rs=cell.rowspan||1;
       const isLastC=(c+cs-1)>=d.cols-1, isLastR=(r+rs-1)>=d.rows-1;
@@ -129,8 +164,10 @@ function renderTableEl(el, d) {
       const tag=isH?'th':'td';
       const selStyle=selected?`outline:2px solid var(--selb);outline-offset:-1px;`:'';
       const cellFs=cell.fs?(`;font-size:${cell.fs}px`):'';
-      const cellTc=cell.tc?(`;color:${cell.tc}`):'';
-      t+=`<${tag} data-r="${r}" data-c="${c}"${span} style="background:${bg};${borders}text-align:${cell.align||'left'};vertical-align:${cell.valign||'middle'};padding:5px 9px;overflow:hidden;word-break:normal;overflow-wrap:break-word;font-weight:${isH?700:400};box-sizing:border-box;${cr}${selStyle}${cellFs}${cellTc}">${cell.html||''}</${tag}>`; 
+      const cellFf=cell.ff?(`;font-family:${cell.ff}`):'';
+      const cellTcRaw=cell.tc||cell.tcScheme!=null?_tblResolved(cell.tc,cell.tcScheme,''):'';
+      const cellTc=cellTcRaw?(`;color:${cellTcRaw}`):'';
+      t+=`<${tag} data-r="${r}" data-c="${c}"${span} style="background:${bg};${borders}text-align:${cell.align||'left'};vertical-align:${cell.valign||'middle'};padding:5px 9px;overflow:hidden;word-break:normal;overflow-wrap:break-word;font-weight:${isH?700:400};box-sizing:border-box;${cr}${selStyle}${cellFs}${cellFf}${cellTc}">${cell.html||''}</${tag}>`; 
     }
     t+='</tr>';
   }
@@ -582,6 +619,79 @@ function tblSplit(){
   renderTableEl(sel,d);save();drawThumbs();saveState();
 }
 
+// ── Strip inline HTML formatting from cell content ──
+function _tblStripCellHtml(html){
+  if(!html) return '';
+  const tmp=document.createElement('div');
+  tmp.innerHTML=html;
+  tmp.querySelectorAll('table').forEach(t=>{
+    const span=document.createElement('span');
+    span.textContent=t.textContent||'';
+    t.replaceWith(span);
+  });
+  tmp.querySelectorAll('[style]').forEach(el=>el.removeAttribute('style'));
+  tmp.querySelectorAll('[class]').forEach(el=>el.removeAttribute('class'));
+  tmp.querySelectorAll('font').forEach(el=>{
+    el.removeAttribute('color'); el.removeAttribute('face'); el.removeAttribute('size');
+  });
+  tmp.querySelectorAll('span,font').forEach(el=>{
+    if(!el.attributes.length){
+      const frag=document.createDocumentFragment();
+      while(el.firstChild) frag.appendChild(el.firstChild);
+      el.replaceWith(frag);
+    }
+  });
+  return tmp.innerHTML;
+}
+
+function _tblClearCellAttrs(cell, stripHtml){
+  if(!cell) return;
+  cell.align='left';
+  cell.valign='middle';
+  delete cell.bg;
+  delete cell.bgScheme;
+  delete cell.fs;
+  delete cell.tc;
+  delete cell.tcScheme;
+  delete cell.ff;
+  if(stripHtml) cell.html=_tblStripCellHtml(cell.html);
+}
+
+function tblClearTableFormat(){
+  const d=tblData(); if(!d) return;
+  pushUndo();
+  d.cells.forEach(cell=>{
+    if(!cell||cell.hidden) return;
+    _tblClearCellAttrs(cell,true);
+  });
+  renderTableEl(sel,d); save(); drawThumbs(); saveState(); syncTableProps();
+  toast(typeof t==='function'?t('toastTableFormatReset'):'Формат таблицы очищен','ok');
+}
+
+function tblResetCellTextFormat(){
+  const d=tblData();
+  if(!d||!_tblSel||_tblSel.elId!==d.id||_tblSelSet.size===0) return toast('Выберите ячейки');
+  pushUndo();
+  const ecEl=sel&&sel.querySelector('.ec');
+  _tblSelectedCells(d).forEach(({r,c,i})=>{
+    const cell=d.cells[i];
+    if(!cell) return;
+    cell.html=_tblStripCellHtml(cell.html);
+    delete cell.fs;
+    delete cell.tc;
+    if(ecEl){
+      const dom=ecEl.querySelector(`[data-r="${r}"][data-c="${c}"]`);
+      if(dom){
+        dom.innerHTML=cell.html;
+        dom.style.color='';
+        dom.style.fontSize='';
+      }
+    }
+  });
+  renderTableEl(sel,d); save(); drawThumbs(); saveState(); syncTableProps();
+  toast(typeof t==='function'?t('toastFormattingReset'):'Форматирование сброшено','ok');
+}
+
 // ── Apply to all selected cells ──
 function tblSetCellAlign(a){
   const d=tblData();if(!d)return;
@@ -593,14 +703,40 @@ function tblSetCellVAlign(a){
   _tblSelectedCells(d).forEach(({i})=>{if(d.cells[i])d.cells[i].valign=a;});
   renderTableEl(sel,d);save();drawThumbs();saveState();
 }
-function tblSetCellBg(v){
+function tblSetCellBg(v, schemeRef){
   const d=tblData();if(!d)return;
-  _tblSelectedCells(d).forEach(({i})=>{if(d.cells[i])d.cells[i].bg=v;});
-  renderTableEl(sel,d);save();drawThumbs();saveState();
+  _tblSelectedCells(d).forEach(({i})=>{
+    if(!d.cells[i]) return;
+    if(v) d.cells[i].bg=v;
+    else delete d.cells[i].bg;
+    if(schemeRef!==undefined){
+      if(schemeRef) d.cells[i].bgScheme=schemeRef;
+      else delete d.cells[i].bgScheme;
+    }
+  });
+  renderTableEl(sel,d);save();drawThumbs();saveState();syncTableProps();
 }
-function tblSetCellTextColor(v){
+function tblSetCellTextColor(v, schemeRef){
   const d=tblData();if(!d)return;
-  _tblSelectedCells(d).forEach(({i})=>{if(d.cells[i])d.cells[i].tc=v||'';});
+  _tblSelectedCells(d).forEach(({i})=>{
+    if(!d.cells[i]) return;
+    if(v) d.cells[i].tc=v;
+    else delete d.cells[i].tc;
+    if(schemeRef!==undefined){
+      if(schemeRef) d.cells[i].tcScheme=schemeRef;
+      else delete d.cells[i].tcScheme;
+    }
+  });
+  renderTableEl(sel,d);save();drawThumbs();saveState();syncTableProps();
+}
+function tblSetCellFf(ff){
+  const d=tblData();if(!d)return;
+  const val=ff||'';
+  _tblSelectedCells(d).forEach(({i})=>{
+    if(!d.cells[i]) return;
+    if(val) d.cells[i].ff=val;
+    else delete d.cells[i].ff;
+  });
   renderTableEl(sel,d);save();drawThumbs();saveState();
 }
 function tblSetCellFs(v){
@@ -619,14 +755,41 @@ function tblSet(prop,val){
   d[prop]=val;
   renderTableEl(sel,d);save();drawThumbs();saveState();
 }
+window.tblSetColor=function(prop,schemeProp,val,schemeRef){
+  const d=tblData();if(!d)return;
+  d[prop]=val;
+  if(schemeRef!==undefined){
+    if(schemeRef) d[schemeProp]=schemeRef;
+    else delete d[schemeProp];
+  }
+  renderTableEl(sel,d);save();drawThumbs();saveState();syncTableProps();
+};
+function tblClearBorderColor(){
+  tblSetColor('borderColor','borderColorScheme','transparent',null);
+}
+function tblClearTableTextColor(){
+  const th=_tblTheme();
+  const scheme={col:7,row:0};
+  const c=th&&typeof _resolveSchemeColor==='function'?(_resolveSchemeColor(scheme,th)||'#ffffff'):'#ffffff';
+  tblSetColor('textColor','textColorScheme',c,scheme);
+}
+function tblToggleAltRows(on){
+  const d=tblData();if(!d)return;
+  if(on){
+    d.altBg='';
+    d.altBgScheme={col:0,row:7};
+  }else{
+    d.altBg='';
+    delete d.altBgScheme;
+  }
+  renderTableEl(sel,d);save();drawThumbs();saveState();syncTableProps();
+}
 
 // ══ PROPS SYNC ══
 function syncTableProps(){
   if(!sel||sel.dataset.type!=='table')return;
   const d=tblData();if(!d)return;
-  const sc6=v=>typeof v==='string'&&v.length>7?v.slice(0,7):v;
   const sv=(id,v)=>{try{const e=document.getElementById(id);if(!e)return;e.value=v;}catch(e){}};
-  const sw=(id,v)=>{try{const e=document.getElementById(id);if(!e)return;e.style.background=v;}catch(e){}};
   const sc=(id,v)=>{try{document.getElementById(id).checked=v;}catch(e){}};
   // Show per-cell fs if a single cell is selected, else global
   const _cellFsVal = (_tblSel&&_tblSel.elId===d.id&&_tblSelSet.size===1)
@@ -634,10 +797,10 @@ function syncTableProps(){
     : (d.fs||15);
   sv('tbl-fs',_cellFsVal); sv('tbl-rx',d.rx||0); sv('tbl-bw',d.borderW||1);
   try{document.getElementById('tbl-bg-op').value=d.tableBgOp!=null?d.tableBgOp:1;document.getElementById('tbl-bg-blur').value=d.tableBgBlur||0;}catch(e){}
-  sw('tbl-bc-swatch',d.borderColor||'#3b82f6'); sv('tbl-bc-hex',d.borderColor||'#3b82f6');
-  sw('tbl-tc-swatch',d.textColor||'#ffffff');   sv('tbl-tc-hex',d.textColor||'#ffffff');
-  sw('tbl-hbg-swatch',d.headerBg||'#3b82f6');  sv('tbl-hbg-hex',d.headerBg||'#3b82f6');
-  sw('tbl-cbg-swatch',d.cellBg||'#1e293b');     sv('tbl-cbg-hex',d.cellBg||'#1e293b');
+  _syncTblColorField('tbl-bc-hex','tbl-bc-preview',d.borderColor,d.borderColorScheme,'#3b82f6');
+  _syncTblColorField('tbl-tc-hex','tbl-tc-preview',d.textColor,d.textColorScheme,'#ffffff');
+  _syncTblColorField('tbl-hbg-hex','tbl-hbg-preview',d.headerBg,d.headerBgScheme,'#3b82f6');
+  _syncTblColorField('tbl-cbg-hex','tbl-cbg-preview',d.cellBg,d.cellBgScheme,'#1e293b');
   sc('tbl-hrow',d.headerRow!==false); sc('tbl-alt',!!d.altBg);
 
   // ── Chart props sync ──
@@ -707,10 +870,11 @@ function syncTableProps(){
     if(anch){
       ['left','center','right'].forEach(a=>{const b=document.getElementById('tbl-ca-'+a);if(b)b.classList.toggle('active',(anch.align||'left')===a);});
       ['top','middle','bottom'].forEach(a=>{const b=document.getElementById('tbl-va-'+a);if(b)b.classList.toggle('active',(anch.valign||'middle')===a);});
-      sw('tbl-own-bg-swatch',anch.bg||d.cellBg||'#1e293b');
-      sv('tbl-own-bg-hex',anch.bg||'');
-      sw('tbl-cell-tc-swatch',anch.tc||'');
-      sv('tbl-cell-tc-hex',anch.tc||'');
+      const cellFf=anch.ff||d.ff||'';
+      const ffSel=document.getElementById('tbl-ff');
+      if(ffSel) ffSel.value=cellFf;
+      _syncTblColorField('tbl-cell-tc-hex','tbl-cell-tc-preview',anch.tc||'',anch.tcScheme||(anch.tc?null:undefined),'');
+      _syncTblColorField('tbl-own-bg-hex','tbl-own-bg-preview',anch.bg||'',anch.bgScheme||(anch.bg?null:undefined),'');
     }
   }
 }

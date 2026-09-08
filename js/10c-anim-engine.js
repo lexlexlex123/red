@@ -22,13 +22,63 @@ function _captionClip(dir, phase, u, w, h) {
   return `inset(0 0 ${bottom}px 0)`;
 }
 
+/** Callout tip often sits outside w×h — expand caption clip so the tail is not cut. */
+function _captionCalloutData(el, d0) {
+  if (!el && !d0) return null;
+  const d = d0 || (el && el._exportD) || null;
+  const ds = (el && el.dataset) || {};
+  const shId = (d && d.shape) || ds.shape || '';
+  let isCallout = !!(ds.calloutForm || (d && d.calloutForm) ||
+    (ds.tailX !== undefined && ds.tailX !== '') ||
+    (d && d.tailX !== undefined));
+  if (!isCallout && shId && typeof SHAPES !== 'undefined') {
+    const sh = SHAPES.find(s => s.id === shId);
+    if (sh && sh.special === 'callout') isCallout = true;
+  }
+  if (!isCallout) return null;
+  const w = (d && d.w) || (el && (parseInt(el.style.width, 10) || el.offsetWidth)) || 200;
+  const h = (d && d.h) || (el && (parseInt(el.style.height, 10) || el.offsetHeight)) || 200;
+  const tx = d && d.tailX !== undefined ? +d.tailX
+    : (ds.tailX !== undefined && ds.tailX !== '' ? +ds.tailX : 0);
+  const ty = d && d.tailY !== undefined ? +d.tailY
+    : (ds.tailY !== undefined && ds.tailY !== '' ? +ds.tailY : (h / 2 + 30));
+  let rx = d && d.tailRoundX !== undefined ? +d.tailRoundX
+    : (ds.tailRoundX !== undefined && ds.tailRoundX !== '' ? +ds.tailRoundX : undefined);
+  let ry = d && d.tailRoundY !== undefined ? +d.tailRoundY
+    : (ds.tailRoundY !== undefined && ds.tailRoundY !== '' ? +ds.tailRoundY : undefined);
+  if (rx === undefined || ry === undefined) {
+    const def = typeof window._calloutDefaultRoundRel === 'function'
+      ? window._calloutDefaultRoundRel(tx, ty)
+      : { tailRoundX: tx * 0.55, tailRoundY: ty * 0.55 };
+    if (rx === undefined) rx = def.tailRoundX;
+    if (ry === undefined) ry = def.tailRoundY;
+  }
+  const sw = d && d.sw != null ? +d.sw
+    : (ds.sw !== undefined && ds.sw !== '' ? +ds.sw : 14);
+  return { w, h, tipX: w / 2 + tx, tipY: h / 2 + ty, rpx: w / 2 + rx, rpy: h / 2 + ry, pad: Math.max(12, sw * 1.5) };
+}
+
+function _captionContentExtents(el, w, h, d0) {
+  w = w || 200;
+  h = h || 200;
+  const c = _captionCalloutData(el, d0);
+  if (!c) return { minX: 0, minY: 0, maxX: w, maxY: h, ow: w, oh: h };
+  const pad = c.pad;
+  const minX = Math.min(0, c.tipX - pad, c.rpx - pad);
+  const minY = Math.min(0, c.tipY - pad, c.rpy - pad);
+  const maxX = Math.max(w, c.tipX + pad, c.rpx + pad);
+  const maxY = Math.max(h, c.tipY + pad, c.rpy + pad);
+  return { minX, minY, maxX, maxY, ow: Math.max(1, maxX - minX), oh: Math.max(1, maxY - minY) };
+}
+
 function _captionGroupBounds(items) {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   (items || []).forEach(it => {
-    const x = it.x != null ? it.x : 0, y = it.y != null ? it.y : 0;
-    const w = it.w || 200, h = it.h || 200;
+    const ext = it.ext || _captionContentExtents(it.el, it.w, it.h, it.d);
+    const x = (it.x != null ? it.x : 0) + ext.minX;
+    const y = (it.y != null ? it.y : 0) + ext.minY;
     minX = Math.min(minX, x); minY = Math.min(minY, y);
-    maxX = Math.max(maxX, x + w); maxY = Math.max(maxY, y + h);
+    maxX = Math.max(maxX, x + ext.ow); maxY = Math.max(maxY, y + ext.oh);
   });
   if (!isFinite(minX)) return null;
   return { x: minX, y: minY, w: Math.max(1, maxX - minX), h: Math.max(1, maxY - minY) };
@@ -88,42 +138,44 @@ function _captionClipGroup(dir, phase, u, G, mx, my, mw, mh) {
   return `inset(${top}px ${right}px ${bottom}px ${left}px)`;
 }
 
-function _captionStageForGroup(wrap, inner, dir, w, h, bounds, phase) {
+function _captionStageForGroup(wrap, inner, dir, w, h, bounds, phase, ext) {
+  ext = ext || { minX: 0, minY: 0, ow: w, oh: h };
+  const ow = ext.ow, oh = ext.oh;
   const { dx, dy } = _captionShift(bounds.w, bounds.h);
   wrap.style.right = 'auto';
   wrap.style.bottom = 'auto';
-  inner.style.left = '0';
-  inner.style.top = '0';
+  inner.style.left = (-ext.minX) + 'px';
+  inner.style.top = (-ext.minY) + 'px';
   _captionLockInnerSize(inner, w, h);
   if (dir === 'right') {
-    wrap.style.top = '0';
-    wrap.style.height = h + 'px';
-    wrap.style.left = '0';
-    wrap.style.width = (phase === 'exit' ? (w + dx) : w) + 'px';
+    wrap.style.top = ext.minY + 'px';
+    wrap.style.height = oh + 'px';
+    wrap.style.left = ext.minX + 'px';
+    wrap.style.width = (phase === 'exit' ? (ow + dx) : ow) + 'px';
   } else if (dir === 'left') {
-    wrap.style.top = '0';
-    wrap.style.height = h + 'px';
+    wrap.style.top = ext.minY + 'px';
+    wrap.style.height = oh + 'px';
     if (phase === 'exit') {
-      wrap.style.left = (-dx) + 'px';
-      wrap.style.width = (w + dx) + 'px';
+      wrap.style.left = (ext.minX - dx) + 'px';
+      wrap.style.width = (ow + dx) + 'px';
     } else {
-      wrap.style.left = '0';
-      wrap.style.width = w + 'px';
+      wrap.style.left = ext.minX + 'px';
+      wrap.style.width = ow + 'px';
     }
   } else if (dir === 'down') {
-    wrap.style.left = '0';
-    wrap.style.width = w + 'px';
-    wrap.style.top = '0';
-    wrap.style.height = (phase === 'exit' ? (h + dy) : h) + 'px';
+    wrap.style.left = ext.minX + 'px';
+    wrap.style.width = ow + 'px';
+    wrap.style.top = ext.minY + 'px';
+    wrap.style.height = (phase === 'exit' ? (oh + dy) : oh) + 'px';
   } else {
-    wrap.style.left = '0';
-    wrap.style.width = w + 'px';
+    wrap.style.left = ext.minX + 'px';
+    wrap.style.width = ow + 'px';
     if (phase === 'exit') {
-      wrap.style.top = (-dy) + 'px';
-      wrap.style.height = (h + dy) + 'px';
+      wrap.style.top = (ext.minY - dy) + 'px';
+      wrap.style.height = (oh + dy) + 'px';
     } else {
-      wrap.style.top = '0';
-      wrap.style.height = h + 'px';
+      wrap.style.top = ext.minY + 'px';
+      wrap.style.height = oh + 'px';
     }
   }
 }
@@ -148,18 +200,31 @@ function _captionInnerFramesGroup(gw, gh, dir, phase, steps) {
   });
 }
 
-function _captionPrepHiddenGroup(wrap, inner, dir, bounds, mx, my, mw, mh) {
-  _captionStageForGroup(wrap, inner, dir, mw, mh, bounds, 'appear');
-  const clip = _captionClipGroup(dir, 'appear', 0, bounds, mx, my, mw, mh);
+function _captionItemSlideRect(it) {
+  const ext = it.ext || _captionContentExtents(it.el, it.w, it.h, it.d);
+  return {
+    x: (it.x != null ? it.x : 0) + ext.minX,
+    y: (it.y != null ? it.y : 0) + ext.minY,
+    w: ext.ow,
+    h: ext.oh,
+    ext
+  };
+}
+
+function _captionPrepHiddenGroup(wrap, inner, dir, bounds, it) {
+  const r = _captionItemSlideRect(it);
+  _captionStageForGroup(wrap, inner, dir, it.w, it.h, bounds, 'appear', r.ext);
+  const clip = _captionClipGroup(dir, 'appear', 0, bounds, r.x, r.y, r.w, r.h);
   wrap.style.clipPath = clip;
   wrap.style.webkitClipPath = clip;
   inner.style.transform = _captionTranslate(dir, 'appear', bounds.w, bounds.h, 0);
   inner.style.opacity = '0';
 }
 
-function _captionHoldVisibleGroup(wrap, inner, dir, bounds, mx, my, mw, mh) {
-  _captionStageForGroup(wrap, inner, dir, mw, mh, bounds, 'hold');
-  const clip = _captionClipGroup(dir, 'hold', 1, bounds, mx, my, mw, mh);
+function _captionHoldVisibleGroup(wrap, inner, dir, bounds, it) {
+  const r = _captionItemSlideRect(it);
+  _captionStageForGroup(wrap, inner, dir, it.w, it.h, bounds, 'hold', r.ext);
+  const clip = _captionClipGroup(dir, 'hold', 1, bounds, r.x, r.y, r.w, r.h);
   wrap.style.clipPath = clip;
   wrap.style.webkitClipPath = clip;
   inner.style.transform = '';
@@ -170,9 +235,10 @@ function _captionPlayPhaseGroup(items, bounds, dir, phase, ms, easing) {
   const steps = 24;
   const innerFrames = _captionInnerFramesGroup(bounds.w, bounds.h, dir, phase, steps);
   const anims = items.map(it => {
-    _captionStageForGroup(it.wrap, it.inner, dir, it.w, it.h, bounds, phase);
+    const r = _captionItemSlideRect(it);
+    _captionStageForGroup(it.wrap, it.inner, dir, it.w, it.h, bounds, phase, r.ext);
     _captionClearStyles(it.wrap, it.inner);
-    const wrapFrames = _captionWrapFramesGroup(bounds, it.x, it.y, it.w, it.h, dir, phase, steps);
+    const wrapFrames = _captionWrapFramesGroup(bounds, r.x, r.y, r.w, r.h, dir, phase, steps);
     const aw = it.wrap.animate(wrapFrames, { duration: ms, easing, fill: 'forwards' });
     const ai = it.inner.animate(innerFrames, { duration: ms, easing, fill: 'forwards' });
     return Promise.all([aw.finished, ai.finished]).catch(() => {});
@@ -184,42 +250,44 @@ function _captionShift(w, h) {
   return { dx: Math.round(w * 0.1), dy: Math.round(h * 0.1) };
 }
 
-function _captionStageFor(wrap, inner, dir, w, h, phase) {
-  const { dx, dy } = _captionShift(w, h);
+function _captionStageFor(wrap, inner, dir, w, h, phase, ext) {
+  ext = ext || { minX: 0, minY: 0, ow: w, oh: h };
+  const ow = ext.ow, oh = ext.oh;
+  const { dx, dy } = _captionShift(ow, oh);
   wrap.style.right = 'auto';
   wrap.style.bottom = 'auto';
-  inner.style.left = '0';
-  inner.style.top = '0';
+  inner.style.left = (-ext.minX) + 'px';
+  inner.style.top = (-ext.minY) + 'px';
   _captionLockInnerSize(inner, w, h);
   if (dir === 'right') {
-    wrap.style.top = '0';
-    wrap.style.height = h + 'px';
-    wrap.style.left = '0';
-    wrap.style.width = (phase === 'exit' ? (w + dx) : w) + 'px';
+    wrap.style.top = ext.minY + 'px';
+    wrap.style.height = oh + 'px';
+    wrap.style.left = ext.minX + 'px';
+    wrap.style.width = (phase === 'exit' ? (ow + dx) : ow) + 'px';
   } else if (dir === 'left') {
-    wrap.style.top = '0';
-    wrap.style.height = h + 'px';
+    wrap.style.top = ext.minY + 'px';
+    wrap.style.height = oh + 'px';
     if (phase === 'exit') {
-      wrap.style.left = (-dx) + 'px';
-      wrap.style.width = (w + dx) + 'px';
+      wrap.style.left = (ext.minX - dx) + 'px';
+      wrap.style.width = (ow + dx) + 'px';
     } else {
-      wrap.style.left = '0';
-      wrap.style.width = w + 'px';
+      wrap.style.left = ext.minX + 'px';
+      wrap.style.width = ow + 'px';
     }
   } else if (dir === 'down') {
-    wrap.style.left = '0';
-    wrap.style.width = w + 'px';
-    wrap.style.top = '0';
-    wrap.style.height = (phase === 'exit' ? (h + dy) : h) + 'px';
+    wrap.style.left = ext.minX + 'px';
+    wrap.style.width = ow + 'px';
+    wrap.style.top = ext.minY + 'px';
+    wrap.style.height = (phase === 'exit' ? (oh + dy) : oh) + 'px';
   } else {
-    wrap.style.left = '0';
-    wrap.style.width = w + 'px';
+    wrap.style.left = ext.minX + 'px';
+    wrap.style.width = ow + 'px';
     if (phase === 'exit') {
-      wrap.style.top = (-dy) + 'px';
-      wrap.style.height = (h + dy) + 'px';
+      wrap.style.top = (ext.minY - dy) + 'px';
+      wrap.style.height = (oh + dy) + 'px';
     } else {
-      wrap.style.top = '0';
-      wrap.style.height = h + 'px';
+      wrap.style.top = ext.minY + 'px';
+      wrap.style.height = oh + 'px';
     }
   }
 }
@@ -300,25 +368,28 @@ function _captionClearStyles(wrap, inner) {
   }
 }
 
-function _captionPrepHidden(wrap, inner, dir, w, h) {
-  _captionStageFor(wrap, inner, dir, w, h, 'appear');
-  const clip = _captionClip(dir, 'appear', 0, w, h);
+function _captionPrepHidden(wrap, inner, dir, w, h, ext) {
+  ext = ext || { minX: 0, minY: 0, ow: w, oh: h };
+  _captionStageFor(wrap, inner, dir, w, h, 'appear', ext);
+  const clip = _captionClip(dir, 'appear', 0, ext.ow, ext.oh);
   wrap.style.clipPath = clip;
   wrap.style.webkitClipPath = clip;
-  inner.style.transform = _captionTranslate(dir, 'appear', w, h, 0);
+  inner.style.transform = _captionTranslate(dir, 'appear', ext.ow, ext.oh, 0);
   inner.style.opacity = '0';
 }
 
-function _captionPlayPhase(wrap, inner, w, h, dir, phase, ms, easing) {
-  _captionStageFor(wrap, inner, dir, w, h, phase);
+function _captionPlayPhase(wrap, inner, w, h, dir, phase, ms, easing, ext) {
+  ext = ext || { minX: 0, minY: 0, ow: w, oh: h };
+  _captionStageFor(wrap, inner, dir, w, h, phase, ext);
   _captionClearStyles(wrap, inner);
-  const aw = wrap.animate(_captionWrapFrames(w, h, dir, phase), { duration: ms, easing, fill: 'forwards' });
-  const ai = inner.animate(_captionInnerFrames(w, h, dir, phase), { duration: ms, easing, fill: 'forwards' });
+  const aw = wrap.animate(_captionWrapFrames(ext.ow, ext.oh, dir, phase), { duration: ms, easing, fill: 'forwards' });
+  const ai = inner.animate(_captionInnerFrames(ext.ow, ext.oh, dir, phase), { duration: ms, easing, fill: 'forwards' });
   return Promise.all([aw.finished, ai.finished]).catch(() => {});
 }
 
-function _captionHoldVisible(wrap, inner, dir, w, h) {
-  _captionStageFor(wrap, inner, dir, w, h, 'hold');
+function _captionHoldVisible(wrap, inner, dir, w, h, ext) {
+  ext = ext || { minX: 0, minY: 0, ow: w, oh: h };
+  _captionStageFor(wrap, inner, dir, w, h, 'hold', ext);
   wrap.style.clipPath = 'inset(0)';
   wrap.style.webkitClipPath = 'inset(0)';
   inner.style.transform = '';
@@ -337,7 +408,30 @@ function _captionAdoptContent(el, inner) {
   while (el.firstChild) inner.appendChild(el.firstChild);
 }
 
+function _splitIsChrome(ch) {
+  if (!ch || !ch.classList) return true;
+  if (ch.classList.contains('link-bar') || ch.classList.contains('trigger-badge') ||
+      ch.classList.contains('_particles_layer') || ch.classList.contains('_split_wrap') ||
+      ch.classList.contains('rh')) return true;
+  return false;
+}
+
 function _splitTakeNodes(el) {
+  const isText = el && el.dataset && (el.dataset.type === 'text' || el.dataset.type === 'markdown');
+  if (isText || (typeof window._isTextBlock === 'function' && window._isTextBlock(el))) {
+    if (typeof window._migrateTextBgLayerOut === 'function') window._migrateTextBgLayerOut(el);
+    const nodes = [];
+    Array.from(el.children).forEach(ch => {
+      if (_splitIsChrome(ch)) return;
+      nodes.push(el.removeChild(ch));
+    });
+    if (nodes.length) return nodes;
+    const pt = el.querySelector('.psel-txt');
+    if (pt && pt.parentNode === el) {
+      el.removeChild(pt);
+      return [pt];
+    }
+  }
   if (typeof window._textAnimShell === 'function') {
     const shell = window._textAnimShell(el);
     if (shell && shell.parentNode === el) {
@@ -346,7 +440,14 @@ function _splitTakeNodes(el) {
     }
   }
   const nodes = [];
-  while (el.firstChild) nodes.push(el.removeChild(el.firstChild));
+  while (el.firstChild) {
+    const ch = el.firstChild;
+    if (_splitIsChrome(ch)) {
+      el.removeChild(ch);
+      continue;
+    }
+    nodes.push(el.removeChild(ch));
+  }
   return nodes;
 }
 
@@ -534,7 +635,7 @@ window._hideCaptionUntilTrigger = function(el, d, anim) {
   const w = (d && d.w) || parseInt(el.style.width, 10) || el.offsetWidth || 200;
   const h = (d && d.h) || parseInt(el.style.height, 10) || el.offsetHeight || 100;
   if (typeof window._prepCaptionSlideInitial === 'function') {
-    window._prepCaptionSlideInitial(el, anim, w, h);
+    window._prepCaptionSlideInitial(el, anim, w, h, d);
   } else {
     el.style.visibility = 'hidden';
     el.style.pointerEvents = 'none';
@@ -542,11 +643,12 @@ window._hideCaptionUntilTrigger = function(el, d, anim) {
   }
 };
 
-window._prepCaptionSlideInitial = function(el, a, w, h) {
+window._prepCaptionSlideInitial = function(el, a, w, h, d0) {
   const dir = a.captionDir || 'right';
   const { wrap, inner } = _ensureCaptionWrap(el);
+  const ext = _captionContentExtents(el, w, h, d0 || (el && el._exportD));
   _captionLockInnerSize(inner, w, h);
-  _captionPrepHidden(wrap, inner, dir, w, h);
+  _captionPrepHidden(wrap, inner, dir, w, h, ext);
   _captionFreeEl(el);
   el.style.visibility = 'hidden';
   el.style.pointerEvents = 'none';
@@ -568,7 +670,8 @@ window._fireCaptionSlideAnimGroup = function(entries, a, delay, opts) {
     const x = e.x != null ? e.x : (parseInt(e.el.style.left) || 0);
     const y = e.y != null ? e.y : (parseInt(e.el.style.top) || 0);
     const parts = _ensureCaptionWrap(e.el);
-    return { el: e.el, x, y, w, h, wrap: parts.wrap, inner: parts.inner };
+    const ext = _captionContentExtents(e.el, w, h, e.d);
+    return { el: e.el, d: e.d, x, y, w, h, ext, wrap: parts.wrap, inner: parts.inner };
   });
   const bounds = items.length > 1 ? _captionGroupBounds(items) : null;
   const groupMode = !!(bounds && items.length > 1);
@@ -586,8 +689,8 @@ window._fireCaptionSlideAnimGroup = function(entries, a, delay, opts) {
       && it.el.querySelector('._caption_wrap');
     _captionLockInnerSize(it.inner, it.w, it.h);
     if (!prepped) {
-      if (groupMode) _captionPrepHiddenGroup(it.wrap, it.inner, dir, bounds, it.x, it.y, it.w, it.h);
-      else _captionPrepHidden(it.wrap, it.inner, dir, it.w, it.h);
+      if (groupMode) _captionPrepHiddenGroup(it.wrap, it.inner, dir, bounds, it);
+      else _captionPrepHidden(it.wrap, it.inner, dir, it.w, it.h, it.ext);
       it.el.style.visibility = 'hidden';
       it.el.style.pointerEvents = 'none';
     }
@@ -608,7 +711,7 @@ window._fireCaptionSlideAnimGroup = function(entries, a, delay, opts) {
   const playPhase = (phase, ms, ease) => {
     if (groupMode) return _captionPlayPhaseGroup(items, bounds, dir, phase, ms, ease);
     const it = items[0];
-    return _captionPlayPhase(it.wrap, it.inner, it.w, it.h, dir, phase, ms, ease);
+    return _captionPlayPhase(it.wrap, it.inner, it.w, it.h, dir, phase, ms, ease, it.ext);
   };
 
   const runExit = () => {
@@ -626,8 +729,8 @@ window._fireCaptionSlideAnimGroup = function(entries, a, delay, opts) {
     playPhase('appear', appearMs, 'ease-out').then(() => {
       if (run.cancelled) return;
       items.forEach(it => {
-        if (groupMode) _captionHoldVisibleGroup(it.wrap, it.inner, dir, bounds, it.x, it.y, it.w, it.h);
-        else _captionHoldVisible(it.wrap, it.inner, dir, it.w, it.h);
+        if (groupMode) _captionHoldVisibleGroup(it.wrap, it.inner, dir, bounds, it);
+        else _captionHoldVisible(it.wrap, it.inner, dir, it.w, it.h, it.ext);
       });
       run.holdTimer = setTimeout(runExit, holdMs);
     }).catch(finishHide);
@@ -635,7 +738,192 @@ window._fireCaptionSlideAnimGroup = function(entries, a, delay, opts) {
 };
 
 window._fireCaptionSlideAnim = function(el, a, delay, w, h, opts) {
-  window._fireCaptionSlideAnimGroup([{ el, w, h }], a, delay, opts);
+  const d = (opts && opts.d) || (el && el._exportD) || null;
+  window._fireCaptionSlideAnimGroup([{ el, w, h, d }], a, delay, opts);
+};
+
+// ══════════════ Титр в космос (Star Wars crawl) ══════════════
+// Bottom-wide / top-narrow perspective; content rises from the bottom
+// and fades out in pieces near the vanishing point (screen-space mask).
+function _cosmosTearDownRun(run) {
+  if (!run) return;
+  run.cancelled = true;
+  if (run.anim && typeof run.anim.cancel === 'function') {
+    try { run.anim.cancel(); } catch (e) {}
+  }
+  (run.items || []).forEach(it => {
+    const el = it && it.el;
+    if (!el) return;
+    if (el._cosmosTitleRun === run) {
+      delete el._cosmosTitleRun;
+      if (el._liveAnimsByName && el._liveAnimsByName.cosmosTitle === run.anim) {
+        delete el._liveAnimsByName.cosmosTitle;
+      }
+    }
+    if (it.base) {
+      el.style.visibility = it.base.visibility || '';
+      el.style.pointerEvents = it.base.pointerEvents || '';
+    }
+  });
+  if (run.stage && run.stage.parentNode) run.stage.remove();
+  if (window._activeCosmosTitleRun === run) window._activeCosmosTitleRun = null;
+}
+
+window._resetCosmosTitleAnim = function(el) {
+  if (!el) return;
+  const run = el._cosmosTitleRun || window._activeCosmosTitleRun;
+  if (run) _cosmosTearDownRun(run);
+};
+
+window._fireCosmosTitleAnimGroup = function(entries, a, delay, opts) {
+  opts = opts || {};
+  if (!entries || !entries.length) return;
+
+  const hideAfter = opts.hideAfter !== false;
+  const dur = Math.max(200, +(a && a.duration || 4000) || 4000);
+  const dl = delay || 0;
+  const host = entries[0] && entries[0].el && entries[0].el.parentElement;
+  if (!host) return;
+
+  const slideW = host.offsetWidth || parseFloat(host.style.width) || 960;
+  const slideH = host.offsetHeight || parseFloat(host.style.height) || 540;
+
+  const items = entries.map(e => {
+    const el = e.el;
+    if (!el) return null;
+    return {
+      el,
+      x: e.x != null ? e.x : (parseFloat(el.style.left) || 0),
+      y: e.y != null ? e.y : (parseFloat(el.style.top) || 0),
+      w: e.w != null ? e.w : (parseFloat(el.style.width) || el.offsetWidth || 200),
+      h: e.h != null ? e.h : (parseFloat(el.style.height) || el.offsetHeight || 200)
+    };
+  }).filter(Boolean);
+  if (!items.length) return;
+
+  let minY = Infinity, maxY = -Infinity;
+  items.forEach(it => {
+    minY = Math.min(minY, it.y);
+    maxY = Math.max(maxY, it.y + it.h);
+  });
+  const groupH = Math.max(1, maxY - minY);
+  // Sit the block just below the lower edge so it appears from the bottom.
+  const yShift = slideH * 0.98 - minY;
+
+  if (window._activeCosmosTitleRun) _cosmosTearDownRun(window._activeCosmosTitleRun);
+
+  const run = { cancelled: false, items: items, stage: null, anim: null };
+  window._activeCosmosTitleRun = run;
+
+  // Скрыть оригиналы сразу — иначе один кадр видно исходную позицию до setTimeout
+  items.forEach(it => {
+    const el = it.el;
+    it.base = {
+      visibility: 'hidden',
+      pointerEvents: 'none'
+    };
+    el._cosmosTitleRun = run;
+    el.style.visibility = 'hidden';
+    el.style.pointerEvents = 'none';
+  });
+
+  setTimeout(() => {
+    if (run.cancelled) return;
+
+    const stage = document.createElement('div');
+    stage.className = '_cosmos_stage';
+    const persp = Math.round(slideH * 0.72);
+    // Upper 30% of slide height is the vanish zone.
+    // Fade starts 15% from the top (0–15% fully gone, 15–30% dissolves).
+    const gonePct = 15;
+    const vanishPct = 30;
+    const fadeMask = 'linear-gradient(to bottom, transparent 0%, transparent ' + gonePct + '%, #000 ' + vanishPct + '%, #000 100%)';
+    stage.style.cssText = 'position:absolute;inset:0;z-index:40;pointer-events:none;overflow:hidden;'
+      + 'perspective:' + persp + 'px;perspective-origin:50% 22%;'
+      + '-webkit-mask-image:' + fadeMask + ';mask-image:' + fadeMask + ';'
+      + '-webkit-mask-size:100% 100%;mask-size:100% 100%;';
+
+    const tilt = document.createElement('div');
+    tilt.className = '_cosmos_tilt';
+    tilt.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;'
+      + 'transform-style:preserve-3d;transform-origin:50% 100%;'
+      + 'transform:rotateX(58deg);';
+
+    const mover = document.createElement('div');
+    mover.className = '_cosmos_mover';
+    mover.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;transform-style:preserve-3d;will-change:transform;';
+
+    items.forEach(it => {
+      const el = it.el;
+      el.style.visibility = 'hidden';
+      el.style.pointerEvents = 'none';
+
+      const clone = el.cloneNode(true);
+      clone.classList.remove('sel', 'msel', 'picked');
+      clone.style.position = 'absolute';
+      clone.style.left = it.x + 'px';
+      clone.style.top = (it.y + yShift) + 'px';
+      clone.style.width = it.w + 'px';
+      clone.style.height = it.h + 'px';
+      clone.style.visibility = 'visible';
+      clone.style.opacity = el.style.opacity || '';
+      clone.style.pointerEvents = 'none';
+      clone.style.margin = '0';
+      clone.removeAttribute('data-id');
+      mover.appendChild(clone);
+    });
+
+    tilt.appendChild(mover);
+    stage.appendChild(tilt);
+    host.appendChild(stage);
+    run.stage = stage;
+    run.items = items;
+
+    const travel = slideH * 1.72 + groupH;
+    const anim = mover.animate(
+      [
+        { transform: 'translateY(0px)' },
+        { transform: 'translateY(' + (-travel) + 'px)' }
+      ],
+      { duration: dur, easing: 'linear', fill: 'forwards' }
+    );
+    run.anim = anim;
+    items.forEach(it => {
+      if (!it.el._liveAnimsByName) it.el._liveAnimsByName = {};
+      it.el._liveAnimsByName.cosmosTitle = anim;
+    });
+
+    const finish = () => {
+      if (run.cancelled) return;
+      if (hideAfter) {
+        run.cancelled = true;
+        if (run.stage && run.stage.parentNode) run.stage.remove();
+        run.stage = null;
+        items.forEach(it => {
+          const el = it.el;
+          el.style.visibility = 'hidden';
+          el.style.pointerEvents = 'none';
+          if (el._cosmosTitleRun === run) delete el._cosmosTitleRun;
+        });
+        if (window._activeCosmosTitleRun === run) window._activeCosmosTitleRun = null;
+      } else {
+        _cosmosTearDownRun(run);
+      }
+    };
+    anim.finished.then(finish).catch(() => {
+      if (!hideAfter) _cosmosTearDownRun(run);
+    });
+  }, dl);
+};
+
+window._fireCosmosTitleAnim = function(el, a, delay, w, h, opts) {
+  opts = opts || {};
+  if (!el) return;
+  const x = parseFloat(el.style.left) || 0;
+  const y = parseFloat(el.style.top) || 0;
+  const ww = w != null ? w : (parseFloat(el.style.width) || el.offsetWidth || 200);
+  const hh = h != null ? h : (parseFloat(el.style.height) || el.offsetHeight || 200);
+  window._fireCosmosTitleAnimGroup([{ el, x, y, w: ww, h: hh }], a, delay, opts);
 };
 
 function _splitReadCounterFromEl(el) {
@@ -889,7 +1177,7 @@ window._particlesCycleSpan = function(a) {
 };
 
 window._animIsElementSpecific = function(name) {
-  return name === 'particles' || name === 'captionSlide' || name === 'splitHalf' || name === 'typewriter' || name === 'langFade';
+  return name === 'particles' || name === 'captionSlide' || name === 'cosmosTitle' || name === 'splitHalf' || name === 'typewriter' || name === 'langFade' || name === 'inkDraw';
 };
 
 window._langFadeTel = function(el, d) {
@@ -1003,8 +1291,9 @@ window._fireLangFadeAnim = function(el, d, a, delay, opts) {
   return handle;
 };
 
-window._particlesEnsureHiddenIfNeeded = function(el, d) {
-  if (!el || !window._particlesHasAnim(d)) return;
+window._particlesEnsureHiddenIfNeeded = function(el, d, force) {
+  if (!el) return;
+  if (!force && !window._particlesHasAnim(d)) return;
   el.classList.add('has-particles');
   window._particlesHideOriginal(el);
 };
@@ -1099,6 +1388,8 @@ window._particlesResolveData = function(el, d, ew, eh) {
     if (out.textShadowW == null && ds.textShadowW != null) out.textShadowW = +ds.textShadowW;
     if (!out.textShadowColor && ds.textShadowColor) out.textShadowColor = ds.textShadowColor;
   }
+  if (out.shapeFlipH == null && ds.shapeFlipH === 'true') out.shapeFlipH = true;
+  if (out.shapeFlipV == null && ds.shapeFlipV === 'true') out.shapeFlipV = true;
   return out;
 };
 
@@ -1139,6 +1430,45 @@ function _particlesNeutralizePointer(node) {
   }
 }
 
+function _particlesUnhideCloneTree(node) {
+  if (!node || node.nodeType !== 1) return;
+  if (node.style) {
+    node.style.opacity = '1';
+    node.style.visibility = 'visible';
+    node.style.animation = 'none';
+  }
+  if (node.querySelectorAll) {
+    node.querySelectorAll('*').forEach(function(n) {
+      if (!n.style) return;
+      n.style.opacity = '1';
+      n.style.visibility = 'visible';
+      n.style.animation = 'none';
+    });
+  }
+}
+
+function _particlesSyncTextEcStyles(origEl, cloneRoot) {
+  const origEc = origEl.querySelector('.ec') || origEl.querySelector('.tel');
+  const cloneEc = cloneRoot.querySelector('.ec') || cloneRoot.querySelector('.tel');
+  if (!origEc || !cloneEc) return;
+  try {
+    const cs = getComputedStyle(origEc);
+    cloneEc.style.color = cs.color;
+    if (origEc.style.background) cloneEc.style.background = origEc.style.background;
+    if (origEc.style.webkitBackgroundClip) cloneEc.style.webkitBackgroundClip = origEc.style.webkitBackgroundClip;
+    if (origEc.style.backgroundClip) cloneEc.style.backgroundClip = origEc.style.backgroundClip;
+    if (origEc.style.webkitTextFillColor) cloneEc.style.webkitTextFillColor = origEc.style.webkitTextFillColor;
+    else if (cs.webkitTextFillColor) cloneEc.style.webkitTextFillColor = cs.webkitTextFillColor;
+  } catch (e) {}
+}
+
+function _particlesIsCanvasChrome(ch) {
+  if (!ch || !ch.classList) return true;
+  if (ch.classList.contains('_particles_layer') || ch.classList.contains('link-bar') || ch.classList.contains('trigger-badge')) return true;
+  if (ch.classList.contains('rh')) return true;
+  return false;
+}
+
 window._particlesCloneVisual = function(el, pd, uid, visScale) {
   visScale = visScale == null ? 1 : visScale;
   const type = (pd && pd.type) || (el.dataset && el.dataset.type) || '';
@@ -1161,29 +1491,38 @@ window._particlesCloneVisual = function(el, pd, uid, visScale) {
     return true;
   }
   if (type === 'text') {
-    const body = el.querySelector('._text_body');
-    if (body) {
-      const c = body.cloneNode(true);
+    if (typeof window._migrateTextBgLayerOut === 'function') window._migrateTextBgLayerOut(el);
+    const shell = document.createElement('div');
+    shell.style.cssText = 'position:absolute;inset:0;width:' + ew + 'px;height:' + eh + 'px;overflow:hidden;box-sizing:border-box;pointer-events:none;';
+    let cloned = false;
+    Array.from(el.children).forEach(function(ch) {
+      if (_particlesIsCanvasChrome(ch)) return;
+      const c = ch.cloneNode(true);
       c.style.pointerEvents = 'none';
-      c.style.width = ew + 'px';
-      c.style.height = eh + 'px';
-      c.style.boxSizing = 'border-box';
-      c.style.position = 'absolute';
-      c.style.left = '0';
-      c.style.top = '0';
-      if (typeof window._syncTextBodyLayout === 'function') window._syncTextBodyLayout(c);
-      wrap.appendChild(c);
-    } else {
-      const src = el.querySelector('.psel-txt') || el.querySelector('.tel') || el.querySelector('.ec');
+      if (c.classList && c.classList.contains('_text_body')) {
+        c.style.width = ew + 'px';
+        c.style.height = eh + 'px';
+        c.style.boxSizing = 'border-box';
+        if (typeof window._syncTextBodyLayout === 'function') window._syncTextBodyLayout(c);
+      }
+      _particlesUnhideCloneTree(c);
+      shell.appendChild(c);
+      cloned = true;
+    });
+    if (!cloned) {
+      const src = el.querySelector('.psel-txt') || el.querySelector('._text_body') || el.querySelector('.tel') || el.querySelector('.ec');
       if (src) {
         const c = src.cloneNode(true);
         c.style.pointerEvents = 'none';
         c.style.width = ew + 'px';
         c.style.height = eh + 'px';
         c.style.boxSizing = 'border-box';
-        wrap.appendChild(c);
+        _particlesUnhideCloneTree(c);
+        shell.appendChild(c);
       }
     }
+    _particlesSyncTextEcStyles(el, shell);
+    wrap.appendChild(shell);
     const rxSrc = el.querySelector('._text_body') || el;
     if (rxSrc && rxSrc.style.borderRadius) wrap.style.borderRadius = rxSrc.style.borderRadius;
     else if (el.style.borderRadius) wrap.style.borderRadius = el.style.borderRadius;
@@ -1211,6 +1550,12 @@ window._particlesCloneVisual = function(el, pd, uid, visScale) {
     }
   }
   root.appendChild(wrap);
+  const flipH = !!(pd && pd.shapeFlipH) || (el && el.dataset && el.dataset.shapeFlipH === 'true');
+  const flipV = !!(pd && pd.shapeFlipV) || (el && el.dataset && el.dataset.shapeFlipV === 'true');
+  if (flipH || flipV) {
+    wrap.style.transformOrigin = 'center center';
+    wrap.style.transform = 'scale(' + (flipH ? -1 : 1) + ',' + (flipV ? -1 : 1) + ')';
+  }
   if (visScale !== 1) {
     root.style.transformOrigin = '0 0';
     root.style.transform = 'scale(' + visScale + ')';
@@ -1448,6 +1793,7 @@ window.ANIM_ENGINE_META = {
   shake: { engine: 'css', export: 'css' },
   flash: { engine: 'css', export: 'css' },
   rotate: { engine: 'waapi', export: 'waapi' },
+  mirror: { engine: 'waapi', export: 'waapi' },
   recolor: { engine: 'custom', export: 'custom' },
   splitHalf: { engine: 'custom', export: 'splitHalf' },
   moveTo: { engine: 'waapi', export: 'waapi' },
@@ -1455,21 +1801,40 @@ window.ANIM_ENGINE_META = {
   dance: { engine: 'live', export: 'live' },
   swing: { engine: 'live', export: 'live' },
   float: { engine: 'live', export: 'live' },
+  inkDraw: { engine: 'live', export: 'live' },
+  camera: { engine: 'live', export: 'live' },
   particles: { engine: 'custom', export: 'particles' },
   typewriter: { engine: 'custom', export: 'typewriter' },
   langFade: { engine: 'custom', export: 'langFade' },
   captionSlide: { engine: 'custom', export: 'captionSlide' },
+  cosmosTitle: { engine: 'custom', export: 'cosmosTitle' },
+  pause: { engine: 'custom', export: 'custom' },
+  animRepeat: { engine: 'custom', export: 'custom' },
+  animPause: { engine: 'custom', export: 'custom' },
 };
 
-window._LIVE_LOOP_NAMES = { dance: 1, swing: 1, float: 1 };
+window._LIVE_LOOP_NAMES = { dance: 1, swing: 1, float: 1, inkDraw: 1 };
+
+window._inkDrawParallelCount = function(a, total) {
+  const n = Math.max(1, +total || 1);
+  if (!a) return 1;
+  const v = a.inkParallel;
+  if (v === 0 || v === 'all') return n;
+  if (v == null || v === '') return 1;
+  const k = +v;
+  if (!isFinite(k) || k < 1) return 1;
+  return Math.max(1, Math.min(n, Math.round(k)));
+};
 
 window._animChainDuration = function(a) {
   if (!a) return 600;
+  if (a.name === 'pause') return Math.max(0, +(a.duration || 0) || 0);
   if (a.name === 'captionSlide') {
     const d = +(a.duration || 600) || 600;
     const h = +(a.holdDuration || 2000) || 2000;
     return d + h + d;
   }
+  if (a.name === 'cosmosTitle') return Math.max(200, +(a.duration || 4000) || 4000);
   if (a.name === 'splitHalf') return +(a.duration || 800) || 800;
   if (a.name === 'particles') {
     const _d = (typeof _ptDef === 'function' ? _ptDef() : (window.PARTICLES_DEFAULTS || { duration: 3550, ptLife: 900 }));
@@ -1482,6 +1847,54 @@ window._animChainDuration = function(a) {
       : Math.max(1, +cnt || 1);
     return perLoop * loops;
   }
+  if (a.name === 'inkDraw') {
+    const per = +(a.duration || 1400) || 1400;
+    const fillPart = Math.min(600, Math.max(250, per * 0.35));
+    const cnt = a.swingCount != null ? a.swingCount : 1;
+    const loops = (!isFinite(cnt) || cnt >= 10) ? 1 : Math.max(1, +cnt || 1);
+    let nS = 2, nF = 0;
+    try {
+      if (typeof slides !== 'undefined' && typeof cur !== 'undefined' && slides[cur]) {
+        const host = (slides[cur].els || []).find(d => d && (d.anims || []).indexOf(a) >= 0);
+        if (host) {
+          if (typeof splitInkForHosts === 'function') {
+            const split = splitInkForHosts(slides[cur].ink || [], slides[cur].inkFills || [], [host]);
+            const b = split.byHost && split.byHost[host.id];
+            if (b) {
+              nS = (b.strokes || []).length;
+              nF = (b.fills || []).length;
+            }
+          } else if (host.inkIds && host.inkIds.length) {
+            nS = host.inkIds.length;
+          }
+        }
+      }
+    } catch (e) {}
+    const parS = window._inkDrawParallelCount(a, Math.max(1, nS));
+    const parF = window._inkDrawParallelCount(a, Math.max(1, nF || 1));
+    let strokeMs = nS ? Math.ceil(nS / parS) * per : 0;
+    try {
+      if (typeof window._inkDrawPoolMakespan === 'function' && typeof slides !== 'undefined' && typeof cur !== 'undefined' && slides[cur]) {
+        const host = (slides[cur].els || []).find(d => d && (d.anims || []).indexOf(a) >= 0);
+        if (host) {
+          const ink = slides[cur].ink || [];
+          let strokeList = [];
+          if (typeof splitInkForHosts === 'function') {
+            const split = splitInkForHosts(ink, slides[cur].inkFills || [], [host]);
+            const b = split.byHost && split.byHost[host.id];
+            if (b) strokeList = b.strokes || [];
+          } else if (host.inkIds && host.inkIds.length) {
+            const set = new Set(host.inkIds);
+            strokeList = ink.filter(s => s && set.has(s.id));
+          }
+          if (strokeList.length) strokeMs = window._inkDrawPoolMakespan(strokeList, parS, per);
+        }
+      }
+    } catch (e) {}
+    const fillMs = nF ? Math.ceil(nF / parF) * fillPart : 0;
+    return Math.max(per, strokeMs + fillMs + 80) * loops;
+  }
+  if (a.name === 'camera') return +(a.duration || 1200) || 1200;
   if (a.name === 'typewriter') {
     const cd = a.charDelay || 40;
     const fromLen = (a.fromHtml || '').replace(/<[^>]*>/g, '').length;
@@ -1508,6 +1921,52 @@ window._animEffTrigger = function(gList) {
   });
 };
 
+window._ANIM_TL_CAM_PREFIX = '__cam_';
+window._animIsCameraEntry = function(d, a) {
+  return !!(d && (d._isCamera || d.type === 'camera' || (a && a.name === 'camera')));
+};
+window._animTlIsCam = function(elId) {
+  return typeof elId === 'string' && elId.indexOf(window._ANIM_TL_CAM_PREFIX) === 0;
+};
+window._animTlCamId = function(elId) {
+  return window._animTlIsCam(elId) ? elId.slice(window._ANIM_TL_CAM_PREFIX.length) : '';
+};
+window._animTlCamElId = function(camId) {
+  return window._ANIM_TL_CAM_PREFIX + camId;
+};
+window._animTlAiOf = function(d, a) {
+  if (!d) return 0;
+  if (d._isCamera || d.type === 'camera') return 0;
+  const i = (d.anims || []).indexOf(a);
+  return i < 0 ? 0 : i;
+};
+window._animTlFindRecord = function(slide, elId, ai) {
+  if (!slide || elId == null) return null;
+  if (window._animTlIsCam(elId)) {
+    const id = window._animTlCamId(elId);
+    return (slide.cameras || []).find(c => c && c.id === id) || null;
+  }
+  const d = slide.els && slide.els.find(x => x.id === elId);
+  return (d && d.anims && d.anims[ai]) || null;
+};
+window._animTlRecordAsAnim = function(slide, elId, ai) {
+  const rec = window._animTlFindRecord(slide, elId, ai);
+  if (!rec) return null;
+  if (window._animTlIsCam(elId)) {
+    if (typeof window._cameraAnimFromCam === 'function') return window._cameraAnimFromCam(rec);
+    return {
+      name: 'camera', cat: 'live',
+      duration: rec.duration || 1200, delay: rec.delay || 0,
+      trigger: rec.trigger || 'auto', tlLane: rec.tlLane, camId: rec.id
+    };
+  }
+  return rec;
+};
+window._animTlOrderEntry = function(elId, ai) {
+  if (window._animTlIsCam(elId)) return { kind: 'camera', camId: window._animTlCamId(elId) };
+  return { elId: elId, ai: ai };
+};
+
 window.buildAnimSchedule = function(slide) {
   const autoMap = {}, clickMap = {}, autoSegments = [];
   if (!slide || !slide.els) return { autoMap, clickMap, autoSegments, totalMs: 0 };
@@ -1522,12 +1981,18 @@ window.buildAnimSchedule = function(slide) {
       return list;
     })();
   const gEffTrig = window._animEffTrigger(gList);
-  const absStarts = window._computeAnimAbsStarts(slide);
+  const absStarts = window._computeAnimAbsStarts(slide, gList);
   const absStartMap = new Map();
   absStarts.forEach(s => { if (!s.skip) absStartMap.set(s.elId + ':' + s.ai, s.abs); });
   gList.forEach((item, gi) => {
     const d = item.d, a = item.a, eff = gEffTrig[gi];
-    const ai = (d.anims || []).indexOf(a);
+    const ai = window._animTlAiOf(d, a);
+    if ((a && a.name === 'pause') || (d && d._isPause)) {
+      const abs = absStartMap.has(d.id + ':' + ai) ? absStartMap.get(d.id + ':' + ai) : (a.delay || 0);
+      const gPD = window._animChainDuration(a);
+      autoSegments.push({ d, a, absDelay: abs, dur: gPD });
+      return;
+    }
     if (eff === 'element' || eff === 'nav' || eff === 'counter' || eff === 'timer') return;
     if ((a.trigger || 'auto') === 'element' || (a.trigger || 'auto') === 'nav' || (a.trigger || 'auto') === 'click' || (a.trigger || 'auto') === 'counter' || (a.trigger || 'auto') === 'timer') return;
     if (eff === 'auto' || eff === 'afterPrev' || eff === 'withPrev') {
@@ -1549,12 +2014,15 @@ window.buildAnimSchedule = function(slide) {
 };
 
 window.computeSlideAnimTimeline = function(slide) {
-  if (!slide) return { totalMs: 800, segments: [], laneCount: 1 };
+  if (!slide) return { totalMs: 800, segments: [], laneCount: 1, repeatBands: [] };
   if (typeof window._ensureAnimOrder === 'function') window._ensureAnimOrder(slide);
+  (slide.cameras || []).forEach(c => {
+    if (c && c.trigger === 'withPrev') c.trigger = 'auto';
+  });
   const info = typeof ANIM_INFO !== 'undefined' ? ANIM_INFO : {};
   const gList = window._animTimelineGList(slide);
   const gEffTrig = window._animEffTrigger(gList);
-  const absStarts = window._computeAnimAbsStarts(slide);
+  const absStarts = window._computeAnimAbsStarts(slide, gList);
   const absStartMap = new Map();
   absStarts.forEach(s => { if (!s.skip) absStartMap.set(s.elId + ':' + s.ai, s.abs); });
   const segments = [];
@@ -1562,22 +2030,19 @@ window.computeSlideAnimTimeline = function(slide) {
   let autoEnd = 0;
 
   const entries = [];
-  if (slide.animOrder && slide.animOrder.length) {
-    slide.animOrder.forEach(({ elId, ai }) => {
-      const d = slide.els.find(x => x.id === elId);
-      const a = d && d.anims && d.anims[ai];
-      if (!d || !a || d._isDecor) return;
-      entries.push({ d, a, ai });
-    });
-  } else {
-    gList.forEach(item => {
-      entries.push({ d: item.d, a: item.a, ai: (item.d.anims || []).indexOf(item.a) });
-    });
-  }
+  let camSeq = 0;
+  gList.forEach((item, gIdx) => {
+    const d = item.d, a = item.a;
+    if (!d || !a || d._isDecor) return;
+    const ai = window._animTlAiOf(d, a);
+    const isCamera = window._animIsCameraEntry(d, a);
+    if (isCamera) camSeq += 1;
+    entries.push({ d, a, ai, isCamera, camNum: isCamera ? camSeq : 0, gIdx });
+  });
 
   const _overlap = (a, b) => a.absDelay < b.absDelay + b.dur && b.absDelay < a.absDelay + a.dur;
 
-  entries.forEach(({ d, a, ai }) => {
+  entries.forEach(({ d, a, ai, isCamera, camNum, gIdx }) => {
     const gi = gList.findIndex(item => item.d.id === d.id && item.a === a);
     const eff = gi >= 0 ? gEffTrig[gi] : 'auto';
     const trigger = a.trigger || 'auto';
@@ -1585,7 +2050,8 @@ window.computeSlideAnimTimeline = function(slide) {
 
     const dur = window._animChainDuration(a);
     const cat = (info[a.name] && info[a.name].cat) || a.cat || 'entrance';
-    const label = (info[a.name] && info[a.name].label) || a.name;
+    const label = isCamera ? ('Камера' + (camNum ? ' ' + camNum : ''))
+      : (a.name === 'pause' ? 'Пауза' : ((info[a.name] && info[a.name].label) || a.name));
     const isClick = trigger === 'click' || eff === 'click';
     let absDelay;
 
@@ -1598,38 +2064,129 @@ window.computeSlideAnimTimeline = function(slide) {
       autoEnd = Math.max(autoEnd, absDelay + dur);
     } else {
       absDelay = absStartMap.has(d.id + ':' + ai) ? absStartMap.get(d.id + ':' + ai) : (a.delay || 0);
-      gPS = absDelay;
-      gPD = dur;
+      if ((a.trigger || 'auto') === 'withPrev' && !isCamera) {
+        gPD = Math.max(gPS + gPD, absDelay + dur) - gPS;
+      } else {
+        gPS = absDelay;
+        gPD = dur;
+      }
       autoEnd = Math.max(autoEnd, absDelay + dur);
     }
 
-    segments.push({ elId: d.id, ai, anim: a, absDelay, dur, cat, label, trigger, isClick, lane: 0 });
+    segments.push({
+      elId: d.id, ai, anim: a, absDelay, dur, cat, label, trigger, isClick, lane: 0,
+      isCamera: !!isCamera, camId: isCamera ? (a.camId || d.camId) : null,
+      gIdx: gIdx
+    });
   });
 
+  // Click segments: place after everything before them in order (not stale autoEnd)
+  let runEnd = 0;
+  segments.forEach(seg => {
+    if (seg.isClick) {
+      seg.absDelay = runEnd + (seg.anim.delay || 0);
+    } else {
+      runEnd = Math.max(runEnd, seg.absDelay + seg.dur);
+    }
+  });
+
+  // Cameras share one lane. Click cameras are skipped by the auto chain, so they
+  // get the same absDelay as the next auto camera and paint as one bar.
+  let camT = 0;
+  segments.forEach(seg => {
+    if (!seg.isCamera) return;
+    if (seg.absDelay < camT) seg.absDelay = camT;
+    camT = Math.max(camT, seg.absDelay + seg.dur);
+  });
+
+  let cameraLane = null;
   segments.forEach((seg, si) => {
-    const manualLane = seg.anim.tlLane;
-    if (manualLane != null && manualLane >= 0 && !isNaN(+manualLane)) {
+    const laneTaken = (lane) => segments.some((s, j) => j < si && s.lane === lane && _overlap(seg, s));
+    // Cameras cannot run in parallel — keep them on one sequential track
+    if (seg.isCamera) {
+      if (cameraLane == null) {
+        const manual = seg.anim && seg.anim.tlLane;
+        cameraLane = (manual != null && manual >= 0 && !isNaN(+manual)) ? +manual : 0;
+        while (laneTaken(cameraLane)) cameraLane++;
+      }
+      seg.lane = cameraLane;
+      return;
+    }
+    // withPrev starts with the previous anim — put it on the next free row, never on top of it
+    if (seg.trigger === 'withPrev' && si > 0) {
+      let lane = segments[si - 1].lane + 1;
+      while (laneTaken(lane)) lane++;
+      seg.lane = lane;
+      return;
+    }
+    const manualLane = seg.anim && seg.anim.tlLane;
+    if (manualLane != null && manualLane >= 0 && !isNaN(+manualLane) && !laneTaken(+manualLane)) {
       seg.lane = +manualLane;
       return;
     }
-    const isWithPrev = seg.trigger === 'withPrev';
-    if (isWithPrev && si > 0) {
-      seg.lane = segments[si - 1].lane;
-      return;
-    }
     let lane = 0;
-    while (segments.some((s, j) => j < si && s.lane === lane && _overlap(seg, s))) lane++;
+    while (laneTaken(lane)) lane++;
     if (si > 0 && segments[si - 1].trigger !== 'withPrev') {
       lane = Math.max(lane, segments[si - 1].lane + 1);
     }
-    while (segments.some((s, j) => j < si && s.lane === lane && _overlap(seg, s))) lane++;
+    while (laneTaken(lane)) lane++;
     seg.lane = lane;
   });
 
+  // Repeat bands: one cycle of children on the scale; gray region is ×count wide.
+  // Items after the block (e.g. pause between two repeats) must start after the full band.
+  const rawBands = (gList._repeatBands || []).slice().sort((a, b) => a.startIdx - b.startIdx);
+  const repeatBands = [];
+  rawBands.forEach(band => {
+    const count = Math.max(1, +(band.count || 1));
+    const members = segments.filter(s => s.gIdx >= band.startIdx && s.gIdx < band.endIdx);
+    if (!members.length) return;
+    let cycleStart = Infinity;
+    let cycleEnd = 0;
+    members.forEach(s => {
+      cycleStart = Math.min(cycleStart, s.absDelay);
+      cycleEnd = Math.max(cycleEnd, s.absDelay + s.dur);
+      if (!s._inRepeatBands) s._inRepeatBands = new Set();
+      s._inRepeatBands.add(band.id);
+    });
+    if (!isFinite(cycleStart)) return;
+    const cycleDur = Math.max(0, cycleEnd - cycleStart);
+    const extra = cycleDur * (count - 1);
+    const bandEnd = cycleStart + cycleDur * count;
+    if (extra > 0) {
+      segments.forEach(s => {
+        if (s._inRepeatBands && s._inRepeatBands.has(band.id)) return;
+        if (s.gIdx >= band.endIdx || s.absDelay >= cycleEnd - 0.01) {
+          s.absDelay += extra;
+        }
+      });
+    }
+    // Anything still overlapping the repeated span (pause between repeats, etc.) → after the band
+    const foreigners = segments
+      .filter(s => !(s._inRepeatBands && s._inRepeatBands.has(band.id)))
+      .filter(s => s.absDelay < bandEnd && (s.absDelay + s.dur) > cycleStart)
+      .sort((a, b) => (a.gIdx - b.gIdx) || (a.absDelay - b.absDelay));
+    let t = bandEnd;
+    foreigners.forEach(s => {
+      if (s.absDelay < t) s.absDelay = t;
+      t = Math.max(t, s.absDelay + s.dur);
+    });
+    repeatBands.push({
+      id: band.id,
+      count,
+      absDelay: cycleStart,
+      dur: cycleDur * count,
+      cycleDur,
+      label: '×' + count
+    });
+  });
+  repeatBands.sort((a, b) => a.absDelay - b.absDelay || b.dur - a.dur);
+
   const laneCount = segments.length ? Math.max(...segments.map(s => s.lane)) + 1 : 1;
   const contentMs = segments.reduce((m, s) => Math.max(m, s.absDelay + s.dur), 0);
-  const totalMs = Math.max(contentMs + 400, 800);
-  return { totalMs, segments, laneCount };
+  const bandMs = repeatBands.reduce((m, b) => Math.max(m, b.absDelay + b.dur), 0);
+  const totalMs = Math.max(contentMs, bandMs) + 400;
+  return { totalMs: Math.max(totalMs, 800), segments, laneCount, repeatBands };
 };
 
 window._refreshAnimTimeline = function() {
@@ -1638,9 +2195,8 @@ window._refreshAnimTimeline = function() {
 };
 
 window._alignAnimWithPrev = function(slide, elId, ai) {
-  const d = slide.els.find(x => x.id === elId);
-  if (!d || !d.anims || !d.anims[ai]) return;
-  const a = d.anims[ai];
+  const a = window._animTlRecordAsAnim(slide, elId, ai);
+  if (!a) return;
   if ((a.trigger || 'auto') !== 'withPrev') return;
   const prevStart = window._getPrevTimedAnimStart(slide, elId, ai);
   window._setAnimAbsDelay(slide, elId, ai, prevStart + (a.delay || 0));
@@ -1712,19 +2268,25 @@ window._isTimedAnimEntry = function(a) {
   return t !== 'element' && t !== 'nav' && t !== 'click' && t !== 'counter' && t !== 'timer';
 };
 
-window._computeAnimAbsStarts = function(slide) {
+window._computeAnimAbsStarts = function(slide, gList) {
   if (typeof window._ensureAnimOrder === 'function') window._ensureAnimOrder(slide);
-  const gList = window._animTimelineGList(slide);
+  if (!gList) {
+    gList = typeof window._buildSlideAnimGlobalList === 'function'
+      ? window._buildSlideAnimGlobalList(slide).map(({ d, a }) => ({ d, a }))
+      : window._animTimelineGList(slide);
+  }
   const out = [];
   let chainPS = 0, chainPD = 0;
   let prevTimedStart = 0;
   gList.forEach(({ d, a }) => {
-    const ai = (d.anims || []).indexOf(a);
+    const ai = window._animTlAiOf(d, a);
     if (!window._isTimedAnimEntry(a)) {
       out.push({ elId: d.id, ai, skip: true, abs: null });
       return;
     }
-    const t = a.trigger || 'auto';
+    const isCam = window._animIsCameraEntry(d, a);
+    let t = a.trigger || 'auto';
+    if (isCam && t === 'withPrev') t = 'auto';
     const rd = a.delay || 0;
     let abs;
     const _il = !!window._LIVE_LOOP_NAMES[a.name];
@@ -1733,15 +2295,22 @@ window._computeAnimAbsStarts = function(slide) {
     else if (_il && t === 'auto') abs = chainPS + chainPD + rd;
     else abs = chainPS + chainPD + rd;
     out.push({ elId: d.id, ai, skip: false, abs });
-    prevTimedStart = abs;
-    chainPS = abs;
-    chainPD = window._animChainDuration(a);
+    const dur = window._animChainDuration(a);
+    if (t === 'withPrev') {
+      // Параллельно с предыдущей — ждём самую длинную из группы
+      chainPD = Math.max(chainPS + chainPD, abs + dur) - chainPS;
+      prevTimedStart = abs;
+    } else {
+      prevTimedStart = abs;
+      chainPS = abs;
+      chainPD = dur;
+    }
   });
   return out;
 };
 
 window._getPrevTimedAnimStart = function(slide, elId, ai) {
-  const starts = window._computeAnimAbsStarts(slide);
+  const starts = window._computeAnimAbsStarts(slide, window._animTimelineGList(slide));
   let prev = 0;
   for (let i = 0; i < starts.length; i++) {
     const s = starts[i];
@@ -1752,17 +2321,140 @@ window._getPrevTimedAnimStart = function(slide, elId, ai) {
 };
 
 window._getAnimAbsStart = function(slide, elId, ai) {
-  const s = window._computeAnimAbsStarts(slide).find(x => x.elId === elId && x.ai === ai);
+  const s = window._computeAnimAbsStarts(slide, window._animTimelineGList(slide))
+    .find(x => x.elId === elId && x.ai === ai);
   return s && !s.skip ? s.abs : 0;
 };
 
 window._baseElTransform = function(d, el) {
   const rot = (d && d.rot) || (el && el.dataset.rot ? +el.dataset.rot : 0) || 0;
+  const flipH = !!(d && d.shapeFlipH) || (el && el.dataset && el.dataset.shapeFlipH === 'true');
+  const flipV = !!(d && d.shapeFlipV) || (el && el.dataset && el.dataset.shapeFlipV === 'true');
   let tf = rot ? 'rotate(' + rot + 'deg)' : '';
-  if (d && (d.shapeFlipH || d.shapeFlipV)) {
-    tf += (tf ? ' ' : '') + 'scale(' + (d.shapeFlipH ? -1 : 1) + ',' + (d.shapeFlipV ? -1 : 1) + ')';
+  if (flipH || flipV) {
+    tf += (tf ? ' ' : '') + 'scale(' + (flipH ? -1 : 1) + ',' + (flipV ? -1 : 1) + ')';
   }
   return tf;
+};
+
+function _elHasBackdropBlur(el, d) {
+  if (!el) return false;
+  d = d || {};
+  const elType = _cssAnimElType(el, d);
+  if ((elType === 'text' || elType === 'markdown') && +(d.textBgBlur || el.dataset.textBgBlur || 0) > 0) return true;
+  if (elType === 'shape' && +(d.shapeBlur || el.dataset.shapeBlur || 0) > 0) return true;
+  if (el.querySelector('.el-bg-layer')) return true;
+  if (el.querySelector('.shape-blur-overlay')) return true;
+  if (el.querySelector('.psel-txt') && +(d.textBgBlur || el.dataset.textBgBlur || 0) > 0) return true;
+  const first = el.firstElementChild;
+  if (first && first.style && (first.style.backdropFilter || first.style.webkitBackdropFilter)) return true;
+  return false;
+}
+
+window._revealBackdropBlurLayers = function(el, d) {
+  if (!el) return;
+  d = d || {};
+  const elType = _cssAnimElType(el, d);
+  el.querySelectorAll('.el-bg-layer').forEach(layer => {
+    layer.style.opacity = '';
+    layer.style.visibility = 'visible';
+    layer.style.animation = '';
+  });
+  el.querySelectorAll('.shape-blur-overlay').forEach(ov => {
+    ov.style.opacity = '';
+    ov.style.visibility = 'visible';
+    ov.style.animation = '';
+  });
+  if ((elType === 'text' || elType === 'markdown') && +(d.textBgBlur || el.dataset.textBgBlur || 0) > 0) {
+    const ptxt = el.querySelector('.psel-txt');
+    if (ptxt) {
+      ptxt.style.opacity = '';
+      ptxt.style.visibility = 'visible';
+      ptxt.style.animation = '';
+    }
+  }
+  if (elType === 'shape' && +(d.shapeBlur || el.dataset.shapeBlur || 0) > 0) {
+    const ec = el.querySelector('.ec');
+    const first = el.firstElementChild;
+    if (first && first !== ec && (first.style.backdropFilter || first.style.webkitBackdropFilter)) {
+      first.style.opacity = '';
+      first.style.visibility = 'visible';
+      first.style.animation = '';
+    }
+  }
+};
+
+window._cssAnimBgLayers = function(el, d) {
+  if (!el) return [];
+  d = d || {};
+  const elType = _cssAnimElType(el, d);
+  const layers = [];
+  if (elType === 'text' || elType === 'markdown') {
+    el.querySelectorAll(':scope > .el-bg-layer').forEach(l => {
+      if (l.parentNode === el) layers.push(l);
+    });
+  } else if (elType === 'shape') {
+    const ov = el.querySelector('.shape-blur-overlay');
+    if (ov) layers.push(ov);
+    const ec = el.querySelector('.ec');
+    const first = el.firstElementChild;
+    if (first && first !== ec && (first.style.backdropFilter || first.style.webkitBackdropFilter)) layers.push(first);
+  }
+  return layers;
+};
+
+window._applyCssAnim = function(el, d, a, overrideDelay) {
+  if (!el || !a) return;
+  const cssName = (typeof ANIM_CSS !== 'undefined' && ANIM_CSS[a.name]) ? ANIM_CSS[a.name] : 'el-fadein';
+  const dur = (a.duration || 600) / 1000;
+  const delay = typeof overrideDelay === 'number' ? overrideDelay / 1000 : (a.delay || 0) / 1000;
+  const animCss = `${cssName} ${dur}s ease-out ${delay}s both`;
+  const targets = window._cssAnimTargets(el, d, a);
+  const bgLayers = window._cssAnimBgLayers(el, d);
+  targets.forEach(t => { t.style.animation = ''; });
+  bgLayers.forEach(t => { t.style.animation = ''; });
+  if (a.cat === 'entrance' && typeof window._revealBackdropBlurLayers === 'function') {
+    window._revealBackdropBlurLayers(el, d);
+  }
+  requestAnimationFrame(() => {
+    targets.forEach(t => { t.style.animation = animCss; });
+    bgLayers.forEach(t => { t.style.animation = animCss; });
+  });
+  return { targets, bgLayers, animCss };
+};
+
+function _cssAnimElType(el, d) {
+  return (d && d.type) || (el && el.dataset && el.dataset.type) || '';
+}
+
+window._cssAnimTargets = function(el, d, a) {
+  if (!el) return [el];
+  d = d || null;
+  const elType = _cssAnimElType(el, d);
+
+  if (elType === 'text' || elType === 'markdown') {
+    if (typeof window._isTextBlock === 'function' && window._isTextBlock(el) && typeof window._ensureTextBodyWrap === 'function') {
+      return [window._ensureTextBodyWrap(el)];
+    }
+    return [el.querySelector('._text_body') || el.querySelector('.ec') || el.querySelector('.psel-txt') || el];
+  }
+
+  if (elType === 'shape' && _elHasBackdropBlur(el, d || { type: elType })) {
+    const ec = el.querySelector('.ec');
+    return ec ? [ec] : [el];
+  }
+
+  const cat = a && a.cat;
+  const isEmphasis = cat === 'emphasis';
+  if (isEmphasis) {
+    const ec = el.querySelector('.ec');
+    return ec ? [ec] : [el];
+  }
+  if (cat === 'entrance' || cat === 'exit') {
+    const ec = el.querySelector('.ec');
+    return ec ? [ec] : [el];
+  }
+  return [el];
 };
 
 window._resetSlideAnimEl = function(el, d) {
@@ -1780,7 +2472,7 @@ window._resetSlideAnimEl = function(el, d) {
     el._liveAnimsByName = {};
   }
   el.classList.remove('has-dance');
-  const nodes = [el, el.querySelector('._text_body'), el.querySelector('.ec'), el.querySelector('.tel'), el.querySelector('.iel'), el.querySelector('.shape-text'), el.querySelector('._dance_wrap'), el.querySelector('._float_wrap'), el.querySelector('._swing_wrap')];
+  const nodes = [el, el.querySelector('._text_body'), el.querySelector('.ec'), el.querySelector('.tel'), el.querySelector('.iel'), el.querySelector('.shape-text'), el.querySelector('._dance_wrap'), el.querySelector('._float_wrap'), el.querySelector('._swing_wrap'), el.querySelector('.el-bg-layer'), el.querySelector('.shape-blur-overlay'), el.querySelector('.psel-txt')];
   nodes.forEach(t => {
     if (!t) return;
     t.getAnimations().forEach(a => { try { a.cancel(); } catch (e) {} });
@@ -1791,10 +2483,12 @@ window._resetSlideAnimEl = function(el, d) {
   el.style.visibility = '';
   el.style.pointerEvents = '';
   if (typeof window._resetCaptionSlide === 'function') window._resetCaptionSlide(el, true);
+  if (typeof window._resetCosmosTitleAnim === 'function') window._resetCosmosTitleAnim(el);
   if (typeof window._resetSplitHalf === 'function') window._resetSplitHalf(el, true);
   if (typeof window._resetRecolor === 'function') window._resetRecolor(el);
   if (typeof window._resetLiveAnimPreview === 'function') window._resetLiveAnimPreview(el, true);
   if (typeof window._resetParticles === 'function') window._resetParticles(el);
+  if (typeof window._resetInkDrawAnim === 'function') window._resetInkDrawAnim(el);
   el.classList.remove('has-particles');
   if (el.dataset.type === 'text' && typeof window._restoreTextBlockVisuals === 'function') window._restoreTextBlockVisuals(el);
   else if (el.dataset.type === 'text' && typeof applyTextRadius === 'function') applyTextRadius(el);
@@ -2074,10 +2768,11 @@ window.playSlideAnimsOnCanvas = function(slideIdx) {
     if (!el) return;
     window._resetSlideAnimEl(el, d);
     const autoList = autoMap[d.id];
-    if (autoList && autoList[0] && autoList[0].anim.name === 'captionSlide') {
+    const hasCosmosAuto = autoList && autoList.some(x => x.anim && x.anim.name === 'cosmosTitle');
+    if (hasCosmosAuto || (autoList && autoList[0] && (autoList[0].anim.name === 'captionSlide' || autoList[0].anim.name === 'cosmosTitle'))) {
       el.style.visibility = 'hidden';
       el.style.pointerEvents = 'none';
-      el.classList.add('has-caption');
+      if (autoList[0] && autoList[0].anim.name === 'captionSlide') el.classList.add('has-caption');
     }
     const deferCap = typeof window._captionAnimDeferredByTrigger === 'function'
       ? window._captionAnimDeferredByTrigger(d.anims) : null;
@@ -2086,11 +2781,12 @@ window.playSlideAnimsOnCanvas = function(slideIdx) {
     }
   });
   Object.keys(autoMap).forEach(elId => {
+    if (window._animTlIsCam && window._animTlIsCam(elId)) return;
     const d = s.els.find(x => x.id === elId);
     const el = cv.querySelector('.el[data-id="' + elId + '"]');
     if (!d || !el) return;
     autoMap[elId].forEach(({ anim: a, absDelay }) => {
-      if (a.name === 'captionSlide') captionQueue.push({ d, a, absDelay });
+      if (a.name === 'captionSlide' || a.name === 'cosmosTitle') captionQueue.push({ d, a, absDelay });
       else window._trackSlideAnimTimeout(() => {
         if (!window._slideAnimPlaying || playGen !== window._slideAnimPlayGen) return;
         fireAnim(el, d, a, slideIdx != null ? slideIdx : cur, 0);
@@ -2098,28 +2794,57 @@ window.playSlideAnimsOnCanvas = function(slideIdx) {
     });
   });
   if (captionQueue.length) {
+    // Скрыть всех участников групп с cosmos до старта — без мигания исходной позиции
+    const seenHide = {};
+    captionQueue.forEach(({ d, a }) => {
+      if (!a || a.name !== 'cosmosTitle' || !d) return;
+      const members = d.groupId ? s.els.filter(x => x.groupId === d.groupId) : [d];
+      const gk = d.groupId || d.id;
+      if (seenHide[gk]) return;
+      seenHide[gk] = 1;
+      members.forEach(md => {
+        const mel = cv.querySelector('.el[data-id="' + md.id + '"]');
+        if (!mel) return;
+        mel.style.visibility = 'hidden';
+        mel.style.pointerEvents = 'none';
+      });
+    });
     window._trackSlideAnimTimeout(() => {
       if (!window._slideAnimPlaying || playGen !== window._slideAnimPlayGen) return;
       requestAnimationFrame(() => requestAnimationFrame(() => {
         const seen = {};
         captionQueue.forEach(({ d, a, absDelay }) => {
+          const isCosmos = a && a.name === 'cosmosTitle';
           if (d.groupId) {
             const members = s.els.filter(x => x.groupId === d.groupId);
-            const leader = members[0] || d;
+            let leader = d;
+            for (let i = 0; i < s.els.length; i++) {
+              if (members.some(m => m.id === s.els[i].id)) { leader = s.els[i]; break; }
+            }
             if (d.id !== leader.id) return;
-            const key = d.groupId + '|' + absDelay + '|captionSlide';
+            const key = d.groupId + '|' + absDelay + '|' + (a.name || 'captionSlide');
             if (seen[key]) return;
             seen[key] = 1;
             const entries = members.map(md => {
               const mel = cv.querySelector('.el[data-id="' + md.id + '"]');
-              return mel ? { el: mel, x: md.x || 0, y: md.y || 0, w: md.w || 200, h: md.h || 200 } : null;
+              return mel ? { el: mel, d: md, x: md.x || 0, y: md.y || 0, w: md.w || 200, h: md.h || 200 } : null;
             }).filter(Boolean);
-            if (entries.length && typeof window._fireCaptionSlideAnimGroup === 'function') {
+            if (!entries.length) return;
+            if (isCosmos) {
+              if (typeof window._fireCosmosTitleAnimGroup === 'function') {
+                window._fireCosmosTitleAnimGroup(entries, a, 0, { hideAfter: false });
+              }
+            } else if (typeof window._fireCaptionSlideAnimGroup === 'function') {
               window._fireCaptionSlideAnimGroup(entries, a, 0, { hideAfter: false });
             }
           } else {
             const mel = cv.querySelector('.el[data-id="' + d.id + '"]');
-            if (mel && typeof window._fireCaptionSlideAnim === 'function') {
+            if (!mel) return;
+            if (isCosmos) {
+              if (typeof window._fireCosmosTitleAnim === 'function') {
+                window._fireCosmosTitleAnim(mel, a, 0, d.w, d.h, { hideAfter: false });
+              }
+            } else if (typeof window._fireCaptionSlideAnim === 'function') {
               window._fireCaptionSlideAnim(mel, a, 0, d.w, d.h, { hideAfter: false });
             }
           }
@@ -2141,7 +2866,10 @@ window.playSlideAnimsOnCanvas = function(slideIdx) {
 
 window._animTimelineGList = function(slide) {
   if (typeof window._buildSlideAnimGlobalList === 'function') {
-    return window._buildSlideAnimGlobalList(slide).map(({ d, a }) => ({ d, a }));
+    const built = window._buildSlideAnimGlobalList(slide, { timeline: true });
+    const gList = built.map(({ d, a }) => ({ d, a }));
+    gList._repeatBands = built._repeatBands || [];
+    return gList;
   }
   const gList = [];
   if (!slide || !slide.els) return gList;
@@ -2149,6 +2877,7 @@ window._animTimelineGList = function(slide) {
     if (d._isDecor) return;
     (d.anims || []).forEach(a => gList.push({ d, a }));
   });
+  gList._repeatBands = [];
   return gList;
 };
 
@@ -2161,21 +2890,34 @@ window._animTlKey = function(elId, ai) { return elId + ':' + ai; };
 
 window._animTlClearSel = function() {
   window._animTlSel.clear();
+  if(typeof window._syncAnimPropsLayout==='function') window._syncAnimPropsLayout();
+  if(typeof window._syncAnimListHighlightFromTimeline==='function') window._syncAnimListHighlightFromTimeline();
 };
 
 window._animTlToggleSel = function(elId, ai) {
   const k = window._animTlKey(elId, ai);
   if (window._animTlSel.has(k)) window._animTlSel.delete(k);
   else window._animTlSel.add(k);
+  if(typeof window._syncAnimPropsLayout==='function') window._syncAnimPropsLayout();
+  if(typeof window._syncAnimListHighlightFromTimeline==='function') window._syncAnimListHighlightFromTimeline({scroll:true});
 };
 
 window._animTlSetSel = function(elId, ai) {
   window._animTlSel.clear();
   window._animTlSel.add(window._animTlKey(elId, ai));
+  if(typeof window._syncAnimPropsLayout==='function') window._syncAnimPropsLayout();
+  if(typeof window._syncAnimListHighlightFromTimeline==='function') window._syncAnimListHighlightFromTimeline({scroll:true});
 };
 
 window._pickElForAnimTl = function(elId) {
-  if (!elId || typeof pick !== 'function') return;
+  if (!elId) return;
+  if (window._animTlIsCam && window._animTlIsCam(elId)) {
+    if (typeof window._syncAnimListHighlightFromTimeline === 'function') {
+      window._syncAnimListHighlightFromTimeline({scroll:true});
+    }
+    return;
+  }
+  if (typeof pick !== 'function') return;
   const cv = document.getElementById('canvas');
   const dom = cv && cv.querySelector('.el[data-id="' + elId + '"]');
   if (dom) pick(dom);
@@ -2227,35 +2969,43 @@ window._snapTimelineSegOnLane = function(segs, elId, ai) {
 window._applyTimelineSegments = function(slide, segs) {
   const _ov = window._timelineOverlap;
   const _skipTrig = anim => {
-    const t = anim.trigger || 'auto';
+    const t = (anim && anim.trigger) || 'auto';
     return t === 'element' || t === 'nav' || t === 'click' || t === 'counter' || t === 'timer';
   };
-  segs.sort((x, y) => x.absDelay - y.absDelay || x.lane - y.lane || x.elId.localeCompare(y.elId) || x.ai - y.ai);
-  slide.animOrder = segs.map(s => ({ elId: s.elId, ai: s.ai }));
+  segs.sort((x, y) => x.absDelay - y.absDelay || x.lane - y.lane || String(x.elId).localeCompare(String(y.elId)) || x.ai - y.ai);
+  slide.animOrder = segs.map(s => window._animTlOrderEntry(s.elId, s.ai));
   for (let i = 0; i < segs.length; i++) {
     const s = segs[i];
-    const anim = slide.els.find(x => x.id === s.elId)?.anims?.[s.ai];
-    if (!anim || _skipTrig(anim)) continue;
-    anim.tlLane = s.lane;
+    const rec = window._animTlFindRecord(slide, s.elId, s.ai);
+    const anim = window._animTlRecordAsAnim(slide, s.elId, s.ai);
+    if (!rec || !anim) continue;
+    rec.tlLane = s.lane;
+    if (_skipTrig(anim)) continue;
+    const sIsCam = window._animTlIsCam(s.elId) || (anim && anim.name === 'camera');
+    if (sIsCam) {
+      if (rec.trigger === 'withPrev') rec.trigger = 'auto';
+      continue;
+    }
     let parallel = false;
     for (let j = 0; j < i; j++) {
       const p = segs[j];
       if (p.lane === s.lane) continue;
       if (_ov(s, p)) { parallel = true; break; }
     }
-    anim.trigger = parallel ? 'withPrev' : 'auto';
+    rec.trigger = parallel ? 'withPrev' : 'auto';
   }
   let gPS = 0, gPD = 0;
   let prevTimedStart = 0;
   segs.forEach(s => {
-    const anim = slide.els.find(x => x.id === s.elId)?.anims?.[s.ai];
-    if (!anim) return;
-    const t = anim.trigger || 'auto';
+    const rec = window._animTlFindRecord(slide, s.elId, s.ai);
+    const anim = window._animTlRecordAsAnim(slide, s.elId, s.ai);
+    if (!rec || !anim) return;
+    const t = rec.trigger || 'auto';
     if (t === 'element' || t === 'nav' || t === 'click' || t === 'counter' || t === 'timer') return;
-    if (t === 'withPrev') anim.delay = Math.max(0, s.absDelay - prevTimedStart);
-    else if (gPS === 0 && gPD === 0) anim.delay = Math.max(0, s.absDelay);
-    else anim.delay = Math.max(0, s.absDelay - gPS - gPD);
-    const rd = anim.delay || 0;
+    if (t === 'withPrev') rec.delay = Math.max(0, s.absDelay - prevTimedStart);
+    else if (gPS === 0 && gPD === 0) rec.delay = Math.max(0, s.absDelay);
+    else rec.delay = Math.max(0, s.absDelay - gPS - gPD);
+    const rd = rec.delay || 0;
     const _il = !!window._LIVE_LOOP_NAMES[anim.name];
     let abs;
     if (t === 'withPrev') abs = prevTimedStart + rd;
@@ -2272,8 +3022,8 @@ window._syncAnimTimelineGroup = function(slide, updates) {
   if (!slide || !updates || !updates.length) return;
   if (typeof window._ensureAnimOrder === 'function') window._ensureAnimOrder(slide);
   updates.forEach(u => {
-    const d = slide.els.find(x => x.id === u.elId);
-    if (d && d.anims && d.anims[u.ai]) d.anims[u.ai].tlLane = Math.max(0, Math.round(u.lane));
+    const rec = window._animTlFindRecord(slide, u.elId, u.ai);
+    if (rec) rec.tlLane = Math.max(0, Math.round(u.lane));
   });
   const tl = window.computeSlideAnimTimeline(slide);
   const updMap = new Map(updates.map(u => [window._animTlKey(u.elId, u.ai), u]));
@@ -2289,12 +3039,13 @@ window._syncAnimTimelineGroup = function(slide, updates) {
 window._syncAnimOrderFromTimeline = function(slide, elId, ai, lane, targetAbs) {
   if (!slide) return;
   if (typeof window._ensureAnimOrder === 'function') window._ensureAnimOrder(slide);
-  const d = slide.els.find(x => x.id === elId);
-  if (!d || !d.anims || !d.anims[ai]) return;
+  const rec = window._animTlFindRecord(slide, elId, ai);
+  const anim = window._animTlRecordAsAnim(slide, elId, ai);
+  if (!rec || !anim) return;
   lane = Math.max(0, Math.round(lane));
-  d.anims[ai].tlLane = lane;
+  rec.tlLane = lane;
   const tl = window.computeSlideAnimTimeline(slide);
-  const dur = window._animChainDuration(d.anims[ai]);
+  const dur = window._animChainDuration(anim);
   const segs = tl.segments.map(s => (
     s.elId === elId && s.ai === ai ? { ...s, absDelay: Math.max(0, Math.round(targetAbs)), lane, dur } : { ...s }
   ));
@@ -2303,44 +3054,42 @@ window._syncAnimOrderFromTimeline = function(slide, elId, ai, lane, targetAbs) {
 };
 
 window._setAnimAbsDelay = function(slide, elId, ai, targetAbs) {
-  const d = slide.els.find(x => x.id === elId);
-  if (!d || !d.anims || !d.anims[ai]) return;
-  const a = d.anims[ai];
+  const rec = window._animTlFindRecord(slide, elId, ai);
+  const a = window._animTlRecordAsAnim(slide, elId, ai);
+  if (!rec || !a) return;
   targetAbs = Math.max(0, Math.round(targetAbs));
-  const trigger = a.trigger || 'auto';
+  const trigger = rec.trigger || a.trigger || 'auto';
   if (trigger === 'withPrev') {
-    a.delay = Math.max(0, targetAbs - window._getPrevTimedAnimStart(slide, elId, ai));
+    rec.delay = Math.max(0, targetAbs - window._getPrevTimedAnimStart(slide, elId, ai));
     return;
   }
-  const starts = window._computeAnimAbsStarts(slide);
+  const starts = window._computeAnimAbsStarts(slide, window._animTimelineGList(slide));
   let prevEnd = 0;
   for (let i = 0; i < starts.length; i++) {
     const s = starts[i];
     if (s.elId === elId && s.ai === ai) break;
     if (s.skip) continue;
-    const pa = slide.els.find(x => x.id === s.elId)?.anims?.[s.ai];
+    const pa = window._animTlRecordAsAnim(slide, s.elId, s.ai);
     if (!pa) continue;
     prevEnd = s.abs + window._animChainDuration(pa);
   }
-  a.delay = Math.max(0, targetAbs - prevEnd);
+  rec.delay = Math.max(0, targetAbs - prevEnd);
 };
 
 window._setAnimDurationFromTimeline = function(slide, elId, ai, newDur) {
-  const d = slide.els.find(x => x.id === elId);
-  if (!d || !d.anims || !d.anims[ai]) return;
-  const a = d.anims[ai];
+  const rec = window._animTlFindRecord(slide, elId, ai);
+  const a = window._animTlRecordAsAnim(slide, elId, ai);
+  if (!rec || !a) return;
   newDur = Math.max(50, Math.round(newDur));
   if (a.name === 'captionSlide') {
     const old = window._animChainDuration(a);
-    const dIn = +(a.duration || 600) || 600;
-    const hold = +(a.holdDuration || 2000) || 2000;
+    const dIn = +(rec.duration || 600) || 600;
+    const hold = +(rec.holdDuration || 2000) || 2000;
     const ratio = old > 0 ? newDur / old : 1;
-    a.duration = Math.max(50, Math.round(dIn * ratio));
-    a.holdDuration = Math.max(0, Math.round(hold * ratio));
-  } else if (a.name === 'typewriter') {
-    a.duration = newDur;
+    rec.duration = Math.max(50, Math.round(dIn * ratio));
+    rec.holdDuration = Math.max(0, Math.round(hold * ratio));
   } else {
-    a.duration = newDur;
+    rec.duration = newDur;
   }
 };
 
@@ -2355,6 +3104,7 @@ window._syncAnimDomAfterTimelineEdit = function(slide) {
   if (typeof save === 'function') save();
   if (typeof saveState === 'function') saveState();
   if (typeof renderMotionOverlay === 'function') renderMotionOverlay();
+  if (typeof renderCameraOverlay === 'function') renderCameraOverlay();
 };
 
 window._applyAnimLane = function(slide, elId, ai, targetLane, absDelay) {
@@ -2551,9 +3301,37 @@ window.renderAnimTimelineBar = function(slide) {
       ruler.appendChild(lbl);
     }
   }
+  (tl.repeatBands || []).forEach(band => {
+    if (!band || !(band.dur > 0)) return;
+    const bandEl = document.createElement('div');
+    bandEl.className = 'anim-tl-repeat-band';
+    bandEl.style.left = (band.absDelay * pxMs) + 'px';
+    bandEl.style.width = Math.max(8, band.dur * pxMs) + 'px';
+    bandEl.style.top = '0';
+    bandEl.style.height = tracksH + 'px';
+    bandEl.dataset.blockId = band.id || '';
+    bandEl.title = 'Повторение ' + (band.label || ('×' + band.count));
+    if (band.count > 1 && band.cycleDur > 0) {
+      for (let k = 1; k < band.count; k++) {
+        const div = document.createElement('div');
+        div.className = 'anim-tl-repeat-band-div';
+        div.style.left = (band.cycleDur * k * pxMs) + 'px';
+        bandEl.appendChild(div);
+      }
+    }
+    const bandLbl = document.createElement('span');
+    bandLbl.className = 'anim-tl-repeat-band-label';
+    bandLbl.textContent = band.label || ('×' + band.count);
+    if (band.count > 1 && band.cycleDur > 0) {
+      bandLbl.style.left = Math.max(4, band.cycleDur * pxMs + 4) + 'px';
+      bandLbl.style.right = 'auto';
+    }
+    bandEl.appendChild(bandLbl);
+    tracks.appendChild(bandEl);
+  });
   tl.segments.forEach(seg => {
     const el = document.createElement('div');
-    el.className = 'anim-tl-seg anim-tl-' + seg.cat + (seg.isClick ? ' is-click' : '');
+    el.className = 'anim-tl-seg anim-tl-' + seg.cat + (seg.isClick ? ' is-click' : '') + (seg.isCamera ? ' anim-tl-camera' : '');
     el.style.left = (seg.absDelay * pxMs) + 'px';
     el.style.width = Math.max(6, seg.dur * pxMs) + 'px';
     el.style.top = (seg.lane * laneH + segPad) + 'px';
@@ -2561,6 +3339,7 @@ window.renderAnimTimelineBar = function(slide) {
     el.dataset.elId = seg.elId;
     el.dataset.ai = String(seg.ai);
     el.dataset.lane = String(seg.lane);
+    if (seg.isCamera && seg.camId) el.dataset.camId = seg.camId;
     if (window._animTlSel.has(window._animTlKey(seg.elId, seg.ai))) el.classList.add('anim-tl-seg-sel');
     el.title = seg.label + ' · ' + seg.absDelay + '–' + (seg.absDelay + seg.dur) + ' ms' + (seg.isClick ? ' · по клику' : seg.trigger === 'withPrev' ? ' · с предыдущей' : '');
     if (seg.isClick) {
@@ -2751,6 +3530,9 @@ window.renderAnimTimelineBar = function(slide) {
         }
       });
       if (lastPickedElId) window._pickElForAnimTl(lastPickedElId);
+      if (typeof window._syncAnimListHighlightFromTimeline === 'function') {
+        window._syncAnimListHighlightFromTimeline({scroll:true});
+      }
       window.renderAnimTimelineBar(slide);
     };
     document.addEventListener('mousemove', onRbMove);
@@ -2982,6 +3764,85 @@ window.renderAnimTimelineBar = function(slide) {
   window._fireRecolorAnim=_fireRecolorAnim;
   window._resetRecolor=_resetRecolor;
 })();
+
+window._fireMirrorAnim = function(el, a, delayMs, opts) {
+  opts = opts || {};
+  if (!el || !a) return;
+  var delay = typeof delayMs === 'number' ? delayMs : (a.delay || 0);
+  var dur = Math.max(80, a.duration || 600);
+  var axis = a.mirrorAxis === 'v' ? 'v' : 'h';
+  var preview = !!opts.preview;
+  var target = (typeof window._animContentTarget === 'function')
+    ? window._animContentTarget(el)
+    : (opts.ecEl || (el.querySelector && (el.querySelector('.ec') || el.querySelector('.iel'))) || el);
+  if (!target) return;
+  var composite = (target !== el) ? 'replace' : 'add';
+  var prop = axis === 'h' ? 'rotateY' : 'rotateX';
+  var persp = 'perspective(900px) ';
+
+  // Host keeps cumulative flip so chained mirrors continue (H→back, H+V, …)
+  // instead of always restarting from the unflipped pose.
+  var host = el;
+  if (host._mirrorCumH == null) host._mirrorCumH = false;
+  if (host._mirrorCumV == null) host._mirrorCumV = false;
+  var curH = !!host._mirrorCumH;
+  var curV = !!host._mirrorCumV;
+  var nextH = axis === 'h' ? !curH : curH;
+  var nextV = axis === 'v' ? !curV : curV;
+  if (!preview) {
+    host._mirrorCumH = nextH;
+    host._mirrorCumV = nextV;
+  }
+
+  function scaleOf(h, v) {
+    return 'scale(' + (h ? -1 : 1) + ',' + (v ? -1 : 1) + ')';
+  }
+  var startScale = scaleOf(curH, curV);
+  var endScale = scaleOf(nextH, nextV);
+
+  function run() {
+    target.style.transformOrigin = 'center center';
+    if (!target.animate) {
+      if (!preview && composite === 'replace') target.style.transform = endScale;
+      return;
+    }
+    // replace (.ec / text body): keep current flips during the turn so the next
+    // mirror continues from where the previous one ended.
+    // add (rare: animating el itself): only rotate, don't clobber translate.
+    var frames = composite === 'replace'
+      ? [
+          { transform: persp + startScale + ' ' + prop + '(0deg)' },
+          { transform: persp + startScale + ' ' + prop + '(180deg)' }
+        ]
+      : [
+          { transform: persp + prop + '(0deg)' },
+          { transform: persp + prop + '(180deg)' }
+        ];
+    var anim = target.animate(frames, {
+      duration: dur,
+      easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+      fill: preview ? 'none' : 'forwards',
+      composite: composite
+    });
+    anim.onfinish = function() {
+      try { anim.commitStyles(); } catch (e) {}
+      anim.cancel();
+      if (preview) {
+        target.style.transform = '';
+        return;
+      }
+      if (composite === 'replace') target.style.transform = endScale;
+    };
+  }
+
+  if (typeof window._pvStageLater === 'function' && !preview) {
+    window._pvStageLater(el.parentElement, run, delay);
+  } else if (delay > 0) {
+    setTimeout(run, delay);
+  } else {
+    run();
+  }
+};
 
 
 

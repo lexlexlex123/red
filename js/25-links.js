@@ -25,9 +25,49 @@
     return 'url';
   }
 
+  function _linkTargets(el) {
+    if (!el) return [];
+    const gid = el.dataset && el.dataset.groupId;
+    if (!gid) return [el];
+    const canvas = document.getElementById('canvas');
+    if (!canvas) return [el];
+    const members = Array.from(canvas.querySelectorAll('.el[data-group-id="' + gid + '"]'));
+    return members.length ? members : [el];
+  }
+
+  function _readGroupLink(el, key) {
+    if (!el) return '';
+    key = key || 'link';
+    if (el.dataset[key]) return el.dataset[key];
+    const gid = el.dataset.groupId;
+    if (!gid) return key === 'linkt' ? '_blank' : '';
+    const canvas = document.getElementById('canvas');
+    if (!canvas) return key === 'linkt' ? '_blank' : '';
+    const mates = canvas.querySelectorAll('.el[data-group-id="' + gid + '"]');
+    for (let i = 0; i < mates.length; i++) {
+      if (mates[i].dataset[key]) return mates[i].dataset[key];
+    }
+    return key === 'linkt' ? '_blank' : '';
+  }
+
+  function _setLinkOnTargets(targets, href, linkt, isUrl) {
+    targets.forEach(function(tel) {
+      if (href) {
+        tel.dataset.link = href;
+        tel.classList.add('has-link');
+      } else {
+        delete tel.dataset.link;
+        tel.classList.remove('has-link');
+      }
+      if (isUrl) tel.dataset.linkt = linkt || '_blank';
+      else delete tel.dataset.linkt;
+    });
+  }
+
   window._resolveSlideLinkIndex = function(link, curIdx, count) {
+    const list = _slides();
+    count = count != null ? Math.max(0, +count || 0) : list.length;
     if (!link || !link.startsWith('#slide-')) return null;
-    count = Math.max(0, +count || 0);
     if (!count) return null;
     curIdx = Math.max(0, Math.min(+curIdx || 0, count - 1));
     const spec = link.slice(7);
@@ -36,7 +76,20 @@
     if (spec === 'first') return 0;
     if (spec === 'last')  return count - 1;
     const n = parseInt(spec, 10);
-    if (!isNaN(n) && n >= 1 && n <= count) return n - 1;
+    if (!isNaN(n) && String(n) === spec && n >= 1 && n <= count) return n - 1;
+    let name = spec;
+    try { name = decodeURIComponent(spec); } catch (e) {}
+    if (typeof window.findSlideIndexByTitle === 'function') {
+      const byName = window.findSlideIndexByTitle(name, list);
+      if (byName != null) return byName;
+    }
+    const norm = (name || '').trim().toLowerCase();
+    for (let i = 0; i < list.length; i++) {
+      const t = typeof window.getSlideDisplayTitle === 'function'
+        ? window.getSlideDisplayTitle(list[i], i)
+        : ((list[i].title || '').trim() || ('Slide ' + (i + 1)));
+      if (t.trim().toLowerCase() === norm) return i;
+    }
     return null;
   };
 
@@ -71,17 +124,17 @@
   window.openLinkModal = function(){
     try{
       const el = _sel(); if(!el) return _toast('Select an element first');
-      const link = el.dataset.link || '';
+      const link = _readGroupLink(el, 'link');
       const linkType = _linkTypeFromHref(link);
       const typeEl = document.getElementById('lm-type');
       const urlEl  = document.getElementById('lm-url');
       const tgtEl  = document.getElementById('lm-target');
       if(typeEl) typeEl.value = linkType;
       if(urlEl)  urlEl.value  = linkType === 'url' ? link : '';
-      if(tgtEl)  tgtEl.value  = el.dataset.linkt || '_blank';
-      lmSel = linkType === 'slide' ? parseInt(link.replace('#slide-',''), 10) - 1 : -1;
+      if(tgtEl)  tgtEl.value  = _readGroupLink(el, 'linkt');
+      lmSel = linkType === 'slide' ? window._resolveSlideLinkIndex(link, typeof cur !== 'undefined' ? cur : 0, _slides().length) : -1;
+      if (lmSel == null) lmSel = -1;
       onLMTypeChange(linkType);
-      if (linkType === 'slide') buildLMSlides();
       document.getElementById('link-modal').classList.add('open');
     }catch(e){ console.warn('[25-links] openLinkModal:', e.message); }
   };
@@ -98,6 +151,10 @@
       if(uw) uw.style.display = v === 'url' ? 'flex' : 'none';
       if(sw) sw.style.display = v === 'slide' ? 'block' : 'none';
       if(tw) tw.style.display = v === 'url' ? '' : 'none';
+      if (v === 'slide') {
+        if (lmSel < 0) lmSel = (typeof cur !== 'undefined' ? cur : 0);
+        buildLMSlides();
+      }
     }catch(e){}
   };
 
@@ -108,7 +165,10 @@
       _slides().forEach((s,i)=>{
         const d = document.createElement('div');
         d.className = 'lsi' + (i===lmSel ? ' on' : '');
-        d.textContent = (i+1) + '. ' + s.title;
+        const title = typeof window.getSlideDisplayTitle === 'function'
+          ? window.getSlideDisplayTitle(s, i)
+          : ((s.title || '').trim() || fb);
+        d.textContent = (i+1) + '. ' + title;
         d.onclick = (function(idx){ return ()=>{ lmSel=idx; buildLMSlides(); }; })(i);
         c.appendChild(d);
       });
@@ -128,12 +188,12 @@
       } else if (SLIDE_NAV_LINKS[t]) {
         href = SLIDE_NAV_LINKS[t];
       } else if (t === 'slide') {
-        href = lmSel >= 0 ? '#slide-' + (lmSel + 1) : '';
+        href = lmSel >= 0
+          ? (typeof window.slideLinkHrefForIndex === 'function' ? window.slideLinkHrefForIndex(lmSel) : '#slide-' + (lmSel + 1))
+          : '';
       }
-      if(href){ el.dataset.link=href; el.classList.add('has-link'); }
-      else { delete el.dataset.link; el.classList.remove('has-link'); }
-      if (t === 'url') el.dataset.linkt = tgtEl ? tgtEl.value : '_blank';
-      else delete el.dataset.linkt;
+      if(href){ _setLinkOnTargets(_linkTargets(el), href, tgtEl ? tgtEl.value : '_blank', t === 'url'); }
+      else { _setLinkOnTargets(_linkTargets(el), '', null, false); }
       const pl = document.getElementById('p-link'); if(pl) pl.value = href;
       _save(); _saveState(); closeLinkModal(); _toast('Link applied','ok');
     }catch(e){ console.warn('[25-links] applyLink:', e.message); }
@@ -142,10 +202,12 @@
   window.removeLink = function(){
     try{
       const el = _sel(); if(!el) return;
-      delete el.dataset.link; delete el.dataset.linkt;
-      el.classList.remove('has-link');
+      _setLinkOnTargets(_linkTargets(el), '', null, false);
       const pl = document.getElementById('p-link'); if(pl) pl.value = '';
       _save(); _saveState(); closeLinkModal();
     }catch(e){ console.warn('[25-links] removeLink:', e.message); }
   };
+
+  window._readGroupLinkFromEl = function(el, key) { return _readGroupLink(el, key); };
+  window._linkTargetsForEl = function(el) { return _linkTargets(el); };
 })();

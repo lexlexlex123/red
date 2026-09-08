@@ -93,24 +93,77 @@
     return { x: cx+r*Math.cos(ea)-ow/2, y: cy+r*Math.sin(ea)-oh/2 };
   }
 
-  function _makeGhost(domEl, gx, gy, ow, oh, outlineColor){
+  function _clientToCanvas(clientX, clientY){
+    if(typeof _toCanvasCoords==='function') return _toCanvasCoords(clientX, clientY);
+    const canvas=document.getElementById('canvas');
+    if(!canvas) return {x:0,y:0};
+    const r=canvas.getBoundingClientRect();
+    const W=typeof canvasW!=='undefined'?canvasW:Math.max(1,r.width);
+    const H=typeof canvasH!=='undefined'?canvasH:Math.max(1,r.height);
+    return {
+      x:(clientX-r.left)/Math.max(1,r.width)*W,
+      y:(clientY-r.top)/Math.max(1,r.height)*H
+    };
+  }
+
+  function _paintInkIntoGhost(ghost, d){
+    if(!ghost||!d||d.type!=='inkhost') return;
+    const build=window.buildInkSvgMarkup;
+    const splitFn=window.splitInkForHosts;
+    if(typeof build!=='function') return;
+    const slide=(typeof slides!=='undefined')&&slides[(typeof cur!=='undefined'?cur:0)];
+    const ink=(slide&&slide.ink)||[];
+    const fills=(slide&&slide.inkFills)||[];
+    let strokes=[], fillItems=[];
+    if(typeof splitFn==='function'){
+      const split=splitFn(ink, fills, [d]);
+      const bucket=split.byHost&&split.byHost[d.id];
+      if(bucket){ strokes=bucket.strokes||[]; fillItems=bucket.fills||[]; }
+    }
+    if(!strokes.length&&!fillItems.length){
+      const ids=new Set(d.inkIds||[]);
+      if(d.groupId){
+        ink.forEach(s=>{ if(s&&s.groupId===d.groupId) ids.add(s.id); });
+        fills.forEach(f=>{ if(f&&f.groupId===d.groupId) ids.add(f.id); });
+      }
+      strokes=ink.filter(s=>s&&ids.has(s.id));
+      fillItems=fills.filter(f=>f&&ids.has(f.id));
+    }
+    if(!strokes.length&&!fillItems.length) return;
+    const hx=+d.x||0, hy=+d.y||0;
+    const hw=Math.max(1,+d.w||1), hh=Math.max(1,+d.h||1);
+    const W=typeof canvasW!=='undefined'?canvasW:1200;
+    const H=typeof canvasH!=='undefined'?canvasH:675;
+    const wrap=document.createElement('div');
+    wrap.className='ink-host-inner';
+    wrap.style.cssText='position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;pointer-events:none;';
+    wrap.innerHTML=build(strokes, W, H, fillItems, {offsetX:-hx, offsetY:-hy, width:hw, height:hh});
+    ghost.appendChild(wrap);
+    ghost.style.overflow='visible';
+    ghost.style.background='transparent';
+  }
+
+  function _makeGhost(domEl, gx, gy, ow, oh, outlineColor, d){
     const ghost = domEl.cloneNode(true);
     ghost.className = 'motion-ghost';
     ghost.dataset.motionUi = '1';
     ghost.removeAttribute('data-id'); ghost.removeAttribute('data-anims');
     ghost.removeAttribute('data-editing'); ghost.removeAttribute('data-type');
     const _origTransform = domEl.style.transform || '';
+    const isInk = d && d.type==='inkhost';
     ghost.style.cssText = [
       'position:absolute',
       `left:${gx}px`,`top:${gy}px`,`width:${ow}px`,`height:${oh}px`,
-      'opacity:0.28', 'pointer-events:auto', 'cursor:move',
+      isInk ? 'opacity:0.55' : 'opacity:0.28',
+      'pointer-events:auto', 'cursor:move',
       `outline:1.5px dashed ${outlineColor}`,
-      'z-index:91','user-select:none',
+      'z-index:91','user-select:none','overflow:visible',
       _origTransform ? `transform:${_origTransform}` : '',
     ].filter(Boolean).join(';');
     ghost.querySelectorAll('*').forEach(ch=>{ ch.style.pointerEvents='none'; ch.removeAttribute('contenteditable'); });
-    ghost.querySelectorAll('.rh,.sel-box').forEach(ch=>ch.remove());
+    ghost.querySelectorAll('.rh,.sel-box,.ink-host-inner').forEach(ch=>ch.remove());
     ghost.classList.remove('sel');
+    if(isInk) _paintInkIntoGhost(ghost, d);
     return ghost;
   }
 
@@ -164,9 +217,10 @@
       const domEl = canvas.querySelector(`.el[data-id="${d.id}"]`);
       if(!domEl) return;
 
-      const ox = parseInt(domEl.style.left) || d.x;
-      const oy = parseInt(domEl.style.top)  || d.y;
-      const ow = d.w, oh = d.h;
+      const ox = parseFloat(domEl.style.left) || +d.x || 0;
+      const oy = parseFloat(domEl.style.top)  || +d.y || 0;
+      const ow = parseFloat(domEl.style.width)  || +d.w || 1;
+      const oh = parseFloat(domEl.style.height) || +d.h || 1;
 
       // Walk ALL anims in their original order, tracking cumulative position
       let prevX = ox, prevY = oy;
@@ -244,16 +298,15 @@
             e.preventDefault(); e.stopPropagation();
             window._anyDragging = true;
             dot.style.cursor='grabbing';
-            const sx=e.clientX, sy=e.clientY;
+            const p0=_clientToCanvas(e.clientX, e.clientY);
             const ssox=sox, ssoy=soy;
 
             const onMove = ev=>{
-              // Сырое смещение в канвасных координатах
-              const rawSox = ssox + (ev.clientX-sx)/scale;
-              const rawSoy = ssoy + (ev.clientY-sy)/scale;
+              const p=_clientToCanvas(ev.clientX, ev.clientY);
+              const rawSox = ssox + (p.x-p0.x);
+              const rawSoy = ssoy + (p.y-p0.y);
               const rawPx  = ox+ow/2+rawSox;
               const rawPy  = oy+oh/2+rawSoy;
-              // Snap
               const {x:spx, y:spy, snapped} = applySnap(rawPx, rawPy);
               dot.style.left = spx+'px';
               dot.style.top  = spy+'px';
@@ -268,8 +321,9 @@
               document.removeEventListener('mouseup', onUp);
               window._anyDragging = false;
               dot.style.cursor='grab';
-              const rawSox = ssox + (ev.clientX-sx)/scale;
-              const rawSoy = ssoy + (ev.clientY-sy)/scale;
+              const p=_clientToCanvas(ev.clientX, ev.clientY);
+              const rawSox = ssox + (p.x-p0.x);
+              const rawSoy = ssoy + (p.y-p0.y);
               const rawPx  = ox+ow/2+rawSox;
               const rawPy  = oy+oh/2+rawSoy;
               const {x:spx, y:spy} = applySnap(rawPx, rawPy);
@@ -305,7 +359,7 @@
           // Arrow from prev chain position to this ghost
           _drawArrow(svg, prevX+ow/2, prevY+oh/2, gx+ow/2, gy+oh/2, 'rgba(99,102,241,0.8)');
 
-          const ghost = _makeGhost(domEl, gx, gy, ow, oh, 'rgba(99,102,241,0.7)');
+          const ghost = _makeGhost(domEl, gx, gy, ow, oh, 'rgba(99,102,241,0.7)', d);
           ghost.dataset.ghostEl = d.id;
           ghost.dataset.ghostMi = mi;
           gc.appendChild(ghost);
@@ -319,23 +373,25 @@
               if(typeof window._isPreviewActive==='function'&&window._isPreviewActive()) return;
               e.preventDefault(); e.stopPropagation();
               window._anyDragging = true;
-              const sx=e.clientX, sy=e.clientY;
+              const p0=_clientToCanvas(e.clientX, e.clientY);
               const stx=a.tx||0, sty=a.ty||0;
               const onMove = ev=>{
-                const nx = ox + stx + Math.round((ev.clientX-sx)/scale);
-                const ny = oy + sty + Math.round((ev.clientY-sy)/scale);
+                const p=_clientToCanvas(ev.clientX, ev.clientY);
+                const nx = ox + stx + (p.x-p0.x);
+                const ny = oy + sty + (p.y-p0.y);
                 ghost.style.left = handle.style.left = nx+'px';
                 ghost.style.top  = handle.style.top  = ny+'px';
                 if(typeof updateConnectorsFor==='function'){
-                  updateConnectorsFor(d.id, stx + Math.round((ev.clientX-sx)/scale), sty + Math.round((ev.clientY-sy)/scale));
+                  updateConnectorsFor(d.id, stx + (p.x-p0.x), sty + (p.y-p0.y));
                 }
               };
               const onUp = ev=>{
                 document.removeEventListener('mousemove',onMove);
                 document.removeEventListener('mouseup',onUp);
                 window._anyDragging = false;
-                a.tx = stx + Math.round((ev.clientX-sx)/scale);
-                a.ty = sty + Math.round((ev.clientY-sy)/scale);
+                const p=_clientToCanvas(ev.clientX, ev.clientY);
+                a.tx = Math.round((stx + (p.x-p0.x))*10)/10;
+                a.ty = Math.round((sty + (p.y-p0.y))*10)/10;
                 const domEl2 = canvas.querySelector(`.el[data-id="${d.id}"]`);
                 if(domEl2) domEl2.dataset.anims = JSON.stringify(d.anims);
                 if(typeof save==='function') save();
@@ -399,7 +455,7 @@
           const endGx  = endEcx - ow/2;
           const endGy  = endEcy - oh/2;
 
-          const ghost = _makeGhost(domEl, endGx, endGy, ow, oh, 'rgba(34,197,94,0.7)');
+          const ghost = _makeGhost(domEl, endGx, endGy, ow, oh, 'rgba(34,197,94,0.7)', d);
           ghost.dataset.ghostEl = d.id;
           ghost.dataset.ghostMi = mi;
           gc.appendChild(ghost);
@@ -414,17 +470,12 @@
                 if(typeof window._isPreviewActive==='function'&&window._isPreviewActive()) return;
                 e.preventDefault(); e.stopPropagation();
                 window._anyDragging = true;
-                const rect0 = canvas.getBoundingClientRect();
-                const mx0 = (e.clientX - rect0.left) / scale;
-                const my0 = (e.clientY - rect0.top) / scale;
-                // Дельта от угла клика — призрак не прыгает к курсору
-                const mouseAng0 = Math.atan2(my0 - cy, mx0 - cx);
+                const p0=_clientToCanvas(e.clientX, e.clientY);
+                const mouseAng0 = Math.atan2(p0.y - cy, p0.x - cx);
                 let lastAng = endAngle;
                 const onMove = ev=>{
-                  const rect = canvas.getBoundingClientRect();
-                  const mx = (ev.clientX - rect.left) / scale;
-                  const my = (ev.clientY - rect.top) / scale;
-                  const dx = mx - cx, dy = my - cy;
+                  const p=_clientToCanvas(ev.clientX, ev.clientY);
+                  const dx = p.x - cx, dy = p.y - cy;
                   if(dx * dx + dy * dy < 4) return;
                   let delta = Math.atan2(dy, dx) - mouseAng0;
                   while(delta >  Math.PI) delta -= 2 * Math.PI;
@@ -494,11 +545,11 @@
             if(typeof window._isPreviewActive==='function'&&window._isPreviewActive()) return;
             e.preventDefault(); e.stopPropagation();
             window._anyDragging = true;
-            const sx=e.clientX, sy=e.clientY;
+            const p0=_clientToCanvas(e.clientX, e.clientY);
             const scx=a.orbitCx||0, scy=a.orbitCy||0;
             const onMove = ev=>{
-              const ddx=Math.round((ev.clientX-sx)/scale);
-              const ddy=Math.round((ev.clientY-sy)/scale);
+              const p=_clientToCanvas(ev.clientX, ev.clientY);
+              const ddx=p.x-p0.x, ddy=p.y-p0.y;
               const newOcx=scx+ddx, newOcy=scy+ddy;
               const newCx=elCx+newOcx, newCy=elCy+newOcy;
               // Радиус от текущего положения объекта — старт орбиты не прыгает
@@ -518,8 +569,8 @@
               document.removeEventListener('mousemove',onMove);
               document.removeEventListener('mouseup',onUp);
               window._anyDragging = false;
-              a.orbitCx=scx+Math.round((ev.clientX-sx)/scale);
-              a.orbitCy=scy+Math.round((ev.clientY-sy)/scale);
+              a.orbitCx=scx+(_clientToCanvas(ev.clientX, ev.clientY).x-p0.x);
+              a.orbitCy=scy+(_clientToCanvas(ev.clientX, ev.clientY).y-p0.y);
               const nc={x:elCx+a.orbitCx, y:elCy+a.orbitCy};
               a.orbitR=Math.max(10, Math.round(Math.sqrt((elCx-nc.x)**2+(elCy-nc.y)**2)));
               const domEl2=canvas.querySelector(`.el[data-id="${d.id}"]`);
@@ -567,9 +618,8 @@
             window._anyDragging = true;
             const angleToEl=Math.atan2(elCy-cy, elCx-cx);
             const onMove = ev=>{
-              const mx=(ev.clientX-canvas.getBoundingClientRect().left)/scale;
-              const my=(ev.clientY-canvas.getBoundingClientRect().top)/scale;
-              const newR=Math.max(10, Math.round(Math.sqrt((mx-cx)**2+(my-cy)**2)));
+              const p=_clientToCanvas(ev.clientX, ev.clientY);
+              const newR=Math.max(10, Math.round(Math.sqrt((p.x-cx)**2+(p.y-cy)**2)));
               // Сдвигаем центр так, чтобы объект остался на окружности (старт без прыжка)
               const newCx=elCx-newR*Math.cos(angleToEl);
               const newCy=elCy-newR*Math.sin(angleToEl);
@@ -591,9 +641,8 @@
               document.removeEventListener('mousemove',onMove);
               document.removeEventListener('mouseup',onUp);
               window._anyDragging = false;
-              const mx=(ev.clientX-canvas.getBoundingClientRect().left)/scale;
-              const my=(ev.clientY-canvas.getBoundingClientRect().top)/scale;
-              const newR=Math.max(10, Math.round(Math.sqrt((mx-cx)**2+(my-cy)**2)));
+              const p=_clientToCanvas(ev.clientX, ev.clientY);
+              const newR=Math.max(10, Math.round(Math.sqrt((p.x-cx)**2+(p.y-cy)**2)));
               const newCx=elCx-newR*Math.cos(angleToEl);
               const newCy=elCy-newR*Math.sin(angleToEl);
               a.orbitR=newR;

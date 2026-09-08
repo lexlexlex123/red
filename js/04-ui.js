@@ -4,7 +4,14 @@ function toggleRibbonCollapse(){
   const ribbon = document.getElementById('ribbon');
   const collapsed = ribbon.classList.toggle('collapsed');
   try{ localStorage.setItem('sf_ribbon_collapsed', collapsed ? '1' : '0'); }catch(e){}
-  drawGrid(); // пересчитываем сетку точек после изменения высоты
+  if(typeof drawGrid==='function') drawGrid();
+  // После скрытия/показа ленты пересчитать зум-область и центрировать слайд
+  const recenter=()=>{
+    if(typeof _applyCanvasZoom==='function') _applyCanvasZoom();
+    if(typeof _centerSlide==='function') _centerSlide();
+  };
+  requestAnimationFrame(()=>requestAnimationFrame(recenter));
+  setTimeout(recenter, 60);
 }
 
 (function(){
@@ -40,14 +47,31 @@ function drawGrid(){
   gc.width=0; gc.width=W; gc.height=H;
   gc.style.width=W+'px';gc.style.height=H+'px';
   const ctx=gc.getContext('2d');
-  const _isLight=document.documentElement.classList.contains('light');ctx.fillStyle=_isLight?'rgba(80,80,120,0.25)':'rgba(180,180,200,0.18)';
+  const dotCss=getComputedStyle(document.documentElement).getPropertyValue('--canvas-grid-dot').trim();
+  ctx.fillStyle=dotCss||(_isLight?'rgba(80,80,120,0.25)':'rgba(148,158,178,0.42)');
   for(let x=0;x<W;x+=SNAP)for(let y=0;y<H;y+=SNAP)ctx.fillRect(x,y,1,1);
 }
 
 // ══════════════ TABS ══════════════
+function _isMobileRibbon(){
+  return typeof isMobileLayout === 'function' && isMobileLayout();
+}
+function _ribbonGroupDisplay(tabName, group){
+  if(group.dataset.tab !== tabName) return 'none';
+  if(_isMobileRibbon() && !group.classList.contains('rg-anim-ribbon') && !group.classList.contains('rg-transitions')){
+    return 'contents';
+  }
+  return 'flex';
+}
 function switchTab(name,btn){
-  document.querySelectorAll('.rtab').forEach(t=>t.classList.remove('active'));btn.classList.add('active');
-  document.querySelectorAll('[data-tab]').forEach(g=>g.style.display=g.dataset.tab===name?'flex':'none');
+  document.querySelectorAll('.rtab').forEach(t=>t.classList.remove('active'));
+  if(btn&&btn.classList) btn.classList.add('active');
+  if (typeof isMobileLayout === 'function' && isMobileLayout() && btn && btn.scrollIntoView) {
+    requestAnimationFrame(function () {
+      btn.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' });
+    });
+  }
+  document.querySelectorAll('[data-tab]').forEach(g=>{ g.style.display=_ribbonGroupDisplay(name, g); });
   if(name==='anim'){
     openAnimPanel();
     requestAnimationFrame(()=>{
@@ -55,28 +79,74 @@ function switchTab(name,btn){
         window.renderAnimTimelineBar(slides[cur]);
     });
   }else{closeAnimPanel();}
+  if(name==='drawing'){
+    if(typeof openDrawingProps==='function') openDrawingProps();
+  }else{
+    if(typeof closeDrawingProps==='function') closeDrawingProps();
+  }
+  if(typeof closeSlideLayoutMenu==='function'){
+    try{ closeSlideLayoutMenu(); }catch(e){}
+  }
   try{localStorage.setItem('sf_active_tab',name);}catch(e){}
-  // Show/hide objects panel in props
   const objSec=document.getElementById('objects-panel-section');
-  const slidePr=document.getElementById('slide-props');
   const elPr=document.getElementById('el-props');
   if(objSec){
     const isObj=name==='objects';
     objSec.style.display=isObj?'block':'none';
     if(elPr)elPr.style.display=isObj?'none':'';
     if(isObj){
-      if(slidePr)slidePr.style.display='none';
-      if(typeof renderObjectsPanel==='function')renderObjectsPanel();
+      // Ink selected: list + stroke props (closeDrawingProps ran before objSec was shown)
+      if(typeof hasSelectedInk==='function' && hasSelectedInk()
+          && typeof window._syncDrawSidePanel==='function'){
+        try{ window._syncDrawSidePanel(); }catch(e){}
+      } else {
+        if(typeof renderObjectsPanel==='function') renderObjectsPanel();
+        // syncProps: при пустом выделении покажет свойства слайда под списком
+        if(typeof syncProps==='function') syncProps();
+      }
     } else {
-      // Восстанавливаем корректное состояние панели через syncProps
-      if(typeof syncProps==='function') syncProps();
+      // Восстанавливаем панель: ink → props рисования; иначе syncProps
+      if(name!=='anim' && typeof hasSelectedInk==='function' && hasSelectedInk()
+          && typeof window._syncDrawSidePanel==='function'){
+        try{ window._syncDrawSidePanel(); }catch(e){}
+      } else if(typeof syncProps==='function'){
+        syncProps();
+      }
     }
   }
 }
 
+function _refreshRibbonGroups(){
+  const active = document.querySelector('.rtab.active');
+  if(!active) return;
+  const m = (active.getAttribute('onclick') || '').match(/switchTab\(\s*['"]([^'"]+)['"]/);
+  if(!m) return;
+  document.querySelectorAll('[data-tab]').forEach(g=>{ g.style.display = _ribbonGroupDisplay(m[1], g); });
+}
+window._refreshRibbonGroups = _refreshRibbonGroups;
+
+(function(){
+  let _ribbonResizeTimer = null;
+  window.addEventListener('resize', function(){
+    clearTimeout(_ribbonResizeTimer);
+    _ribbonResizeTimer = setTimeout(function(){
+      const active = document.querySelector('.rtab.active');
+      if(!active || typeof switchTab !== 'function') return;
+      const onclick = active.getAttribute('onclick') || '';
+      const m = onclick.match(/switchTab\(\s*['"]([^'"]+)['"]/);
+      if(m) switchTab(m[1], active);
+    }, 120);
+  });
+  window.addEventListener('load', function(){ setTimeout(_refreshRibbonGroups, 80); });
+})();
+
 // Move anim-panel-body into #props when anim tab is active
 window._animInProps = false;
 window.openAnimPanel = function(){
+  if(typeof closeDrawingProps==='function'){
+    const wrap=document.getElementById('props-draw-wrap');
+    if(wrap) wrap.style.display='none';
+  }
   const body = document.getElementById('anim-panel-body');
   const wrap = document.getElementById('props-anim-wrap');
   const scroll = document.getElementById('props-scroll');
@@ -87,12 +157,14 @@ window.openAnimPanel = function(){
   }
   wrap.style.display='flex';
   scroll.style.display='none';
+  if(typeof window._syncAnimPropsLayout==='function') window._syncAnimPropsLayout();
 };
 window.closeAnimPanel = function(){
   const wrap = document.getElementById('props-anim-wrap');
   const scroll = document.getElementById('props-scroll');
   if(wrap) wrap.style.display='none';
   if(scroll) scroll.style.display='';
+  document.body.classList.remove('anim-row-focused');
 };
 
 // ══════════════ SNAP / GUIDES ══════════════
@@ -208,6 +280,108 @@ function showGuides(el){
     }
   });
 }
+/** Alignment guides while resizing (snap + cyan/amber lines like drag). */
+function showGuidesResize(el, cfg) {
+  clearGuides();
+  const snapOn = document.getElementById('snap-chk');
+  if (!snapOn || !snapOn.checked) return;
+  if (!cfg) { showGuides(el); return; }
+
+  let x = parseInt(el.style.left) || 0;
+  let y = parseInt(el.style.top) || 0;
+  let w = parseInt(el.style.width) || 0;
+  let h = parseInt(el.style.height) || 0;
+  const cx = canvasW / 2, cy = canvasH / 2, TH = 7;
+  const rot = parseFloat(el.dataset.rot || 0);
+  const canSnap = rot === 0;
+
+  const moveRight = cfg.dx !== 0 && !cfg.ax;
+  const moveLeft = cfg.dx !== 0 && cfg.ax;
+  const moveBottom = cfg.dy !== 0 && !cfg.ay;
+  const moveTop = cfg.dy !== 0 && cfg.ay;
+
+  function tryV(pos, color) {
+    color = color || 'element';
+    if (moveRight && Math.abs(x + w - pos) < TH) {
+      addGuide('v', pos, color);
+      if (canSnap) w = Math.max(40, snapV(pos - x));
+      return;
+    }
+    if (moveLeft && Math.abs(x - pos) < TH) {
+      addGuide('v', pos, color);
+      if (canSnap) {
+        const right = x + w;
+        x = snapV(pos);
+        w = Math.max(40, snapV(right - x));
+      }
+      return;
+    }
+    if (Math.abs(x - pos) < TH) addGuide('v', pos, color);
+    else if (Math.abs(x + w / 2 - pos) < TH) addGuide('v', pos, color);
+    else if (Math.abs(x + w - pos) < TH) addGuide('v', pos, color);
+  }
+
+  function tryH(pos, color) {
+    color = color || 'element';
+    if (moveBottom && Math.abs(y + h - pos) < TH) {
+      addGuide('h', pos, color);
+      if (canSnap) h = Math.max(20, snapV(pos - y));
+      return;
+    }
+    if (moveTop && Math.abs(y - pos) < TH) {
+      addGuide('h', pos, color);
+      if (canSnap) {
+        const bottom = y + h;
+        y = snapV(pos);
+        h = Math.max(20, snapV(bottom - y));
+      }
+      return;
+    }
+    if (Math.abs(y - pos) < TH) addGuide('h', pos, color);
+    else if (Math.abs(y + h / 2 - pos) < TH) addGuide('h', pos, color);
+    else if (Math.abs(y + h - pos) < TH) addGuide('h', pos, color);
+  }
+
+  tryV(cx); tryH(cy);
+  tryV(0); tryH(0);
+  tryV(canvasW - 1); tryH(canvasH - 1);
+
+  if (slides[cur]) {
+    slides[cur].els.filter(d => !d._isDecor && d.id !== el.dataset.id).forEach(d => {
+      [d.x, d.x + d.w / 2, d.x + d.w].forEach(pos => tryV(pos, 'element'));
+      [d.y, d.y + d.h / 2, d.y + d.h].forEach(pos => tryH(pos, 'element'));
+    });
+  }
+
+  if (canSnap) {
+    el.style.width = Math.round(w) + 'px';
+    el.style.height = Math.round(h) + 'px';
+    el.style.left = Math.round(x) + 'px';
+    el.style.top = Math.round(y) + 'px';
+    x = parseInt(el.style.left) || x;
+    y = parseInt(el.style.top) || y;
+    w = parseInt(el.style.width) || w;
+    h = parseInt(el.style.height) || h;
+  }
+
+  if (typeof _extraGuidesMode === 'undefined' || _extraGuidesMode === 'none') return;
+  const phi = 0.618;
+  const extras = _extraGuidesMode === 'thirds'
+    ? [{ t: 'v', pos: canvasW / 3 }, { t: 'v', pos: canvasW * 2 / 3 }, { t: 'h', pos: canvasH / 3 }, { t: 'h', pos: canvasH * 2 / 3 }]
+    : [{ t: 'v', pos: canvasW * phi }, { t: 'v', pos: canvasW * (1 - phi) }, { t: 'h', pos: canvasH * phi }, { t: 'h', pos: canvasH * (1 - phi) }];
+  extras.forEach(({ t, pos }) => {
+    if (t === 'v') tryV(pos, 'amber');
+    else tryH(pos, 'amber');
+  });
+  if (canSnap) {
+    el.style.width = Math.round(w) + 'px';
+    el.style.height = Math.round(h) + 'px';
+    el.style.left = Math.round(x) + 'px';
+    el.style.top = Math.round(y) + 'px';
+  }
+}
+window.showGuidesResize = showGuidesResize;
+
 function addGuide(t,pos,color){
   const cv=document.getElementById('canvas');const g=document.createElement('div');g.className='guide '+t;
   if(t==='h')g.style.top=Math.round(pos)+'px';else g.style.left=Math.round(pos)+'px';
@@ -228,9 +402,30 @@ function clampEls(newW,newH){
     });
   });
 }
+function toggleAspectRatio(){
+  const next=(typeof ar!=='undefined'&&ar==='4:3')?'16:9':'4:3';
+  setAR(next);
+}
+window.toggleAspectRatio=toggleAspectRatio;
+
+function _syncArBtn(){
+  const r=(typeof ar!=='undefined'?ar:'16:9');
+  const tip=r==='4:3'?'4:3 — нажмите для 16:9':'16:9 — нажмите для 4:3';
+  ['btn-ar-toggle','btn-mobile-ar'].forEach(id=>{
+    const btn=document.getElementById(id);
+    if(!btn) return;
+    btn.textContent=r;
+    btn.title=tip;
+    btn.setAttribute('data-i18n-title','btnMobileAr');
+  });
+}
+window._syncArBtn=_syncArBtn;
+window._syncMobileArBtn=_syncArBtn;
+
 function setAR(ratio,btn){
   pushUndo();
-  ar=ratio;document.querySelectorAll('.ar-btn').forEach(b=>b.classList.toggle('active',b===btn));
+  ar=ratio;
+  _syncArBtn();
   const oldW=canvasW,oldH=canvasH;
   canvasW=1200;canvasH=ratio==='4:3'?900:675;
   document.getElementById('canvas').style.width=canvasW+'px';document.getElementById('canvas').style.height=canvasH+'px';
@@ -253,6 +448,9 @@ function setAR(ratio,btn){
       d.w=Math.round(d.w*sx);
       d.h=Math.round(d.h*sy);
     });
+    if(typeof window._scaleSlideCameras==='function'){
+      try{ window._scaleSlideCameras(s, sx, sy); }catch(e){}
+    }
   });
   clampEls(canvasW,canvasH);
   // Regenerate decor SVGs for new canvas dimensions
@@ -262,8 +460,96 @@ function setAR(ratio,btn){
 
 // ══════════════ CANVAS ZOOM ══════════════
 let _canvasZoom = 1.0;
-const ZOOM_MIN = 0.25, ZOOM_MAX = 4.0;
+const ZOOM_MIN = 0.25, ZOOM_MAX = 20.0;
 const ZOOM_PAD = 100; // px black border around canvas at all zoom levels
+
+function _zoomPad(){
+  if(typeof isMobileLayout === 'function' && isMobileLayout()) return 2;
+  if(typeof _desktopColorBarActive === 'function' && _desktopColorBarActive()) return 8;
+  return ZOOM_PAD;
+}
+window._zoomPad = _zoomPad;
+
+function _isReactEmbed(){
+  return !!window.__SLIDES_REACT_EMBED__;
+}
+
+/** Equal pan margin on all sides (desktop). */
+function _canvasOuterPad(cwW, cwH){
+  if(_isReactEmbed()) return Math.max(12, _zoomPad());
+  if(typeof isMobileLayout === 'function' && isMobileLayout()) return _zoomPad();
+  const generous = Math.round(Math.min(cwW, cwH) * 0.42);
+  return Math.max(_zoomPad(), generous, 500);
+}
+
+/** Pan margin around scaled slide — constant layout, no mode switch at 100%. */
+function _canvasPanPad(cwW, cwH){
+  if(_isReactEmbed()) return Math.max(12, _zoomPad());
+  if(typeof isMobileLayout === 'function' && isMobileLayout()) return _zoomPad();
+  return _canvasOuterPad(cwW, cwH);
+}
+
+function _canvasScrollLayout(z){
+  const cwrap = document.getElementById('cwrap');
+  if(!cwrap || typeof canvasW !== 'number' || typeof canvasH !== 'number') return null;
+  const cwW = cwrap.offsetWidth;
+  const cwH = cwrap.offsetHeight;
+  const pad = _canvasPanPad(cwW, cwH);
+  const scaledW = Math.round(canvasW * z);
+  const scaledH = Math.round(canvasH * z);
+  const totalW = scaledW + pad * 2;
+  const totalH = scaledH + pad * 2;
+  return {
+    cwW, cwH, pad, scaledW, scaledH, totalW, totalH,
+    ccLeft: pad,
+    ccTop: pad,
+    scrollLeft: Math.max(0, (totalW - cwW) / 2),
+    scrollTop: Math.max(0, (totalH - cwH) / 2)
+  };
+}
+
+function _canvasContainerOffset(){
+  const layout = _canvasScrollLayout(typeof _canvasZoom === 'number' ? _canvasZoom : 1);
+  if(layout) return { left: layout.ccLeft, top: layout.ccTop };
+  const cc = document.getElementById('canvas-container');
+  if(!cc) return { left: _zoomPad(), top: _zoomPad() };
+  const left = parseFloat(cc.style.left);
+  const top = parseFloat(cc.style.top);
+  return {
+    left: Number.isFinite(left) ? left : (cc.offsetLeft || 0),
+    top: Number.isFinite(top) ? top : (cc.offsetTop || 0)
+  };
+}
+
+function _lockZoomOrigin(mouseClientX, mouseClientY){
+  const cwrap = document.getElementById('cwrap');
+  if(!cwrap) return;
+  _zoomOriginX = mouseClientX;
+  _zoomOriginY = mouseClientY;
+  if(typeof _toCanvasCoords === 'function'){
+    const cv = _toCanvasCoords(mouseClientX, mouseClientY);
+    _zoomOriginCanvasX = cv.x;
+    _zoomOriginCanvasY = cv.y;
+    return;
+  }
+  const rect = cwrap.getBoundingClientRect();
+  const vx = mouseClientX - rect.left;
+  const vy = mouseClientY - rect.top;
+  const off = _canvasContainerOffset();
+  _zoomOriginCanvasX = (cwrap.scrollLeft + vx - off.left) / _canvasZoom;
+  _zoomOriginCanvasY = (cwrap.scrollTop + vy - off.top) / _canvasZoom;
+}
+
+function _applyZoomScroll(newZ){
+  const cwrap = document.getElementById('cwrap');
+  if(!cwrap || _zoomOriginX === null) return;
+  const rect = cwrap.getBoundingClientRect();
+  const vx = _zoomOriginX - rect.left;
+  const vy = _zoomOriginY - rect.top;
+  const off = _canvasContainerOffset();
+  cwrap.scrollLeft = _zoomOriginCanvasX * newZ + off.left - vx;
+  cwrap.scrollTop  = _zoomOriginCanvasY * newZ + off.top - vy;
+}
 
 // Smooth zoom state
 let _zoomTarget = 1.0;       // target zoom level
@@ -285,16 +571,7 @@ function _zoomTick(){
   _applyCanvasZoom();
 
   // Keep origin pixel under cursor while animating
-  if(_zoomOriginX !== null){
-    const rect = cwrap.getBoundingClientRect();
-    const vx = _zoomOriginX - rect.left;
-    const vy = _zoomOriginY - rect.top;
-    // canvasX/Y was locked at gesture start — recompute scroll to keep it fixed
-    const canvasX = _zoomOriginCanvasX;
-    const canvasY = _zoomOriginCanvasY;
-    cwrap.scrollLeft = canvasX * newZ + ZOOM_PAD - vx;
-    cwrap.scrollTop  = canvasY * newZ + ZOOM_PAD - vy;
-  }
+  _applyZoomScroll(newZ);
 
   if(done){ _zoomRafId=null; if(typeof drawGrid==='function') drawGrid(); }
   else     { _zoomRafId = requestAnimationFrame(_zoomTick); }
@@ -310,20 +587,17 @@ function zoomCanvas(factor, mouseClientX, mouseClientY, instant){
   const newTarget = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, _zoomTarget * factor));
   if(newTarget === _zoomTarget) return;
 
-  // On first call in a gesture (or when origin changes significantly), lock origin
-  if(mouseClientX !== undefined){
+  if(mouseClientX === undefined){
     const rect = cwrap.getBoundingClientRect();
-    const vx = mouseClientX - rect.left;
-    const vy = mouseClientY - rect.top;
-    // Only re-lock origin if this is a new gesture or position shifted a lot
-    if(_zoomRafId === null || Math.abs(mouseClientX-(_zoomOriginX||0))>30 || Math.abs(mouseClientY-(_zoomOriginY||0))>30){
-      _zoomOriginX = mouseClientX;
-      _zoomOriginY = mouseClientY;
-      _zoomOriginCanvasX = (cwrap.scrollLeft + vx - ZOOM_PAD) / _canvasZoom;
-      _zoomOriginCanvasY = (cwrap.scrollTop  + vy - ZOOM_PAD) / _canvasZoom;
-    }
-  } else {
-    _zoomOriginX = null; _zoomOriginY = null;
+    mouseClientX = rect.left + rect.width / 2;
+    mouseClientY = rect.top + rect.height / 2;
+  }
+
+  // On first call in a gesture (or when origin changes significantly), lock origin
+  if(_zoomRafId === null
+    || Math.abs(mouseClientX - (_zoomOriginX || 0)) > 30
+    || Math.abs(mouseClientY - (_zoomOriginY || 0)) > 30){
+    _lockZoomOrigin(mouseClientX, mouseClientY);
   }
 
   _zoomTarget = newTarget;
@@ -331,6 +605,7 @@ function zoomCanvas(factor, mouseClientX, mouseClientY, instant){
   if(instant){
     _canvasZoom = newTarget;
     _applyCanvasZoom();
+    _applyZoomScroll(newTarget);
     return;
   }
 
@@ -338,21 +613,97 @@ function zoomCanvas(factor, mouseClientX, mouseClientY, instant){
 }
 
 function resetZoom(){
+  if(_shouldFitCanvasToView()){
+    fitCanvasToView();
+    return;
+  }
+  if(_zoomRafId){ cancelAnimationFrame(_zoomRafId); _zoomRafId=null; }
   _zoomTarget = 1.0;
   _canvasZoom = 1.0;
-  if(_zoomRafId){ cancelAnimationFrame(_zoomRafId); _zoomRafId=null; }
+  _zoomOriginX = null;
+  _zoomOriginY = null;
   _applyCanvasZoom();
   _centerSlide();
+  if(typeof drawGrid === 'function') drawGrid();
+}
+
+function fitCanvasToView(){
+  if (_canvasViewportLocked()) return (typeof _canvasZoom === 'number' ? _canvasZoom : 1);
+  const cwrap = document.getElementById('cwrap');
+  if(!cwrap || typeof canvasW !== 'number' || typeof canvasH !== 'number') return 1;
+  const pad = _zoomPad();
+  const availW = Math.max(40, cwrap.clientWidth - pad * 2);
+  const availH = Math.max(40, cwrap.clientHeight - pad * 2);
+  const maxZ = _isReactEmbed() ? 1 : ZOOM_MAX;
+  const z = Math.min(availW / canvasW, availH / canvasH, maxZ);
+  const newZ = Math.max(ZOOM_MIN, z);
+  _zoomTarget = newZ;
+  _canvasZoom = newZ;
+  _zoomOriginX = null;
+  _zoomOriginY = null;
+  _applyCanvasZoom();
+  _centerSlide();
+  window._mobileFitZoom = newZ;
+  return newZ;
+}
+window.fitCanvasToView = fitCanvasToView;
+
+function _canvasViewportLocked(){
+  return !!document.querySelector('.el[data-editing="true"]');
+}
+window._canvasViewportLocked = _canvasViewportLocked;
+
+/** Keep cwrap scroll fixed while DOM/layout updates (e.g. text autofit on wrap). */
+function _preserveCwrapScroll(fn){
+  const cwrap = document.getElementById('cwrap');
+  const sl = cwrap ? cwrap.scrollLeft : 0;
+  const st = cwrap ? cwrap.scrollTop : 0;
+  if (typeof fn === 'function') fn();
+  if (!cwrap) return;
+  const restore = function(){
+    cwrap.scrollLeft = sl;
+    cwrap.scrollTop = st;
+  };
+  restore();
+  requestAnimationFrame(restore);
+  requestAnimationFrame(function(){ requestAnimationFrame(restore); });
+}
+window._preserveCwrapScroll = _preserveCwrapScroll;
+
+function _mobileShouldFit(){
+  if (_canvasViewportLocked()) return false;
+  return typeof isMobileLayout === 'function' && isMobileLayout();
+}
+
+function _desktopColorBarActive(){
+  if (!window.matchMedia || !window.matchMedia('(min-width: 1280px)').matches) return false;
+  if (document.body.classList.contains('preview-mode')) return false;
+  if (typeof window.isColorBarEnabled === 'function' && !window.isColorBarEnabled()) return false;
+  const bar = document.getElementById('color-bar');
+  return !!(bar && getComputedStyle(bar).display !== 'none');
+}
+window._desktopColorBarActive = _desktopColorBarActive;
+
+function _shouldFitCanvasToView(){
+  if (_canvasViewportLocked()) return false;
+  if (_mobileShouldFit()) return true;
+  return _desktopColorBarActive();
+}
+
+function _refreshCanvasViewport(){
+  _applyCanvasZoom();
+  if (_canvasViewportLocked()) return;
+  if(_shouldFitCanvasToView() && typeof fitCanvasToView === 'function') fitCanvasToView();
+  else _centerSlide();
 }
 
 function _centerSlide(){
+  if (_canvasViewportLocked()) return;
   const cwrap = document.getElementById('cwrap');
-  if(!cwrap) return;
-  const z = _canvasZoom;
-  const totalW = Math.round(canvasW * z) + ZOOM_PAD * 2;
-  const totalH = Math.round(canvasH * z) + ZOOM_PAD * 2;
-  cwrap.scrollLeft = Math.max(0, (totalW - cwrap.offsetWidth)  / 2);
-  cwrap.scrollTop  = Math.max(0, (totalH - cwrap.offsetHeight) / 2);
+  const layout = _canvasScrollLayout(_canvasZoom);
+  if(!cwrap || !layout) return;
+  cwrap.scrollLeft = layout.scrollLeft;
+  cwrap.scrollTop = layout.scrollTop;
 }
 
 function _applyCanvasZoom(){
@@ -360,16 +711,15 @@ function _applyCanvasZoom(){
   const cwrap = document.getElementById('cwrap');
   if(!cc || !cwrap) return;
   const z = _canvasZoom;
-  const scaledW = Math.round(canvasW * z);
-  const scaledH = Math.round(canvasH * z);
-  const totalW  = scaledW + ZOOM_PAD * 2;
-  const totalH  = scaledH + ZOOM_PAD * 2;
+  const layout = _canvasScrollLayout(z);
+  if(!layout) return;
 
   cc.style.position      = 'absolute';
   cc.style.transform     = `scale(${z})`;
   cc.style.transformOrigin = 'top left';
+  cc.style.left = layout.ccLeft + 'px';
+  cc.style.top  = layout.ccTop + 'px';
 
-  // Ghost defines scroll area
   let ghost = document.getElementById('cwrap-ghost');
   if(!ghost){
     ghost = document.createElement('div');
@@ -377,26 +727,8 @@ function _applyCanvasZoom(){
     ghost.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;';
     cwrap.appendChild(ghost);
   }
-
-  // Use offsetWidth/Height (ignores scrollbars) to avoid chicken-and-egg jitter
-  const cwW = cwrap.offsetWidth;
-  const cwH = cwrap.offsetHeight;
-  const fitsW = totalW <= cwW;
-  const fitsH = totalH <= cwH;
-
-  if(fitsW && fitsH){
-    // Fits both axes — no scrollbars, center canvas, ghost = cwrap size
-    ghost.style.width  = cwW + 'px';
-    ghost.style.height = cwH + 'px';
-    cc.style.left = Math.round((cwW - scaledW) / 2) + 'px';
-    cc.style.top  = Math.round((cwH - scaledH) / 2) + 'px';
-  } else {
-    // Overflows on at least one axis — center on fitting axis, pad on overflow axis
-    ghost.style.width  = totalW + 'px';
-    ghost.style.height = totalH + 'px';
-    cc.style.left = fitsW ? Math.round((cwW - scaledW) / 2) + 'px' : ZOOM_PAD + 'px';
-    cc.style.top  = fitsH ? Math.round((cwH - scaledH) / 2) + 'px' : ZOOM_PAD + 'px';
-  }
+  ghost.style.width  = layout.totalW + 'px';
+  ghost.style.height = layout.totalH + 'px';
 
   // Sync canvas-bg-rect size with canvas dimensions
   const bgRect = document.getElementById('canvas-bg-rect');
@@ -404,7 +736,130 @@ function _applyCanvasZoom(){
 
   const lbl = document.getElementById('zoom-label-btn');
   if(lbl) lbl.textContent = Math.round(z * 100) + '%';
+  const lblMob = document.getElementById('zoom-label-btn-mob');
+  if(lblMob) lblMob.textContent = Math.round(z * 100) + '%';
 }
+
+/** Visible slide rect in canvas coords (zoom + scroll). */
+function _visibleCanvasRect(){
+  const cwrap = document.getElementById('cwrap');
+  const z = (typeof _canvasZoom === 'number' && _canvasZoom > 0.01) ? _canvasZoom : 1;
+  const W = typeof canvasW === 'number' ? canvasW : 1200;
+  const H = typeof canvasH === 'number' ? canvasH : 675;
+  if(!cwrap) return { x:0, y:0, w:W, h:H, z };
+
+  // Same mapping as drag/draw: screen → canvas via #canvas getBoundingClientRect
+  // (accounts for CSS scale + scroll). Sample cwrap viewport corners.
+  if(typeof _toCanvasCoords === 'function' && document.getElementById('canvas')){
+    const r = cwrap.getBoundingClientRect();
+    const pad = 2;
+    const tl = _toCanvasCoords(r.left + pad, r.top + pad);
+    const tr = _toCanvasCoords(r.right - pad, r.top + pad);
+    const bl = _toCanvasCoords(r.left + pad, r.bottom - pad);
+    const br = _toCanvasCoords(r.right - pad, r.bottom - pad);
+    let x1 = Math.min(tl.x, tr.x, bl.x, br.x);
+    let y1 = Math.min(tl.y, tr.y, bl.y, br.y);
+    let x2 = Math.max(tl.x, tr.x, bl.x, br.x);
+    let y2 = Math.max(tl.y, tr.y, bl.y, br.y);
+    x1 = Math.max(0, Math.min(W, x1));
+    y1 = Math.max(0, Math.min(H, y1));
+    x2 = Math.max(0, Math.min(W, x2));
+    y2 = Math.max(0, Math.min(H, y2));
+    return { x:x1, y:y1, w:Math.max(1, x2 - x1), h:Math.max(1, y2 - y1), z };
+  }
+
+  // Fallback: scroll + layout offset of scaled container
+  const cc = document.getElementById('canvas-container');
+  if(!cc) return { x:0, y:0, w:W, h:H, z };
+  const ccLeft = parseFloat(cc.style.left);
+  const ccTop = parseFloat(cc.style.top);
+  const canvasL = isFinite(ccLeft) ? ccLeft : (cc.offsetLeft || 0);
+  const canvasT = isFinite(ccTop) ? ccTop : (cc.offsetTop || 0);
+  const viewL = cwrap.scrollLeft, viewT = cwrap.scrollTop;
+  const viewR = viewL + cwrap.clientWidth, viewB = viewT + cwrap.clientHeight;
+  const interL = Math.max(viewL, canvasL);
+  const interT = Math.max(viewT, canvasT);
+  const interR = Math.min(viewR, canvasL + W * z);
+  const interB = Math.min(viewB, canvasT + H * z);
+  if(interR <= interL || interB <= interT) return { x:0, y:0, w:W, h:H, z };
+  let x = (interL - canvasL) / z;
+  let y = (interT - canvasT) / z;
+  let w = (interR - interL) / z;
+  let h = (interB - interT) / z;
+  x = Math.max(0, Math.min(W, x));
+  y = Math.max(0, Math.min(H, y));
+  w = Math.max(1, Math.min(W - x, w));
+  h = Math.max(1, Math.min(H - y, h));
+  return { x, y, w, h, z };
+}
+
+/**
+ * Geometry for a newly inserted object: center of the currently visible
+ * viewport (not the slide center), shrunk by 1/zoom when zoomed in.
+ */
+function _insertGeom(baseW, baseH){
+  const W = typeof canvasW === 'number' ? canvasW : 1200;
+  const H = typeof canvasH === 'number' ? canvasH : 675;
+  const vis = _visibleCanvasRect();
+  const z = vis.z || 1;
+  const scale = z > 1.01 ? (1 / z) : 1;
+  let w = Math.max(8, Math.round((+baseW || 100) * scale));
+  let h = Math.max(8, Math.round((+baseH || 100) * scale));
+  const margin = 8;
+  const maxW = Math.max(8, vis.w - margin * 2);
+  const maxH = Math.max(8, vis.h - margin * 2);
+  if(w > maxW || h > maxH){
+    const s = Math.min(maxW / w, maxH / h, 1);
+    w = Math.max(8, Math.round(w * s));
+    h = Math.max(8, Math.round(h * s));
+  }
+  // Viewport center via the same screen→canvas mapping used by drag
+  let x, y;
+  const cwrap = document.getElementById('cwrap');
+  if(typeof _toCanvasCoords === 'function' && cwrap && document.getElementById('canvas')){
+    const r = cwrap.getBoundingClientRect();
+    const mid = _toCanvasCoords((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+    x = Math.round(mid.x - w / 2);
+    y = Math.round(mid.y - h / 2);
+  } else {
+    x = Math.round(vis.x + (vis.w - w) / 2);
+    y = Math.round(vis.y + (vis.h - h) / 2);
+  }
+  x = Math.max(0, Math.min(Math.max(0, W - w), x));
+  y = Math.max(0, Math.min(Math.max(0, H - h), y));
+  if(typeof snapV === 'function'){
+    x = snapV(x); y = snapV(y); w = snapV(w); h = snapV(h);
+    w = Math.max(8, w); h = Math.max(8, h);
+    x = Math.max(0, Math.min(Math.max(0, W - w), x));
+    y = Math.max(0, Math.min(Math.max(0, H - h), y));
+  }
+  return { x, y, w, h, scale };
+}
+window._visibleCanvasRect = _visibleCanvasRect;
+window._insertGeom = _insertGeom;
+function getZoom(){ return (typeof _canvasZoom === 'number' && _canvasZoom > 0.01) ? _canvasZoom : 1; }
+window.getZoom = getZoom;
+
+/** Pan cwrap when zoomed in; used by arrow keys with no selection. */
+function canvasPanByKey(key, fast){
+  const cwrap = document.getElementById('cwrap');
+  if(!cwrap) return false;
+  const z = getZoom();
+  if(z <= 1.001) return false;
+  const step = Math.round((fast ? 100 : 40) * Math.min(2, Math.max(1, z * 0.65)));
+  let dx = 0, dy = 0;
+  if(key === 'ArrowLeft') dx = -step;
+  else if(key === 'ArrowRight') dx = step;
+  else if(key === 'ArrowUp') dy = -step;
+  else if(key === 'ArrowDown') dy = step;
+  else return false;
+  cwrap.scrollLeft += dx;
+  cwrap.scrollTop += dy;
+  if(typeof drawGrid === 'function') drawGrid();
+  return true;
+}
+window.canvasPanByKey = canvasPanByKey;
+
 // drawGrid вызывается отдельно — не в каждом zoom tick во избежание тряски
 
 // Init on load
@@ -412,14 +867,13 @@ window.addEventListener('load', function(){
   setTimeout(function(){
     const cwrap = document.getElementById('cwrap');
     if(!cwrap) return;
-    _applyCanvasZoom();
-    _centerSlide();
+    _refreshCanvasViewport();
 
     // Re-center on window resize (including browser zoom)
     let _resizeTimer = null;
     window.addEventListener('resize', function(){
       clearTimeout(_resizeTimer);
-      _resizeTimer = setTimeout(function(){ _applyCanvasZoom(); _centerSlide(); }, 80);
+      _resizeTimer = setTimeout(_refreshCanvasViewport, 80);
     });
 
     cwrap.addEventListener('wheel', function(e){
@@ -622,7 +1076,7 @@ function _repositionHandlesOverlay(el) {
         frame.style.transformOrigin = 'center center';
         frame.style.transform = elDeg ? ('rotate(' + elDeg + 'deg)') : '';
         if (el.dataset && el.dataset.appletId === 'flip') {
-          frame.style.borderRadius = ((typeof FLIP_RX === 'number' ? FLIP_RX : 14) + 'px');
+          frame.style.borderRadius = ((typeof _flipRxPx === 'function' ? _flipRxPx(elW, elH) : (typeof FLIP_RX === 'number' ? FLIP_RX : 14)) + 'px');
         }
       }
     } else if (typeof _updateSelFrames === 'function') {
@@ -1980,8 +2434,60 @@ function _updateHandlesOverlay(){
       const orig = origRhs[cls];
       if(orig) orig.dispatchEvent(new MouseEvent('mousedown', {bubbles:false, cancelable:true, clientX:e.clientX, clientY:e.clientY, button:0}));
     });
+    if (typeof wireTouchMouseDrag === 'function') {
+      wireTouchMouseDrag(rh, {
+        guard: function () { return !window._mobilePinchActive; },
+        bubbles: false,
+        onPointerDown: function (pe) {
+          const orig = origRhs[cls];
+          if (orig) {
+            orig.dispatchEvent(new MouseEvent('mousedown', {
+              bubbles: false, cancelable: true,
+              clientX: pe.clientX, clientY: pe.clientY,
+              button: 0, buttons: 1
+            }));
+          }
+        }
+      });
+    }
     overlay.appendChild(rh);
   });
+
+  if (typeof isMobileLayout === 'function' && isMobileLayout()) {
+    const rotCorners = _getRotCorners(el);
+    const rotSize = 20;
+    const rotOff = 16;
+    rotCorners.forEach(function (c) {
+      const dx = c.x - elCx;
+      const dy = c.y - elCy;
+      const len = Math.hypot(dx, dy) || 1;
+      const hx = c.x + (dx / len) * rotOff - rotSize / 2;
+      const hy = c.y + (dy / len) * rotOff - rotSize / 2;
+      const rhRot = document.createElement('div');
+      rhRot.className = 'mob-rot-handle';
+      rhRot.dataset.rotHandle = '1';
+      rhRot.title = 'Поворот';
+      rhRot.style.cssText = 'position:absolute;left:' + hx + 'px;top:' + hy + 'px;'
+        + 'width:' + rotSize + 'px;height:' + rotSize + 'px;'
+        + 'background:#fff;border:1.5px solid var(--selb);border-radius:3px;'
+        + 'box-shadow:0 1px 4px rgba(0,0,0,.45);pointer-events:auto;'
+        + 'display:flex;align-items:center;justify-content:center;'
+        + 'font-size:12px;line-height:1;color:var(--selb);cursor:grab;z-index:10000;';
+      rhRot.innerHTML = '&#x21bb;';
+      rhRot.addEventListener('mousedown', function (e) {
+        e.stopPropagation();
+        e.preventDefault();
+        _startRotationDrag(e, el);
+      });
+      if (typeof wireTouchMouseDrag === 'function') {
+        wireTouchMouseDrag(rhRot, {
+          guard: function () { return !window._mobilePinchActive; },
+          bubbles: false
+        });
+      }
+      overlay.appendChild(rhRot);
+    });
+  }
   } else {
     _buildLineEndpointHandles(overlay, el, elL, elT, elW, elH, elRad, elDeg);
   }
@@ -2009,49 +2515,94 @@ function _updateHandlesOverlay(){
   // ── Curve bezier editor ──
   _buildCurveEditor();
 
-  // Callout tail handle
+  // Callout tail handles (tip + round control)
   if(el.dataset.type==='shape'){
-    const _d=slides[cur]&&slides[cur].els.find(e=>e.id===el.dataset.id);
-    if(_d){
-      const _sh=typeof SHAPES!=='undefined'&&SHAPES.find(s=>s.id===_d.shape);
+    const _d0=slides[cur]&&slides[cur].els.find(e=>e.id===el.dataset.id);
+    if(_d0){
+      const _sh=typeof SHAPES!=='undefined'&&SHAPES.find(s=>s.id===_d0.shape);
       if(_sh&&_sh.special==='callout'){
-        const tipRelX=+(_d.tailX||0);
-        const tipRelY=_d.tailY!==undefined?+_d.tailY:(elH/2+30);
-        const elCx=elL+elW/2, elCy=elT+elH/2;
-        // Rotate tip offset into canvas coords
-        const tipCx=elCx+tipRelX*Math.cos(elRad)-tipRelY*Math.sin(elRad);
-        const tipCy=elCy+tipRelX*Math.sin(elRad)+tipRelY*Math.cos(elRad);
-        const TH=6; // half-handle size
-        const th=document.createElement('div');
-        th.dataset.calloutHandle='1';
-        th.style.cssText=`position:absolute;left:${tipCx-TH}px;top:${tipCy-TH}px;width:12px;height:12px;
-          background:#f59e0b;border:2px solid #fff;border-radius:50%;
-          box-shadow:0 1px 4px rgba(0,0,0,.6);pointer-events:auto;cursor:crosshair;z-index:10000;`;
-        th.addEventListener('mousedown',e=>{
+        const TH=6;
+        const _defRound=typeof _calloutDefaultRoundRel==='function'
+          ?_calloutDefaultRoundRel(+(_d0.tailX||0),_d0.tailY!==undefined?+_d0.tailY:(elH/2+30))
+          :{tailRoundX:0,tailRoundY:94};
+        if(_d0.tailRoundX===undefined) _d0.tailRoundX=_defRound.tailRoundX;
+        if(_d0.tailRoundY===undefined) _d0.tailRoundY=_defRound.tailRoundY;
+
+        function _calloutFreshD(){
+          // save() заменяет объекты в slides — всегда берём актуальный + стиль из DOM
+          let d=slides[cur]&&slides[cur].els.find(e=>e.id===el.dataset.id);
+          if(!d) d=_d0;
+          if(el.dataset.sw!=null&&el.dataset.sw!=='') d.sw=+el.dataset.sw;
+          if(el.dataset.rx!=null&&el.dataset.rx!=='') d.rx=+el.dataset.rx;
+          if(el.dataset.stroke) d.stroke=el.dataset.stroke;
+          if(el.dataset.fill) d.fill=el.dataset.fill;
+          if(el.dataset.fillOp!=null&&el.dataset.fillOp!=='') d.fillOp=+el.dataset.fillOp;
+          if(el.dataset.strokeStyle) d.strokeStyle=el.dataset.strokeStyle;
+          if(el.dataset.shadow!=null) d.shadow=el.dataset.shadow==='true';
+          if(el.dataset.shadowBlur!=null) d.shadowBlur=+el.dataset.shadowBlur;
+          if(el.dataset.shadowSize!=null) d.shadowSize=+el.dataset.shadowSize;
+          if(el.dataset.shadowColor) d.shadowColor=el.dataset.shadowColor;
+          if(el.dataset.tailWFrac!=null&&el.dataset.tailWFrac!=='') d.tailWFrac=+el.dataset.tailWFrac;
+          if(el.dataset.calloutForm) d.calloutForm=el.dataset.calloutForm;
+          return d;
+        }
+        function _calloutLocalToCanvas(lx, ly){
+          const cx=parseInt(el.style.left)+(parseInt(el.style.width)||0)/2;
+          const cy=parseInt(el.style.top)+(parseInt(el.style.height)||0)/2;
+          const rad=(parseFloat(el.dataset.rot)||0)*Math.PI/180;
+          return {
+            x: cx + lx * Math.cos(rad) - ly * Math.sin(rad),
+            y: cy + lx * Math.sin(rad) + ly * Math.cos(rad)
+          };
+        }
+        function _calloutPlaceHandle(node, lx, ly){
+          const p=_calloutLocalToCanvas(lx, ly);
+          node.style.left=(p.x-TH)+'px';
+          node.style.top=(p.y-TH)+'px';
+        }
+        function _calloutRedraw(d){
+          if(typeof renderShapeEl==='function') renderShapeEl(el,d);
+          _calloutPlaceHandle(tipH, +(d.tailX||0), d.tailY!==undefined?+d.tailY:(elH/2+30));
+          _calloutPlaceHandle(roundH, +(d.tailRoundX||0), +(d.tailRoundY||0));
+        }
+
+        const tipH=document.createElement('div');
+        tipH.dataset.calloutHandle='tip';
+        tipH.title='Кончик выноски';
+        tipH.style.cssText=`position:absolute;width:12px;height:12px;background:#f59e0b;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.6);pointer-events:auto;cursor:crosshair;z-index:10001;`;
+        tipH.addEventListener('mousedown',e=>{
           e.preventDefault();e.stopPropagation();
+          const d0=_calloutFreshD();
           const startMx=e.clientX, startMy=e.clientY;
-          const startTX=+(_d.tailX||0);
-          const startTY=_d.tailY!==undefined?+_d.tailY:(elH/2+30);
+          const startTX=+(d0.tailX||0);
+          const startTY=d0.tailY!==undefined?+d0.tailY:(elH/2+30);
+          const startRX=+(d0.tailRoundX||0);
+          const startRY=+(d0.tailRoundY||0);
+          // along/side в системе tip — при повороте жёлтого рот/хвост уходят вбок, а не режут тело
+          const startLen=Math.hypot(startTX,startTY)||1;
+          const sUx=startTX/startLen, sUy=startTY/startLen;
+          const sPx=-sUy, sPy=sUx;
+          let along0=startRX*sUx+startRY*sUy;
+          let side0=startRX*sPx+startRY*sPy;
+          // Если round был «внизу» при боковом tip — нормализуем
+          if(along0<startLen*0.15) along0=startLen*0.55;
+          const alongFrac=Math.max(0.25, Math.min(0.75, along0/startLen));
           const zoom=typeof getZoom==='function'?getZoom():1;
           const rad=(parseFloat(el.dataset.rot)||0)*Math.PI/180;
-          const _elCx=parseInt(el.style.left)+(parseInt(el.style.width)||0)/2;
-          const _elCy=parseInt(el.style.top)+(parseInt(el.style.height)||0)/2;
           function onMove(ev){
+            const d=_calloutFreshD();
             const mdx=(ev.clientX-startMx)/zoom;
             const mdy=(ev.clientY-startMy)/zoom;
-            // Un-rotate mouse delta into element local coords
-            _d.tailX=startTX+mdx*Math.cos(-rad)-mdy*Math.sin(-rad);
-            _d.tailY=startTY+mdx*Math.sin(-rad)+mdy*Math.cos(-rad);
-            // Persist in dataset
-            el.dataset.tailX=_d.tailX;
-            el.dataset.tailY=_d.tailY;
-            // Redraw shape
-            if(typeof renderShapeEl==='function') renderShapeEl(el,_d);
-            // Move handle directly in canvas coords
-            const nx=_elCx+_d.tailX*Math.cos(rad)-_d.tailY*Math.sin(rad);
-            const ny=_elCy+_d.tailX*Math.sin(rad)+_d.tailY*Math.cos(rad);
-            th.style.left=(nx-TH)+'px';
-            th.style.top=(ny-TH)+'px';
+            d.tailX=startTX+mdx*Math.cos(-rad)-mdy*Math.sin(-rad);
+            d.tailY=startTY+mdx*Math.sin(-rad)+mdy*Math.cos(-rad);
+            const len=Math.hypot(d.tailX,d.tailY)||1;
+            const ux=d.tailX/len, uy=d.tailY/len;
+            const px=-uy, py=ux;
+            d.tailRoundX=ux*alongFrac*len+px*side0;
+            d.tailRoundY=uy*alongFrac*len+py*side0;
+            el.dataset.tailX=d.tailX;el.dataset.tailY=d.tailY;
+            el.dataset.tailRoundX=d.tailRoundX;el.dataset.tailRoundY=d.tailRoundY;
+            _calloutRedraw(d);
           }
           function onUp(){
             document.removeEventListener('mousemove',onMove);
@@ -2059,11 +2610,49 @@ function _updateHandlesOverlay(){
             if(typeof save==='function') save();
             if(typeof drawThumbs==='function') drawThumbs();
             if(typeof saveState==='function') saveState();
+            if(typeof _updateHandlesOverlay==='function') _updateHandlesOverlay();
           }
           document.addEventListener('mousemove',onMove);
           document.addEventListener('mouseup',onUp);
         });
-        overlay.appendChild(th);
+        _calloutPlaceHandle(tipH, +(_d0.tailX||0), _d0.tailY!==undefined?+_d0.tailY:(elH/2+30));
+        overlay.appendChild(tipH);
+
+        const roundH=document.createElement('div');
+        roundH.dataset.calloutHandle='round';
+        roundH.title='Скругление хвоста';
+        roundH.style.cssText=`position:absolute;width:12px;height:12px;background:#8b5cf6;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.6);pointer-events:auto;cursor:grab;z-index:10000;`;
+        roundH.addEventListener('mousedown',e=>{
+          e.preventDefault();e.stopPropagation();
+          const d0=_calloutFreshD();
+          const startMx=e.clientX, startMy=e.clientY;
+          const startRX=+(d0.tailRoundX||0);
+          const startRY=+(d0.tailRoundY||0);
+          const zoom=typeof getZoom==='function'?getZoom():1;
+          const rad=(parseFloat(el.dataset.rot)||0)*Math.PI/180;
+          function onMove(ev){
+            const d=_calloutFreshD();
+            const mdx=(ev.clientX-startMx)/zoom;
+            const mdy=(ev.clientY-startMy)/zoom;
+            d.tailRoundX=startRX+mdx*Math.cos(-rad)-mdy*Math.sin(-rad);
+            d.tailRoundY=startRY+mdx*Math.sin(-rad)+mdy*Math.cos(-rad);
+            el.dataset.tailRoundX=d.tailRoundX;el.dataset.tailRoundY=d.tailRoundY;
+            _calloutRedraw(d);
+          }
+          function onUp(){
+            document.removeEventListener('mousemove',onMove);
+            document.removeEventListener('mouseup',onUp);
+            if(typeof save==='function') save();
+            if(typeof drawThumbs==='function') drawThumbs();
+            if(typeof saveState==='function') saveState();
+            if(typeof _updateHandlesOverlay==='function') _updateHandlesOverlay();
+          }
+          document.addEventListener('mousemove',onMove);
+          document.addEventListener('mouseup',onUp);
+        });
+        _calloutPlaceHandle(roundH, +(_d0.tailRoundX||0), +(_d0.tailRoundY||0));
+        const _cf=_d0.calloutForm||el.dataset.calloutForm||'round';
+        if(_cf!=='rect'&&_cf!=='sharp'&&_cf!=='burst') overlay.appendChild(roundH);
       }
     }
   }
@@ -2107,6 +2696,21 @@ const _rotateCursor = (()=>{
     + `</svg>`;
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 10 10, crosshair`;
 })();
+
+function _flipScaleSuffix(el, d){
+  if(!d&&typeof slides!=='undefined'&&typeof cur!=='undefined'&&slides[cur]&&el&&el.dataset.id){
+    d=slides[cur].els.find(e=>e.id===el.dataset.id);
+  }
+  const flipH=!!(d&&d.shapeFlipH)||(el&&el.dataset.shapeFlipH==='true');
+  const flipV=!!(d&&d.shapeFlipV)||(el&&el.dataset.shapeFlipV==='true');
+  const fx=flipH?-1:1, fy=flipV?-1:1;
+  return (fx===-1||fy===-1)?` scale(${fx},${fy})`:'';
+}
+function _elRotTransform(deg, el, d){
+  return `rotate(${deg}deg)${_flipScaleSuffix(el,d)}`;
+}
+window._flipScaleSuffix=_flipScaleSuffix;
+window._elRotTransform=_elRotTransform;
 
 let _rotDragging = false;
 
@@ -2160,12 +2764,27 @@ function _rotCursorAngle(pivotX, pivotY, mouseX, mouseY) {
   return Math.atan2(mouseY - pivotY, mouseX - pivotX) * 180 / Math.PI + 90;
 }
 
+function _uiOverlayOpen() {
+  if (document.querySelector('.modal-ov.open')) return true;
+  if (document.querySelector('#settings-modal.open, #local-ai-modal.open, #ai-panel.open, #layout-preview-modal.open, #version-history-modal.open')) return true;
+  const aw = document.getElementById('props-anim-wrap');
+  if (aw && aw.style.display === 'flex') return true;
+  if (typeof _cpActivePanelId !== 'undefined' && _cpActivePanelId) return true;
+  return false;
+}
+window._uiOverlayOpen = _uiOverlayOpen;
+
 let _lastRotCursor = '';
 function _setRotCursor(cursorVal) {
+  if (cursorVal && _uiOverlayOpen()) cursorVal = '';
   if (cursorVal === _lastRotCursor) return;
   _lastRotCursor = cursorVal;
-  const st = document.getElementById('_rot-cursor-style');
-  if (!st) return;
+  let st = document.getElementById('_rot-cursor-style');
+  if (!st) {
+    st = document.createElement('style');
+    st.id = '_rot-cursor-style';
+    document.head.appendChild(st);
+  }
   if (cursorVal === 'none') {
     st.textContent = '* { cursor: none !important; }';
   } else if (cursorVal) {
@@ -2414,14 +3033,96 @@ function _nearCorner(el, canvasX, canvasY) {
 function _toCanvasCoords(clientX, clientY) {
   const canvas = document.getElementById('canvas');
   if (!canvas) return {x:0,y:0};
-  const z = typeof _canvasZoom === 'number' ? _canvasZoom : 1;
-  // Use canvas element's own bounding rect — accounts for zoom, scroll, and centering
   const r = canvas.getBoundingClientRect();
+  const W = typeof canvasW !== 'undefined' ? canvasW : Math.max(1, r.width);
+  const H = typeof canvasH !== 'undefined' ? canvasH : Math.max(1, r.height);
   return {
-    x: (clientX - r.left) / z,
-    y: (clientY - r.top)  / z
+    x: (clientX - r.left) / Math.max(1e-6, r.width) * W,
+    y: (clientY - r.top)  / Math.max(1e-6, r.height) * H
   };
 }
+
+function _startRotationDrag(ev, el) {
+  if (!el) el = _rotEl;
+  if (!el || !el.isConnected) return;
+  if (typeof window._isPreviewActive === 'function' && window._isPreviewActive()) return;
+  if (window._resizeDragging || window._curveEditMode || window._pivotDragging) return;
+
+  const p = _toCanvasCoords(ev.clientX, ev.clientY);
+  window._anyDragging = true;
+  ev.stopPropagation();
+  ev.preventDefault();
+  _syncRotDragging(true);
+
+  const W = parseInt(el.style.width) || 0;
+  const H = parseInt(el.style.height) || 0;
+  const pivLX2 = parseFloat(el.dataset.rotPivotX || 0);
+  const pivLY2 = parseFloat(el.dataset.rotPivotY || 0);
+  el.style.transformOrigin = '';
+  const L = parseInt(el.style.left) || 0;
+  const T = parseInt(el.style.top) || 0;
+  const elCx = L + W / 2;
+  const elCy = T + H / 2;
+  const deg0 = parseFloat(el.dataset.rot || 0) * Math.PI / 180;
+  const cx = elCx + pivLX2 * Math.cos(deg0) - pivLY2 * Math.sin(deg0);
+  const cy = elCy + pivLX2 * Math.sin(deg0) + pivLY2 * Math.cos(deg0);
+  const startCx = elCx;
+  const startCy = elCy;
+  const startAngle = parseFloat(el.dataset.rot || 0);
+  const a0 = Math.atan2(p.y - cy, p.x - cx) * 180 / Math.PI;
+  _updateRotCursorFromPivot(cx, cy, p.x, p.y);
+
+  let _rotRaf = null;
+  const onMove = e => {
+    if (typeof window._isPreviewActive === 'function' && window._isPreviewActive()) {
+      onUp();
+      return;
+    }
+    const clientX = e.clientX;
+    const clientY = e.clientY;
+    const shiftKey = e.shiftKey;
+    if (_rotRaf) return;
+    _rotRaf = requestAnimationFrame(() => {
+      _rotRaf = null;
+      const q = _toCanvasCoords(clientX, clientY);
+      _updateRotCursorFromPivot(cx, cy, q.x, q.y);
+      const a = Math.atan2(q.y - cy, q.x - cx) * 180 / Math.PI;
+      let deg = Math.round(startAngle + (a - a0));
+      if (shiftKey) deg = Math.round(deg / 15) * 15;
+      el.style.transform = _elRotTransform(deg, el);
+      el.dataset.rot = deg;
+      if (pivLX2 || pivLY2) {
+        const delta = (deg - startAngle) * Math.PI / 180;
+        const cosd = Math.cos(delta);
+        const sind = Math.sin(delta);
+        const dcx = startCx - cx;
+        const dcy = startCy - cy;
+        el.style.left = Math.round(cx + dcx * cosd - dcy * sind - W / 2) + 'px';
+        el.style.top = Math.round(cy + dcx * sind + dcy * cosd - H / 2) + 'px';
+      }
+      const pRot = document.getElementById('p-rot');
+      if (pRot) pRot.value = deg;
+      _repositionHandlesOverlay(el);
+      if (typeof updateConnectorsFor === 'function') updateConnectorsFor(el.dataset.id);
+    });
+  };
+
+  const onUp = () => {
+    _syncRotDragging(false);
+    window._anyDragging = false;
+    window._overPivotHandle = false;
+    _setRotCursor('');
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    if (el && typeof pick === 'function') pick(el);
+    if (typeof commitAll === 'function') commitAll();
+    _updateHandlesOverlay();
+  };
+
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
+window._startRotationDrag = _startRotationDrag;
 
 function _addRotationZones(overlay, el) {
   if(el && el.dataset.type==='lego') return; // лего не вращается
@@ -2441,6 +3142,9 @@ function _addRotationZones(overlay, el) {
 
   document.addEventListener('mousemove', ev => {
     if (typeof window._isPreviewActive === 'function' && window._isPreviewActive()) return;
+    if (_uiOverlayOpen() || (ev.target.closest && ev.target.closest('.modal-ov.open, #settings-modal.open, #local-ai-modal.open, #ai-panel.open, #layout-preview-modal.open, #version-history-modal.open'))) {
+      _setRotCursor(''); return;
+    }
     if (_rotDragging || !_rotEl) return;
     if (!_rotEl.isConnected) { _rotEl = null; return; }
     if (typeof sel !== 'undefined' && sel && _rotEl !== sel) return;
@@ -2467,6 +3171,7 @@ function _addRotationZones(overlay, el) {
   // Capture phase: fires before ANY element's mousedown handler
   document.addEventListener('mousedown', ev => {
     if (typeof window._isPreviewActive === 'function' && window._isPreviewActive()) return;
+    if (_uiOverlayOpen() || (ev.target.closest && ev.target.closest('.modal-ov.open, #settings-modal.open, #local-ai-modal.open, #ai-panel.open, #layout-preview-modal.open, #version-history-modal.open'))) return;
     if (ev.button !== 0 || !_rotEl) return;
     if (!_rotEl.isConnected) { _rotEl = null; return; }
     if (typeof sel !== 'undefined' && sel && _rotEl !== sel) return;
@@ -2481,88 +3186,14 @@ function _addRotationZones(overlay, el) {
     if (window._overPivotHandle) return; // mouse is over pivot handle
     const rhHit = ev.target.closest && (
       ev.target.closest('#handles-overlay [data-cls]') ||
-      ev.target.closest('#handles-overlay [data-line-ep]')
+      ev.target.closest('#handles-overlay [data-line-ep]') ||
+      ev.target.closest('#handles-overlay [data-rot-handle]')
     );
     if (rhHit) return; // resize / line-endpoint handles always win over rotation
     const p = _toCanvasCoords(ev.clientX, ev.clientY);
     const corner = _nearCorner(_rotEl, p.x, p.y);
     if (!corner) return;
-    // We're in a rotation zone — always consume the event
-    window._anyDragging = true;
-    ev.stopPropagation();
-    ev.preventDefault();
-    _syncRotDragging(true);
-
-    const el = _rotEl;
-    const W = parseInt(el.style.width)||0, H = parseInt(el.style.height)||0;
-    const pivLX2 = parseFloat(el.dataset.rotPivotX||0);
-    const pivLY2 = parseFloat(el.dataset.rotPivotY||0);
-    el.style.transformOrigin = '';
-    // Get CURRENT actual element position (may differ from stored if pivot was moved)
-    const L = parseInt(el.style.left)||0, T = parseInt(el.style.top)||0;
-    // Pivot is at local offset (pivLX2, pivLY2) from element center
-    // In canvas: element center + local pivot offset
-    const elCx = L + W/2, elCy = T + H/2;
-    const deg0 = parseFloat(el.dataset.rot||0)*Math.PI/180;
-    // Pivot canvas position = center + rotate(localPivot, deg)
-    // With transformOrigin=50%50%, element rotates around CSS center which IS elCx,elCy
-    // But visual pivot is at: elCx + pivLX2*cos - pivLY2*sin, etc.
-    const cx = elCx + pivLX2*Math.cos(deg0) - pivLY2*Math.sin(deg0);
-    const cy = elCy + pivLX2*Math.sin(deg0) + pivLY2*Math.cos(deg0);
-    // Fixed reference: element center at t=0 (relative to pivot)
-    const startCx = elCx, startCy = elCy;
-
-    const startAngle = parseFloat(el.dataset.rot || 0);
-    // a0: angle from pivot to mouse at drag start — this is the reference angle
-    const a0 = Math.atan2(p.y - cy, p.x - cx) * 180 / Math.PI;
-    _updateRotCursorFromPivot(cx, cy, p.x, p.y);
-
-    let _rotRaf = null;
-    const onMove = e => {
-      if (typeof window._isPreviewActive === 'function' && window._isPreviewActive()) {
-        onUp();
-        return;
-      }
-      const clientX = e.clientX, clientY = e.clientY, shiftKey = e.shiftKey;
-      if (_rotRaf) return; // throttle to one frame
-      _rotRaf = requestAnimationFrame(() => {
-        _rotRaf = null;
-        const q = _toCanvasCoords(clientX, clientY);
-        _updateRotCursorFromPivot(cx, cy, q.x, q.y);
-        const a = Math.atan2(q.y - cy, q.x - cx) * 180 / Math.PI;
-        let deg = Math.round(startAngle + (a - a0));
-        if (shiftKey) deg = Math.round(deg / 15) * 15;
-        el.style.transform = `rotate(${deg}deg)`;
-        el.dataset.rot = deg;
-        if(pivLX2 || pivLY2){
-          const delta = (deg - startAngle)*Math.PI/180;
-          const cosd=Math.cos(delta), sind=Math.sin(delta);
-          const dcx=startCx-cx, dcy=startCy-cy;
-          el.style.left = Math.round(cx + dcx*cosd - dcy*sind - W/2)+'px';
-          el.style.top  = Math.round(cy + dcx*sind + dcy*cosd - H/2)+'px';
-        }
-        const pRot = document.getElementById('p-rot');
-        if (pRot) pRot.value = deg;
-        _repositionHandlesOverlay(el);
-        if (typeof updateConnectorsFor === 'function') updateConnectorsFor(el.dataset.id);
-      });
-    };
-
-    const onUp = () => {
-      _syncRotDragging(false);
-      window._anyDragging = false;
-      window._overPivotHandle = false;
-      _setRotCursor('');
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      // Restore selection if it was lost during rotation
-      if (el && typeof pick === 'function') pick(el);
-      if (typeof commitAll === 'function') commitAll();
-      _updateHandlesOverlay();
-    };
-
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+    _startRotationDrag(ev, _rotEl);
   }, true);
 }
 

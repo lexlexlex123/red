@@ -1,0 +1,16 @@
+      function fogFlameBand(yFloor,yCeil,seed,dur,layerOp,extraY){
+        extraY=extraY||0;
+        const yOff=fogYOff+fogYContent+extraY;
+        const yF=yFloor+yOff, yC=yCeil+yOff;
+        const d0=fogFlamePath(seed,yF,yC);
+        const op=(layerOp!=null?layerOp:fogOp).toFixed(2);
+        let el='<path d="'+d0+'" fill="url(#'+uid+'fogG)" filter="url(#'+uid+'fogBlur)" opacity="'+op+'"';
+        if(doAnimate){
+          const dkf=fogFlameKF(seed,yF,yC,12);
+          const opDur=(5.5+rng(seed+7)*3.5).toFixed(1);
+          const opBeg=(-rng(seed+11)*opDur).toFixed(2);
+          el+='><animate attributeName="d" dur="'+dur+'s" repeatCount="indefinite" calcMode="linear" values="'+dkf+'"/>'+
+            '<animate attributeName="opacity" values="0.8;0.5;0.7;0.8" keyTimes="0;0.33;0.66;1" dur="'+opDur+'s" begin="'+opBeg+'s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1;0.45 0 0.55 1"/></path>';
+        } else el+='/>';
+        return el;
+      }

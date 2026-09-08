@@ -11,6 +11,15 @@ function _pteBySymbol(sym){
 function _pteEsc(s){
   return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+function _cardHostDropShadow(isDark, scale){
+  const s=(scale>0&&isFinite(scale))?Math.max(0.12, Math.min(1.25, scale)):1;
+  const y=Math.max(1, Math.round(6*s));
+  const blur=Math.max(2, Math.round(12*s));
+  return isDark
+    ? 'drop-shadow(0 '+y+'px '+blur+'px rgba(0,0,0,.42))'
+    : 'drop-shadow(0 '+y+'px '+blur+'px rgba(15,23,42,.22))';
+}
+window._cardHostDropShadow=_cardHostDropShadow;
 function _pteHexRgba(hex,a){
   if(!hex||hex==='transparent'||hex==='none') return 'rgba(0,0,0,0)';
   const h=String(hex).replace('#','');
@@ -214,9 +223,6 @@ function getPeriodicHTML(palette,cfg){
   const accentMid=_pteShadeHex(accent,0.25);
   const accentDark=_pteShadeHex(accent,0.55);
   const fg=colors.fg;
-  const shadow=colors.isDark
-    ? '0 6px 20px rgba(0,0,0,.4)'
-    : '0 6px 18px rgba(15,23,42,.16)';
   const blurCss=blur>0?('backdrop-filter:blur('+blur+'px);-webkit-backdrop-filter:blur('+blur+'px);'):'';
   const symSize=isIcon?56:56;
   const nameSize=isIcon?17:18;
@@ -229,11 +235,15 @@ function getPeriodicHTML(palette,cfg){
     +'<div class="prop"><span class="pl">Плотность</span><span class="pv">'+_pteEsc(densTxt)+'</span></div>'
     +'</div>'
   );
+  const refW=isIcon?PTE_ICON_SIZE:PTE_CARD_W;
+  const refH=isIcon?PTE_ICON_SIZE:PTE_CARD_H;
   return '<!DOCTYPE html><html><head><meta charset="utf-8"><style>'
     +'*{box-sizing:border-box;margin:0;padding:0}'
     +'html,body{width:100%;height:100%;overflow:hidden;background:transparent;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;'
-    +'display:flex;align-items:center;justify-content:center}'
-    +'.wrap{width:calc(100% - 40px);height:calc(100% - 40px);border-radius:14px;box-shadow:'+shadow+'}'
+    +'display:block}'
+    +'.stage{width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden}'
+    +'.design{width:'+refW+'px;height:'+refH+'px;flex-shrink:0;transform-origin:center center;will-change:transform}'
+    +'.wrap{width:100%;height:100%;border-radius:14px;box-shadow:none}'
     +'.card{width:100%;height:100%;padding:'+pad+';display:flex;flex-direction:column;justify-content:'+justify+';gap:6px;'
     +'background:'+bgCss+';'+blurCss+'color:'+fg+';border-radius:14px;border:none;'
     +'position:relative;overflow:hidden}'
@@ -270,7 +280,7 @@ function getPeriodicHTML(palette,cfg){
     +'box-shadow:0 0 2px '+fg+'33;transform-style:preserve-3d;transform-origin:center center}'
     +'.lat-empty{width:148px;height:148px;display:flex;align-items:center;justify-content:center;font-size:12px;opacity:.45;text-align:center}'
     +'.hist{margin-top:auto;padding-top:8px;font-size:10px;line-height:1.35;opacity:.72;border-top:1px solid '+fg+'22;color:'+fg+'}'
-    +'</style></head><body><div class="wrap"><div class="card">'
+    +'</style></head><body><div class="stage"><div class="design" id="pte-design"><div class="wrap"><div class="card">'
     +'<div class="top"><span class="z">'+el.Z+'</span><span class="mass">'+_pteEsc(mass)+'</span></div>'
     +'<div class="sym">'+_pteEsc(el.s)+'</div>'
     +'<div class="name">'+_pteEsc(el.ru)+'</div>'
@@ -280,7 +290,23 @@ function getPeriodicHTML(palette,cfg){
     +propsBlock
     +lattice
     +(histLine?'<div class="hist">'+_pteEsc(histLine)+'</div>':'')
-    +'</div></div></body></html>';
+    +'</div></div></div></div>'
+    +'<script>(function(){'
+    +'var RW='+refW+',RH='+refH+';'
+    +'var design=document.getElementById("pte-design");'
+    +'function fit(){'
+    +'if(!design)return;'
+    +'var w=document.documentElement.clientWidth||window.innerWidth||RW;'
+    +'var h=document.documentElement.clientHeight||window.innerHeight||RH;'
+    +'var s=Math.min(w/RW,h/RH);'
+    +'if(!(s>0)||!isFinite(s))s=1;'
+    +'design.style.transform="scale("+s+")";'
+    +'}'
+    +'fit();'
+    +'window.addEventListener("resize",fit);'
+    +'if(window.ResizeObserver){try{new ResizeObserver(fit).observe(document.documentElement);}catch(e){}}'
+    +'})();<\/script>'
+    +'</body></html>';
 }
 window.getPeriodicHTML=getPeriodicHTML;
 window.PTE_ELEMENTS=PTE_ELEMENTS;
@@ -294,6 +320,64 @@ function _pteDefaultSize(isIcon){
   if(isIcon) return {w:PTE_ICON_SIZE, h:PTE_ICON_SIZE};
   return {w:PTE_CARD_W, h:PTE_CARD_H};
 }
+
+function _pteRxPx(w, h, isIcon){
+  const bw=isIcon?PTE_ICON_SIZE:PTE_CARD_W;
+  const bh=isIcon?PTE_ICON_SIZE:PTE_CARD_H;
+  const s=Math.min(((+w>0)?+w:bw)/bw, ((+h>0)?+h:bh)/bh);
+  return Math.max(2, Math.min(14, Math.round(14*s)));
+}
+
+function _layoutPeriodicIframe(hostEl, d){
+  if(!hostEl) return;
+  let data=d;
+  if(!data&&typeof slides!=='undefined'&&slides[cur]){
+    data=slides[cur].els.find(function(e){ return e.id===hostEl.dataset.id; });
+  }
+  const isIcon=!!(data&&data.pteIcon);
+  const hw=parseFloat(hostEl.style.width)||(data&&data.w)||(isIcon?PTE_ICON_SIZE:PTE_CARD_W);
+  const hh=parseFloat(hostEl.style.height)||(data&&data.h)||(isIcon?PTE_ICON_SIZE:PTE_CARD_H);
+  const rx=_pteRxPx(hw, hh, isIcon)+'px';
+  const refW=isIcon?PTE_ICON_SIZE:PTE_CARD_W;
+  const refH=isIcon?PTE_ICON_SIZE:PTE_CARD_H;
+  const scale=Math.min(hw/refW, hh/refH);
+  const colors=_pteResolveColors(data||{});
+  hostEl.style.borderRadius=rx;
+  hostEl.style.overflow='hidden';
+  hostEl.style.background='transparent';
+  hostEl.style.backgroundColor='transparent';
+  hostEl.style.boxShadow='none';
+  hostEl.style.filter=_cardHostDropShadow(colors.isDark, scale);
+  const wrap=hostEl.querySelector('.applet-el')||hostEl;
+  if(wrap!==hostEl){
+    wrap.style.borderRadius=rx;
+    wrap.style.overflow='hidden';
+    wrap.style.background='transparent';
+    wrap.style.boxShadow='none';
+    wrap.style.filter='none';
+  }
+  let clipEl=null;
+  Array.prototype.forEach.call(wrap.children||[], function(ch){
+    if(ch.tagName==='DIV'&&!ch.classList.contains('applet-border-overlay')&&ch.querySelector('iframe')){
+      clipEl=ch;
+    }
+  });
+  if(!clipEl){
+    const ifr0=hostEl.querySelector('iframe');
+    clipEl=ifr0&&ifr0.parentElement;
+  }
+  if(clipEl){
+    clipEl.style.cssText='position:absolute;inset:0;overflow:hidden;background:transparent;border-radius:'+rx+';box-shadow:none;';
+  }
+  const iframe=hostEl.querySelector('iframe');
+  if(iframe){
+    iframe.style.borderRadius=rx;
+    iframe.style.overflow='hidden';
+    iframe.style.background='transparent';
+  }
+}
+window._layoutPeriodicIframe=_layoutPeriodicIframe;
+window._pteRxPx=_pteRxPx;
 
 /** Выставить стандартный размер, сохранив центр элемента. */
 function _pteApplyDefaultSize(d, dom){
@@ -409,9 +493,13 @@ function insertPeriodicApplet(symbol){
   const el=_pteBySymbol(symbol)||_pteBySymbol('Fe');
   if(typeof pushUndo==='function') pushUndo();
   const sz=_pteDefaultSize(false);
-  const w=sz.w, h=sz.h;
-  const x=Math.round(((typeof canvasW!=='undefined'?canvasW:1200)-w)/2);
-  const y=Math.round(((typeof canvasH!=='undefined'?canvasH:675)-h)/2);
+  let w=sz.w, h=sz.h;
+  let x=Math.round(((typeof canvasW!=='undefined'?canvasW:1200)-w)/2);
+  let y=Math.round(((typeof canvasH!=='undefined'?canvasH:675)-h)/2);
+  if(typeof _insertGeom==='function'){
+    const g=_insertGeom(w,h);
+    x=g.x; y=g.y; w=g.w; h=g.h;
+  }
   const theme=(typeof THEMES!=='undefined'&&typeof appliedThemeIdx!=='undefined'&&appliedThemeIdx>=0)?THEMES[appliedThemeIdx]:null;
   const bgScheme=_pteDefaultBgScheme(theme);
   const fgScheme=_pteDefaultFgScheme();
@@ -473,6 +561,7 @@ function refreshPeriodicEl(elId,opts){
     dom.dataset.genBgScheme=d.genBgScheme?JSON.stringify(d.genBgScheme):'';
     const iframe=dom.querySelector('iframe');
     if(iframe) iframe.srcdoc=d.appletHtml;
+    if(typeof _layoutPeriodicIframe==='function') _layoutPeriodicIframe(dom, d);
   }
   if(!opts.silent){
     if(typeof save==='function') save();
@@ -486,6 +575,11 @@ function syncPeriodicProps(){
   if(!sel||sel.dataset.appletId!=='periodic') return;
   const d=slides[cur]&&slides[cur].els.find(e=>e.id===sel.dataset.id);
   if(!d) return;
+  // Migrate old fixed-px cards to scale-to-fit HTML
+  if(d.appletHtml && (d.appletHtml.indexOf('pte-design')<0 || d.appletHtml.indexOf('box-shadow:0 6px')>=0 || d.appletHtml.indexOf('box-shadow:0 6px 18px')>=0 || d.appletHtml.indexOf('box-shadow:0 6px 20px')>=0)){
+    refreshPeriodicEl(d.id, {silent:true});
+  }
+  if(typeof _layoutPeriodicIframe==='function' && sel) _layoutPeriodicIframe(sel, d);
   const el=_pteBySymbol(d.pteSymbol)||_pteBySymbol('Fe');
   const nameEl=document.getElementById('pte-props-name');
   if(nameEl) nameEl.textContent=el?(el.ru+' ('+el.s+')'):'—';

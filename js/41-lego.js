@@ -305,8 +305,27 @@ function _refreshAllZOrders() {
   }
 }
 // ── Состояние ─────────────────────────────────────────────────────
-let _color = '#e3000b';
-let _colorScheme = null; // null=кастомный, {col,row}=из палитры схемы
+let _color = '';
+let _colorScheme = (typeof DEFAULT_LEGO_COLOR_SCHEME !== 'undefined')
+  ? {col: DEFAULT_LEGO_COLOR_SCHEME.col, row: DEFAULT_LEGO_COLOR_SCHEME.row}
+  : null; // null=кастомный, {col,row}=из палитры схемы
+
+function _legoParseScheme(raw){
+  if (raw === undefined || raw === '' || raw === 'undefined') return undefined;
+  if (raw === 'null') return null;
+  try { return JSON.parse(raw); } catch(e) { return null; }
+}
+
+function _legoSyncColorUI(color, schemeRef){
+  if (typeof _setColorFieldValue === 'function')
+    _setColorFieldValue('lego-color-hex', 'lego-color-inner', color, schemeRef);
+  else {
+    const inner = document.getElementById('lego-color-inner');
+    const hex = document.getElementById('lego-color-hex');
+    if (inner && color) inner.style.background = color;
+    if (hex) hex.value = (typeof _colorFieldDisplay === 'function') ? _colorFieldDisplay(color, schemeRef) : color;
+  }
+}
 
 // ── Типы деталей ──────────────────────────────────────────────────
 const PIECES = [
@@ -350,9 +369,9 @@ function buildPanel() {
              style="width:26px;height:26px;border-radius:4px;border:1px solid var(--border2);
                     cursor:pointer;overflow:hidden;flex-shrink:0"
              onmousedown="event.preventDefault();openColorPanel('cp-lego-slot','lego',function(c,sr){legoOnColorPick(c,sr)})">
-          <div id="lego-color-inner" style="width:100%;height:100%;background:#e3000b"></div>
+          <div id="lego-color-inner" style="width:100%;height:100%"></div>
         </div>
-        <input id="lego-color-hex" type="text" maxlength="7" value="#e3000b" readonly
+        <input id="lego-color-hex" type="text" maxlength="7" value="" readonly
                style="width:64px;background:var(--surface2);border:1px solid var(--border2);
                       border-radius:5px;padding:3px 6px;color:var(--text1);font-size:11px;
                       font-family:monospace;cursor:pointer"
@@ -368,16 +387,19 @@ function buildPanel() {
 
   const nosel = document.getElementById('nosel');
   if (nosel) scroll.insertBefore(p, nosel); else scroll.appendChild(p);
+  if (typeof _defaultLegoColor === 'function') {
+    const def = _defaultLegoColor();
+    _color = def.color;
+    _colorScheme = def.schemeRef;
+  }
+  _legoSyncColorUI(_color, _colorScheme);
   _buildGrid();
 }
 
 window.legoOnColorPick = function(c, sr) {
   _color = c;         // запоминаем как цвет для новых блоков
-  _colorScheme = sr !== undefined ? (sr || null) : null; // null=кастом, {col,row}=схема
-  const inner = document.getElementById('lego-color-inner');
-  if (inner) inner.style.background = c;
-  const hex = document.getElementById('lego-color-hex');
-  if (hex) hex.value = c;
+  _colorScheme = sr !== undefined ? (sr || null) : _colorScheme; // null=кастом, {col,row}=схема
+  _legoSyncColorUI(c, _colorScheme);
   // Меняем цвет всех выделенных лего-деталей
   const _legoTargets = [];
   if (typeof multiSel!=='undefined' && multiSel.size > 1) {
@@ -478,12 +500,20 @@ function _buildGrid() {
       if (elph) elph.style.display = 'none';
 
       // Sync color to selected block
-      const c = sel.dataset.legoColor || '#e3000b';
-      const inner = document.getElementById('lego-color-inner');
-      if (inner) inner.style.background = c;
-      const hexEl = document.getElementById('lego-color-hex');
-      if (hexEl) hexEl.value = c;
-      if (c !== _color) { _color = c; _buildGrid(); }
+      const sr = _legoParseScheme(sel.dataset.legoColorScheme);
+      const def = (typeof _defaultLegoColor === 'function') ? _defaultLegoColor() : {color:'#906cf9', schemeRef:null};
+      let c = sel.dataset.legoColor || def.color;
+      let scheme = sr !== undefined ? sr : null;
+      if (scheme && typeof _resolveSchemeColor === 'function') {
+        const th = typeof _activeThemeForScheme === 'function' ? _activeThemeForScheme() : null;
+        const resolved = th ? _resolveSchemeColor(scheme, th) : null;
+        if (resolved) c = resolved;
+      }
+      const prevColor = _color;
+      _color = c;
+      if (sr !== undefined) _colorScheme = sr;
+      _legoSyncColorUI(c, scheme);
+      if (c !== prevColor) _buildGrid();
 
     } else {
       // Not lego selected — hide lego panel, restore everything (except lineangle)
@@ -531,6 +561,9 @@ function _buildGrid() {
 
 function _mkLegoEl(d) {
   const cv = _legoLayer(); if (!cv) return;
+  const def = (typeof _defaultLegoColor === 'function') ? _defaultLegoColor() : {color:'#906cf9', schemeRef:null};
+  if (d.legoColorScheme === undefined && !d.legoColor && def.schemeRef)
+    d.legoColorScheme = def.schemeRef;
 
   // Snap к сетке при создании из сохранённых данных
   d.x = Math.round(d.x / U) * U;
@@ -538,6 +571,13 @@ function _mkLegoEl(d) {
   const bh = d.legoStair ? TH : d.legoSlope ? TH : (d.legoTall ? TH : FH);
   d.w = d.legoStuds * U;
   d.h = bh + SH;
+
+  let lc = d.legoColor || def.color;
+  if (d.legoColorScheme && typeof _resolveSchemeColor === 'function') {
+    const th = typeof _activeThemeForScheme === 'function' ? _activeThemeForScheme() : null;
+    const resolved = th ? _resolveSchemeColor(d.legoColorScheme, th) : null;
+    if (resolved) lc = resolved;
+  }
 
   const el = document.createElement('div');
   el.className = 'el';
@@ -547,7 +587,7 @@ function _mkLegoEl(d) {
   el.dataset.legoTall  = d.legoTall ? 'true' : 'false';
   el.dataset.legoSlope = d.legoSlope || '';
   el.dataset.legoStair = d.legoStair || '';
-  el.dataset.legoColor       = d.legoColor || '#e3000b';
+  el.dataset.legoColor       = lc;
   // null → 'null' (кастомный), {col,row} → '{...}', undefined → '' (не задан)
   el.dataset.legoColorScheme = d.legoColorScheme !== undefined ? JSON.stringify(d.legoColorScheme) : '';
   el.dataset.anims           = JSON.stringify(d.anims || []);
@@ -559,8 +599,7 @@ function _mkLegoEl(d) {
   const ec_ = document.createElement('div');
   ec_.className = 'ec';
   ec_.style.cssText = 'width:100%;height:100%;overflow:visible;position:relative;';
-  const _lc = d.legoColor||'#e3000b';
-  ec_.innerHTML = d.legoSlope ? makeSlopeSVG(d.legoStuds, d.legoSlope, _lc) : d.legoStair ? makeStairSVG(_lc, d.legoStair) : makeSVG(d.legoStuds, d.legoTall, _lc);
+  ec_.innerHTML = d.legoSlope ? makeSlopeSVG(d.legoStuds, d.legoSlope, lc) : d.legoStair ? makeStairSVG(lc, d.legoStair) : makeSVG(d.legoStuds, d.legoTall, lc);
 
   // Hit-area для надёжного клика
   const hit = document.createElement('div');
@@ -858,6 +897,11 @@ function _addRibbonBtn() {
 
 function _openLego() {
   buildPanel();
+  if (_colorScheme && typeof _resolveSchemeColor === 'function') {
+    const th = typeof _activeThemeForScheme === 'function' ? _activeThemeForScheme() : null;
+    const resolved = th ? _resolveSchemeColor(_colorScheme, th) : null;
+    if (resolved) { _color = resolved; _legoSyncColorUI(_color, _colorScheme); _buildGrid(); }
+  }
   const panel = document.getElementById('legoprops');
   if (!panel) return;
   panel.style.display = 'flex';

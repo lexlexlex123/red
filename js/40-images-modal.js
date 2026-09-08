@@ -315,6 +315,7 @@ function _insertAsSvg(code){
     svgContent: code,
     rot: 0, anims: []
   };
+  if(typeof _insertGeom==='function'){ const g=_insertGeom(d.w,d.h); d.x=g.x;d.y=g.y;d.w=g.w;d.h=g.h; }
   slides[cur].els.push(d);
   mkEl(d);
   const el = document.getElementById('canvas').querySelector('[data-id="' + d.id + '"]');
@@ -324,12 +325,27 @@ function _insertAsSvg(code){
 }
 
 // Вставка изображения — точно как handleImg в 11-elements.js
-function _insertAsImage(src){
+function _insertAsImage(src, imageId){
   if(!src || src === 'null' || src === 'undefined'){
     console.error('[ImageGallery] _insertAsImage вызван с пустым src:', src);
     return;
   }
   pushUndo();
+  const _finishInsert = function(d, el){
+    const after=()=>{
+      save(); drawThumbs(); saveState();
+      if(typeof window._connMaybeAttachAfterInsert === 'function') window._connMaybeAttachAfterInsert();
+    };
+    if(typeof MediaStore!=='undefined'&&MediaStore.persistImageEl){
+      MediaStore.persistImageEl(d).then(function(){
+        const img=el&&el.querySelector('img');
+        if(img&&d.src&&img.getAttribute('src')!==d.src){
+          try{ img.setAttribute('src', d.src); }catch(e){}
+        }
+        after();
+      }).catch(after);
+    } else after();
+  };
   const tmp = new Image();
   tmp.onload = () => {
     const maxW = canvasW * 0.6, maxH = canvasH * 0.6;
@@ -339,45 +355,47 @@ function _insertAsImage(src){
     if(!h || h < 4) h = 300;
     const scale = Math.min(maxW/w, maxH/h, 1);
     w = Math.round(w * scale); h = Math.round(h * scale);
+    const g = typeof _insertGeom==='function' ? _insertGeom(w,h) : {x:Math.round((canvasW-w)/2),y:Math.round((canvasH-h)/2),w,h};
     const d = {
       id: 'e' + (++ec),
       type: 'image',
-      x: Math.round((canvasW - w) / 2),
-      y: Math.round((canvasH - h) / 2),
-      w, h, src, rot: 0, anims: [],
+      x: g.x,
+      y: g.y,
+      w: g.w, h: g.h, src, rot: 0, anims: [],
       imgFit: 'fill', imgRx: 0,
       imgBw: 0, imgBc: '#ffffff',
       imgShadow: false, imgShadowBlur: 15, imgShadowColor: '#000000',
       imgOpacity: 1,
     };
+    if(imageId) d.imageId=imageId;
     slides[cur].els.push(d);
     mkEl(d);
     const el = document.getElementById('canvas').querySelector('[data-id="' + d.id + '"]');
     if(el) pick(el);
-    save(); drawThumbs(); saveState();
-    if(typeof window._connMaybeAttachAfterInsert === 'function') window._connMaybeAttachAfterInsert();
+    _finishInsert(d, el);
   };
   tmp.onerror = () => {
     // Изображение не загрузилось (например CORS при file://)
     // Вставляем с размером по умолчанию
     const w = 400, h = 300;
+    const g = typeof _insertGeom==='function' ? _insertGeom(w,h) : {x:Math.round((canvasW-w)/2),y:Math.round((canvasH-h)/2),w,h};
     const d = {
       id: 'e' + (++ec),
       type: 'image',
-      x: Math.round((canvasW - w) / 2),
-      y: Math.round((canvasH - h) / 2),
-      w, h, src, rot: 0, anims: [],
+      x: g.x,
+      y: g.y,
+      w: g.w, h: g.h, src, rot: 0, anims: [],
       imgFit: 'fill', imgRx: 0,
       imgBw: 0, imgBc: '#ffffff',
       imgShadow: false, imgShadowBlur: 15, imgShadowColor: '#000000',
       imgOpacity: 1,
     };
+    if(imageId) d.imageId=imageId;
     slides[cur].els.push(d);
     mkEl(d);
     const el = document.getElementById('canvas').querySelector('[data-id="' + d.id + '"]');
     if(el) pick(el);
-    save(); drawThumbs(); saveState();
-    if(typeof window._connMaybeAttachAfterInsert === 'function') window._connMaybeAttachAfterInsert();
+    _finishInsert(d, el);
   };
   tmp.src = typeof assetUrl==='function' ? assetUrl(src) : src;
 }
@@ -425,6 +443,9 @@ function imgModalUpload(){
         }
       };
       reader.readAsText(file);
+    } else if(typeof _addImageToCanvas==='function'){
+      // Blob → IDB — крупные GIF не ломают localStorage
+      _addImageToCanvas(null, { blob: file, mime: file.type || 'image/png' });
     } else {
       const reader = new FileReader();
       reader.onload = ev => _insertAsImage(ev.target.result);

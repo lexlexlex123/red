@@ -69,6 +69,11 @@ function insertMarkdownBlock(){
   } else {
     const defMdColor=document.documentElement.classList.contains('light')?'#000000':'#ffffff';
     const d={id:'e'+(++ec),type:'markdown',x:snapV(60),y:snapV(60),w:snapV(550),h:snapV(400),mdRaw:raw,mdHtml:html,mdFs:16,mdColor:defMdColor,mdColorScheme:{col:7,row:0},rot:0,anims:[]};
+    if(typeof _insertGeom==='function'){
+      const g=_insertGeom(d.w,d.h);
+      d.x=g.x;d.y=g.y;d.w=g.w;d.h=g.h;
+      d.mdFs=Math.max(8, Math.round(16*(g.scale||1)));
+    }
     slides[cur].els.push(d);mkEl(d);
   }
   if(typeof save==="function")save();if(typeof drawThumbs==="function")drawThumbs();if(typeof saveState==="function")saveState();

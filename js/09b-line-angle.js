@@ -236,6 +236,16 @@
     return { a: map(ends.x1, ends.y1), b: map(ends.x2, ends.y2) };
   }
 
+  function _resolveLineById(els, id) {
+    if (!els || !id) return null;
+    const exact = els.find(e => e && e.id === id && e.shape === 'line');
+    if (exact) return exact;
+    // Fallback: id match (shape may be missing after some imports)
+    const any = els.find(e => e && e.id === id);
+    if (any && (any.shape === 'line' || any.type === 'shape')) return any;
+    return null;
+  }
+
   function _measurePairFromData(dA, endA, dB, endB) {
     const eA = _lineDataCanvasEnds(dA);
     const eB = _lineDataCanvasEnds(dB);
@@ -257,11 +267,44 @@
     };
   }
 
+  /** Geometry + style for canvas/PNG (no DOM). */
+  window.buildLineAngleDrawModel = function (d, els) {
+    if (!d || d.type !== 'lineangle' || !els) return null;
+    const dA = _resolveLineById(els, d.lineIdA);
+    const dB = _resolveLineById(els, d.lineIdB);
+    if (!dA || !dB) return null;
+    const m = _measurePairFromData(dA, d.endA || 'a', dB, d.endB || 'a');
+    if (!m) return null;
+    _migrateAngleFields(d);
+    const r = d.radius || DEFAULT_R;
+    const col = d.color || _fallbackAngleColor();
+    const style = _normLabelStyle(d.labelStyle);
+    const nMarks = _normMarkCount(d.markCount);
+    const fsPt = _labelFsPt(d);
+    const fsPx = _labelFsPx(fsPt);
+    const useSquare = Math.abs(m.deg - 90) < 0.6 && nMarks === 1;
+    const pad = r + Math.max(28, Math.ceil(fsPx * 1.2));
+    const label = _labelText(style, m.deg, d.displayDeg);
+    let labelX = null, labelY = null;
+    if (label) {
+      const mid = m.a1 + m.delta / 2;
+      const lr = r + 14 + fsPx * 0.35;
+      labelX = m.j.x + Math.cos(mid) * lr;
+      labelY = m.j.y + Math.sin(mid) * lr;
+    }
+    return {
+      j: m.j, a1: m.a1, a2: m.a2, delta: m.delta, deg: m.deg,
+      radius: r, color: col, markCount: nMarks, useSquare,
+      label: label || '', labelX, labelY, fsPx,
+      x: m.j.x - pad, y: m.j.y - pad, w: pad * 2, h: pad * 2
+    };
+  };
+
   /** Build angle SVG from slide data (preview / export — no editor canvas DOM) */
   window.buildLineAngleContent = function (d, els) {
     if (!d || d.type !== 'lineangle' || !els) return null;
-    const dA = els.find(e => e && e.id === d.lineIdA && e.shape === 'line');
-    const dB = els.find(e => e && e.id === d.lineIdB && e.shape === 'line');
+    const dA = _resolveLineById(els, d.lineIdA);
+    const dB = _resolveLineById(els, d.lineIdB);
     if (!dA || !dB) return null;
     const m = _measurePairFromData(dA, d.endA || 'a', dB, d.endB || 'a');
     if (!m) return null;
@@ -370,7 +413,7 @@
       const owner = node.closest && node.closest('.el');
       if (!owner || owner === angleEl || owner.classList.contains('decor-el')) continue;
       if (owner.dataset.type === 'lineangle') continue;
-      if (typeof _pointHitsEl === 'function' && (owner.dataset.type === 'shape' || owner.dataset.type === 'image' || owner.dataset.type === 'svg')) {
+      if (typeof _pointHitsEl === 'function' && (owner.dataset.type === 'shape' || owner.dataset.type === 'image' || owner.dataset.type === 'svg' || owner.dataset.type === 'icon')) {
         angles.forEach(disableTree);
         const ok = _pointHitsEl(owner, clientX, clientY);
         restoreTree();

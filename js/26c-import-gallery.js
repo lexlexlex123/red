@@ -15,6 +15,59 @@
   let _igThumbIO = null;
   let _igLastItems = null;
   let _igLastAbsUrl = '';
+  let _igHelpOpen = false;
+  let _igLastStatus = { msg: '', isErr: false };
+  let _igLastBrowsePath = '';
+
+  function _igSetupHelpHtml(errMsg) {
+    let html = '<div class="ig-help ig-empty">';
+    if (errMsg) {
+      html += 'Не удалось загрузить каталог.<br><span class="ig-help-detail">' +
+        _esc(errMsg) + '</span><br><br>';
+    }
+    html += '<span class="ig-help-note">Залейте в <code>prezi/</code> на сайте файлы ' +
+      '<code>list.php</code> и <code>get.php</code> из проекта.</span>';
+    if (!errMsg) {
+      html += '<p class="ig-help-note">Укажите URL каталога в поле сверху и нажмите «Изменить».</p>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function _igSyncHelpUI() {
+    const nav = document.getElementById('ig-nav');
+    const btn = document.getElementById('ig-info-btn');
+    if (nav) nav.hidden = _igHelpOpen;
+    if (btn) {
+      btn.classList.toggle('on', _igHelpOpen);
+      btn.setAttribute('aria-pressed', _igHelpOpen ? 'true' : 'false');
+    }
+  }
+
+  function _igEnterHelp() {
+    _igHelpOpen = true;
+    _igSyncHelpUI();
+    const grid = document.getElementById('ig-grid');
+    if (grid) grid.innerHTML = _igSetupHelpHtml('');
+    _igSetStatus('Справка по подключению каталога');
+  }
+
+  function _igExitHelp() {
+    if (!_igHelpOpen) return;
+    _igHelpOpen = false;
+    _igSyncHelpUI();
+    if (_igLastItems) {
+      _igRenderGrid(_igLastItems, _igLastAbsUrl);
+      _igSetStatus(_igLastStatus.msg, _igLastStatus.isErr);
+    } else {
+      _igLoad();
+    }
+  }
+
+  function _igToggleHelp() {
+    if (_igHelpOpen) _igExitHelp();
+    else _igEnterHelp();
+  }
 
   function _igGetView() {
     try {
@@ -24,6 +77,7 @@
     return 'grid';
   }
   function _igSetView(mode) {
+    if (_igHelpOpen) _igExitHelp();
     const v = mode === 'list' ? 'list' : 'grid';
     try { localStorage.setItem(LS_VIEW, v); } catch (e) {}
     _igSyncViewUI();
@@ -48,6 +102,46 @@
     if (!u.endsWith('/')) u += '/';
     return u;
   }
+  /** Каталог — только папка, не файл и не URL редактора с ?import= */
+  function _sanitizeCatalogBase(url) {
+    let u = String(url || '').trim();
+    if (!u) return DEFAULT_BASE;
+    if (/[?&](?:import|prezi|src)=/i.test(u)) {
+      try {
+        const q = u.indexOf('?');
+        if (q >= 0) u = u.slice(0, q);
+      } catch (e) {}
+    }
+    u = u.replace(/[#?].*$/, '');
+    u = u.replace(/\/(list|get)\.php.*$/i, '/');
+    if (/\.(html?|slides\.json|json|pptx?|ppt)$/i.test(u.split('/').pop() || '')) {
+      u = u.replace(/[^/]+$/, '');
+    }
+    return _normBase(u);
+  }
+  /** Подкаталог pyabc.ru/prezi/ в localStorage — вернуть корень каталога */
+  function _fixStoredCatalogRoot(url) {
+    const u = _sanitizeCatalogBase(url);
+    const def = _normBase(DEFAULT_BASE);
+    if (u === def) return u;
+    try {
+      const uu = new URL(u);
+      const dd = new URL(def);
+      if (uu.origin === dd.origin && u.startsWith(def) && u.length > def.length) return def;
+    } catch (e) {}
+    return u;
+  }
+  function _igRememberBrowsePath(fileAbsUrl) {
+    const root = _getStoredBase();
+    const rel = _igRelUnderBase(fileAbsUrl, root);
+    if (!rel) {
+      _igLastBrowsePath = '';
+      return;
+    }
+    const parts = rel.split('/').filter(Boolean);
+    parts.pop();
+    _igLastBrowsePath = parts.length ? parts.join('/') + '/' : '';
+  }
   function _needsProxy() {
     try {
       return location.protocol === 'https:' && /^http:\/\//i.test(_normBase(_base));
@@ -70,11 +164,14 @@
     return _proxyUrl({ path: rel.replace(/^\//, '') });
   }
   function _getStoredBase() {
-    try { return _normBase(localStorage.getItem(LS_KEY) || DEFAULT_BASE); }
-    catch (e) { return DEFAULT_BASE; }
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (!raw) return DEFAULT_BASE;
+      return _fixStoredCatalogRoot(raw);
+    } catch (e) { return DEFAULT_BASE; }
   }
   function _setStoredBase(url) {
-    _base = _normBase(url);
+    _base = _fixStoredCatalogRoot(_sanitizeCatalogBase(url));
     try { localStorage.setItem(LS_KEY, _base); } catch (e) {}
     return _base;
   }
@@ -97,15 +194,15 @@
       .trim() || name;
   }
   function _igAppIconUrl() {
-    const p = 'icon-512.png';
+    const p = 'icons/icon-512.png';
     return (typeof assetUrl === 'function') ? assetUrl(p) : p;
   }
 
   function openImportGallery() {
     _base = _setStoredBase(_getStoredBase());
-    _relPath = '';
+    _relPath = _igLastBrowsePath || '';
     let modal = document.getElementById('import-gallery-modal');
-    if (modal && !modal.querySelector('#ig-view-grid')) {
+    if (modal && (!modal.querySelector('#ig-view-grid') || !modal.querySelector('#ig-info-btn'))) {
       modal.remove();
       modal = null;
     }
@@ -115,7 +212,10 @@
       modal.id = 'import-gallery-modal';
       modal.innerHTML =
         '<div class="modal ig-modal">' +
-          '<h3 style="margin:0 0 12px">Импорт презентации</h3>' +
+          '<div class="ig-head">' +
+            '<h3>Импорт презентации</h3>' +
+            '<button type="button" class="ig-info-btn" id="ig-info-btn" title="Справка по подключению каталога" aria-pressed="false">i</button>' +
+          '</div>' +
           '<div class="ig-toolbar">' +
             '<input id="ig-base-url" type="url" spellcheck="false" placeholder="http://pyabc.ru/prezi/" />' +
             '<button type="button" class="mbtn" id="ig-apply-base">Изменить</button>' +
@@ -154,6 +254,7 @@
         _setStoredBase(v);
         document.getElementById('ig-base-url').value = _base;
         _relPath = '';
+        _igLastBrowsePath = '';
         _igLoad();
       };
       modal.querySelector('#ig-base-url').addEventListener('keydown', function (e) {
@@ -162,8 +263,11 @@
       modal.querySelector('#ig-back').onclick = function () { _igGoUp(); };
       modal.querySelector('#ig-view-grid').onclick = function () { _igSetView('grid'); };
       modal.querySelector('#ig-view-list').onclick = function () { _igSetView('list'); };
+      modal.querySelector('#ig-info-btn').onclick = function () { _igToggleHelp(); };
     }
     document.getElementById('ig-base-url').value = _base;
+    _igHelpOpen = false;
+    _igSyncHelpUI();
     modal.classList.add('open');
     _igSyncViewUI();
     _igLoad();
@@ -211,6 +315,7 @@
     if (!st) return;
     st.textContent = msg || '';
     st.classList.toggle('err', !!isErr);
+    if (!_igHelpOpen) _igLastStatus = { msg: msg || '', isErr: !!isErr };
   }
 
   async function _igFetchText(url) {
@@ -238,6 +343,332 @@
     const q = String(pathRel || '').replace(/^\/+/, '');
     if (_needsProxy()) return _proxyUrl({ file: 'get.php', path: q });
     return _normBase(_base) + 'get.php?path=' + encodeURIComponent(q);
+  }
+
+  /** Абсолютный URL файла презентации → ссылка на редактор с ?import= */
+  function _igEditorImportUrl(fileAbsUrl) {
+    const abs = String(fileAbsUrl || '').trim();
+    if (!abs) return '';
+    try {
+      const page = new URL(location.href);
+      const qs = new URLSearchParams(page.search);
+      qs.delete('prezi');
+      qs.delete('src');
+      qs.delete('import');
+      const rest = qs.toString();
+      const prefix = page.pathname + (rest ? '?' + rest + '&' : '?');
+      return prefix + 'import=' + encodeURIComponent(abs) + (page.hash || '');
+    } catch (e) {
+      return location.pathname + '?import=' + encodeURIComponent(abs);
+    }
+  }
+
+  /** Записать в адресную строку shareable URL (без перезагрузки). */
+  function _igSetAddressImportUrl(fileAbsUrl) {
+    const next = _igEditorImportUrl(fileAbsUrl);
+    if (!next) return;
+    try {
+      if (location.protocol === 'file:') return; // file:// + history часто бесполезен
+      history.replaceState(null, '', next);
+    } catch (e) {}
+  }
+
+  /** Убрать ?import= / ?prezi= / ?src= из адресной строки (после правок на слайде). */
+  function _igClearAddressImportUrl() {
+    try {
+      if (location.protocol === 'file:') return;
+      const u = new URL(location.href);
+      let changed = false;
+      ['import', 'prezi', 'src'].forEach(function (k) {
+        if (u.searchParams.has(k)) { u.searchParams.delete(k); changed = true; }
+      });
+      if (!changed) return;
+      const qs = u.searchParams.toString();
+      const next = u.pathname + (qs ? '?' + qs : '') + u.hash;
+      history.replaceState(null, '', next);
+    } catch (e) {}
+  }
+
+  function _igHasImportParam() {
+    return !!_igReadImportParam();
+  }
+
+  /** Очищать shareable ?import= только когда пользователь меняет слайд. */
+  function _igHookImportUrlClearOnEdit() {
+    if (window._igImportUrlClearHooked) return;
+    const orig = window.pushUndo;
+    if (typeof orig !== 'function') return;
+    window._igImportUrlClearHooked = true;
+    window.pushUndo = function () {
+      if (!window._appLoadingBoot && !window._igImportUrlConsuming && _igHasImportParam()) {
+        _igClearAddressImportUrl();
+      }
+      return orig.apply(this, arguments);
+    };
+  }
+
+  function _igNeedsProxyForAbs(absUrl) {
+    try {
+      return location.protocol === 'https:' && /^http:\/\//i.test(String(absUrl || ''));
+    } catch (e) { return false; }
+  }
+
+  function _igDecodePath(p) {
+    let s = String(p || '');
+    try { s = decodeURIComponent(s); } catch (e) {}
+    return s;
+  }
+
+  /** Декодировать ?import= из адресной строки (в т.ч. кириллица, двойное кодирование). */
+  function _igNormalizeImportAbs(raw) {
+    let abs = String(raw || '').trim();
+    if (!abs) return '';
+    abs = abs.replace(/\+/g, ' ');
+    for (let i = 0; i < 4; i++) {
+      if (!/%[0-9A-Fa-f]{2}/.test(abs)) break;
+      try {
+        const next = decodeURIComponent(abs);
+        if (next === abs) break;
+        abs = next;
+      } catch (e) { break; }
+    }
+    if (!/^https?:\/\//i.test(abs)) return abs;
+    try {
+      const u = new URL(abs);
+      return u.href.split('#')[0];
+    } catch (e) {
+      return abs;
+    }
+  }
+
+  function _igReadImportParam() {
+    try {
+      const sp = new URLSearchParams(location.search);
+      const v = sp.get('import') || sp.get('prezi') || sp.get('src') || '';
+      if (v) return _igNormalizeImportAbs(v);
+    } catch (e) {}
+    try {
+      const m = String(location.href || '').match(/[?&](?:import|prezi|src)=([^#&]*)/i);
+      if (m && m[1]) return _igNormalizeImportAbs(m[1]);
+    } catch (e2) {}
+    return '';
+  }
+
+  /** Захват ?import= до boot() — addSlide→pushUndo иначе стирает параметр из адресной строки. */
+  let _igPendingImportUrl = '';
+  try { _igPendingImportUrl = _igReadImportParam() || ''; } catch (e) {}
+
+  function _igHasPendingImportUrl() {
+    return !!(_igPendingImportUrl || _igReadImportParam());
+  }
+
+  function _igTakePendingImportUrl() {
+    const v = _igPendingImportUrl || _igReadImportParam();
+    _igPendingImportUrl = '';
+    return v;
+  }
+
+  async function _igWhenBootReady() {
+    if (window._bootMainDone && !window._bootHydratePending) return;
+    const t0 = Date.now();
+    while (Date.now() - t0 < 20000) {
+      if (window._bootMainDone && !window._bootHydratePending) return;
+      await new Promise(function (r) { setTimeout(r, 40); });
+    }
+  }
+
+  /** Разбор URL файла: file — декодированное имя (для get.php), abs — href браузера. */
+  function _igSplitAbsFile(absUrl) {
+    const u = new URL(String(absUrl).trim(), location.href);
+    const hrefNoHash = u.href.split('#')[0];
+    const pathDec = _igDecodePath(u.pathname || '/');
+    const i = pathDec.lastIndexOf('/');
+    const dirDec = pathDec.slice(0, i + 1);
+    const fileDec = pathDec.slice(i + 1);
+    const dirEnc = dirDec.split('/').map(function (seg) {
+      if (!seg) return '';
+      try { return encodeURIComponent(_igDecodePath(seg)); } catch (e) { return seg; }
+    }).filter(Boolean).join('/');
+    const base = _normBase(u.origin + (dirEnc ? '/' + dirEnc : '/'));
+    return { base: base, file: fileDec, abs: hrefNoHash };
+  }
+
+  /** Относительный путь файла внутри base, или null. */
+  function _igRelUnderBase(absUrl, base) {
+    const b = _normBase(base);
+    const a = String(absUrl || '');
+    if (!a || !b) return null;
+    if (a.indexOf(b) === 0) return a.slice(b.length).replace(/^\/+/, '');
+    try {
+      const ad = _igDecodePath(a);
+      const bd = _igDecodePath(b);
+      if (ad.indexOf(bd) === 0) return ad.slice(bd.length).replace(/^\/+/, '');
+    } catch (e) {}
+    try {
+      const ua = new URL(a);
+      const ub = new URL(b);
+      if (ua.origin !== ub.origin) return null;
+      let pa = _igDecodePath(ua.pathname);
+      let pb = _igDecodePath(ub.pathname);
+      if (!pb.endsWith('/')) pb += '/';
+      if (pa.indexOf(pb) === 0) return pa.slice(pb.length).replace(/^\/+/, '');
+    } catch (e2) {}
+    return null;
+  }
+
+  async function _igFetchPresentationRaw(absUrl) {
+    const abs = String(absUrl || '').trim();
+    if (!abs) throw new Error('Пустой URL');
+    const parsed = _igSplitAbsFile(abs);
+    const stored = _normBase(_getStoredBase());
+    const errors = [];
+
+    async function tryGet(base, relFile) {
+      if (!relFile) return null;
+      const prev = _base;
+      _base = _normBase(base);
+      const names = [relFile];
+      try {
+        const nfc = relFile.normalize('NFC');
+        const nfd = relFile.normalize('NFD');
+        if (nfc !== relFile) names.push(nfc);
+        if (nfd !== relFile && nfd !== nfc) names.push(nfd);
+      } catch (e) {}
+      try {
+        let lastErr = null;
+        for (let i = 0; i < names.length; i++) {
+          try { return await _igFetchText(_igGetPhpUrl(names[i])); }
+          catch (e) { lastErr = e; }
+        }
+        throw lastErr;
+      } finally {
+        _base = prev;
+      }
+    }
+
+    // 1) get.php — у pyabc CORS есть только здесь (прямой .json без Access-Control)
+    try { return await tryGet(parsed.base, parsed.file); }
+    catch (e) { errors.push(e); }
+    if (stored && stored !== parsed.base) {
+      const relStored = _igRelUnderBase(parsed.abs, stored);
+      if (relStored) {
+        try { return await tryGet(stored, relStored); }
+        catch (e2) { errors.push(e2); }
+      }
+    }
+
+    // 2) proxy (https-редактор → http-каталог)
+    if (_igNeedsProxyForAbs(parsed.abs)) {
+      const prev = _base;
+      _base = parsed.base;
+      try {
+        try { return await _igFetchText(_igGetPhpUrl(parsed.file)); }
+        catch (e1) {
+          errors.push(e1);
+          return await _igFetchText(_proxyUrl({ path: parsed.file }));
+        }
+      } finally {
+        _base = prev;
+      }
+    }
+
+    // 3) прямой fetch (если сервер отдаёт CORS)
+    try {
+      return await _igFetchText(parsed.abs);
+    } catch (e) {
+      errors.push(e);
+      const msg = (errors.map(function (x) { return x && x.message; }).filter(Boolean).join(' · ')) || (e && e.message) || 'fetch failed';
+      throw new Error(msg);
+    }
+  }
+
+  function _igApplyImportedRaw(raw, fileHint) {
+    const name = _igDecodePath(String(fileHint || 'presentation.html'));
+    const isLite = /\.json$/i.test(name) || (raw && raw.trim().charAt(0) === '{');
+    let ok = false;
+    if (isLite) {
+      if (typeof importLiteContent === 'function') ok = !!importLiteContent(raw);
+      else throw new Error('importLiteContent недоступен');
+    } else {
+      if (!raw || (raw.indexOf('id="_sl"') < 0 && raw.indexOf("id='_sl'") < 0)) {
+        throw new Error('Файл не похож на презентацию «Слайды»');
+      }
+      if (typeof importHTMLContent === 'function') {
+        ok = !!importHTMLContent(raw);
+      } else if (typeof importHTMLFile === 'function') {
+        const safe = name.replace(/[^\w.\-а-яА-ЯёЁ]+/gi, '_');
+        const file = new File([raw], /\.html?$/i.test(safe) ? safe : safe + '.html', { type: 'text/html' });
+        importHTMLFile(file);
+        ok = true;
+      } else {
+        throw new Error('importHTMLFile недоступен');
+      }
+    }
+    if (ok && typeof fitAllTextsAllSlides === 'function') {
+      setTimeout(function () { try { fitAllTextsAllSlides(); } catch (e) {} }, 800);
+    } else if (ok && typeof window._fitAllTextsAllSlides === 'function') {
+      setTimeout(function () { try { window._fitAllTextsAllSlides(); } catch (e) {} }, 800);
+    }
+    if (!ok) throw new Error('Импорт не выполнен');
+    return true;
+  }
+
+  /**
+   * Импорт презентации по абсолютному/относительному URL.
+   */
+  async function importPresentationFromUrl(fileUrl, opts) {
+    opts = opts || {};
+    let abs = _igNormalizeImportAbs(String(fileUrl || '').trim());
+    if (!abs) throw new Error('Не указан URL');
+    if (!/^https?:\/\//i.test(abs)) {
+      abs = _joinUrl(_getStoredBase(), abs);
+    }
+    let parsed = null;
+    try {
+      parsed = _igSplitAbsFile(abs);
+      abs = parsed.abs;
+    } catch (e) {}
+
+    if (typeof showLoading === 'function') showLoading('Импорт…', 12);
+    try {
+      const raw = await _igFetchPresentationRaw(abs);
+      const bytes = (typeof Blob !== 'undefined') ? new Blob([raw || '']).size : ((raw || '').length * 2);
+      if (typeof showLoading === 'function') showLoading('Импорт…', 88, bytes, bytes || undefined);
+      let fileName = 'presentation.html';
+      try { fileName = (parsed || _igSplitAbsFile(abs)).file || fileName; } catch (e) {
+        fileName = _igDecodePath(abs.split('/').pop() || fileName);
+      }
+      _igApplyImportedRaw(raw, fileName);
+      _igRememberBrowsePath(abs);
+      if (parsed) _igSetAddressImportUrl(_joinUrl(parsed.base, parsed.file));
+      else _igSetAddressImportUrl(abs);
+      if (typeof toast === 'function') toast('Импортировано · ссылка в адресной строке', 'ok');
+      return true;
+    } finally {
+      if (typeof hideLoading === 'function') hideLoading();
+    }
+  }
+
+  /** Прочитать ?import= / ?prezi= из адресной строки и загрузить файл. */
+  async function consumeImportUrl() {
+    const absRaw = _igTakePendingImportUrl();
+    if (!absRaw) return false;
+    let abs = absRaw;
+    if (!/^https?:\/\//i.test(abs) && abs.indexOf('/') >= 0) {
+      abs = _joinUrl(_getStoredBase(), abs);
+    }
+    window._igImportUrlConsuming = true;
+    try {
+      await _igWhenBootReady();
+      await importPresentationFromUrl(abs);
+      return true;
+    } catch (err) {
+      console.warn('[import-url]', err);
+      if (typeof toast === 'function') toast('Импорт по ссылке: ' + (err.message || err), 'err');
+      return false;
+    } finally {
+      window._igImportUrlConsuming = false;
+    }
   }
 
   /** 1) list.php (CORS) → 2) index.json → 3) HTML directory listing */
@@ -341,6 +772,8 @@
   async function _igLoad() {
     if (_loading) return;
     _loading = true;
+    _igHelpOpen = false;
+    _igSyncHelpUI();
     _igRenderCrumbs();
     const grid = document.getElementById('ig-grid');
     if (grid) grid.innerHTML = '<div class="ig-loading">Загрузка…</div>';
@@ -352,11 +785,9 @@
       _igRenderGrid(items, abs);
       _igSetStatus(items.length ? ('Найдено: ' + items.length) : 'Папка пуста');
     } catch (err) {
-      if (grid) {
-        grid.innerHTML = '<div class="ig-empty">Не удалось загрузить каталог.<br><span style="opacity:.7;font-size:12px">' +
-          _esc(err.message || err) + '</span><br><br>' +
-          '<span style="opacity:.75;font-size:12px">Залейте в <code>prezi/</code> на сайте файлы <code>list.php</code> и <code>get.php</code> из проекта.</span></div>';
-      }
+      _igLastItems = null;
+      _igLastAbsUrl = '';
+      if (grid) grid.innerHTML = _igSetupHelpHtml(String(err.message || err));
       _igSetStatus(String(err.message || err), true);
     }
     _loading = false;
@@ -625,7 +1056,7 @@
     const direct = absUrl.replace(/\/?$/, '/') + String(it.file || '').replace(/^\//, '');
     const isLite = /\.json$/i.test(String(it.file || it.name || ''));
     _igSetStatus('Импорт: ' + (it.name || it.file) + '…');
-    if (typeof showLoading === 'function') showLoading('Импорт…', 20);
+    if (typeof showLoading === 'function') showLoading('Импорт…', 12);
     try {
       let raw = '';
       try {
@@ -633,34 +1064,14 @@
       } catch (e1) {
         raw = await _igFetchText(_needsProxy() ? _proxiedAsset(direct) : direct);
       }
+      const bytes = (typeof Blob !== 'undefined') ? new Blob([raw || '']).size : ((raw || '').length * 2);
       const modal = document.getElementById('import-gallery-modal');
       if (modal) modal.classList.remove('open');
-      if (typeof showLoading === 'function') showLoading('Импорт…', 90);
-      let ok = false;
-      if (isLite || (raw && raw.trim().charAt(0) === '{')) {
-        if (typeof importLiteContent === 'function') ok = !!importLiteContent(raw);
-        else throw new Error('importLiteContent недоступен');
-      } else {
-        if (!raw || (raw.indexOf('id="_sl"') < 0 && raw.indexOf("id='_sl'") < 0)) {
-          throw new Error('Файл не похож на презентацию «Слайды»');
-        }
-        if (typeof importHTMLContent === 'function') {
-          ok = !!importHTMLContent(raw);
-        } else if (typeof importHTMLFile === 'function') {
-          const name = (it.file || it.name || 'presentation.html').replace(/[^\w.\-а-яА-ЯёЁ]+/gi, '_');
-          const file = new File([raw], name.endsWith('.html') ? name : name + '.html', { type: 'text/html' });
-          importHTMLFile(file);
-          ok = true;
-        } else {
-          throw new Error('importHTMLFile недоступен');
-        }
-      }
-      if (ok && typeof fitAllTextsAllSlides === 'function') {
-        setTimeout(function () { try { fitAllTextsAllSlides(); } catch (e) {} }, 800);
-      } else if (ok && typeof window._fitAllTextsAllSlides === 'function') {
-        setTimeout(function () { try { window._fitAllTextsAllSlides(); } catch (e) {} }, 800);
-      }
-      if (!ok) throw new Error('Импорт не выполнен');
+      if (typeof showLoading === 'function') showLoading('Импорт…', 88, bytes, bytes || undefined);
+      _igApplyImportedRaw(raw, it.file || it.name || (isLite ? 'presentation.json' : 'presentation.html'));
+      _igRememberBrowsePath(direct);
+      _igSetAddressImportUrl(direct);
+      if (typeof toast === 'function') toast('Импортировано · ссылка в адресной строке', 'ok');
     } catch (err) {
       _igSetStatus(String(err.message || err), true);
       if (typeof toast === 'function') toast('Импорт: ' + (err.message || err), 'err');
@@ -670,4 +1081,20 @@
   }
 
   window.openImportGallery = openImportGallery;
+  window.importPresentationFromUrl = importPresentationFromUrl;
+  window.consumeImportUrl = consumeImportUrl;
+  window._igHasPendingImportUrl = _igHasPendingImportUrl;
+  window.getPresentationImportUrl = function (fileAbsUrl) {
+    try {
+      const u = new URL(_igEditorImportUrl(fileAbsUrl), location.href);
+      return u.href;
+    } catch (e) {
+      return _igEditorImportUrl(fileAbsUrl);
+    }
+  };
+  _igHookImportUrlClearOnEdit();
+  try {
+    const fixed = _fixStoredCatalogRoot(localStorage.getItem(LS_KEY) || '');
+    if (fixed && localStorage.getItem(LS_KEY) !== fixed) localStorage.setItem(LS_KEY, fixed);
+  } catch (e) {}
 })();

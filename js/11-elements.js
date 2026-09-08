@@ -22,6 +22,12 @@ function addText(){
     cs:'font-size:36px;font-weight:400;color:'+_defColor+';text-align:left;line-height:1.2;',
     rot:0,anims:[],textRole:'body',
     textColorScheme: _defScheme};
+  if(typeof _insertGeom==='function'){
+    const g=_insertGeom(d.w,d.h);
+    d.x=g.x; d.y=g.y; d.w=g.w; d.h=g.h;
+    const fs=Math.max(10, Math.round(36*(g.scale||1)));
+    d.cs='font-size:'+fs+'px;font-weight:400;color:'+_defColor+';text-align:left;line-height:1.2;';
+  }
   slides[cur].els.push(d);mkEl(d);save();drawThumbs();saveState();
 }
 function handleImg(e){
@@ -36,7 +42,8 @@ function handleImg(e){
       let w=tmp.naturalWidth||400,h=tmp.naturalHeight||300;
       const scale=Math.min(maxW/w,maxH/h,1);
       w=Math.round(w*scale);h=Math.round(h*scale);
-      const d={id:'e'+(++ec),type:'image',x:Math.round((canvasW-w)/2),y:Math.round((canvasH-h)/2),w,h,src,imgName:f.name,rot:0,anims:[],imgFit:'fill',imgRx:0,imgBw:0,imgBc:'#ffffff',imgShadow:false,imgShadowBlur:15,imgShadowColor:'#000000',imgOpacity:1};
+      const g=typeof _insertGeom==='function'?_insertGeom(w,h):{x:Math.round((canvasW-w)/2),y:Math.round((canvasH-h)/2),w,h};
+      const d={id:'e'+(++ec),type:'image',x:g.x,y:g.y,w:g.w,h:g.h,src,imgName:f.name,rot:0,anims:[],imgFit:'fill',imgRx:0,imgBw:0,imgBc:'#ffffff',imgShadow:false,imgShadowBlur:15,imgShadowColor:'#000000',imgOpacity:1};
       slides[cur].els.push(d);mkEl(d);
       const el=document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
       if(el)pick(el);
@@ -129,7 +136,7 @@ function getCodeBlockTheme(d){
 function codeBlockSurfaceCss(d, T){
   const theme = getCodeBlockTheme(d);
   T = T || CODE_THEMES[theme] || CODE_THEMES.dark;
-  const fs = d.codeFs || 13;
+  const fs = d.codeFs || 16;
   let bg = T.bg;
   let glass = '';
   if(d.codeGlass){
@@ -189,6 +196,117 @@ function getCodeThemeForPresTheme(){
   return t.dark?'dark':'light';
 }
 
+/**
+ * Эвристика: похож ли текст из буфера на исходный код.
+ * Возвращает код языка (py/js/…) или null — вставлять как обычный текст.
+ */
+function _detectPasteCodeLang(raw){
+  let text=String(raw||'').replace(/^\uFEFF/,'');
+  let fenceLang=null;
+  const fm=text.match(/^```([a-zA-Z0-9_+-]*)[ \t]*\r?\n([\s\S]*?)\r?\n```[ \t]*$/);
+  if(fm){
+    text=fm[2];
+    const fl=(fm[1]||'').toLowerCase();
+    const fmap={
+      python:'py',py:'py',javascript:'js',js:'js',jsx:'js',typescript:'ts',ts:'ts',tsx:'ts',
+      rust:'rust',rs:'rust',go:'go',golang:'go',java:'java',c:'cpp',cpp:'cpp','c++':'cpp',
+      csharp:'cs',cs:'cs','c#':'cs',html:'html',htm:'html',css:'css',scss:'css',
+      sql:'sql',bash:'bash',sh:'bash',shell:'bash',zsh:'bash',json:'json',yaml:'yaml',yml:'yaml'
+    };
+    fenceLang=fmap[fl]||(fl? 'plain':null);
+  }
+  const trim=text.trim();
+  if(trim.length<20) return null;
+  const lines=trim.split(/\r?\n/);
+  const nonEmpty=lines.filter(l=>l.trim().length);
+  if(nonEmpty.length<2 && !/[{};]|=>|\bdef\b|\bfunction\b|\bclass\b/.test(trim)) return null;
+
+  // Явный JSON
+  if(/^\s*[\[{]/.test(trim) && /[\]}]\s*$/.test(trim)){
+    try{ JSON.parse(trim); return 'json'; }catch(e){}
+  }
+
+  let score=0;
+  const L={py:0,js:0,ts:0,java:0,cpp:0,cs:0,go:0,rust:0,html:0,css:0,sql:0,bash:0,yaml:0};
+
+  const indented=lines.filter(l=>/^[ \t]{2,}\S/.test(l)).length;
+  if(indented>=1) score+=2;
+  if(indented>=3) score+=1;
+  if(nonEmpty.length>=3) score+=1;
+  if(nonEmpty.length>=6) score+=1;
+  if(/[{}]/.test(trim) && /;/.test(trim)) score+=2;
+  if(/\w+\s*\([^)]*\)\s*\{/.test(trim)) score+=2;
+  if(/\w+\s*\([^)]*\)\s*:/.test(trim)){ score+=2; L.py+=2; }
+
+  if(/(^|\n)\s*#(?!!|include)/.test(trim)){ score+=1; L.py+=1; L.bash+=0.5; }
+  if(/\/\/|\/\*|\*\//.test(trim)){ score+=1; L.js+=1; L.java+=0.5; L.cpp+=0.5; L.cs+=0.5; }
+
+  if(/\b(def|elif|except|lambda|None|True|False|yield|nonlocal|asyncio)\b/.test(trim)) L.py+=4;
+  if(/\bfor\s+\w+\s+in\s+/.test(trim)) L.py+=2;
+  if(/\[[^\]]*\bfor\b[^\]]*\bin\b[^\]]*\]/.test(trim)) L.py+=3;
+  if(/\bprint\s*\(/.test(trim)) L.py+=1;
+  if(/\bself\b/.test(trim) && /\bdef\b/.test(trim)) L.py+=2;
+
+  if(/\b(const|let|var|function|console\.log|typeof|undefined|=>)\b/.test(trim)) L.js+=3;
+  if(/\b(interface|type\s+[A-Z]\w*\s*=|:\s*(string|number|boolean|any))\b/.test(trim)) L.ts+=4;
+  if(/\b(public|private|protected|static|void|System\.out)\b/.test(trim)) L.java+=3;
+  if(/#include\b|\bstd::|\bnullptr\b|\bint\s+main\s*\(/.test(trim)) L.cpp+=4;
+  if(/\b(namespace|using\s+System|Console\.Write)\b/.test(trim)) L.cs+=3;
+  if(/\b(func|package\s+main|fmt\.|:=)\b/.test(trim)) L.go+=3;
+  if(/\b(fn\s+|let\s+mut|impl\s+|pub\s+fn)\b/.test(trim)) L.rust+=4;
+  if(/<\/?[a-zA-Z][\w:-]*[^>]*>/.test(trim) && /<\w+/.test(trim)){ L.html+=4; score+=2; }
+  if(/\{[^}]*:[^}]*;[^}]*\}/.test(trim) && /\b(color|margin|display|flex)\b/.test(trim)) L.css+=3;
+  if(/\b(SELECT|INSERT|UPDATE|DELETE|FROM|WHERE|JOIN)\b/i.test(trim)) L.sql+=4;
+  if(/(^|\n)\s*(#!\/bin\/|echo\s+|export\s+\w+=)/.test(trim)) L.bash+=3;
+  if(/^\s*\w+:\s*.+$/m.test(trim) && !/[{};]/.test(trim) && nonEmpty.length>=3) L.yaml+=2;
+
+  let best='plain', bestN=0;
+  Object.keys(L).forEach(k=>{ if(L[k]>bestN){ bestN=L[k]; best=k; } });
+  score+=bestN;
+
+  if(fenceLang) return fenceLang==='plain' && bestN>=2 ? best : fenceLang;
+  // Порог: нужна явная языковая сигнатура или сильная структура
+  if(bestN>=3 && score>=5) return best;
+  if(bestN>=2 && score>=7) return best;
+  if(score>=9 && (indented>=2 || /[{};]/.test(trim))) return bestN>=1?best:'plain';
+  return null;
+}
+window._detectPasteCodeLang=_detectPasteCodeLang;
+
+/** Текст + язык → блок кода на слайде (для paste / импорта). */
+function insertCodeFromText(raw, lang, toastMsg){
+  if(typeof syntaxHighlight!=='function'){
+    if(typeof toast==='function') toast('Блок кода недоступен','err');
+    return false;
+  }
+  const code=String(raw||'');
+  const theme=(typeof getCodeThemeForPresTheme==='function')?getCodeThemeForPresTheme():'dark';
+  const T=(typeof CODE_THEMES!=='undefined'&&CODE_THEMES[theme])||{bg:'#0d1117'};
+  if(typeof pushUndo==='function') pushUndo();
+  const lines=Math.max(1, code.split(/\r?\n/).length);
+  const h=typeof snapV==='function'?snapV(Math.min(520, Math.max(140, 56+lines*20))):Math.min(520, Math.max(140, 56+lines*20));
+  const longest=code.split(/\r?\n/).reduce((m,l)=>Math.max(m,l.length),0);
+  const w=typeof snapV==='function'?snapV(Math.min(760, Math.max(420, 80+longest*8))):Math.min(760, Math.max(420, 80+longest*8));
+  const g=typeof _insertGeom==='function'?_insertGeom(w,h):{x:60,y:60,w,h};
+  const d={id:'e'+(++ec),type:'code',x:g.x,y:g.y,w:g.w,h:g.h,
+    codeLang:lang||'plain',codeTheme:theme,codeGlass:false,codeRaw:code,
+    codeHtml:syntaxHighlight(code,lang||'plain',theme),
+    codeBg:T.bg,codeFs:16,rot:0,anims:[]};
+  slides[cur].els.push(d);
+  if(typeof mkEl==='function') mkEl(d);
+  const el=document.getElementById('canvas')&&document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
+  if(el&&typeof pick==='function') pick(el);
+  if(typeof save==='function') save();
+  if(typeof drawThumbs==='function') drawThumbs();
+  if(typeof saveState==='function') saveState();
+  if(typeof toast==='function'){
+    const msg=toastMsg||(typeof t==='function'?t('toastCodePasted'):'Код вставлен');
+    toast(msg,'ok');
+  }
+  return true;
+}
+window.insertCodeFromText=insertCodeFromText;
+
 function _openCodeModalReady(){
   const modal=document.getElementById('code-modal');
   if(modal) modal.classList.add('open');
@@ -245,12 +363,14 @@ function insertCodeBlock(){
       d.codeBg=T.bg;
       const domEl=document.getElementById('canvas').querySelector('[data-id="'+d.id+'"]');
       if(domEl)renderCodeEl(domEl,d);
+      // Связанный HTML-фрейм («Показать код») — обновить отображение
+      if(typeof _hfSyncFromLinkedCode==='function') _hfSyncFromLinkedCode(d);
     }
   } else {
     const T=CODE_THEMES[theme]||CODE_THEMES.dark;
     const d={id:'e'+(++ec),type:'code',x:snapV(60),y:snapV(60),w:snapV(680),h:snapV(400),
       codeLang:lang,codeTheme:theme,codeGlass:codeGlass,codeRaw:raw,codeHtml:syntaxHighlight(raw,lang,theme),
-      codeBg:T.bg,codeFs:13,rot:0,anims:[]};
+      codeBg:T.bg,codeFs:16,rot:0,anims:[]};
     slides[cur].els.push(d);mkEl(d);
   }
   save();drawThumbs();saveState();

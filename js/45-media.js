@@ -15,6 +15,10 @@ function _mediaInsertNew(type) {
     maStart: 'click-el', maContinue: 'this', maLoop: false, maVolume: 1, maTriggerElIds: [],
     rot: 0, anims: []
   };
+  if (typeof _insertGeom === 'function') {
+    const g = _insertGeom(d.w, d.h);
+    d.x = g.x; d.y = g.y; d.w = g.w; d.h = g.h;
+  }
   slides[cur].els.push(d);
   mkEl(d);
   const cv = document.getElementById('canvas');
@@ -154,8 +158,83 @@ function _mediaShortSrc(src) {
   if (!src) return '—';
   if (src.startsWith('blob:')) return '(файл загружен)';
   if (src.startsWith('data:')) { const m = src.match(/^data:(audio|video)\/([^;]+)/); return m ? '(файл: '+m[2]+')' : '(файл загружен)'; }
+  if (/^audio\//i.test(src) || src.indexOf('/') < 0) {
+    try { return decodeURIComponent(src.split('/').pop() || src); } catch (e) { return src.split('/').pop() || src; }
+  }
   try { const u = new URL(src); return u.hostname + (u.pathname.length > 1 ? u.pathname.slice(0, 18) : ''); } catch(e) { return src.slice(0, 28); }
 }
+
+function _mediaAudioFileLabel(d) {
+  if (!d) return '';
+  if (d.mediaId) return '(файл в IndexedDB)';
+  if (d.mediaSrcType === 'data' || (d.mediaSrc && String(d.mediaSrc).startsWith('data:'))) return _mediaShortSrc(d.mediaSrc);
+  if (d.mediaSrc) return _mediaShortSrc(d.mediaSrc);
+  return '';
+}
+
+function _mediaGetAudioLibrary() {
+  return Array.isArray(window._AUDIO_LIBRARY) ? window._AUDIO_LIBRARY : [];
+}
+
+function _mediaCloseSoundsMenu() {
+  const menu = document.getElementById('map-sounds-menu');
+  if (menu) menu.hidden = true;
+  document.removeEventListener('mousedown', _mediaSoundsOutsideClose, true);
+}
+
+function _mediaSoundsOutsideClose(e) {
+  const wrap = document.querySelector('.map-sounds-wrap');
+  if (wrap && wrap.contains(e.target)) return;
+  _mediaCloseSoundsMenu();
+}
+
+function _mediaToggleSoundsMenu(ev) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  const menu = document.getElementById('map-sounds-menu');
+  if (!menu) return;
+  if (!menu.hidden) { _mediaCloseSoundsMenu(); return; }
+  const lib = _mediaGetAudioLibrary();
+  if (!lib.length) {
+    menu.innerHTML = '<div class="map-sounds-empty">Папка audio/ пуста.<br>Добавьте .ogg / .mp3 / .wav / .mp4 и запустите update-audio.bat</div>';
+  } else {
+    menu.innerHTML = lib.map(function(item, i) {
+      const label = (item.name || item.file || ('Звук ' + (i + 1))).replace(/</g, '&lt;');
+      const title = (item.path || item.file || '').replace(/"/g, '&quot;');
+      return '<button type="button" data-aud-idx="' + i + '" title="' + title + '">' + label + '</button>';
+    }).join('');
+    menu.querySelectorAll('button[data-aud-idx]').forEach(function(btn) {
+      btn.onclick = function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const idx = +btn.getAttribute('data-aud-idx');
+        _mediaSelectLibrarySound(lib[idx]);
+        _mediaCloseSoundsMenu();
+      };
+    });
+  }
+  menu.hidden = false;
+  document.addEventListener('mousedown', _mediaSoundsOutsideClose, true);
+}
+
+function _mediaSelectLibrarySound(item) {
+  if (!sel || !item || !item.path) return;
+  const d = slides[cur] && slides[cur].els.find(e => e.id === sel.dataset.id); if (!d) return;
+  d.mediaSrc = item.path;
+  d.mediaSrcType = 'url';
+  delete d.mediaId;
+  const fn = document.getElementById('map-file-name');
+  if (fn) fn.textContent = item.name || item.file || item.path;
+  const se = document.getElementById('map-src');
+  if (se) se.value = item.path;
+  _mediaRenderPlayer(sel, d);
+  if (typeof save === 'function') save();
+  if (typeof saveState === 'function') saveState();
+  if (typeof drawThumbs === 'function') drawThumbs();
+  if (typeof toast === 'function') toast('Звук: ' + (item.name || item.file));
+}
+window._mediaToggleSoundsMenu = _mediaToggleSoundsMenu;
+window._mediaSelectLibrarySound = _mediaSelectLibrarySound;
+window._mediaCloseSoundsMenu = _mediaCloseSoundsMenu;
 
 function _mediaTriggerLabel(elId) {
   if (!elId || !slides[cur]) return elId;
@@ -306,7 +385,7 @@ function syncMediaProps() {
     const st = document.getElementById('mvp-start'); if (st) st.value = d.mvStart||'click';
   } else {
     const se = document.getElementById('map-src'); if (se) se.value = d.mediaSrcType === 'url' ? (d.mediaSrc||'') : '';
-    const fn = document.getElementById('map-file-name'); if (fn) fn.textContent = d.mediaSrcType === 'data' ? _mediaShortSrc(d.mediaSrc) : '';
+    const fn = document.getElementById('map-file-name'); if (fn) fn.textContent = _mediaAudioFileLabel(d);
     const st = document.getElementById('map-start'); if (st) st.value = d.maStart||'click-el';
     const co = document.getElementById('map-continue'); if (co) co.value = d.maContinue||'this';
     const lp = document.getElementById('map-loop'); if (lp) lp.value = d.maLoop ? '1' : '0';
