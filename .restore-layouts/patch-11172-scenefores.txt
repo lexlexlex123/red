@@ -1,0 +1,3 @@
+        scene+=forestLayer(c28,1,null,'bottom',sx,xa,P.deer);
+        scene+=forestGrassLayer(c18,sx,xa,P);
+        scene+=mistContentFrontBottom();

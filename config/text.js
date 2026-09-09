@@ -12,12 +12,14 @@ window.CFG_TEXT = {
     height: 120,
     role:   'body',   // 'body' | 'heading'
     placeholder: 'Double-click to edit',
+    // Встроенный шрифт (fonts/fonts-data.js) — одинаковая вёрстка на всех ОС
+    fontFamily: 'timesnewromanpsmt',
 
     // CSS-стили для body-текста
-    bodyStyle: 'font-size:36px;font-weight:400;color:#ffffff;text-align:left;line-height:1.2;',
+    bodyStyle: 'font-family:timesnewromanpsmt;font-size:36px;font-weight:400;color:#ffffff;text-align:left;line-height:1.2;',
 
     // CSS-стили для heading-текста
-    headingStyle: 'font-size:52px;font-weight:700;color:#818cf8;text-align:left;line-height:1.1;text-transform:uppercase;',
+    headingStyle: 'font-family:timesnewromanpsmt;font-size:52px;font-weight:700;color:#818cf8;text-align:left;line-height:1.1;text-transform:uppercase;',
   },
 
   // ── Набор предустановленных размеров шрифта ───────────────────

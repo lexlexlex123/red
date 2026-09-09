@@ -35,6 +35,13 @@ node images\build-index.js
 echo Код завершения: %errorlevel%
 echo.
 
+if exist "tools\_gen-image-index.mjs" (
+    echo Синхронизация React src\editor\image-index.js ...
+    node tools\_gen-image-index.mjs
+    echo Код завершения: %errorlevel%
+    echo.
+)
+
 if exist "images\image-index.js" (
     echo [OK] image-index.js создан
 ) else (

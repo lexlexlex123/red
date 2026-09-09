@@ -1,0 +1,232 @@
+      const vbStr=(FP&&FP.viewBox)||'0 0 1002.3298 509.91534';
+      const vbParts=vbStr.trim().split(/[\s,]+/).map(Number);
+      const vbW=vbParts[2]||1002.3298, vbH=vbParts[3]||509.91534;
+      // Палитра: «18»/«19»/«28» (col/row 0-based: 0,7 / 0,8 / 1,7)
+      const _thF=typeof _activeThemeForScheme==='function'?_activeThemeForScheme():null;
+      const _sw=(col,row,fb)=>((_thF&&typeof _schemeSwatchColor==='function'&&_schemeSwatchColor(_thF,col,row))||fb);
+      const c18=_sw(0,7,a1);
+      const c19=_sw(0,8,a2);
+      const c28=_sw(1,7,a1);
+      // Дымка: всегда белая @ 40%
+      const c88='#ffffff';
+      const fogOp=0.40;
+
+      // Дымка: сплошные полосы + волнистый верх (без отрывающихся «языков»).
+      let fogSeq=0;
+      function fogGrad(opBot,seed,dur){
+        const gid=uid+'fg'+(fogSeq++);
+        const opMid=(opBot*0.48).toFixed(2);
+        const opPeak=opBot.toFixed(2);
+        const opLo=(opBot*0.8).toFixed(2);
+        let g='<linearGradient id="'+gid+'" x1="0" y1="0" x2="0" y2="1">'+
+          '<stop offset="0%" stop-color="'+c88+'" stop-opacity="0"/>'+
+          '<stop offset="22%" stop-color="'+c88+'" stop-opacity="0.05"/>'+
+          '<stop offset="48%" stop-color="'+c88+'" stop-opacity="'+opMid+'"/>'+
+          '<stop offset="78%" stop-color="'+c88+'" stop-opacity="'+opPeak+'">'+
+            (doAnimate?'<animate attributeName="stop-opacity" values="'+opLo+';'+opPeak+';'+opLo+';'+opPeak+'" dur="'+dur+'s" begin="'+((-rng(seed)*dur).toFixed(2))+'s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1"/>':'')+
+          '</stop>'+
+          '<stop offset="100%" stop-color="'+c88+'" stop-opacity="'+opPeak+'"/>'+
+          '</linearGradient>';
+        return {gid, def:g};
+      }
+
+      function fogShelf(y,height,opBot,seed,dur,opts){
+        opts=opts||{};
+        const {gid,def}=fogGrad(opBot==null?fogOp:opBot,seed,dur);
+        const x0=-(w*0.45), ww=w*1.9;
+        const travel=opts.travel!=null?opts.travel:0.30;
+        const dir=opts.dir!=null?opts.dir:1;
+        const dx=f(dir*w*travel), dx2=f(-dir*w*travel*0.6), dx3=f(dir*w*travel*0.3);
+        let el=def+'<rect x="'+f(x0)+'" y="'+f(y)+'" width="'+f(ww)+'" height="'+f(height)+'" fill="url(#'+gid+')"';
+        if(doAnimate){
+          const begin=(-rng(seed+1)*dur).toFixed(2);
+          el+='><animateTransform attributeName="transform" type="translate" values="0 0;'+dx+' 0;'+dx2+' 0;'+dx3+' 0;0 0" dur="'+dur+'s" begin="'+begin+'s" repeatCount="indefinite" calcMode="spline" keySplines="0.3 0 0.7 1;0.3 0 0.7 1;0.3 0 0.7 1;0.3 0 0.7 1"/></rect>';
+        } else el+='/>';
+        return el;
+      }
+
+      function fogWave(yTop,yBot,opBot,seed,dur,opts){
+        opts=opts||{};
+        const {gid,def}=fogGrad(opBot==null?fogOp:opBot,seed,dur);
+        const x0=-(w*0.5), x1=w*1.5;
+        const n=7;
+        const amp=opts.amp!=null?opts.amp:(h*(0.06+rng(seed)*0.08));
+        function crest(phase){
+          let d='M '+f(x0)+','+f(yBot)+' L '+f(x1)+','+f(yBot)+' L '+f(x1)+','+f(yTop);
+          for(let i=n;i>=0;i--){
+            const t=i/n;
+            const x=x0+(x1-x0)*t;
+            const jagged=(rng(seed*10+i+phase)-0.5)*amp*1.4;
+            const wave=Math.sin(t*Math.PI*2.2+phase)*amp*0.55+Math.sin(t*Math.PI*5.1+phase*1.7)*amp*0.25;
+            const y=yTop+wave+jagged;
+            if(i===n) d+=' L '+f(x)+','+f(y);
+            else {
+              const t2=(i+0.5)/n;
+              const x2=x0+(x1-x0)*t2;
+              const j2=(rng(seed*10+i+0.5+phase)-0.5)*amp;
+              const w2=Math.sin(t2*Math.PI*2.2+phase)*amp*0.55;
+              d+=' Q '+f(x2)+','+f(yTop+w2+j2)+' '+f(x)+','+f(y);
+            }
+          }
+          d+=' Z';
+          return d;
+        }
+        const d0=crest(0), d1=crest(1.7), d2=crest(3.1);
+        const travel=opts.travel!=null?opts.travel:0.28;
+        const dir=opts.dir!=null?opts.dir:1;
+        const dx=f(dir*w*travel), dx2=f(-dir*w*travel*0.55);
+        let el=def+'<path fill="url(#'+gid+')" d="'+d0+'"';
+        if(doAnimate){
+          const begin=(-rng(seed+2)*dur).toFixed(2);
+          el+='><animate attributeName="d" values="'+d0+';'+d1+';'+d2+';'+d0+'" dur="'+dur+'s" begin="'+begin+'s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1"/>'+
+            '<animateTransform attributeName="transform" type="translate" values="0 0;'+dx+' 0;'+dx2+' 0;0 0" dur="'+(dur*1.15).toFixed(1)+'s" begin="'+begin+'s" repeatCount="indefinite" calcMode="spline" keySplines="0.35 0 0.65 1;0.35 0 0.65 1;0.35 0 0.65 1"/></path>';
+        } else el+='/>';
+        return el;
+      }
+
+      function mistBeltDeep(){
+        return fogWave(h*0.22,h*1.08,fogOp,0.5,10,{travel:0.32,dir:1,amp:h*0.09})+
+          fogShelf(h*0.55,h*0.55,fogOp,0.8,12,{travel:0.22,dir:-1});
+      }
+
+      function mistBeltMid(){
+        return fogWave(h*0.18,h*1.05,fogOp,1.2,8,{travel:0.36,dir:-1,amp:h*0.11})+
+          fogWave(h*0.32,h*1.02,fogOp,1.8,11,{travel:0.28,dir:1,amp:h*0.08});
+      }
+
+      function mistBeltFront(){
+        return fogWave(h*0.42,h*1.18,fogOp,3,7,{travel:0.40,dir:1,amp:h*0.10})+
+          fogWave(h*0.58,h*1.15,fogOp,3.5,9,{travel:0.34,dir:-1,amp:h*0.07})+
+          fogShelf(h*0.78,h*0.40,fogOp,4,8,{travel:0.30,dir:1});
+      }
+
+      // Вырезать элемент по id из Inkscape-разметки (g с вложенностью или path).
+      function extractById(html,id){
+        if(!html||!id) return '';
+        const needle='id="'+id+'"';
+        const at=html.indexOf(needle);
+        if(at<0) return '';
+        const start=html.lastIndexOf('<',at);
+        if(start<0) return '';
+        if(html.slice(start,start+5)==='<path'){
+          const gt=html.indexOf('>',at);
+          if(gt<0) return '';
+          if(html.charAt(gt-1)==='/') return html.slice(start,gt+1);
+          const end=html.indexOf('</path>',gt);
+          return end<0?'':html.slice(start,end+7);
+        }
+        if(html.slice(start,start+2)!=='<g') return '';
+        let i=html.indexOf('>',at)+1, depth=1;
+        while(i<html.length&&depth>0){
+          const nextOpen=html.indexOf('<g',i);
+          const nextClose=html.indexOf('</g>',i);
+          if(nextClose<0) break;
+          if(nextOpen>=0&&nextOpen<nextClose){ depth++; i=nextOpen+2; }
+          else { depth--; i=nextClose+4; if(depth===0) return html.slice(start,i); }
+        }
+        return '';
+      }
+
+      function paintForestMarkup(html,color){
+        if(!html) return '';
+        return html.replace(/#d40000/gi,color).replace(/#000000/gi,color);
+      }
+
+      // Разметка побочного: деревья / олени / трава (кусты).
+      let contentParts=null;
+      if(FP&&FP.markup&&!isTitle){
+        const loose=['path10138','path4345','path4349','path4487','path4507','path4517','path4539','path4551','path4583']
+          .map(id=>extractById(FP.markup,id)).join('');
+        contentParts={
+          trees:extractById(FP.markup,'g11470')+loose,
+          deer:extractById(FP.markup,'path10598')+extractById(FP.markup,'path10595'),
+          grass:extractById(FP.markup,'g9841')+extractById(FP.markup,'g9841-2'),
+        };
+      }
+
+      // Inkscape / path-defs. Ширина с bleed — низ уходит за clipPath.
+      // xAlign — доля ширины для левого края SVG (null = по центру).
+      // yAlign: число = центр; 'bottom' = низ SVG на нижнем крае слайда.
+      // partMarkup — готовый фрагмент (побочный: trees/deer/grass); иначе canopy/trees как раньше.
+      function forestLayer(fill,treesOp,canopyOp,yAlign,scaleX,xAlign,partMarkup){
+        if(!FP) return '';
+        const hasMarkup=!!FP.markup;
+        if(!hasMarkup&&!FP.trees&&!partMarkup) return '';
+        scaleX=scaleX==null?1.22:scaleX;
+        const drawW=w*scaleX;
+        const drawH=drawW*(vbH/vbW);
+        const xOff=xAlign==null?(w-drawW)/2:w*xAlign;
+        const y=yAlign==='bottom'?(h-drawH)
+          :(yAlign==null?(h-drawH*0.88):(h*yAlign-drawH*0.5));
+        let g='<svg x="'+f(xOff)+'" y="'+f(y)+'" width="'+f(drawW)+'" height="'+f(drawH)+'" viewBox="'+vbStr+'" preserveAspectRatio="xMidYMax meet" overflow="visible">';
+        const gxf=FP.groupTransform||'';
+        if(partMarkup){
+          g+='<g'+(gxf?' transform="'+gxf+'"':'')+'>'+paintForestMarkup(partMarkup,fill)+'</g>';
+        } else if(hasMarkup){
+          // Титул: canopy = #d40000, trees = #000000
+          const wrap=(mode,op)=>{
+            if(op==null||!(+op>0)) return '';
+            let mk=FP.markup;
+            if(mode==='canopy') mk=mk.replace(/#d40000/gi,fill).replace(/#000000/gi,'none');
+            else mk=mk.replace(/#d40000/gi,'none').replace(/#000000/gi,fill);
+            return '<g'+(gxf?' transform="'+gxf+'"':'')+' opacity="'+op+'">'+mk+'</g>';
+          };
+          if(canopyOp!=null&&+canopyOp>0) g+=wrap('canopy',canopyOp);
+          if(+treesOp>0) g+=wrap('trees',treesOp);
+        } else {
+          g+='<g fill="'+fill+'">';
+          if(canopyOp!=null&&+canopyOp>0&&FP.canopy) g+='<use href="#'+uid+'canopyG" opacity="'+canopyOp+'"/>';
+          if(+treesOp>0) g+='<use href="#'+uid+'treesG" opacity="'+treesOp+'"/>';
+          g+='</g>';
+        }
+        g+='</svg>';
+        return g;
+      }
+
+      let inkDefs='';
+      if(FP&&FP.trees&&!FP.markup){
+        // Transform must live on the <use> target group (parent of path), not only on path id
+        const gxf=FP.groupTransform||'translate(187.09185,197.45552)';
+        inkDefs=(FP.canopy?'<g id="'+uid+'canopyG" transform="'+gxf+'"><path d="'+FP.canopy+'"/></g>':'')+
+          '<g id="'+uid+'treesG" transform="'+gxf+'"><path d="'+FP.trees+'"/></g>';
+      }
+
+      const defs='<defs>'+
+        '<linearGradient id="'+uid+'sky" x1="0" y1="0" x2="0" y2="1">'+
+          '<stop offset="0%" stop-color="'+c18+'" stop-opacity="0.04"/>'+
+          '<stop offset="65%" stop-color="'+c19+'" stop-opacity="0.08"/>'+
+          '<stop offset="100%" stop-color="'+c19+'" stop-opacity="0.20"/>'+
+        '</linearGradient>'+
+        '<clipPath id="'+uid+'cp"><rect width="'+w+'" height="'+h+'"/></clipPath>'+
+        inkDefs+
+        '</defs>';
+
+      let scene='<rect width="'+w+'" height="'+h+'" fill="url(#'+uid+'sky)"/>';
+
+      if(isTitle){
+        // Назад → вперёд: слой2 «19» (canopy), слой1 «18» (trees)
+        const sx=1.28, ya=0.66;
+        scene+=mistBeltDeep();
+        scene+=forestLayer(c19,'0','1',ya,sx);
+        scene+=mistBeltMid();
+        scene+=forestLayer(c18,'1',null,ya,sx);
+        scene+=mistBeltFront();
+      } else {
+        // +30px вправо от предыдущего xa; низ SVG = низ слайда
+        // Слои сзади вперёд: деревья«19» → олень«28» → трава«18»
+        const sx=1.741, xa=-0.55+30/w;
+        const P=contentParts||{};
+        scene+=mistBeltDeep();
+        scene+=forestLayer(c19,1,null,'bottom',sx,xa,P.trees);
+        scene+=mistBeltMid();
+        scene+=forestLayer(c28,1,null,'bottom',sx,xa,P.deer);
+        scene+=forestLayer(c18,1,null,'bottom',sx,xa,P.grass);
+        scene+=mistBeltFront();
+      }
+
+      return '<svg xmlns="http://www.w3.org/2000/svg" width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'">'+defs+'<g clip-path="url(#'+uid+'cp)">'+scene+'</g></svg>';
+    },
+    titleSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,true,doAnimate!==false);},
+    contentSvg(w,h,a1,a2,doAnimate){return this._build(w,h,a1,a2,false,doAnimate!==false);},
+  },
+  {

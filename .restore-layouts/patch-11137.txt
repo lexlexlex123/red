@@ -1,0 +1,4 @@
+      function fogFlameBand(yFloor,yCeil,seed,dur,layerOp,extraY){
+        extraY=extraY||0;
+        const yOff=fogYOff+fogYContent+extraY;
+        const yF=yFloor+yOff, yC=yCeil+yOff;

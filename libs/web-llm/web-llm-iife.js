@@ -13002,8 +13002,5 @@ class ServiceWorkerMLCEngine extends WebWorkerMLCEngine {
     }
 }
 
-//# sourceMappingURL=index.js.map
-
 window._WebLLMLib = { CreateMLCEngine };
 })();
-//# sourceMappingURL removed

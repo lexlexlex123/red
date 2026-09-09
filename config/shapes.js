@@ -13,9 +13,9 @@ window.CFG_SHAPES = {
   defaults: {
     width:  200,
     height: 200,
-    fill:   '#3b82f6',
-    stroke: '#1d4ed8',
-    strokeWidth: 2,
+    fill:   '#64748b',  // palette 15
+    stroke: '#475569',  // palette 14
+    strokeWidth: 0,
     fillOpacity: 1,
     shadow: false,
     shadowBlur: 8,
