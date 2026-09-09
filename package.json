@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "vite build && node scripts/copy-dist-assets.mjs",
     "preview": "vite preview --host 127.0.0.1 --port 8000",
+    "server": "node js/server.js",
     "start": "vite",
     "fonts": "powershell -NoProfile -ExecutionPolicy Bypass -File ./download-fonts.ps1 -NoPause",
     "images": "node images/build-index.js && node tools/_gen-image-index.mjs",

@@ -164,7 +164,6 @@ export const usePresentationStore = create((set, get) => ({
   drawNeonBright: 75,
   clipboard: null,
   slideClipboard: null,
-  clipSource: 'elements',
   slideMultiSel: [],
   slideSelAnchor: 0,
 
@@ -368,7 +367,7 @@ export const usePresentationStore = create((set, get) => ({
       .filter(Boolean)
       .map((s) => clone(s));
     if (!pack.length) return 0;
-    set({ slideClipboard: pack, clipboard: null, clipSource: 'slides' });
+    set({ slideClipboard: pack, clipboard: null });
     return pack.length;
   },
 
@@ -625,11 +624,7 @@ export const usePresentationStore = create((set, get) => ({
     const i = get().cur;
     if (!slides[i]?.connectors) return;
     slides[i].connectors = slides[i].connectors.filter((c) => String(c.id) !== String(id));
-    // Only remove elements whose rideConnId explicitly references this connector
-    slides[i].els = (slides[i].els || []).filter((e) => {
-      const rideConnId = e.rideConnId;
-      return rideConnId == null || String(rideConnId) !== String(id);
-    });
+    slides[i].els = (slides[i].els || []).filter((e) => String(e.rideConnId) !== String(id));
     set({ slides });
     get().persist();
   },

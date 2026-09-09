@@ -142,18 +142,14 @@ export function slideBgImgLayer(bg, canvasW = DEFAULT_CANVAS_W, canvasH = DEFAUL
       th = tileSize;
       tw = tileSize * imgAr;
     }
-    // FIXED: compute cols/rows once based on tileSize (no gap) so they don't jump
-    // when gap slider is dragged. This keeps the DOM stable for CSS transitions.
-    const cellWNoGap = tw;
-    const cellHNoGap = th;
-    const diag = Math.sqrt(canvasW * canvasW + canvasH * canvasH) * 2;
-    const cols = Math.ceil(diag / cellWNoGap) + 4;
-    const rows = Math.ceil(diag / cellHNoGap) + 4;
     const cellW = tw + gap;
     const cellH = th + gap;
-    // Match legacy v7.1 centering: integer-based, symmetric from center
-    const startX = -Math.ceil(cols / 2) * cellW;
-    const startY = -Math.ceil(rows / 2) * cellH;
+    // Calculate how many tiles we need to cover the canvas (with rotation margin)
+    const diag = Math.sqrt(canvasW * canvasW + canvasH * canvasH) * 1.5;
+    const cols = Math.ceil(diag / cellW) + 2;
+    const rows = Math.ceil(diag / cellH) + 2;
+    const startX = -(cols * cellW) / 2;
+    const startY = -(rows * cellH) / 2;
     // Build tile positions
     const tiles = [];
     for (let row = 0; row < rows; row++) {

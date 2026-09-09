@@ -1009,10 +1009,10 @@ export const editorApi = {
 
   deleteSelected() {
     const { selId, multiSel, selConnId, selInkIds } = useSelectionStore.getState();
-    // Always delete ink first if ink is selected (ink may be co-selected with objects)
-    if (selInkIds?.length) {
+    if (selInkIds?.length && !selId && !(multiSel && multiSel.length) && !selConnId) {
       withHistory(() => usePresentationStore.getState().deleteInkByIds(selInkIds));
       useSelectionStore.getState().clearInkSelection();
+      return;
     }
     if (selConnId && !selId && !(multiSel && multiSel.length)) {
       withHistory(() => usePresentationStore.getState().deleteConnector(selConnId));
@@ -1020,7 +1020,13 @@ export const editorApi = {
       return;
     }
     const ids = multiSel?.length ? multiSel : selId ? [selId] : [];
-    if (!ids.length) return;
+    if (!ids.length) {
+      if (selInkIds?.length) {
+        withHistory(() => usePresentationStore.getState().deleteInkByIds(selInkIds));
+        useSelectionStore.getState().clearInkSelection();
+      }
+      return;
+    }
     withHistory(() => usePresentationStore.getState().deleteIds(ids));
     pick(null);
   },
@@ -3378,7 +3384,7 @@ export const editorApi = {
       .filter((e) => e && ids.includes(String(e.id)) && !e._isDecor && e.type !== 'pagenum')
       .map((e) => JSON.parse(JSON.stringify(e)));
     if (!els.length) return;
-    usePresentationStore.setState({ clipboard: { els }, slideClipboard: null, clipSource: 'elements' });
+    usePresentationStore.setState({ clipboard: { els }, slideClipboard: null });
     writeOsClipboard(els).catch(() => {});
     useUiStore.getState().showToast(ru() ? `Скопировано: ${els.length}` : `Copied: ${els.length}`, 'ok');
   },

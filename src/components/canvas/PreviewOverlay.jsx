@@ -84,7 +84,6 @@ import { textGlyphShadowStyle, textBlockShadowStyle } from '../../editor/textSha
 import { textPadCss } from '../../editor/textPad.js';
 import { textBorderRadiusCss } from '../../editor/textRadius.js';
 import SlideBgImgLayer from './SlideBgImgLayer.jsx';
-import { morphMatchKey, morphEligible, morphPlainText, morphTextBlocksMatch, runMorphTransition, findElById } from '../../editor/morphPlay.js';
 import { slideSolidBg } from '../../editor/slideBgImg.js';
 
 function isSpecialAnim(name) {
@@ -1019,9 +1018,6 @@ export default function PreviewOverlay() {
   const [camTransform, setCamTransform] = useState(null);
   const [vp, setVp] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }));
   const [black, setBlack] = useState(false);
-  const [morphing, setMorphing] = useState(false);
-  const [morphFromIdx, setMorphFromIdx] = useState(-1);
-  const morphPairsRef = useRef([]);
   const busy = useRef(false);
   const overlayRef = useRef(null);
   const idxRef = useRef(from);
@@ -1729,69 +1725,18 @@ export default function PreviewOverlay() {
     const dest = Math.max(0, Math.min(list.length - 1, next | 0));
     if (dest === idxRef.current) return;
     clearAutoTimer();
-    const fromSlide = slides[idxRef.current] || {};
-    const toSlide = list[dest] || {};
+    const slide = list[dest] || {};
     const gTrans = usePresentationStore.getState().globalTrans;
     const gDur = usePresentationStore.getState().globalTransDur;
-    const trans = effectiveTrans(toSlide, gTrans);
-    const ms = effectiveTransDur(toSlide, gDur);
-
-    // Morph transition: animate existing DOM elements
-    if (trans === 'morph' && ms > 0 && stageRef.current) {
-      console.log('[Morph] Starting morph transition:', { fromIdx: idxRef.current, toIdx: dest, fromEls: fromSlide.els?.length, toEls: toSlide.els?.length });
-      
-      busy.current = true;
-      setMorphing(true);
-      
-      // Hide the stage temporarily to prevent flash
-      const stage = stageRef.current;
-      stage.style.opacity = '0';
-      
-      // Update state - React will render toSlide
-      idxRef.current = dest;
-      setDur(ms);
-      setIdx(dest);
-      
-      // After React renders, run morph animation
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          if (!stageRef.current) {
-            console.log('[Morph] Stage not ready');
-            setMorphing(false);
-            setAnimKey((k) => k + 1);
-            initSlideAnims(toSlide);
-            return;
-          }
-
-          console.log('[Morph] Stage ready, calling runMorphTransition');
-
-          // Use the standardized morph transition function
-          runMorphTransition(
-            fromSlide,
-            toSlide,
-            (id) => findElById(stageRef.current, id),
-            ms,
-            () => {
-              busy.current = false;
-              setMorphing(false);
-              morphPairsRef.current = [];
-              setAnimKey((k) => k + 1);
-            }
-          );
-        });
-      });
-      return;
-    }
-
-    // Default path: change animKey to trigger React re-render
+    const trans = effectiveTrans(slide, gTrans);
+    const ms = effectiveTransDur(slide, gDur);
     idxRef.current = dest;
     setDur(ms);
-    setIdx(dest);
+    setAnimClass(enterClass(trans));
     setAnimKey((k) => k + 1);
-    initSlideAnims(toSlide);
-
+    setIdx(dest);
+    initSlideAnims(slide);
     if (trans !== 'none' && ms > 0) {
-      setAnimClass(enterClass(trans));
       busy.current = true;
       clearBusyTimer();
       busyTimerRef.current = window.setTimeout(() => {

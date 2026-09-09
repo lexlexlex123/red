@@ -31,14 +31,6 @@ export function getClipSource() {
   return clipSource;
 }
 
-/** Reset clip source to elements — call when user copies elements or selects canvas objects. */
-export function resetClipSource() {
-  clipSource = 'elements';
-  try {
-    localStorage.setItem(KEY_META, JSON.stringify({ kind: 'elements', t: Date.now() }));
-  } catch (e) {}
-}
-
 export function isSystemClipText(text) {
   return String(text || '').includes(MAGIC);
 }
@@ -104,13 +96,6 @@ function saveMeta(kind, t) {
     localStorage.setItem(KEY_META, JSON.stringify({ kind, t: ts }));
     clipSource = kind;
     appClipAt = ts;
-  } catch (e) {}
-}
-
-/** Clear element clipboard state — call when copying slides to prevent element paste. */
-export function clearElementClipboard() {
-  try {
-    localStorage.removeItem(KEY_EL);
   } catch (e) {}
 }
 

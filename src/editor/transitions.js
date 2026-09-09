@@ -164,24 +164,20 @@ export function enterClass(trans) {
     case 'morph':
       return 'pv-enter-fade';
     case 'slide':
-      return 'pv-enter-slide';
     case 'push':
-      return 'pv-enter-push';
     case 'wipe':
-      return 'pv-enter-wipe';
     case 'reveal':
-      return 'pv-enter-reveal';
+      return 'pv-enter-slide';
     case 'slideUp':
       return 'pv-enter-slide-up';
     case 'zoom':
+    case 'cube':
       return 'pv-enter-zoom';
     case 'zoomOut':
       return 'pv-enter-zoom-out';
     case 'flip':
     case 'flipV':
       return 'pv-enter-flip';
-    case 'cube':
-      return 'pv-enter-cube';
     case 'glitch':
       return 'pv-enter-glitch';
     case 'split':
@@ -207,11 +203,7 @@ export const PLAYBACK_TRANS_CSS = `
 .pv-enter-zoom-out{animation:pvZoomOut var(--pv-dur,500ms) ease both}
 .pv-enter-flip{animation:pvFlip var(--pv-dur,500ms) ease both;transform-style:preserve-3d}
 .pv-enter-glitch{animation:pvGlitch var(--pv-dur,500ms) steps(2,end) both}
-.pv-enter-split{animation:pvSplit var(--pv-dur,500ms) ease both}
-.pv-enter-push{animation:pvPush var(--pv-dur,500ms) ease both}
-.pv-enter-wipe{animation:pvWipe var(--pv-dur,500ms) ease both}
-.pv-enter-reveal{animation:pvReveal var(--pv-dur,500ms) ease both}
-.pv-enter-cube{animation:pvCube var(--pv-dur,500ms) ease both;transform-style:preserve-3d}
+.pv-enter-split{animation:pvFade var(--pv-dur,500ms) ease both}
 @keyframes pvFade{from{opacity:0}to{opacity:1}}
 @keyframes pvSlide{from{opacity:.4;transform:translateX(8%)}to{opacity:1;transform:none}}
 @keyframes pvSlideUp{from{opacity:.4;transform:translateY(10%)}to{opacity:1;transform:none}}
@@ -219,10 +211,5 @@ export const PLAYBACK_TRANS_CSS = `
 @keyframes pvZoomOut{from{opacity:.3;transform:scale(1.14)}to{opacity:1;transform:none}}
 @keyframes pvFlip{from{opacity:.5;transform:perspective(1200px) rotateY(-55deg)}to{opacity:1;transform:none}}
 @keyframes pvGlitch{0%{transform:translate(0,0);filter:none}25%{transform:translate(-6px,2px);filter:hue-rotate(90deg)}50%{transform:translate(5px,-2px);filter:hue-rotate(-40deg)}100%{transform:none;filter:none}}
-@keyframes pvSplit{from{opacity:0;transform:scaleY(0)}to{opacity:1;transform:scaleY(1)}}
-@keyframes pvPush{from{opacity:.4;transform:translateX(10%)}to{opacity:1;transform:none}}
-@keyframes pvWipe{from{opacity:0;clip-path:polygon(0 0,0 0,0 100%,0 100%)}to{opacity:1;clip-path:polygon(0 0,100% 0,100% 100%,0 100%)}}
-@keyframes pvReveal{from{opacity:.4;transform:translateX(-10%)}to{opacity:1;transform:none}}
-@keyframes pvCube{from{opacity:.5;transform:perspective(1000px) rotateX(-45deg)}to{opacity:1;transform:none}}
 `.replace(/\n/g, '');
 

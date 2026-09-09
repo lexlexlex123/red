@@ -172,8 +172,7 @@ export default function App() {
       } else if (mod && k === 'd') {
         if (typing) return;
         e.preventDefault();
-        const onThumbStrip = !!e.target?.closest?.('.thumb-strip') || !!document.activeElement?.closest?.('.thumb-strip');
-        if (onThumbStrip) {
+        if (e.target?.closest?.('.thumb-strip')) {
           editorApi.dupSlide(usePresentationStore.getState().cur);
         } else {
           editorApi.dupSelected();
@@ -185,18 +184,16 @@ export default function App() {
       } else if (mod && k === 'c') {
         if (typing) return;
         e.preventDefault();
-        const onCanvas = !!e.target?.closest?.('.react-slide-stage') || !!e.target?.closest?.('#canvas') || !!e.target?.closest?.('.react-el');
-        if (onCanvas) editorApi.copySelected();
-        else editorApi.copySlidesSelected();
+        if (e.target?.closest?.('.thumb-strip')) editorApi.copySlidesSelected();
+        else editorApi.copySelected();
       } else if (mod && e.shiftKey && k === 'v') {
         if (typing) return;
         e.preventDefault();
         editorApi.pasteStyle();
       } else if (mod && k === 'v') {
+        // Do not preventDefault — native paste event carries clipboardData
+        // (images / URL / text). Keydown paste would steal from OS bitmap.
         if (typing) return;
-        e.preventDefault();
-        const onCanvas = !!e.target?.closest?.('.react-slide-stage') || !!e.target?.closest?.('#canvas') || !!e.target?.closest?.('.react-el');
-        editorApi.pasteSelected({ preferThumbStrip: !onCanvas });
       } else if (mod && k === 'a') {
         if (typing) return;
         e.preventDefault();
@@ -246,19 +243,12 @@ export default function App() {
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         if (typing) return;
         e.preventDefault();
-        const st = usePresentationStore.getState();
-        const { selId, multiSel, selInkIds } = useSelectionStore.getState();
-        const onThumbStrip = !!e.target?.closest?.('.thumb-strip');
-        // If thumb strip is focused, always delete slides
-        if (onThumbStrip || st.slideMultiSel?.length) {
+        if (e.target?.closest?.('.thumb-strip')) {
+          const st = usePresentationStore.getState();
           const ids = st.slideMultiSel?.length ? st.slideMultiSel : [st.cur];
           editorApi.delSlides(ids);
-        } else if (selId || multiSel?.length || selInkIds?.length) {
-          // Element(s) selected — delete elements
-          editorApi.deleteSelected();
         } else {
-          // Nothing selected — delete current slide
-          editorApi.delSlides([st.cur]);
+          editorApi.deleteSelected();
         }
       } else if (!typing && !mod && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
         e.preventDefault();

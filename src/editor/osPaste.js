@@ -15,7 +15,6 @@ import {
   isSystemClipText,
   readOsClipboard,
   readOsSlideClipboard,
-  peekLocalSlides,
 } from './osClipboard.js';
 import { getTheme, resolveSchemeColor } from './themes.js';
 import { DEFAULT_CANVAS_W, DEFAULT_CANVAS_H } from './canvasDims.js';
@@ -140,52 +139,25 @@ export async function dispatchPaste(api, bag = {}) {
 
   const pasteAppSlides = async () => {
     let slides = api._pasteReadStore?.()?.slideClipboard;
-    // Match v7.1: always try localStorage first (like _xclipHydrateSlides)
-    if (!slides?.length) {
-      try {
-        const fromOs = await readOsSlideClipboard();
-        if (fromOs?.length) {
-          slides = fromOs;
-          api._pasteSetSlides?.(fromOs);
-        }
-      } catch (e) {}
-    }
-    // Fallback: try peeking directly from localStorage
-    if (!slides?.length) {
-      const localSlides = peekLocalSlides();
-      if (localSlides?.length) {
-        slides = localSlides;
-        api._pasteSetSlides?.(localSlides);
+    try {
+      const fromOs = await readOsSlideClipboard();
+      if (fromOs?.length) {
+        slides = fromOs;
+        api._pasteSetSlides?.(fromOs);
       }
-    }
+    } catch (e) {}
     if (!slides?.length) return false;
     await api.pasteSlide?.();
     return true;
   };
 
   const pasteLastAppClip = async () => {
-    // Use clipSource from store (set by copySlides/copySelected)
-    const storeClipSource = api._pasteReadStore?.()?.clipSource;
-    const src = storeClipSource || getClipSource();
-    
-    // Match v7.1: if clipSource is 'slides', paste slides first
-    if (src === 'slides') {
+    const src = getClipSource();
+    if (preferThumbStrip || src === 'slides') {
       if (await pasteAppSlides()) return true;
     }
-    
-    // If clipSource is 'elements', paste elements first
-    if (src === 'elements') {
-      if (await pasteAppElements()) return true;
-    }
-    
-    // Default behavior: preferThumbStrip -> slides first, otherwise elements first
-    if (preferThumbStrip) {
-      if (await pasteAppSlides()) return true;
-      if (await pasteAppElements()) return true;
-    } else {
-      if (await pasteAppElements()) return true;
-      if (await pasteAppSlides()) return true;
-    }
+    if (await pasteAppElements()) return true;
+    if (await pasteAppSlides()) return true;
     return false;
   };
 
@@ -506,17 +478,6 @@ export async function pasteWithoutEvent(api, opts = {}) {
   }
 
   const htmlImgEl = parseHtmlImg(html);
-
-  // Fallback: if preferThumbStrip and no clipboard data, try localStorage for slides
-  // This matches v7.1 behavior where slides are read from localStorage on paste
-  if (preferThumbStrip) {
-    const localSlides = peekLocalSlides();
-    if (localSlides?.length) {
-      // Set slides in store so pasteAppSlides can find them
-      api._pasteSetSlides?.(localSlides);
-    }
-  }
-
   return dispatchPaste(api, {
     plain,
     html,

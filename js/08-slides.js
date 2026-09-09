@@ -1,0 +1,1221 @@
+// ══════════════ SLIDES ══════════════
+let _slideClipboard = null;
+
+function _cloneSlideData(src, stripDecor){
+  const copy = JSON.parse(JSON.stringify(src));
+  if(stripDecor) copy.els = (copy.els || []).filter(d => !d._isDecor);
+  return copy;
+}
+
+function _remapSlideElIds(s){
+  const map = {};
+  const oldIds = (s.els || []).map(d => d.id);
+  oldIds.forEach(old => { map[old] = 'e' + (++ec); });
+  if (s.animOrder) {
+    const remapEntry = (entry) => {
+      if (!entry) return;
+      if (entry.elId && map[entry.elId]) entry.elId = map[entry.elId];
+      if (entry.kind === 'repeat' && entry.children) entry.children.forEach(remapEntry);
+    };
+    s.animOrder.forEach(remapEntry);
+  }
+  (s.els || []).forEach((d, i) => {
+    const oldId = oldIds[i];
+    d.id = map[oldId];
+    _remapClonedElementRefs(d, oldId, d.id, map);
+  });
+  if(s.connectors){
+    s.connectors.forEach(c => {
+      if(c.fromId && map[c.fromId]) c.fromId = map[c.fromId];
+      if(c.toId && map[c.toId]) c.toId = map[c.toId];
+    });
+  }
+  if(s.lineJunctions){
+    const nj = {};
+    Object.keys(s.lineJunctions).forEach(jid => {
+      const mems = (s.lineJunctions[jid] || [])
+        .map(m => map[m.id] ? { id: map[m.id], end: m.end } : null)
+        .filter(Boolean);
+      if(mems.length >= 2){
+        nj[jid] = mems;
+      } else {
+        mems.forEach(m => {
+          const d = (s.els || []).find(e => e && e.id === m.id);
+          if(d && d.lineJoin && d.lineJoin[m.end] === jid) d.lineJoin[m.end] = null;
+        });
+      }
+    });
+    s.lineJunctions = nj;
+  }
+}
+
+function _mapClonedElId(tid, oldId, newId, idMap) {
+  if (!tid) return tid;
+  if (tid === oldId) return newId;
+  if (idMap && idMap[tid]) return idMap[tid];
+  return tid;
+}
+
+function _remapClonedElementRefs(d, oldId, newId, idMap) {
+  if (d.anims && d.anims.length) {
+    d.anims.forEach(a => {
+      if (a.triggerElId) a.triggerElId = _mapClonedElId(a.triggerElId, oldId, newId, idMap);
+    });
+  }
+  if (d.maTriggerElId) d.maTriggerElId = _mapClonedElId(d.maTriggerElId, oldId, newId, idMap);
+  if (d.maTriggerElIds && d.maTriggerElIds.length) {
+    d.maTriggerElIds = d.maTriggerElIds.map(tid => _mapClonedElId(tid, oldId, newId, idMap));
+  }
+  if (d.hfLinkedCodeId) d.hfLinkedCodeId = _mapClonedElId(d.hfLinkedCodeId, oldId, newId, idMap);
+  if (d.hfParentId) d.hfParentId = _mapClonedElId(d.hfParentId, oldId, newId, idMap);
+  if (d.type === 'lineangle') {
+    if (d.lineIdA) d.lineIdA = _mapClonedElId(d.lineIdA, oldId, newId, idMap);
+    if (d.lineIdB) d.lineIdB = _mapClonedElId(d.lineIdB, oldId, newId, idMap);
+  }
+  if (d.shape === 'line' && d.lineJoin) {
+    ['a', 'b'].forEach(w => {
+      const ref = d.lineJoin[w];
+      if(ref && typeof ref === 'object' && ref.id){
+        const nid = _mapClonedElId(ref.id, oldId, newId, idMap);
+        if(nid && nid !== ref.id) d.lineJoin[w] = { id: nid, end: ref.end };
+        else if(!idMap || !idMap[ref.id]) d.lineJoin[w] = null;
+      }
+    });
+  }
+}
+
+function _syncTextPadToElementData(fresh, dom) {
+  if (!fresh || !dom || dom.dataset.type !== 'text') return;
+  if (dom.dataset.pad_t !== undefined) {
+    fresh.pad_t = +dom.dataset.pad_t;
+    fresh.pad_r = +dom.dataset.pad_r;
+    fresh.pad_b = +dom.dataset.pad_b;
+    fresh.pad_l = +dom.dataset.pad_l;
+    fresh.padUnit = dom.dataset.padUnit || 'px';
+    return;
+  }
+  const c = dom.querySelector('.tel') || dom.querySelector('.ec');
+  if (!c) return;
+  const cs = c.getAttribute('style') || '';
+  const m = cs.match(/\bpadding\s*:\s*([^;]+)/i);
+  if (!m) return;
+  const parts = m[1].trim().split(/\s+/);
+  if (!parts.length) return;
+  const parse = (p) => {
+    const v = parseFloat(p);
+    return isFinite(v) ? v : 0;
+  };
+  const hasPct = parts.some((p) => /%/.test(p));
+  const t = parse(parts[0]);
+  const r = parts.length > 1 ? parse(parts[1]) : t;
+  const b = parts.length > 2 ? parse(parts[2]) : t;
+  const l = parts.length > 3 ? parse(parts[3]) : r;
+  fresh.pad_t = t;
+  fresh.pad_r = r;
+  fresh.pad_b = b;
+  fresh.pad_l = l;
+  fresh.padUnit = hasPct ? '%' : 'px';
+}
+
+function _freshElementDataFromDom(elId) {
+  const s = slides[cur];
+  if (!s) return null;
+  const d = s.els.find(x => x.id === elId);
+  if (!d) return null;
+  const fresh = JSON.parse(JSON.stringify(d));
+  const cv = document.getElementById('canvas');
+  const dom = cv && cv.querySelector('.el[data-id="' + elId + '"]');
+  if (dom) {
+    if (dom.dataset.anims) {
+      try { fresh.anims = JSON.parse(dom.dataset.anims); } catch (e) {}
+    }
+    if (dom.dataset.isTrigger === 'true') fresh.isTrigger = true;
+    else delete fresh.isTrigger;
+    _syncTextPadToElementData(fresh, dom);
+  }
+  return fresh;
+}
+
+function _copyElementDataList(elIds) {
+  if (typeof save === 'function') save();
+  const idSet = new Set((elIds || []).filter(Boolean));
+  // Angles belong to their two legs — include them when both lines are copied
+  if (typeof slides !== 'undefined' && slides[cur] && slides[cur].els) {
+    slides[cur].els.forEach(e => {
+      if (!e || e.type !== 'lineangle' || idSet.has(e.id)) return;
+      if (e.lineIdA && e.lineIdB && idSet.has(e.lineIdA) && idSet.has(e.lineIdB)) {
+        idSet.add(e.id);
+      }
+    });
+    // Keep slide order so lines are cloned before dependent angles
+    const ordered = [];
+    slides[cur].els.forEach(e => {
+      if (e && idSet.has(e.id) && e.type !== 'inkhost') ordered.push(e.id);
+    });
+    return ordered.map(elId => _freshElementDataFromDom(elId)).filter(Boolean);
+  }
+  return [...idSet].map(elId => _freshElementDataFromDom(elId)).filter(Boolean);
+}
+
+function _cloneElementDataList(els, opts) {
+  opts = opts || {};
+  const idMap = {};
+  const pairs = els.map(d => {
+    const nd = JSON.parse(JSON.stringify(d));
+    const oldId = nd.id;
+    nd.id = 'e' + (++ec);
+    idMap[oldId] = nd.id;
+    return { oldId, nd };
+  });
+  pairs.forEach(({ oldId, nd }) => _remapClonedElementRefs(nd, oldId, nd.id, idMap));
+  if (opts.offset) {
+    const off = opts.offset;
+    pairs.forEach(({ nd }) => { nd.x = (nd.x || 0) + off; nd.y = (nd.y || 0) + off; });
+  }
+  const cloned = pairs.map(p => p.nd);
+  // Rebake N-way junctions for the pasted subset (new junction ids)
+  if(typeof slides !== 'undefined' && slides[cur]){
+    if(!slides[cur].lineJunctions) slides[cur].lineJunctions = {};
+    const juncs = slides[cur].lineJunctions;
+    const byOldJid = {};
+    cloned.forEach(d => {
+      if(d.shape !== 'line' || !d.lineJoin) return;
+      ['a', 'b'].forEach(w => {
+        const ref = d.lineJoin[w];
+        if(typeof ref === 'string' && ref){
+          if(!byOldJid[ref]) byOldJid[ref] = [];
+          byOldJid[ref].push({ d, w });
+        }
+      });
+    });
+    Object.keys(byOldJid).forEach(oldJid => {
+      const entries = byOldJid[oldJid];
+      if(entries.length < 2){
+        entries.forEach(({ d, w }) => { d.lineJoin[w] = null; });
+        return;
+      }
+      const newJid = 'j' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      juncs[newJid] = entries.map(({ d, w }) => {
+        d.lineJoin[w] = newJid;
+        return { id: d.id, end: w };
+      });
+    });
+  }
+  return cloned;
+}
+
+function _syncSlideAnimsFromDom(slideIdx) {
+  const si = slideIdx != null ? slideIdx : cur;
+  const s = slides[si];
+  const cv = document.getElementById('canvas');
+  if (!s || !cv) return;
+  cv.querySelectorAll('.el[data-id]').forEach(el => {
+    const d = s.els.find(x => x.id === el.dataset.id);
+    if (!d || el.dataset.anims == null) return;
+    try { d.anims = JSON.parse(el.dataset.anims); } catch (e) {}
+    if (el.dataset.isTrigger === 'true') d.isTrigger = true;
+    else delete d.isTrigger;
+  });
+}
+
+function _normalizeSlideTitle(title) {
+  return (title || '').trim().toLowerCase();
+}
+
+function getSlideDisplayTitle(slide, index) {
+  const t = slide && slide.title != null ? String(slide.title).trim() : '';
+  if (t) return t;
+  const n = (index != null ? index : 0) + 1;
+  return typeof defaultSlideTitle === 'function' ? defaultSlideTitle(n) : ('Слайд ' + n);
+}
+
+function isSlideTitleTaken(title, excludeIdx, extraTitles) {
+  const norm = _normalizeSlideTitle(title);
+  if (!norm) return false;
+  for (let i = 0; i < slides.length; i++) {
+    if (i === excludeIdx) continue;
+    if (_normalizeSlideTitle(getSlideDisplayTitle(slides[i], i)) === norm) return true;
+  }
+  if (extraTitles) {
+    for (const t of extraTitles) {
+      if (_normalizeSlideTitle(t) === norm) return true;
+    }
+  }
+  return false;
+}
+
+function ensureUniqueSlideTitle(base, excludeIdx, extraTitles) {
+  base = (base || '').trim();
+  if (!base) {
+    base = typeof defaultSlideTitle === 'function' ? defaultSlideTitle(slides.length + 1) : ('Слайд 1');
+  }
+  if (!isSlideTitleTaken(base, excludeIdx, extraTitles)) return base;
+  let n = 1;
+  while (isSlideTitleTaken(base + ' (' + n + ')', excludeIdx, extraTitles)) n++;
+  return base + ' (' + n + ')';
+}
+
+function slideLinkHrefForIndex(idx) {
+  if (idx == null || idx < 0 || idx >= slides.length) return '';
+  return '#slide-' + encodeURIComponent(getSlideDisplayTitle(slides[idx], idx));
+}
+
+function findSlideIndexByTitle(title, slideList) {
+  const list = slideList || slides;
+  const norm = _normalizeSlideTitle(title);
+  if (!norm) return null;
+  for (let i = 0; i < list.length; i++) {
+    if (_normalizeSlideTitle(getSlideDisplayTitle(list[i], i)) === norm) return i;
+  }
+  return null;
+}
+
+function resolveNavTargetSlideIndex(navTarget, slideList) {
+  const list = slideList || slides;
+  if (navTarget == null) return null;
+  if (typeof navTarget === 'number') {
+    return navTarget >= 0 && navTarget < list.length ? navTarget : null;
+  }
+  if (typeof navTarget === 'string') return findSlideIndexByTitle(navTarget, list);
+  return null;
+}
+
+function remapSlideLinksFromTitle(oldTitle, newTitle) {
+  if (!oldTitle || !newTitle || _normalizeSlideTitle(oldTitle) === _normalizeSlideTitle(newTitle)) return;
+  const oldHref = '#slide-' + encodeURIComponent(oldTitle.trim());
+  const newHref = '#slide-' + encodeURIComponent(newTitle.trim());
+  slides.forEach(s => {
+    (s.els || []).forEach(d => {
+      if (d.link === oldHref) d.link = newHref;
+    });
+  });
+  const cv = document.getElementById('canvas');
+  if (cv) {
+    cv.querySelectorAll('.el[data-link]').forEach(el => {
+      if (el.dataset.link === oldHref) el.dataset.link = newHref;
+    });
+  }
+}
+
+function remapNavTargetsFromTitle(oldTitle, newTitle) {
+  if (!oldTitle || !newTitle || _normalizeSlideTitle(oldTitle) === _normalizeSlideTitle(newTitle)) return;
+  const oldNorm = _normalizeSlideTitle(oldTitle);
+  slides.forEach(s => {
+    (s.els || []).forEach(d => {
+      (d.anims || []).forEach(a => {
+        if (a.navTarget != null && typeof a.navTarget === 'string' && _normalizeSlideTitle(a.navTarget) === oldNorm) {
+          a.navTarget = newTitle;
+        }
+      });
+    });
+  });
+}
+
+function migratePresentationSlideNamesAndLinks() {
+  if (!slides || !slides.length) return;
+  slides.forEach((s, i) => {
+    const display = getSlideDisplayTitle(s, i);
+    if (!(s.title && String(s.title).trim())) s.title = display;
+    s.title = ensureUniqueSlideTitle(String(s.title).trim(), i);
+  });
+  slides.forEach(s => {
+    (s.els || []).forEach(d => {
+      if (!d.link || !d.link.startsWith('#slide-')) return;
+      const spec = d.link.slice(7);
+      if (spec === 'next' || spec === 'prev' || spec === 'first' || spec === 'last') return;
+      const n = parseInt(spec, 10);
+      if (!isNaN(n) && String(n) === spec && n >= 1 && n <= slides.length) {
+        d.link = slideLinkHrefForIndex(n - 1);
+      }
+    });
+  });
+  slides.forEach(s => {
+    (s.els || []).forEach(d => {
+      (d.anims || []).forEach(a => {
+        if (typeof a.navTarget === 'number') {
+          const idx = a.navTarget;
+          if (idx >= 0 && idx < slides.length) {
+            a.navTarget = getSlideDisplayTitle(slides[idx], idx);
+          }
+        }
+      });
+    });
+  });
+}
+
+window.getSlideDisplayTitle = getSlideDisplayTitle;
+window.ensureUniqueSlideTitle = ensureUniqueSlideTitle;
+window.slideLinkHrefForIndex = slideLinkHrefForIndex;
+window.findSlideIndexByTitle = findSlideIndexByTitle;
+window.resolveNavTargetSlideIndex = resolveNavTargetSlideIndex;
+window.migratePresentationSlideNamesAndLinks = migratePresentationSlideNamesAndLinks;
+
+function _buildSlideObject(tmpl, insertAt){
+  const curSlide = slides[cur];
+  const inheritBg = curSlide ? curSlide.bg : 'b1';
+  const inheritBgc = curSlide ? curSlide.bgc : null;
+  const inheritBgImg = curSlide && curSlide.bgImg ? JSON.parse(JSON.stringify(curSlide.bgImg)) : null;
+  const at = insertAt != null ? insertAt : slides.length;
+  const s = {title: (typeof defaultSlideTitle === 'function' ? defaultSlideTitle(at + 1) : ('Слайд ' + (at + 1))), bg:inheritBg, bgc:inheritBgc, ar, trans:'', auto:0, els:[]};
+  if(inheritBgImg) s.bgImg = inheritBgImg;
+  if(tmpl){
+    const t = JSON.parse(JSON.stringify(tmpl));
+    Object.assign(s, t);
+    s.els = t.els || [];
+    s.trans = t.trans != null ? t.trans : '';
+  }
+  const baseTitle = (s.title || '').trim() || (typeof defaultSlideTitle === 'function' ? defaultSlideTitle(at + 1) : ('Слайд ' + (at + 1)));
+  s.title = ensureUniqueSlideTitle(baseTitle, null);
+  return s;
+}
+
+function insertSlidesAt(insertAt, slideObjs, addDecor){
+  pushUndo();
+  insertAt = Math.max(0, Math.min(insertAt, slides.length));
+  const reservedTitles = [];
+  slideObjs.forEach((s, k) => {
+    const base = (s.title || '').trim() || (typeof defaultSlideTitle === 'function' ? defaultSlideTitle(insertAt + k + 1) : ('Слайд ' + (insertAt + k + 1)));
+    s.title = ensureUniqueSlideTitle(base, null, reservedTitles);
+    reservedTitles.push(s.title);
+  });
+  slideObjs.forEach(s => _remapSlideElIds(s));
+  slides.splice(insertAt, 0, ...slideObjs);
+  if(addDecor){
+    const tpl = typeof _getSelectedSlideTpl === 'function' ? _getSelectedSlideTpl() : null;
+    if(tpl && typeof makeDecorEl === 'function'){
+      slideObjs.forEach((s, k) => {
+        s.els = (s.els || []).filter(d => !d._isDecor);
+        const d = makeDecorEl(insertAt + k, tpl.style, tpl.mirror, tpl.layoutIdx);
+        if(d) s.els.unshift(d);
+      });
+    } else {
+      slideObjs.forEach(s => {
+        s.els = (s.els || []).filter(d => !d._isDecor);
+      });
+    }
+  }
+  cur = insertAt + slideObjs.length - 1;
+  renderAll(); saveState();
+}
+
+function insertSlideAt(insertAt, s, addDecor){
+  insertSlidesAt(insertAt, [s], addDecor);
+}
+
+function addSlide(tmpl, insertAt){
+  save();
+  if(insertAt == null) insertAt = slides.length > 0 ? cur + 1 : 0;
+  else insertAt = Math.max(0, Math.min(insertAt, slides.length));
+  insertSlideAt(insertAt, _buildSlideObject(tmpl, insertAt), true);
+}
+
+function dupSlide(){
+  if(!slides.length) return;
+  dupSlideAt(cur);
+}
+
+function dupSlideAt(i){
+  if(!slides[i]) return;
+  save();
+  insertSlideAt(i + 1, _buildSlideObject(_cloneSlideData(slides[i], true), i + 1), true);
+}
+
+function clearSlideMultiSel(){
+  slideMultiSel.clear();
+}
+
+function getSlideSelection(){
+  if(slideMultiSel.size > 0) return [...slideMultiSel].sort((a, b) => a - b);
+  return [cur];
+}
+
+function pickSlideWithMod(i, e){
+  const ctrl = e && (e.ctrlKey || e.metaKey);
+  const shift = e && e.shiftKey;
+  if(shift){
+    save();
+    const anchor = slideSelAnchor != null ? slideSelAnchor : cur;
+    const from = Math.min(anchor, i);
+    const to = Math.max(anchor, i);
+    slideMultiSel.clear();
+    for(let j = from; j <= to; j++) slideMultiSel.add(j);
+    cur = i;
+    load();
+    drawThumbs();
+    return;
+  }
+  if(ctrl){
+    if(slideMultiSel.size === 0){
+      slideMultiSel.add(cur);
+      slideSelAnchor = cur;
+    }
+    if(slideMultiSel.has(i)){
+      slideMultiSel.delete(i);
+      if(slideMultiSel.size === 0){
+        pickSlide(i);
+        return;
+      }
+      if(cur === i){
+        cur = [...slideMultiSel].sort((a, b) => a - b)[0];
+        load();
+      } else {
+        drawThumbs();
+      }
+      slideSelAnchor = i;
+    } else {
+      slideMultiSel.add(i);
+      slideSelAnchor = i;
+      save();
+      cur = i;
+      load();
+      drawThumbs();
+    }
+    return;
+  }
+  clearSlideMultiSel();
+  pickSlide(i);
+}
+
+function copySlidesSelected(){
+  const indices = getSlideSelection();
+  if(!indices.length) return;
+  save();
+  _slideClipboard = indices.map(idx => _cloneSlideData(slides[idx], true));
+  if(typeof _xclipSaveSlides==='function') _xclipSaveSlides(_slideClipboard);
+  if(typeof window._markSlideClipboardCopy==='function') window._markSlideClipboardCopy();
+  if(typeof toast==='function'){
+    const msg=indices.length>1
+      ? (typeof t==='function'?t('ctxCopySlidesN').replace('{n}', String(indices.length)):'Copied '+indices.length+' slides')
+      : (typeof t==='function'?t('toastCopied'):'Copied');
+    toast(msg,'ok');
+  }
+}
+
+function copySlideAt(i){
+  if(!slides[i]) return;
+  _slideClipboard = [_cloneSlideData(slides[i], true)];
+  if(typeof _xclipSaveSlides==='function') _xclipSaveSlides(_slideClipboard);
+  if(typeof window._markSlideClipboardCopy==='function') window._markSlideClipboardCopy();
+}
+
+function hasSlideClipboard(){
+  if(_slideClipboard && _slideClipboard.length) return true;
+  if(typeof _xclipHydrateSlides==='function') _xclipHydrateSlides();
+  return !!(_slideClipboard && _slideClipboard.length);
+}
+
+function pasteSlideAt(atIdx){
+  if(typeof _xclipHydrateSlides==='function') _xclipHydrateSlides();
+  if(!hasSlideClipboard()) return;
+  save();
+  const toInsert = _slideClipboard.map((s, k) => _buildSlideObject(_cloneSlideData(s, true), atIdx + k));
+  insertSlidesAt(atIdx, toInsert, true);
+  slideMultiSel.clear();
+  toInsert.forEach((_, k) => slideMultiSel.add(atIdx + k));
+  drawThumbs();
+}
+
+function deleteSlidesSelected(){
+  deleteSlidesAt(getSlideSelection());
+}
+
+function deleteSlidesAt(indices){
+  const uniq = [...new Set(indices)].filter(i => i >= 0 && i < slides.length).sort((a, b) => a - b);
+  if(!uniq.length) return;
+  if(slides.length - uniq.length < 1) return toast(t('toastNeedSlide'));
+  save();
+  pushUndo();
+  const wasCur = cur;
+  for(let k = uniq.length - 1; k >= 0; k--) slides.splice(uniq[k], 1);
+  let newCur = wasCur;
+  uniq.forEach(i => { if(i < newCur) newCur--; });
+  if(uniq.includes(wasCur)) newCur = Math.min(newCur, slides.length - 1);
+  cur = Math.max(0, newCur);
+  clearSlideMultiSel();
+  renderAll(); saveState();
+  if(typeof renderAnimPanel === 'function') renderAnimPanel();
+  if(typeof renderMotionOverlay === 'function') renderMotionOverlay();
+  if(typeof renderCameraOverlay === 'function') renderCameraOverlay();
+}
+
+function delSlide(){
+  const sel = getSlideSelection();
+  if(sel.length > 1) deleteSlidesSelected();
+  else delSlideAt(sel[0]);
+}
+
+function delSlideAt(i){
+  deleteSlidesAt([i]);
+}
+
+function pickSlide(i, keepMultiSel){
+  if(typeof tblClearSel === 'function') tblClearSel();
+  if(typeof window.stopSlideAnimsOnCanvas === 'function') window.stopSlideAnimsOnCanvas();
+  // Завершить редактирование текста до save/load, иначе blur сработает на удалённом DOM
+  if(typeof sel!=='undefined'&&sel&&sel.dataset&&sel.dataset.editing==='true'){
+    if(typeof window._finishTextEdit==='function') window._finishTextEdit(sel);
+  }
+  if(typeof _decorPrepareCarry === 'function') _decorPrepareCarry(cur, i, document.getElementById('canvas'));
+  save();
+  cur = i;
+  slideSelAnchor = i;
+  if(!keepMultiSel) clearSlideMultiSel();
+  load();
+  drawThumbs();
+  saveState();
+}
+
+function save(){
+  if(typeof window._isPreviewActive==='function'&&window._isPreviewActive())return;
+  if(window._pvRestoring)return;
+  if(!slides[cur])return;
+  const canvas=document.getElementById('canvas');
+  // Build lookup of existing decor flags before overwriting
+  const decorMeta={};
+  const oldEls=slides[cur].els||[]; // snapshot BEFORE overwriting
+  oldEls.forEach(d=>{if(d._isDecor)decorMeta[d.id]={_isDecor:true,_decorStyle:d._decorStyle,_decorMirror:!!d._decorMirror,_layoutIdx:d._layoutIdx,_decorRenderer:d._decorRenderer,_glCfg:d._glCfg||d._crystalCfg,_crystalCfg:d._crystalCfg};});
+  const oldElsById={}; oldEls.forEach(d=>oldElsById[d.id]=d);
+  // Snapshot table data keyed by id so the table branch below always finds fresh data
+  const tableSnap={}; oldEls.forEach(d=>{if(d.type==='table')tableSnap[d.id]=d;});
+  const _seenIds=new Set();
+  slides[cur].els=Array.from(canvas.querySelectorAll('.el')).filter(el=>{
+    if(el.classList.contains('motion-ghost')) return false;
+    const id=el.dataset.id;
+    if(!id) return true;
+    if(_seenIds.has(id)) return false;
+    _seenIds.add(id);
+    return true;
+  }).map(el=>{
+    const _prev=oldElsById[el.dataset.id];
+    const _inCrop=el.dataset.cropMode==='true'&&_prev;
+    const d={id:el.dataset.id,type:el.dataset.type,
+      x:_inCrop?_prev.x:parseInt(el.style.left),y:_inCrop?_prev.y:parseInt(el.style.top),
+      w:_inCrop?_prev.w:parseInt(el.style.width),h:_inCrop?_prev.h:parseInt(el.style.height),
+      rot:el.dataset.rot?+el.dataset.rot:0,
+      rotPivotX:el.dataset.rotPivotX?+el.dataset.rotPivotX:0,
+      rotPivotY:el.dataset.rotPivotY?+el.dataset.rotPivotY:0,
+      anims:el.dataset.anims?JSON.parse(el.dataset.anims):[],
+      isTrigger:el.dataset.isTrigger==='true',
+    };
+    if(el.dataset.link)d.link=el.dataset.link;if(el.dataset.linkt)d.linkt=el.dataset.linkt;
+    if(el.dataset.morphName)d.morphName=el.dataset.morphName; else if(_prev&&_prev.morphName)d.morphName=_prev.morphName;
+    if(el.dataset.rideConnId)d.rideConnId=el.dataset.rideConnId;
+    else if(_prev&&_prev.rideConnId)d.rideConnId=_prev.rideConnId;
+    if(d.type==='text'){const c=el.querySelector('.ec');
+      const vw=c&&c.querySelector('.ec-valign-wrap');
+      const root=(typeof _rtContent==='function'&&c)?_rtContent(c):c;
+      d.html = el.dataset._savedHtml != null
+        ? el.dataset._savedHtml
+        : (vw ? vw.innerHTML : (root ? root.innerHTML : (c ? c.innerHTML : '')));
+      // Strip layout/background props from cs (stored separately or computed dynamically)
+      let cs=c.getAttribute('style')||'';
+      cs=cs.replace(/\bbackground\s*:[^;]+;?/gi,'')
+           .replace(/-webkit-background-clip\s*:[^;]+;?/gi,'')
+           .replace(/\bbackground-clip\s*:[^;]+;?/gi,'')
+           .replace(/-webkit-text-fill-color\s*:[^;]+;?/gi,'')
+           .replace(/\bdisplay\s*:[^;]+;?/gi,'')
+           .replace(/\bflex-direction\s*:[^;]+;?/gi,'')
+           .replace(/\bjustify-content\s*:[^;]+;?/gi,'')
+           .replace(/\bpadding(?:-top|-right|-bottom|-left)?\s*:[^;]+;?/gi,'')
+           .replace(/\banimation\s*:[^;]+;?/gi,'')
+           .replace(/\s{2,}/g,' ').trim();
+      d.cs=cs;
+      // Preserve scheme refs — not stored in DOM, only in data object
+      const _od=oldElsById[d.id];
+      if(_od){
+        if(_od.textColorScheme!==undefined)d.textColorScheme=_od.textColorScheme;
+        if(_od.textBgScheme!==undefined)d.textBgScheme=_od.textBgScheme;
+        if(_od.textBgCol2Scheme!==undefined)d.textBgCol2Scheme=_od.textBgCol2Scheme;
+        if(_od.textColorGrad2Scheme!==undefined)d.textColorGrad2Scheme=_od.textColorGrad2Scheme;
+        if(_od.borderScheme!==undefined)d.borderScheme=_od.borderScheme;
+        if(_od.textShadowScheme!==undefined)d.textShadowScheme=_od.textShadowScheme;
+      }
+      if(el.dataset.valign)d.valign=el.dataset.valign;
+      if(el.dataset.textPlaceholder==='1'){
+        d.textPlaceholder=true;
+        if(el.dataset.textPlaceholderLabel) d.textPlaceholderLabel=el.dataset.textPlaceholderLabel;
+      } else if(_od&&_od.textPlaceholder){
+        d.textPlaceholder=false;
+      }
+      if(_od&&_od._fromSlideLayout){
+        d._fromSlideLayout=true;
+        if(_od.textPlaceholderLabel) d.textPlaceholderLabel=_od.textPlaceholderLabel;
+        else if(el.dataset.textPlaceholderLabel) d.textPlaceholderLabel=el.dataset.textPlaceholderLabel;
+      }
+      if(el.dataset.textBg)d.textBg=el.dataset.textBg;
+      // Save textBgOp whenever textBg OR gradient is active
+      if(el.dataset.textBg||el.dataset.textBgGrad==='1'){d.textBgOp=el.dataset.textBgOp!=null?+el.dataset.textBgOp:1;}
+      else if(el.dataset.textBgOp!=null){d.textBgOp=+el.dataset.textBgOp;}
+      if(el.dataset.textBgBlur>0)d.textBgBlur=+el.dataset.textBgBlur;
+      if(el.dataset.textBgGrad==='1'){d.textBgGrad=true;} else {delete d.textBgGrad;}
+      if(el.dataset.textBgCol2)d.textBgCol2=el.dataset.textBgCol2; else {delete d.textBgCol2;delete d.textBgCol2Scheme;}
+      if(el.dataset.textBgDir!=null)d.textBgDir=+el.dataset.textBgDir; else delete d.textBgDir;
+      if(el.dataset.textColorGrad==='1'){d.textColorGrad=true;d.textColorGrad1=el.dataset.textColorGrad1||'';d.textColorGrad2=el.dataset.textColorGrad2||'';d.textColorGradDir=+(el.dataset.textColorGradDir||90);}else{delete d.textColorGrad;delete d.textColorGrad1;delete d.textColorGrad2;delete d.textColorGradDir;delete d.textColorGrad2Scheme;}
+      // Table bg opacity/blur — stored in dataset.tableData via _tblSaveToDataset
+      if(d.type==='table'&&_od){
+        if(_od.tableBgOp!=null)d.tableBgOp=_od.tableBgOp;
+        if(_od.tableBgBlur!=null)d.tableBgBlur=_od.tableBgBlur;
+      }
+      if(el.dataset.textRole)d.textRole=el.dataset.textRole;
+      if(el.dataset.bulletGap!=null)d.bulletGap=+el.dataset.bulletGap;
+      if(el.dataset.textBorderW&&+el.dataset.textBorderW>0){d.textBorderW=+el.dataset.textBorderW;d.textBorderColor=el.dataset.textBorderColor||'#ffffff';d.textBorderStyle=el.dataset.textBorderStyle||'solid';}
+      const _tss=+(el.dataset.textShadowSize||0), _tsb=+(el.dataset.textShadowBlur||0), _tsw=+(el.dataset.textShadowW||0);
+      if(_tss>0||_tsb>0||_tsw>0){
+        if(_tsb>0)d.textShadowBlur=_tsb;
+        if(_tss>0)d.textShadowSize=_tss;
+        if(!d.textShadowBlur&&!d.textShadowSize&&_tsw>0)d.textShadowW=_tsw;
+        d.textShadowColor=el.dataset.textShadowColor||'#000000';
+      }else{
+        delete d.textShadowBlur; delete d.textShadowSize; delete d.textShadowW; delete d.textShadowColor;
+      }
+      const _tbss=+(el.dataset.textBlockShadowSize||0), _tbsb=+(el.dataset.textBlockShadowBlur||0);
+      if(_tbss>0||_tbsb>0){
+        if(_tbsb>0)d.textBlockShadowBlur=_tbsb; else delete d.textBlockShadowBlur;
+        if(_tbss>0)d.textBlockShadowSize=_tbss; else delete d.textBlockShadowSize;
+        d.textBlockShadowColor=el.dataset.textBlockShadowColor||'#000000';
+        d.textBlockShadowInset=el.dataset.textBlockShadowInset==='1';
+      }else{
+        delete d.textBlockShadowBlur; delete d.textBlockShadowSize; delete d.textBlockShadowColor; delete d.textBlockShadowInset;
+      }
+      if(+(el.dataset.rx_tl||0)||+(el.dataset.rx_tr||0)||+(el.dataset.rx_bl||0)||+(el.dataset.rx_br||0)){
+        d.rx_tl=+(el.dataset.rx_tl||0);d.rx_tr=+(el.dataset.rx_tr||0);
+        d.rx_bl=+(el.dataset.rx_bl||0);d.rx_br=+(el.dataset.rx_br||0);
+        d.rxUnit=el.dataset.rxUnit||'px';
+      }
+      if(el.dataset.pad_t!==undefined){
+        d.pad_t=+el.dataset.pad_t;d.pad_r=+el.dataset.pad_r;
+        d.pad_b=+el.dataset.pad_b;d.pad_l=+el.dataset.pad_l;
+        d.padUnit=el.dataset.padUnit||'px';
+      }
+    }
+    if(d.type==='table'){
+      // Primary: read from DOM dataset (written by renderTableEl every time table is drawn)
+      // Fallback: use tableSnap from slides[cur].els
+      let tdata=null;
+      if(el.dataset.tableData){try{tdata=JSON.parse(el.dataset.tableData);}catch(e){}}
+      const tsrc=tdata||tableSnap[d.id];
+      if(tsrc){Object.keys(tsrc).forEach(k=>{ d[k]=tsrc[k]; });}
+    }
+    if(el.dataset.hoverFx){
+      let _fx;
+      try{ _fx=JSON.parse(el.dataset.hoverFx); }catch(e){ _fx=null; }
+      if(_fx){
+        const _prevD=oldElsById[d.id];
+        if(_fx.base && _prevD){
+          // The element may have moved/resized since fx.base was captured.
+          // Shift base (and hover, to preserve the relative hover offset)
+          // by the same delta so the hover effect doesn't snap back to a
+          // stale position when the user later moves/resizes the element.
+          const _dx=d.x-(_prevD.x||0), _dy=d.y-(_prevD.y||0);
+          const _dw=d.w-(_prevD.w||0), _dh=d.h-(_prevD.h||0);
+          if(_dx||_dy||_dw||_dh){
+            _fx.base.x=(_fx.base.x||0)+_dx;
+            _fx.base.y=(_fx.base.y||0)+_dy;
+            _fx.base.w=(_fx.base.w||0)+_dw;
+            _fx.base.h=(_fx.base.h||0)+_dh;
+            if(_fx.hover){
+              if(_fx.hover.x!=null)_fx.hover.x=+_fx.hover.x+_dx;
+              if(_fx.hover.y!=null)_fx.hover.y=+_fx.hover.y+_dy;
+              if(_fx.hover.w!=null)_fx.hover.w=+_fx.hover.w+_dw;
+              if(_fx.hover.h!=null)_fx.hover.h=+_fx.hover.h+_dh;
+            }
+            el.dataset.hoverFx=JSON.stringify(_fx);
+          }
+        }
+        d.hoverFx=_fx;
+      }
+    }
+    if(el.dataset.elOpacity!=null&&+el.dataset.elOpacity!==1)d.elOpacity=+el.dataset.elOpacity;
+    if(el.dataset.objHidden==='1')d.objHidden=true;else delete d.objHidden;
+    if(el.dataset.groupId)d.groupId=el.dataset.groupId;else delete d.groupId;
+    if(d.type==='image'){
+      const dd=oldElsById[d.id];
+      const _imgEl=el.querySelector('img');
+      const _imgAttr=_imgEl?_imgEl.getAttribute('src'):'';
+      d.src=(_imgAttr&&!_imgAttr.startsWith('blob:'))?_imgAttr:(_imgEl?_imgEl.src:(dd&&dd.src)||'');
+      if(dd&&dd.src&&dd.src.startsWith('data:')&&(!d.src||!d.src.startsWith('data:'))) d.src=dd.src;
+      if(dd&&dd.imageId) d.imageId=dd.imageId;
+      // Не затирать картинку пустым src из сломанного DOM
+      if((!d.src||d.src==='about:blank')&&dd){
+        if(dd.src) d.src=dd.src;
+        if(dd.imageId&&!d.imageId) d.imageId=dd.imageId;
+      }
+      // Don't bake blob→PNG dataURL (it explodes localStorage). Keep blob for display; IDB holds the file.
+      if(d.src&&d.src.startsWith('blob:')&&typeof MediaStore!=='undefined'&&MediaStore.persistImageEl&&!d.imageId){
+        MediaStore.persistImageEl(d).catch(function(){});
+      }
+      d.imgFit=el.dataset.imgFit||(dd&&dd.imgFit)||'contain';
+      d.imgRx=el.dataset.imgRx!=null?+el.dataset.imgRx:(dd&&dd.imgRx)||0;
+      d.imgBw=el.dataset.imgBw!=null?+el.dataset.imgBw:(dd&&dd.imgBw)||0;
+      d.imgBc=el.dataset.imgBc||(dd&&dd.imgBc)||'#ffffff';
+      if(el.dataset.imgBorderStyle)d.imgBorderStyle=el.dataset.imgBorderStyle;
+      else if(dd&&dd.imgBorderStyle)d.imgBorderStyle=dd.imgBorderStyle;
+      if(el.dataset.imgFrame)d.imgFrame=el.dataset.imgFrame;
+      else if(dd&&dd.imgFrame)d.imgFrame=dd.imgFrame;
+      if(el.dataset.imgFrameBaseW!=null)d.imgFrameBaseW=+el.dataset.imgFrameBaseW;
+      else if(dd&&dd.imgFrameBaseW!=null)d.imgFrameBaseW=dd.imgFrameBaseW;
+      if(el.dataset.imgFrameBaseH!=null)d.imgFrameBaseH=+el.dataset.imgFrameBaseH;
+      else if(dd&&dd.imgFrameBaseH!=null)d.imgFrameBaseH=dd.imgFrameBaseH;
+      if(el.dataset.imgAccent)d.imgAccent=el.dataset.imgAccent;
+      else if(dd&&dd.imgAccent)d.imgAccent=dd.imgAccent;
+      const _capEl=el.querySelector('.img-caption');
+      if(_capEl) d.imgCaption=(_capEl.textContent||'').trim();
+      else if(el.dataset.imgCaption!=null) d.imgCaption=el.dataset.imgCaption;
+      else if(dd&&dd.imgCaption!=null) d.imgCaption=dd.imgCaption;
+      d.imgShadow=el.dataset.imgShadow==='true'||(dd&&dd.imgShadow)||false;
+      d.imgShadowBlur=el.dataset.imgShadowBlur!=null?+el.dataset.imgShadowBlur:(dd&&dd.imgShadowBlur)||15;
+      d.imgShadowSize=el.dataset.imgShadowSize!=null?+el.dataset.imgShadowSize:(dd&&dd.imgShadowSize!=null?dd.imgShadowSize:4);
+      d.imgShadowColor=el.dataset.imgShadowColor||(dd&&dd.imgShadowColor)||'#000000';
+      if(el.dataset.imgShadowColorScheme){try{d.imgShadowColorScheme=JSON.parse(el.dataset.imgShadowColorScheme);}catch(e){}}
+      else if(dd&&dd.imgShadowColorScheme!==undefined)d.imgShadowColorScheme=dd.imgShadowColorScheme;
+      d.imgOpacity=el.dataset.imgOpacity!=null?+el.dataset.imgOpacity:(dd&&dd.imgOpacity!=null?dd.imgOpacity:1);
+      d.imgPosX=el.dataset.imgPosX||(dd&&dd.imgPosX)||'center';
+      d.imgPosY=el.dataset.imgPosY||(dd&&dd.imgPosY)||'center';
+      d.imgFlipH=el.dataset.imgFlipH==='true'||!!(dd&&dd.imgFlipH)||false;
+      d.imgFlipV=el.dataset.imgFlipV==='true'||!!(dd&&dd.imgFlipV)||false;
+      if(dd&&dd._pptxSrcRect)d._pptxSrcRect=dd._pptxSrcRect;
+      // QR Code — приоритет: dataset > oldEls (dd)
+      // Пишем dataset обратно если dd._isQR есть но dataset нет
+      if(dd&&dd._isQR && el.dataset.isQR!=='true'){
+        el.dataset.isQR='true';
+        if(dd.qrText) el.dataset.qrText=dd.qrText;
+        if(dd.qrBg)   el.dataset.qrBg=dd.qrBg;
+        if(dd.qrColor) el.dataset.qrColor=dd.qrColor;
+        if(dd.qrRx!=null) el.dataset.qrRx=dd.qrRx;
+      }
+      if(el.dataset.isQR==='true'||(dd&&dd._isQR)){
+        d._isQR=true;
+        d.qrText=el.dataset.qrText||(dd&&dd.qrText)||'https://example.com';
+        d.qrBg=el.dataset.qrBg!==undefined?el.dataset.qrBg:((dd&&dd.qrBg!=null)?dd.qrBg:'#ffffff');
+        d.qrColor=el.dataset.qrColor||(dd&&dd.qrColor)||'#000000';
+        d.qrRx=el.dataset.qrRx!=null?+el.dataset.qrRx:(dd&&dd.qrRx!=null?dd.qrRx:16);
+      }
+      // crop: read from dataset (written on exit crop mode), fallback to live d value
+      d.imgCropL = el.dataset.imgCropL != null ? +el.dataset.imgCropL : (d.imgCropL || 0);
+      d.imgCropT = el.dataset.imgCropT != null ? +el.dataset.imgCropT : (d.imgCropT || 0);
+      d.imgCropR = el.dataset.imgCropR != null ? +el.dataset.imgCropR : (d.imgCropR || 0);
+      d.imgCropB = el.dataset.imgCropB != null ? +el.dataset.imgCropB : (d.imgCropB || 0);
+      // preserve full-image coords so re-entering crop mode works correctly
+      if(dd&&dd._cropFullW)d._cropFullW=dd._cropFullW;
+      if(dd&&dd._cropFullH)d._cropFullH=dd._cropFullH;
+      if(dd&&dd._cropFullX!=null)d._cropFullX=dd._cropFullX;
+      if(dd&&dd._cropFullY!=null)d._cropFullY=dd._cropFullY;
+    }
+    else if(d.type==='shape'){
+      d.shape=el.dataset.shape;d.fill=el.dataset.fill||'#3b82f6';d.stroke=el.dataset.stroke||'#1d4ed8';
+      // Preserve scheme refs
+      const _ods=oldElsById[d.id];
+      if(_ods){
+        if(_ods.fillScheme!==undefined)d.fillScheme=_ods.fillScheme;
+        if(_ods.strokeScheme!==undefined)d.strokeScheme=_ods.strokeScheme;
+      }
+      d.sw=el.dataset.sw!=null?+el.dataset.sw:2;d.rx=+(el.dataset.rx||0);d.fillOp=el.dataset.fillOp!=null?+el.dataset.fillOp:1;
+      d.shadow=el.dataset.shadow==='true';
+      d.shadowBlur=el.dataset.shadowBlur!=null?+el.dataset.shadowBlur:(_ods&&_ods.shadowBlur!=null?_ods.shadowBlur:4);
+      d.shadowSize=el.dataset.shadowSize!=null?+el.dataset.shadowSize:(_ods&&_ods.shadowSize!=null?_ods.shadowSize:3);
+      d.shadowColor=el.dataset.shadowColor||(_ods&&_ods.shadowColor)||'#000000';
+      if(el.dataset.strokeStyle)d.strokeStyle=el.dataset.strokeStyle; else if(_ods&&_ods.strokeStyle)d.strokeStyle=_ods.strokeStyle;
+      if(el.dataset.lineMark!=null && el.dataset.lineMark!==''){
+        if(el.dataset.lineMark==='none') delete d.lineMark;
+        else d.lineMark=el.dataset.lineMark;
+      } else if(_ods && _ods.lineMark && _ods.lineMark!=='none') d.lineMark=_ods.lineMark;
+      else delete d.lineMark;
+      if(el.dataset.lineFromMarker!=null && el.dataset.lineFromMarker!==''){
+        if(el.dataset.lineFromMarker==='none') delete d.lineFromMarker;
+        else d.lineFromMarker=el.dataset.lineFromMarker;
+      } else if(_ods && _ods.lineFromMarker && _ods.lineFromMarker!=='none') d.lineFromMarker=_ods.lineFromMarker;
+      else delete d.lineFromMarker;
+      if(el.dataset.lineToMarker!=null && el.dataset.lineToMarker!==''){
+        if(el.dataset.lineToMarker==='none') delete d.lineToMarker;
+        else d.lineToMarker=el.dataset.lineToMarker;
+      } else if(_ods && _ods.lineToMarker && _ods.lineToMarker!=='none') d.lineToMarker=_ods.lineToMarker;
+      else delete d.lineToMarker;
+      // Shape fill gradient
+      if(el.dataset.fillGrad!=null){d.fillGrad=el.dataset.fillGrad==='1';}
+      else if(_ods&&_ods.fillGrad!=null){d.fillGrad=_ods.fillGrad;}
+      if(el.dataset.fillGrad2)d.fillGrad2=el.dataset.fillGrad2;
+      else if(_ods&&_ods.fillGrad2)d.fillGrad2=_ods.fillGrad2;
+      // fillGrad2Scheme: try dataset first, then _ods
+      if(el.dataset.fillGrad2Scheme)d.fillGrad2Scheme=JSON.parse(el.dataset.fillGrad2Scheme);
+      else if(_ods&&_ods.fillGrad2Scheme!==undefined)d.fillGrad2Scheme=_ods.fillGrad2Scheme;
+      // shadowColorScheme
+      if(el.dataset.shadowColorScheme)d.shadowColorScheme=JSON.parse(el.dataset.shadowColorScheme);
+      else if(_ods&&_ods.shadowColorScheme!==undefined)d.shadowColorScheme=_ods.shadowColorScheme;
+      if(el.dataset.fillGradDir!=null)d.fillGradDir=+el.dataset.fillGradDir;
+      else if(_ods&&_ods.fillGradDir!=null)d.fillGradDir=_ods.fillGradDir;
+      // Cloud seed
+      if(el.dataset.cloudSeed!=null) d.cloudSeed=+el.dataset.cloudSeed;
+      else if(_ods&&_ods.cloudSeed!=null) d.cloudSeed=_ods.cloudSeed;
+      if(el.dataset.cloudForm) d.cloudForm=el.dataset.cloudForm;
+      else if(_ods&&_ods.cloudForm) d.cloudForm=_ods.cloudForm;
+      if(el.dataset.cloudRefW) d.cloudRefW=+el.dataset.cloudRefW;
+      else if(_ods&&_ods.cloudRefW) d.cloudRefW=_ods.cloudRefW;
+      if(el.dataset.cloudRefH) d.cloudRefH=+el.dataset.cloudRefH;
+      else if(_ods&&_ods.cloudRefH) d.cloudRefH=_ods.cloudRefH;
+      if(el.dataset.cloudFramed==='1') d.cloudFramed=true;
+      else if(_ods&&_ods.cloudFramed) d.cloudFramed=_ods.cloudFramed;
+      if(_ods&&_ods.cloudCircles) d.cloudCircles=_ods.cloudCircles;
+      if(_ods&&_ods.cloudCirclesForm) d.cloudCirclesForm=_ods.cloudCirclesForm;
+      else if(d.cloudForm) d.cloudCirclesForm=d.cloudForm;
+      if(_ods&&_ods.cloudFrameW) d.cloudFrameW=_ods.cloudFrameW;
+      if(_ods&&_ods.cloudFrameH) d.cloudFrameH=_ods.cloudFrameH;
+      const _domCw=parseInt(el.style.width)||0, _domCh=parseInt(el.style.height)||0;
+      if(!d.cloudRefW&&_domCw>0) d.cloudRefW=_domCw;
+      if(!d.cloudRefH&&_domCh>0) d.cloudRefH=_domCh;
+      if(typeof _cloudPersistDataset==='function') _cloudPersistDataset(el,d);
+      // Parallelogram skew
+      if(el.dataset.paraSkew!=null) d.paraSkew=+el.dataset.paraSkew;
+      else if(_ods&&_ods.paraSkew!=null) d.paraSkew=_ods.paraSkew;
+      // Chevron depth
+      if(el.dataset.chevSkew!=null) d.chevSkew=+el.dataset.chevSkew;
+      else if(_ods&&_ods.chevSkew!=null) d.chevSkew=_ods.chevSkew;
+      if(el.dataset.chevInner!=null) d.chevInner=+el.dataset.chevInner;
+      else if(_ods&&_ods.chevInner!=null) d.chevInner=_ods.chevInner;
+      // Curve bezier points
+      if(el.dataset.curvePoints){try{d.curvePoints=JSON.parse(el.dataset.curvePoints);}catch(e){}}
+      else if(_ods&&_ods.curvePoints) d.curvePoints=_ods.curvePoints;
+      if(el.dataset.curveClosed==='1') d.curveClosed=true;
+      else if(_ods&&_ods.curveClosed) d.curveClosed=_ods.curveClosed;
+      // Star rays/inner radius
+      if(el.dataset.starRays) d.starRays=+el.dataset.starRays;
+      else if(_ods&&_ods.starRays) d.starRays=_ods.starRays;
+      if(el.dataset.starInner) d.starInner=+el.dataset.starInner;
+      else if(_ods&&_ods.starInner!=null) d.starInner=_ods.starInner;
+      if(el.dataset.gearTeeth) d.gearTeeth=+el.dataset.gearTeeth;
+      else if(_ods&&_ods.gearTeeth!=null) d.gearTeeth=_ods.gearTeeth;
+      if(el.dataset.gearDepth) d.gearDepth=+el.dataset.gearDepth;
+      else if(_ods&&_ods.gearDepth!=null) d.gearDepth=_ods.gearDepth;
+      if(el.dataset.shapeFlipH==='true') d.shapeFlipH=true;
+      else delete d.shapeFlipH;
+      if(el.dataset.shapeFlipV==='true') d.shapeFlipV=true;
+      else delete d.shapeFlipV;
+      if(el.dataset.moonPhase!=null&&el.dataset.moonPhase!=='') d.moonPhase=+el.dataset.moonPhase;
+      else if(_ods&&_ods.moonPhase!=null) d.moonPhase=_ods.moonPhase;
+      if(el.dataset.trapTop!=null&&el.dataset.trapTop!=='') d.trapTop=+el.dataset.trapTop;
+      else if(_ods&&_ods.trapTop!=null) d.trapTop=_ods.trapTop;
+      if(el.dataset.trapBot!=null&&el.dataset.trapBot!=='') d.trapBot=+el.dataset.trapBot;
+      else if(_ods&&_ods.trapBot!=null) d.trapBot=_ods.trapBot;
+      // Polygon sides
+      if(el.dataset.polySides) d.polySides=+el.dataset.polySides;
+      else if(_ods&&_ods.polySides) d.polySides=_ods.polySides;
+      // Arc/sector/chord for ellipse
+      if(el.dataset.arcMode) d.arcMode=el.dataset.arcMode;
+      else if(_ods&&_ods.arcMode) d.arcMode=_ods.arcMode;
+      if(el.dataset.arcStart!=null&&el.dataset.arcStart!=='') d.arcStart=+el.dataset.arcStart;
+      else if(_ods&&_ods.arcStart!=null) d.arcStart=_ods.arcStart;
+      if(el.dataset.arcEnd!=null&&el.dataset.arcEnd!=='') d.arcEnd=+el.dataset.arcEnd;
+      else if(_ods&&_ods.arcEnd!=null) d.arcEnd=_ods.arcEnd;
+      if(el.dataset.shapeBlur>0) d.shapeBlur=+el.dataset.shapeBlur;
+      else if(_ods&&_ods.shapeBlur>0) d.shapeBlur=_ods.shapeBlur;
+      // Callout tail position - read from dataset (most reliable) or _ods
+      if(el.dataset.tailX!==undefined&&el.dataset.tailX!=='undefined'){d.tailX=+el.dataset.tailX;d.tailY=+el.dataset.tailY;}
+      else if(_ods&&_ods.tailX!==undefined){d.tailX=_ods.tailX;d.tailY=_ods.tailY;}
+      if(el.dataset.tailRoundX!==undefined&&el.dataset.tailRoundX!=='undefined'){
+        d.tailRoundX=+el.dataset.tailRoundX;d.tailRoundY=+el.dataset.tailRoundY;
+      } else if(_ods&&_ods.tailRoundX!==undefined){d.tailRoundX=_ods.tailRoundX;d.tailRoundY=_ods.tailRoundY;}
+      if(el.dataset.tailWFrac!==undefined&&el.dataset.tailWFrac!=='') d.tailWFrac=+el.dataset.tailWFrac;
+      else if(_ods&&_ods.tailWFrac!==undefined) d.tailWFrac=_ods.tailWFrac;
+      if(el.dataset.calloutForm) d.calloutForm=el.dataset.calloutForm;
+      else if(_ods&&_ods.calloutForm) d.calloutForm=_ods.calloutForm;
+      // Line endpoint joins — prefer DOM dataset (source of truth after glue), else previous data
+      if(el.dataset.lineJoin){
+        try{ d.lineJoin=JSON.parse(el.dataset.lineJoin); }catch(e){ if(_ods&&_ods.lineJoin) d.lineJoin=JSON.parse(JSON.stringify(_ods.lineJoin)); }
+      } else if(_ods&&_ods.lineJoin){
+        d.lineJoin=JSON.parse(JSON.stringify(_ods.lineJoin));
+      }
+      // Cap-center line model (v2): path ends = round-cap centers
+      if(d.shape==='line' && _ods && _ods._lineCapV!=null) d._lineCapV=_ods._lineCapV;
+      const st=el.querySelector('.shape-text');
+      const _stInner=st&&(st.querySelector('[contenteditable],:scope > div')||st);
+      d.shapeHtml=_stInner?_stInner.innerHTML:(st?st.innerHTML:'');
+      {
+        const raw=st?st.getAttribute('style')||'':'';
+        d.shapeTextCss=(typeof _shapeTextCssPick==='function')
+          ? _shapeTextCssPick(raw, (_ods&&_ods.shapeTextCss)||raw)
+          : raw;
+      }
+      // Preserve shapeTextColorScheme
+      if(_ods&&_ods.shapeTextColorScheme!==undefined)d.shapeTextColorScheme=_ods.shapeTextColorScheme;
+      // Preserve shapeTextColorScheme (not in DOM, only in data)
+      if(_ods&&_ods.shapeTextColorScheme!==undefined)d.shapeTextColorScheme=_ods.shapeTextColorScheme;
+    }
+    else if(d.type==='svg'){
+      const _oldSvg=oldElsById[d.id];
+      const _isDecor=!!(_oldSvg&&_oldSvg._isDecor)||!!decorMeta[d.id];
+      if(!_isDecor){
+        const _ec=el.querySelector('.ec');
+        const _svgOnly=_ec&&_ec.querySelector('svg');
+        const _isGlDecor=_oldSvg&&typeof _isGlDecorRenderer==='function'&&_isGlDecorRenderer(_oldSvg._decorRenderer);
+        if(_isGlDecor&&_svgOnly) d.svgContent=_svgOnly.outerHTML;
+        else if(_ec) d.svgContent=_ec.innerHTML;
+      }else{
+        delete d.svgContent;
+      }
+      if(el.dataset.svgOpacity!==undefined)d.svgOpacity=+el.dataset.svgOpacity;
+      if(el.dataset.svgShadow!==undefined)d.svgShadow=el.dataset.svgShadow==='true';
+      if(el.dataset.svgShadowBlur!==undefined)d.svgShadowBlur=+el.dataset.svgShadowBlur;
+      if(el.dataset.svgShadowSize!==undefined)d.svgShadowSize=+el.dataset.svgShadowSize;
+      if(el.dataset.svgShadowColor!==undefined)d.svgShadowColor=el.dataset.svgShadowColor;
+      if(el.dataset.svgShadowColorScheme){try{d.svgShadowColorScheme=JSON.parse(el.dataset.svgShadowColorScheme);}catch(e){}}
+      else if(_oldSvg&&_oldSvg.svgShadowColorScheme!==undefined)d.svgShadowColorScheme=_oldSvg.svgShadowColorScheme;
+    }
+    else if(d.type==='formula'){const dd=oldElsById[d.id];if(dd){d.formulaRaw=dd.formulaRaw;d.formulaLines=dd.formulaLines;d.formulaSvg=dd.formulaSvg;d.formulaColorScheme=dd.formulaColorScheme;}d.formulaColor=el.dataset.formulaColor||'#ffffff';}
+    else if(d.type==='lineangle'){
+      const dd=oldElsById[d.id];
+      let meta=null;
+      if(el.dataset.lineAngle){ try{ meta=JSON.parse(el.dataset.lineAngle); }catch(e){} }
+      if(!meta && dd) meta={lineIdA:dd.lineIdA,endA:dd.endA,lineIdB:dd.lineIdB,endB:dd.endB,radius:dd.radius,color:dd.color,moveLine:dd.moveLine,labelStyle:dd.labelStyle,markCount:dd.markCount,deg:dd.deg,displayDeg:dd.displayDeg,colorScheme:dd.colorScheme,labelFs:dd.labelFs};
+      if(meta){
+        d.lineIdA=meta.lineIdA;d.endA=meta.endA;d.lineIdB=meta.lineIdB;d.endB=meta.endB;
+        d.radius=meta.radius||36;d.color=meta.color||(typeof _defaultLineColor==='function'?_defaultLineColor().color:'#64748b');d.moveLine=meta.moveLine||'B';
+        d.labelStyle=meta.labelStyle||(dd&&dd.labelStyle)||'deg';
+        d.markCount=meta.markCount!=null?meta.markCount:(dd&&dd.markCount!=null?dd.markCount:1);
+        if(meta.deg!=null) d.deg=meta.deg;
+        if(meta.displayDeg!=null) d.displayDeg=meta.displayDeg;
+        else if(dd&&dd.displayDeg!=null) d.displayDeg=dd.displayDeg;
+        if(meta.colorScheme!==undefined) d.colorScheme=meta.colorScheme;
+        else if(dd&&dd.colorScheme!==undefined) d.colorScheme=dd.colorScheme;
+        if(meta.labelFs!=null) d.labelFs=+meta.labelFs;
+        else if(dd&&dd.labelFs!=null) d.labelFs=+dd.labelFs;
+      }
+      if(d.deg==null && dd && dd.deg!=null) d.deg=dd.deg;
+      if(d.displayDeg==null && dd && dd.displayDeg!=null) d.displayDeg=dd.displayDeg;
+      if(!d.labelStyle) d.labelStyle=(dd&&dd.labelStyle)||'deg';
+      if(d.markCount==null) d.markCount=(dd&&dd.markCount!=null)?dd.markCount:1;
+      if(!d.color) d.color=(dd&&dd.color)||(typeof _defaultLineColor==='function'?_defaultLineColor().color:'#64748b');
+      if(d.labelFs==null) d.labelFs=(dd&&dd.labelFs!=null)?+dd.labelFs:18;
+      // Migrate legacy markN-as-labelStyle
+      if(d.labelStyle==='mark1'||d.labelStyle==='mark2'||d.labelStyle==='mark3'||d.labelStyle==='mark4'){
+        const map={mark1:1,mark2:2,mark3:3,mark4:4};
+        if(d.markCount==null||d.markCount===1) d.markCount=map[d.labelStyle]||1;
+        d.labelStyle='deg';
+      }
+    }
+    else if(d.type==='lego'){d.legoStuds=+el.dataset.legoStuds||2;d.legoTall=el.dataset.legoTall==='true';d.legoSlope=el.dataset.legoSlope||null;d.legoStair=el.dataset.legoStair||null;d.legoColor=el.dataset.legoColor||'#e3000b';const _lsc=el.dataset.legoColorScheme;d.legoColorScheme=(!_lsc||_lsc===''||_lsc==='undefined')?undefined:(_lsc==='null'?null:(function(){try{return JSON.parse(_lsc);}catch(e){return undefined;}})());}
+    else if(d.type==='graph'){const dd=oldElsById[d.id];if(dd){d.linkedFormulaId=dd.linkedFormulaId;d.graphExpr=dd.graphExpr;d.graphLatex=dd.graphLatex;d.graphExprs=dd.graphExprs;d.graphLines=dd.graphLines;d.graphLineColors=dd.graphLineColors;d.graphImg=dd.graphImg;d.graphColor=dd.graphColor;d.graphBg=dd.graphBg;d.graphDark=dd.graphDark;d.graphXMin=dd.graphXMin;d.graphXMax=dd.graphXMax;d.graphYMin=dd.graphYMin;d.graphYMax=dd.graphYMax;d.graphStep=dd.graphStep;d.graphKind=dd.graphKind;d.chemKey=dd.chemKey;d.chemName=dd.chemName;d.graphBgOp=dd.graphBgOp;d.graphBgBlur=dd.graphBgBlur;d.graphColorScheme=dd.graphColorScheme;d.graphBgScheme=dd.graphBgScheme;d.chemShowFormula=dd.chemShowFormula;d.chemShowName=dd.chemShowName;d.logicShowFormula=dd.logicShowFormula;d.graphShowLabel=dd.graphShowLabel;}
+      // Prefer live DOM dataset (updated by chem style controls before save)
+      if(el.dataset.graphBg!==undefined){d.graphBg=el.dataset.graphBg||'';}
+      if(el.dataset.graphBgOp!==undefined){d.graphBgOp=+el.dataset.graphBgOp;}
+      if(el.dataset.graphBgBlur!==undefined){d.graphBgBlur=+el.dataset.graphBgBlur;}
+      if(el.dataset.graphColor){d.graphColor=el.dataset.graphColor;}
+      if(el.dataset.graphBgScheme){try{d.graphBgScheme=JSON.parse(el.dataset.graphBgScheme);}catch(e){}}
+    }
+    else if(d.type==='code'){const dd=oldElsById[d.id];if(dd){d.codeLang=dd.codeLang;d.codeTheme=dd.codeTheme;d.codeGlass=dd.codeGlass;d.codeRaw=dd.codeRaw;d.codeHtml=dd.codeHtml;d.codeFs=dd.codeFs;d.codeBg=dd.codeBg;if(dd.hfParentId)d.hfParentId=dd.hfParentId;}}
+    else if(d.type==='htmlframe'){
+      d.hfSrc=el.dataset.hfSrc||'';
+      d.hfScroll=el.dataset.hfScroll==='1';
+      d.hfChrome=el.dataset.hfChrome!=='0';
+      d.hfLinkedCodeId=el.dataset.hfLinkedCodeId||null;
+    }
+    else if(d.type==='markdown'){const dd=oldElsById[d.id];if(dd){d.mdRaw=dd.mdRaw;d.mdHtml=dd.mdHtml;d.mdFs=dd.mdFs;d.mdColor=dd.mdColor||'#ffffff';d.mdColorScheme=dd.mdColorScheme!==undefined?dd.mdColorScheme:{col:7,row:0};}
+      if(el.dataset.textBg)d.textBg=el.dataset.textBg;
+      if(el.dataset.textBg||el.dataset.textBgGrad==='1'){d.textBgOp=el.dataset.textBgOp!=null?+el.dataset.textBgOp:1;}
+      else if(el.dataset.textBgOp!=null){d.textBgOp=+el.dataset.textBgOp;}
+      if(el.dataset.textBgBlur>0)d.textBgBlur=+el.dataset.textBgBlur;
+      if(el.dataset.textBgGrad==='1'){d.textBgGrad=true;} else {delete d.textBgGrad;}
+      if(el.dataset.textBgCol2)d.textBgCol2=el.dataset.textBgCol2; else {delete d.textBgCol2;delete d.textBgCol2Scheme;}
+      if(el.dataset.textBgDir!=null)d.textBgDir=+el.dataset.textBgDir; else delete d.textBgDir;
+      if(el.dataset.textColorGrad==='1'){d.textColorGrad=true;d.textColorGrad1=el.dataset.textColorGrad1||'';d.textColorGrad2=el.dataset.textColorGrad2||'';d.textColorGradDir=+(el.dataset.textColorGradDir||90);}else{delete d.textColorGrad;delete d.textColorGrad1;delete d.textColorGrad2;delete d.textColorGradDir;delete d.textColorGrad2Scheme;}
+      if(el.dataset.textBorderW&&+el.dataset.textBorderW>0){d.textBorderW=+el.dataset.textBorderW;d.textBorderColor=el.dataset.textBorderColor||'#ffffff';d.textBorderStyle=el.dataset.textBorderStyle||'solid';}
+      const _tss=+(el.dataset.textShadowSize||0), _tsb=+(el.dataset.textShadowBlur||0), _tsw=+(el.dataset.textShadowW||0);
+      if(_tss>0||_tsb>0||_tsw>0){
+        if(_tsb>0)d.textShadowBlur=_tsb;
+        if(_tss>0)d.textShadowSize=_tss;
+        if(!d.textShadowBlur&&!d.textShadowSize&&_tsw>0)d.textShadowW=_tsw;
+        d.textShadowColor=el.dataset.textShadowColor||'#000000';
+      }else{
+        delete d.textShadowBlur; delete d.textShadowSize; delete d.textShadowW; delete d.textShadowColor;
+      }
+      const _tbss=+(el.dataset.textBlockShadowSize||0), _tbsb=+(el.dataset.textBlockShadowBlur||0);
+      if(_tbss>0||_tbsb>0){
+        if(_tbsb>0)d.textBlockShadowBlur=_tbsb; else delete d.textBlockShadowBlur;
+        if(_tbss>0)d.textBlockShadowSize=_tbss; else delete d.textBlockShadowSize;
+        d.textBlockShadowColor=el.dataset.textBlockShadowColor||'#000000';
+        d.textBlockShadowInset=el.dataset.textBlockShadowInset==='1';
+      }else{
+        delete d.textBlockShadowBlur; delete d.textBlockShadowSize; delete d.textBlockShadowColor; delete d.textBlockShadowInset;
+      }
+      if(+(el.dataset.rx_tl||0)||+(el.dataset.rx_tr||0)||+(el.dataset.rx_bl||0)||+(el.dataset.rx_br||0)){d.rx_tl=+(el.dataset.rx_tl||0);d.rx_tr=+(el.dataset.rx_tr||0);d.rx_bl=+(el.dataset.rx_bl||0);d.rx_br=+(el.dataset.rx_br||0);d.rxUnit=el.dataset.rxUnit||'px';}
+      const _odmd=oldElsById[d.id];if(_odmd){if(_odmd.textBgScheme!==undefined)d.textBgScheme=_odmd.textBgScheme;if(_odmd.textBgCol2Scheme!==undefined)d.textBgCol2Scheme=_odmd.textBgCol2Scheme;if(_odmd.textColorGrad2Scheme!==undefined)d.textColorGrad2Scheme=_odmd.textColorGrad2Scheme;if(_odmd.borderScheme!==undefined)d.borderScheme=_odmd.borderScheme;}
+    }
+    else if(d.type==='icon'){
+      d.iconId=el.dataset.iconId||'';
+      d.iconColor=el.dataset.iconColor||'#3b82f6';
+      d.iconSw=el.dataset.iconSw!=null?+el.dataset.iconSw:1.8;
+      const _ecInner=el.querySelector('.ec');
+      const _domSvg=_ecInner?_ecInner.querySelector('svg'):null;
+      const _oldIcon=oldElsById[d.id];
+      d.iconFillOp=(typeof _iconResolvedFillOp==='function')
+        ?_iconResolvedFillOp(el.dataset.iconFillOp!=null?el.dataset.iconFillOp:(_oldIcon&&_oldIcon.iconFillOp), el.dataset.iconStyle||(_oldIcon&&_oldIcon.iconStyle))
+        :(el.dataset.iconFillOp!=null?+el.dataset.iconFillOp:0);
+      d.shadow=el.dataset.shadow==='true'||el.dataset.shadow===true;
+      d.shadowBlur=el.dataset.shadowBlur!=null?+el.dataset.shadowBlur:(_oldIcon&&_oldIcon.shadowBlur!=null?_oldIcon.shadowBlur:4);
+      d.shadowSize=el.dataset.shadowSize!=null?+el.dataset.shadowSize:(_oldIcon&&_oldIcon.shadowSize!=null?_oldIcon.shadowSize:0);
+      d.shadowColor=el.dataset.shadowColor||(_oldIcon&&_oldIcon.shadowColor)||'#000000';
+      d.iconAnim=el.dataset.iconAnim==='true';
+      if(el.dataset.shadowColorScheme){try{d.shadowColorScheme=JSON.parse(el.dataset.shadowColorScheme);}catch(e){}}
+      else if(_oldIcon&&_oldIcon.shadowColorScheme!==undefined)d.shadowColorScheme=_oldIcon.shadowColorScheme;
+      if(el.dataset.iconColorScheme){try{d.iconColorScheme=JSON.parse(el.dataset.iconColorScheme);}catch(e){}}
+      else if(_oldIcon&&_oldIcon.iconColorScheme!==undefined)d.iconColorScheme=_oldIcon.iconColorScheme;
+      if(_domSvg){
+        d.svgContent=_domSvg.outerHTML;
+        // Preserve flags from previous data
+        if(_oldIcon&&_oldIcon.iconFitted) d.iconFitted=true;
+        if(_oldIcon&&_oldIcon.iconColorCustom) d.iconColorCustom=true;
+      } else if(_oldIcon&&_oldIcon.iconFitted&&_oldIcon.svgContent){
+        d.svgContent=_oldIcon.svgContent;
+        d.iconFitted=true;
+      } else {
+        const _ic=typeof getIconById==='function'?getIconById(d.iconId):(typeof ICONS!=='undefined'?ICONS.find(function(x){return x.id===d.iconId;}):null);
+        if(_ic&&typeof _buildIconSVG==='function'){
+          const _savePath=(typeof _iconStaticPath==='function')?_iconStaticPath(_ic,d.iconAnim):null;
+          d.svgContent=_buildIconSVG(_ic,d.iconColor,d.iconSw,d.iconStyle,d.shadow,d.shadowBlur,d.shadowColor,d.shadowSize,d.id,d.iconFillOp,_savePath);
+        }else if(_ecInner){
+          d.svgContent=_ecInner.innerHTML;
+        }
+      }
+      if(el.dataset.shapeFlipH==='true') d.shapeFlipH=true;
+      else delete d.shapeFlipH;
+      if(el.dataset.shapeFlipV==='true') d.shapeFlipV=true;
+      else delete d.shapeFlipV;
+    }
+    else if(d.type==='applet'){
+      if(typeof _serializeAppletFromDom==='function') _serializeAppletFromDom(el, d);
+      else {
+      d.appletId=el.dataset.appletId;
+      d.appletHtml=el.dataset.appletHtml||'';
+      if(el.dataset.appletAspect)d._appletAspect=+el.dataset.appletAspect;
+      const _gk=['tmMin','tmSec','tmOnEnd','tmOnEndSlide','tmOnEndAnim','genMode','genLines','cntStart','cntGoal','cntOnEnd','cntOnEndSlide','cntOnEndAnim','cntGroupId','genMin','genMax','genStep','genFontSize','genColor','genBg','genBgBlur','genBgOp',
+        'genBorderColor','genBorderWidth','genBold','genAlign','genVAlign',
+        'genShadowOn','genShadowBlur','genShadowColor',
+        'genColorScheme','genBgScheme','genBorderScheme'];
+      _gk.forEach(k=>{
+        if(el.dataset[k]!==undefined){
+          const v=el.dataset[k];
+          if(k==='genBold') d[k]=(v==='true');
+          else if(k==='genShadowOn') d[k]=(v==='true');
+          else if(['tmMin','tmSec','tmOnEndSlide','cntStart','cntOnEndSlide','genMin','genMax','genStep','genFontSize','genBgBlur','genBgOp','genBorderWidth','genShadowBlur'].includes(k)) d[k]=+v;
+          else if(['genColorScheme','genBgScheme','genBorderScheme'].includes(k)){
+            try{d[k]=JSON.parse(v);}catch(e){d[k]=null;}
+          }
+          else if(k==='genLines'){ try{d[k]=decodeURIComponent(v);}catch(e){d[k]=v;} }
+          else if(k==='cntGoal'){ if(v!=='') d[k]=+v; }
+          else d[k]=v;
+        }
+      });
+      if(el.dataset.genRx!==undefined) d.rx=+el.dataset.genRx;
+      }
+    }
+    else if(d.type==='pagenum'){
+      // page number element — data stored in slide data, no DOM reading needed
+      const dd=oldElsById[d.id];
+      if(dd){d.html=dd.html;d.pnStyle=dd.pnStyle;d.pnPos=dd.pnPos;d.pnColor=dd.pnColor;d.pnTextColor=dd.pnTextColor;d.pnFontSize=dd.pnFontSize;d.pnShowTotal=dd.pnShowTotal;}
+    }
+    else if(d.type==='inkhost'){
+      const dd=oldElsById[d.id];
+      if(dd){ d.inkIds=dd.inkIds?dd.inkIds.slice():[]; }
+      else if(el.dataset.inkIds){
+        try{ d.inkIds=JSON.parse(el.dataset.inkIds); }catch(e){ d.inkIds=[]; }
+      }
+    }
+    else if(d.type==='mediavideo'||d.type==='mediaaudio'){
+      // Media elements — all data stored in slides array, not in DOM
+      const dd=oldElsById[d.id];
+      if(dd){
+        d.mediaSrc=dd.mediaSrc;d.mediaSrcType=dd.mediaSrcType;d.mediaId=dd.mediaId;
+        d.mvDisplay=dd.mvDisplay;d.mvControls=dd.mvControls;d.mvStart=dd.mvStart;
+        d.maStart=dd.maStart;d.maContinue=dd.maContinue;d.maLoop=dd.maLoop;d.maVolume=dd.maVolume;
+        d.maTriggerElId=dd.maTriggerElId;d.maTriggerElIds=dd.maTriggerElIds;
+      }
+    }
+    else if(d.type==='model3d'){
+      const dd=oldElsById[d.id];
+      if(dd){
+        d.objText=dd.objText;d.objName=dd.objName;
+        d.objRotX=dd.objRotX;d.objRotY=dd.objRotY;
+        d.objAutoRot=dd.objAutoRot;d.objRotSpeed=dd.objRotSpeed;
+        d.objColor=dd.objColor;d.objColorScheme=dd.objColorScheme;
+        d.objBg=dd.objBg;d.objBgScheme=dd.objBgScheme;d.objBgOp=dd.objBgOp;d.objBgCleared=dd.objBgCleared;
+        if(dd._mesh) d._mesh=dd._mesh;
+      }
+    }
+    // Restore decor flags
+    if(decorMeta[d.id])Object.assign(d,decorMeta[d.id]);
+    return d;
+  });
+  const _decor=slides[cur].els&&slides[cur].els.find(function(d){ return d&&d._isDecor; });
+  if(_decor&&_decor._layoutIdx!=null) slides[cur].layoutIdx=_decor._layoutIdx;
+  else delete slides[cur].layoutIdx;
+}
+function load(){
+  // Сначала сбросить sel — иначе clearMultiSel→_updateSelFrames оставит синюю рамку
+  // от объекта предыдущего слайда в #sel-frames-layer
+  sel=null;_rotEl=null;
+  if(typeof clearMultiSel==='function') clearMultiSel();
+  else if(typeof multiSel!=='undefined'&&multiSel) multiSel.clear();
+  clearGuides();
+  if(typeof window._deselectConn==='function'){
+    try{ window._deselectConn(true); }catch(e){}
+  }
+  // Clean up shape handles (arc, star) when switching slides
+  document.querySelectorAll('.arc-handle,.star-handle,.para-handle,.chev-handle,.trap-handle,.moon-handle,.curve-handle').forEach(h=>h.remove());
+  const _ov=document.getElementById('handles-overlay');if(_ov)_ov.innerHTML='';
+  const _sf=document.getElementById('sel-frames-layer');if(_sf)_sf.innerHTML='';
+  document.querySelectorAll('.rh[data-overlay-hidden]').forEach(rh=>{rh.style.display='';delete rh.dataset.overlayHidden;});
+  const canvas=document.getElementById('canvas');
+  if(typeof CrystalDecor!=='undefined') CrystalDecor.unmountAll();
+  if(typeof DnaDecor!=='undefined') DnaDecor.unmountAll();
+  if(typeof GalaxyDecor!=='undefined') GalaxyDecor.unmountAll();
+  if(typeof CausticsDecor!=='undefined') CausticsDecor.unmountAll();
+  if(typeof WarpDecor!=='undefined') WarpDecor.unmountAll();
+  canvas.querySelectorAll('._particles_layer,._particle,#motion-ghosts,#motion-svg,.motion-ghost,#camera-svg,#camera-layer,[data-camera-ui]').forEach(e=>e.remove());
+  canvas.querySelectorAll('.el').forEach(e=>e.remove());
+  const s=slides[cur];loadBg(s);s.els.forEach(mkEl);
+  if(typeof _migrateSlideLineJoins==='function') _migrateSlideLineJoins();
+  if(typeof _coalesceAllLineJunctions==='function') _coalesceAllLineJunctions();
+  document.getElementById('p-st').value=s.title;
+  // Ribbon + props show the current slide transition (synced both ways)
+  const _st=s.trans||'none';
+  if(typeof syncSlideTransUI==='function') syncSlideTransUI(_st);
+  else {
+    document.querySelectorAll('#slide-trans-grid .tbtn2[data-st]').forEach(b=>
+      b.classList.toggle('active', b.dataset.st===_st)
+    );
+    document.querySelectorAll('#trans-btn-grid .tbtn2[data-t]').forEach(b=>
+      b.classList.toggle('active', b.dataset.t===_st)
+    );
+    if(typeof updateSlideTransHint==='function') updateSlideTransHint(_st);
+    if(typeof updateRibbonTransHint==='function') updateRibbonTransHint(_st);
+  }
+  if(typeof syncTransDurUI==='function') syncTransDurUI();
+  document.getElementById('p-auto').value=s.auto||0;
+  const navChk=document.getElementById('slide-click-nav');
+  if(navChk)navChk.checked=s.clickNav!==false; // default true
+  syncProps();
+  if(typeof _updateSelFrames==='function') _updateSelFrames();
+  if(typeof _updateHandlesOverlay==='function') _updateHandlesOverlay();
+  if(document.getElementById('props-anim-wrap')?.style.display==='flex'){
+    renderAnimPanel();
+    if(typeof renderMotionOverlay==='function') renderMotionOverlay();
+    if(typeof renderCameraOverlay==='function') renderCameraOverlay();
+  }
+  const _objSec=document.getElementById('objects-panel-section');
+  if(_objSec&&_objSec.style.display!=='none'&&typeof renderObjectsPanel==='function')renderObjectsPanel();
+  if(typeof window._drawingOnSlideLoad==='function') window._drawingOnSlideLoad();
+  if(typeof _syncAllIconAnims==='function') _syncAllIconAnims();
+}
+function onTitleInput(v){
+  const oldTitle = getSlideDisplayTitle(slides[cur], cur);
+  const trimmed = (v || '').trim();
+  let newTitle = trimmed || (typeof defaultSlideTitle === 'function' ? defaultSlideTitle(cur + 1) : ('Слайд ' + (cur + 1)));
+  newTitle = ensureUniqueSlideTitle(newTitle, cur);
+  slides[cur].title = newTitle;
+  if (_normalizeSlideTitle(oldTitle) !== _normalizeSlideTitle(newTitle)) {
+    remapSlideLinksFromTitle(oldTitle, newTitle);
+    remapNavTargetsFromTitle(oldTitle, newTitle);
+  }
+  const pSt = document.getElementById('p-st');
+  if (pSt && pSt.value !== newTitle) pSt.value = newTitle;
+  drawThumbs();
+  saveState();
+}
