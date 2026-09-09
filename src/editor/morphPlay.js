@@ -302,7 +302,7 @@ export function runMorphTransition(fromSlide, toSlide, findEl, dur, onDone) {
     toEl.dataset.morphOriginalShadow = originalBoxShadow;
     toEl.dataset.morphOriginalRadius = originalBorderRadius;
     
-    // Hide first to prevent flash
+    // Set initial opacity (no hiding - prevents flash)
     toEl.style.opacity = t.fromOpacity;
     
     // Snap to FROM position
@@ -341,7 +341,7 @@ export function runMorphTransition(fromSlide, toSlide, findEl, dur, onDone) {
     }
   });
 
-  // Hide enter elements initially
+  // Fade in enter elements
   enterPairs.forEach(({ toEl }) => {
     if (toEl) {
       toEl.style.opacity = '0';
@@ -352,12 +352,7 @@ export function runMorphTransition(fromSlide, toSlide, findEl, dur, onDone) {
   // Force reflow
   void document.body.offsetHeight;
 
-  // Show elements and start animation
-  console.log('[Morph] Showing elements and starting animation');
-  pairs.forEach(({ toEl }) => {
-    if (toEl) {
-      toEl.style.opacity = '1';
-    }
+  // Start animation immediately (elements are already visible at from positions)
   });
 
   // Animate geometry

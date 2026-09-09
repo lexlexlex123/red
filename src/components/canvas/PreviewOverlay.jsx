@@ -1734,13 +1734,15 @@ export default function PreviewOverlay() {
     const ms = effectiveTransDur(toSlide, gDur);
     idxRef.current = dest;
     setDur(ms);
-    setAnimClass(enterClass(trans));
-    setAnimKey((k) => k + 1);
-    setIdx(dest);
-    initSlideAnims(toSlide);
     
-    // Handle morph transition specially
+    // Handle morph transition specially - no entrance animation, just render and morph
     if (trans === 'morph' && ms > 0) {
+      // Set animClass empty BEFORE React re-renders to prevent flash
+      setAnimClass('');
+      setAnimKey((k) => k + 1);
+      setIdx(dest);
+      initSlideAnims(toSlide);
+      
       busy.current = true;
       clearBusyTimer();
       // Wait for React to render the new slide, then run morph
@@ -1752,17 +1754,24 @@ export default function PreviewOverlay() {
         }
         runMorphTransition(fromSlide, toSlide, (id) => findElById(stage, id), ms, () => {
           busy.current = false;
-          setAnimClass('');
         });
       }, 50);
-    } else if (trans !== 'none' && ms > 0) {
-      busy.current = true;
-      clearBusyTimer();
-      busyTimerRef.current = window.setTimeout(() => {
-        busyTimerRef.current = null;
-        busy.current = false;
-        setAnimClass('');
-      }, ms);
+    } else {
+      // Normal transitions: trigger re-render with animation class
+      setAnimClass(enterClass(trans));
+      setAnimKey((k) => k + 1);
+      setIdx(dest);
+      initSlideAnims(toSlide);
+      
+      if (trans !== 'none' && ms > 0) {
+        busy.current = true;
+        clearBusyTimer();
+        busyTimerRef.current = window.setTimeout(() => {
+          busyTimerRef.current = null;
+          busy.current = false;
+          setAnimClass('');
+        }, ms);
+      }
     }
   };
 
