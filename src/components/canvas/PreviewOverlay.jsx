@@ -7,6 +7,7 @@ import { shapeBlurOverlayStyle, shapeBlurPx } from '../../editor/shapeBlur.js';
 import { shapeTextBoxStyle } from '../../editor/shapeText.js';
 import { versionAttr } from '../../editor/versions.js';
 import { effectiveTrans, effectiveTransDur, enterClass } from '../../editor/transitions.js';
+import { runMorphTransition, findElById } from '../../editor/morphPlay.js';
 import { readGroupLink, resolveSlideLinkIndex } from '../../editor/links.js';
 import { animCssClass, animDuration, collectSlidePlaybackSteps, isEntranceAnim, isExitAnim, isLiveAnim } from '../../editor/anims.js';
 import { resolveNavTargetSlideIndex } from '../../editor/slideTitles.js';
@@ -1725,25 +1726,52 @@ export default function PreviewOverlay() {
     const dest = Math.max(0, Math.min(list.length - 1, next | 0));
     if (dest === idxRef.current) return;
     clearAutoTimer();
-    const slide = list[dest] || {};
+    const fromSlide = list[idxRef.current] || {};
+    const toSlide = list[dest] || {};
     const gTrans = usePresentationStore.getState().globalTrans;
     const gDur = usePresentationStore.getState().globalTransDur;
-    const trans = effectiveTrans(slide, gTrans);
-    const ms = effectiveTransDur(slide, gDur);
+    const trans = effectiveTrans(toSlide, gTrans);
+    const ms = effectiveTransDur(toSlide, gDur);
     idxRef.current = dest;
     setDur(ms);
-    setAnimClass(enterClass(trans));
-    setAnimKey((k) => k + 1);
-    setIdx(dest);
-    initSlideAnims(slide);
-    if (trans !== 'none' && ms > 0) {
+    
+    // Handle morph transition specially - no entrance animation, just render and morph
+    if (trans === 'morph' && ms > 0) {
+      // Set animClass empty BEFORE React re-renders to prevent flash
+      setAnimClass('');
+      setAnimKey((k) => k + 1);
+      setIdx(dest);
+      initSlideAnims(toSlide);
+      
       busy.current = true;
       clearBusyTimer();
-      busyTimerRef.current = window.setTimeout(() => {
-        busyTimerRef.current = null;
-        busy.current = false;
-        setAnimClass('');
-      }, ms);
+      // Wait for React to render the new slide, then run morph
+      setTimeout(() => {
+        const stage = stageRef.current;
+        if (!stage) {
+          busy.current = false;
+          return;
+        }
+        runMorphTransition(fromSlide, toSlide, (id) => findElById(stage, id), ms, () => {
+          busy.current = false;
+        });
+      }, 50);
+    } else {
+      // Normal transitions: trigger re-render with animation class
+      setAnimClass(enterClass(trans));
+      setAnimKey((k) => k + 1);
+      setIdx(dest);
+      initSlideAnims(toSlide);
+      
+      if (trans !== 'none' && ms > 0) {
+        busy.current = true;
+        clearBusyTimer();
+        busyTimerRef.current = window.setTimeout(() => {
+          busyTimerRef.current = null;
+          busy.current = false;
+          setAnimClass('');
+        }, ms);
+      }
     }
   };
 
