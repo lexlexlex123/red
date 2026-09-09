@@ -1735,27 +1735,39 @@ export default function PreviewOverlay() {
     idxRef.current = dest;
     setDur(ms);
     
-    // Handle morph transition specially - no entrance animation, just render and morph
+    // Handle morph transition specially - keep both slides in DOM and animate
     if (trans === 'morph' && ms > 0) {
       // Set animClass empty BEFORE React re-renders to prevent flash
       setAnimClass('');
-      setAnimKey((k) => k + 1);
+      
+      // For morph, we need to keep the old slide visible while rendering the new one on top
+      // Then animate elements from old positions to new positions
+      const stage = stageRef.current;
+      if (!stage) {
+        setIdx(dest);
+        initSlideAnims(toSlide);
+        busy.current = false;
+        return;
+      }
+      
+      // Get all current elements before update
+      const currentEls = Array.from(stage.querySelectorAll('[data-id]')).map(el => ({
+        id: el.dataset.id,
+        el: el
+      }));
+      
+      // Update to new slide
       setIdx(dest);
       initSlideAnims(toSlide);
       
-      busy.current = true;
-      clearBusyTimer();
-      // Wait for React to render the new slide, then run morph
-      setTimeout(() => {
-        const stage = stageRef.current;
-        if (!stage) {
-          busy.current = false;
-          return;
-        }
-        runMorphTransition(fromSlide, toSlide, (id) => findElById(stage, id), ms, () => {
-          busy.current = false;
+      // Wait for React to render, then run morph
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          runMorphTransition(fromSlide, toSlide, (id) => findElById(stage, id), ms, () => {
+            busy.current = false;
+          });
         });
-      }, 50);
+      });
     } else {
       // Normal transitions: trigger re-render with animation class
       setAnimClass(enterClass(trans));
