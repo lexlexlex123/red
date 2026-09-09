@@ -759,7 +759,6 @@ function pptBinaryToSlides(parsed){
   });
 }
 
-<<<<<<<< HEAD:src/editor/pptBinaryImport.js
 /**
  * @param {ArrayBuffer|Uint8Array} buf
  * @param {{filename?:string}} [opts]
@@ -779,45 +778,6 @@ export async function importPptBinaryFile(buf, opts = {}) {
     canvasH: parsed.slideH,
     ar: parsed.ar,
   };
-========
-async function doParsePPTBinary(buf, filename){
-  window._skipImportAutofit = true;
-  try{
-    const _ib = window._importFileBytes || (buf && buf.byteLength) || 0;
-    const _sl = function(msg, pct){ showLoading(msg, pct, _ib, _ib || undefined); };
-    _sl('Чтение .ppt…', 35);
-    const parsed = parsePptBinary(buf);
-    _sl('Сборка слайдов…', 75);
-    const slides_out = pptBinaryToSlides(parsed);
-    const W = parsed.slideW, H = parsed.slideH, arOut = parsed.ar;
-    slides = slides_out; cur = 0; ar = arOut; canvasW = W; canvasH = H;
-    document.getElementById('canvas').style.width = W + 'px';
-    document.getElementById('canvas').style.height = H + 'px';
-    if(typeof _syncArBtn==='function') _syncArBtn();
-    if(typeof clampEls === 'function') clampEls(W, H);
-    _sl('Завершение…', 95);
-    const isRu = (typeof _lang !== 'undefined') ? _lang !== 'en' : true;
-    const imgCnt = slides_out.reduce(function(n,s){ return n + s.els.filter(function(e){return e.type==='image';}).length; }, 0);
-    const txtCnt = slides_out.reduce(function(n,s){ return n + s.els.filter(function(e){return e.type==='text';}).length; }, 0);
-    const linkCnt = slides_out.reduce(function(n,s){ return n + s.els.filter(function(e){return !!e.link;}).length; }, 0);
-    const toastMsg = isRu
-      ? ('Импорт .ppt: '+slides.length+' слайдов ('+arOut+'), текст: '+txtCnt+', рис.: '+imgCnt+(linkCnt?', ссылок: '+linkCnt:'')+' — по координатам оригинала')
-      : ('Imported .ppt: '+slides.length+' slides ('+arOut+'), text: '+txtCnt+', images: '+imgCnt+(linkCnt?', links: '+linkCnt:''));
-    if(typeof finalizeImport==='function'){
-      await finalizeImport({toast: toastMsg, loadingPct: 95});
-    } else {
-      if(typeof renderAll === 'function') renderAll();
-      if(typeof saveState === 'function') saveState();
-      setTimeout(function(){
-        try{ const raw = localStorage.getItem('sf_v4'); if(raw && window._idbSave) window._idbSave(raw); }catch(e){}
-      }, 200);
-      hideLoading();
-      toast(toastMsg, 'ok');
-    }
-  } finally {
-    setTimeout(function(){ window._skipImportAutofit = false; }, 2500);
-  }
->>>>>>>> f8bd18bab168c67e6e63057c1e751b81f629b97f:js/26b-ppt-binary.js
 }
 
 export { parsePptBinary, pptBinaryToSlides };

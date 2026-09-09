@@ -353,9 +353,6 @@ export function runMorphTransition(fromSlide, toSlide, findEl, dur, onDone) {
   void document.body.offsetHeight;
 
   // Start animation immediately (elements are already visible at from positions)
-  });
-
-  // Animate geometry
   console.log('[Morph] Starting animation for', pairs.length, 'elements');
   function frame(now) {
     const elapsed = now - startTime;
