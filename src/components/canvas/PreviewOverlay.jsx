@@ -1750,25 +1750,21 @@ export default function PreviewOverlay() {
         return;
       }
       
-      // Get all current elements before update
-      const currentEls = Array.from(stage.querySelectorAll('[data-id]')).map(el => ({
-        id: el.dataset.id,
-        el: el
-      }));
+      // CRITICAL: Do NOT call setIdx yet - keep old slide in DOM for morphing
+      // We will animate the existing elements, then switch idx after animation
       
-      // Update to new slide BUT prevent React from changing DOM positions immediately
-      // by keeping the old slide data temporarily
-      setIdx(dest);
-      initSlideAnims(toSlide);
-      
-      // Wait for React to render, then run morph
+      // Wait for next frame to ensure DOM is stable, then run morph
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           runMorphTransition(fromSlide, toSlide, (id) => findElById(stage, id), ms, () => {
+            // Only AFTER animation completes, switch to new slide
+            setIdx(dest);
+            initSlideAnims(toSlide);
             busy.current = false;
           });
         });
       });
+      return; // Exit early - don't do normal transition
     } else {
       // Normal transitions: trigger re-render with animation class
       setAnimClass(enterClass(trans));
