@@ -1756,7 +1756,8 @@ export default function PreviewOverlay() {
         el: el
       }));
       
-      // Update to new slide
+      // Update to new slide BUT prevent React from changing DOM positions immediately
+      // by keeping the old slide data temporarily
       setIdx(dest);
       initSlideAnims(toSlide);
       

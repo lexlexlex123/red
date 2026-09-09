@@ -302,17 +302,20 @@ export function runMorphTransition(fromSlide, toSlide, findEl, dur, onDone) {
     toEl.dataset.morphOriginalShadow = originalBoxShadow;
     toEl.dataset.morphOriginalRadius = originalBorderRadius;
     
+    // CRITICAL: Force hardware acceleration and prevent React from interfering
+    toEl.style.position = 'absolute';
+    toEl.style.willChange = 'transform, left, top, width, height, opacity, font-size, color, background-color, box-shadow, border-radius';
+    
     // Set initial opacity (no hiding - prevents flash)
     toEl.style.opacity = t.fromOpacity;
     
-    // Snap to FROM position
-    toEl.style.left = t.fromRect.x + 'px';
-    toEl.style.top = t.fromRect.y + 'px';
+    // Snap to FROM position using transform for better performance
+    toEl.style.transform = `translate(${t.fromRect.x}px, ${t.fromRect.y}px) rotate(${t.fromRot}deg)`;
+    toEl.style.left = '0px';
+    toEl.style.top = '0px';
     toEl.style.width = t.fromRect.w + 'px';
     toEl.style.height = t.fromRect.h + 'px';
-    toEl.style.transform = `rotate(${t.fromRot}deg)`;
     toEl.style.transformOrigin = 'center center';
-    toEl.style.willChange = 'transform, left, top, width, height, opacity, font-size, color, background-color, box-shadow, border-radius';
     
     // Snap font size if applicable
     if (t.fromFs && t.toFs) {
@@ -370,11 +373,10 @@ export function runMorphTransition(fromSlide, toSlide, findEl, dur, onDone) {
       const curH = t.fromRect.h + (t.toRect.h - t.fromRect.h) * ease;
       const curRot = t.fromRot + (t.toRot - t.fromRot) * ease;
       
-      el.style.left = curX + 'px';
-      el.style.top = curY + 'px';
+      // Use transform for smooth GPU-accelerated animation
+      el.style.transform = `translate(${curX}px, ${curY}px) rotate(${curRot}deg)`;
       el.style.width = curW + 'px';
       el.style.height = curH + 'px';
-      el.style.transform = `rotate(${curRot}deg)`;
 
       // Interpolate font size
       if (t.fromFs && t.toFs) {
@@ -430,11 +432,17 @@ export function runMorphTransition(fromSlide, toSlide, findEl, dur, onDone) {
       console.log('[Morph] Cleanup');
       pairs.forEach(({ toEl }) => {
         if (toEl) {
-          toEl.style.left = toEl.dataset.morphOriginalLeft || '';
-          toEl.style.top = toEl.dataset.morphOriginalTop || '';
+          // Restore position using transform if there was an original transform, otherwise use left/top
+          const origTransform = toEl.dataset.morphOriginalTransform;
+          if (origTransform && origTransform !== 'none') {
+            toEl.style.transform = origTransform;
+          } else {
+            toEl.style.transform = '';
+            toEl.style.left = toEl.dataset.morphOriginalLeft || '';
+            toEl.style.top = toEl.dataset.morphOriginalTop || '';
+          }
           toEl.style.width = toEl.dataset.morphOriginalWidth || '';
           toEl.style.height = toEl.dataset.morphOriginalHeight || '';
-          toEl.style.transform = toEl.dataset.morphOriginalTransform || '';
           toEl.style.opacity = toEl.dataset.morphOriginalOpacity || '';
           toEl.style.fontSize = toEl.dataset.morphOriginalFontSize || '';
           toEl.style.color = toEl.dataset.morphOriginalColor || '';
