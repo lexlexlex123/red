@@ -82,16 +82,84 @@ export function morphFindFrom(fromEls, toEl, used, toEls) {
 /** Hex color interpolation. */
 export function lerpHexColor(from, to, t) {
   if (!from || !to) return to || from || '';
+  // Handle transparent colors
+  if (from === 'transparent' || from === 'none') from = '#00000000';
+  if (to === 'transparent' || to === 'none') to = '#00000000';
+  
+  // Parse alpha if present
+  const hasAlphaFrom = from.length === 9;
+  const hasAlphaTo = to.length === 9;
+  
   const r1 = parseInt(from.slice(1, 3), 16) / 255;
   const g1 = parseInt(from.slice(3, 5), 16) / 255;
   const b1 = parseInt(from.slice(5, 7), 16) / 255;
+  const a1 = hasAlphaFrom ? parseInt(from.slice(7, 9), 16) / 255 : 1;
+  
   const r2 = parseInt(to.slice(1, 3), 16) / 255;
   const g2 = parseInt(to.slice(3, 5), 16) / 255;
   const b2 = parseInt(to.slice(5, 7), 16) / 255;
+  const a2 = hasAlphaTo ? parseInt(to.slice(7, 9), 16) / 255 : 1;
+  
   const r = Math.round((r1 + (r2 - r1) * t) * 255);
   const g = Math.round((g1 + (g2 - g1) * t) * 255);
   const b = Math.round((b1 + (b2 - b1) * t) * 255);
-  return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+  const a = Math.round((a1 + (a2 - a1) * t) * 255);
+  
+  const hex = '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+  return a < 255 ? hex + a.toString(16).padStart(2, '0') : hex;
+}
+
+/** Parse shadow string to components. */
+export function parseShadow(shadow) {
+  if (!shadow || shadow === 'none') return null;
+  // Format: "offset-x offset-y blur-radius spread-radius color" or "inset ..."
+  const match = shadow.match(/^(inset\s+)?(-?[\d.]+)(px|em|rem|%)\s+(-?[\d.]+)(px|em|rem|%)\s+(-?[\d.]+)(px|em|rem|%)?\s*(-?[\d.]+)?(px|em|rem|%)?\s*(.+)?$/i);
+  if (!match) return null;
+  return {
+    inset: !!match[1],
+    offsetX: parseFloat(match[2]),
+    offsetY: parseFloat(match[4]),
+    blur: match[6] ? parseFloat(match[6]) : 0,
+    spread: match[9] ? parseFloat(match[9]) : 0,
+    color: match[match.length - 1] || '#000',
+  };
+}
+
+/** Interpolate shadow. */
+export function lerpShadow(from, to, t) {
+  const f = parseShadow(from);
+  const d = parseShadow(to);
+  if (!f && !d) return 'none';
+  if (!f) return to;
+  if (!d) return from;
+  
+  const ox = f.offsetX + (d.offsetX - f.offsetX) * t;
+  const oy = f.offsetY + (d.offsetY - f.offsetY) * t;
+  const blur = f.blur + (d.blur - f.blur) * t;
+  const spread = f.spread + (d.spread - f.spread) * t;
+  const color = lerpHexColor(f.color, d.color, t);
+  
+  return `${ox}px ${oy}px ${blur}px ${spread}px ${color}`;
+}
+
+/** Parse border-radius string to array. */
+export function parseRadius(radius) {
+  if (!radius) return [0, 0, 0, 0];
+  if (typeof radius === 'number') return [radius, radius, radius, radius];
+  const parts = String(radius).replace(/px/g, '').split(/\s+/).map(parseFloat);
+  if (parts.length === 1) return [parts[0], parts[0], parts[0], parts[0]];
+  if (parts.length === 2) return [parts[0], parts[1], parts[0], parts[1]];
+  if (parts.length === 3) return [parts[0], parts[1], parts[2], parts[1]];
+  if (parts.length >= 4) return [parts[0], parts[1], parts[2], parts[3]];
+  return [0, 0, 0, 0];
+}
+
+/** Interpolate border-radius. */
+export function lerpRadius(from, to, t) {
+  const f = parseRadius(from);
+  const d = parseRadius(to);
+  const result = f.map((v, i) => v + (d[i] - v) * t);
+  return result.map(v => `${v}px`).join(' ');
 }
 
 /**
@@ -191,7 +259,13 @@ export function runMorphTransition(fromSlide, toSlide, findEl, dur, onDone) {
     const toStroke = to.stroke || null;
     const fromFs = from.fs || from.mdFs || from.fontSize || null;
     const toFs = to.fs || to.mdFs || to.fontSize || null;
-    return { fromRect, toRect, fromRot, toRot, fromFill, toFill, fromStroke, toStroke, fromFs, toFs };
+    const fromShadow = from.shadow || null;
+    const toShadow = to.shadow || null;
+    const fromRadius = from.radius || from.borderRadius || null;
+    const toRadius = to.radius || to.borderRadius || null;
+    const fromOpacity = from.elOpacity != null ? +from.elOpacity : 1;
+    const toOpacity = to.elOpacity != null ? +to.elOpacity : 1;
+    return { fromRect, toRect, fromRot, toRot, fromFill, toFill, fromStroke, toStroke, fromFs, toFs, fromShadow, toShadow, fromRadius, toRadius, fromOpacity, toOpacity };
   });
 
   // Hide elements initially, then snap to FROM positions
@@ -210,6 +284,8 @@ export function runMorphTransition(fromSlide, toSlide, findEl, dur, onDone) {
     const originalFontSize = computedStyle.fontSize;
     const originalColor = computedStyle.color;
     const originalBg = computedStyle.backgroundColor;
+    const originalBoxShadow = computedStyle.boxShadow;
+    const originalBorderRadius = computedStyle.borderRadius;
     
     console.log('[Morph] Snap element', toEl.dataset.id, 'from original:', originalLeft, originalTop, 'to from:', t.fromRect.x, t.fromRect.y);
     
@@ -223,9 +299,11 @@ export function runMorphTransition(fromSlide, toSlide, findEl, dur, onDone) {
     toEl.dataset.morphOriginalFontSize = originalFontSize;
     toEl.dataset.morphOriginalColor = originalColor;
     toEl.dataset.morphOriginalBg = originalBg;
+    toEl.dataset.morphOriginalShadow = originalBoxShadow;
+    toEl.dataset.morphOriginalRadius = originalBorderRadius;
     
     // Hide first to prevent flash
-    toEl.style.opacity = '0';
+    toEl.style.opacity = t.fromOpacity;
     
     // Snap to FROM position
     toEl.style.left = t.fromRect.x + 'px';
@@ -234,17 +312,32 @@ export function runMorphTransition(fromSlide, toSlide, findEl, dur, onDone) {
     toEl.style.height = t.fromRect.h + 'px';
     toEl.style.transform = `rotate(${t.fromRot}deg)`;
     toEl.style.transformOrigin = 'center center';
-    toEl.style.willChange = 'transform, left, top, width, height, opacity, font-size, color, background-color';
+    toEl.style.willChange = 'transform, left, top, width, height, opacity, font-size, color, background-color, box-shadow, border-radius';
     
     // Snap font size if applicable
     if (t.fromFs && t.toFs) {
       toEl.style.fontSize = t.fromFs + 'px';
     }
     
-    // Snap color if applicable
-    if (t.fromFill && t.toFill && t.fromFill.startsWith('#') && t.toFill.startsWith('#')) {
-      toEl.style.color = t.fromFill;
-      toEl.style.backgroundColor = t.fromFill;
+    // Snap colors if applicable
+    if (t.fromFill && t.toFill) {
+      if (t.fromFill.startsWith('#') && t.toFill.startsWith('#')) {
+        toEl.style.color = t.fromFill;
+        toEl.style.backgroundColor = t.fromFill;
+      } else if (t.fromFill === 'transparent' || t.fromFill === 'none') {
+        toEl.style.color = 'transparent';
+        toEl.style.backgroundColor = 'transparent';
+      }
+    }
+    
+    // Snap shadow if applicable
+    if (t.fromShadow && t.toShadow) {
+      toEl.style.boxShadow = t.fromShadow;
+    }
+    
+    // Snap border-radius if applicable
+    if (t.fromRadius != null && t.toRadius != null) {
+      toEl.style.borderRadius = typeof t.fromRadius === 'number' ? `${t.fromRadius}px` : String(t.fromRadius);
     }
   });
 
@@ -297,9 +390,20 @@ export function runMorphTransition(fromSlide, toSlide, findEl, dur, onDone) {
         el.style.fontSize = curFs + 'px';
       }
 
+      // Interpolate opacity
+      const curOpacity = t.fromOpacity + (t.toOpacity - t.fromOpacity) * ease;
+      el.style.opacity = curOpacity;
+
       // Interpolate colors
-      if (t.fromFill && t.toFill && t.fromFill.startsWith('#') && t.toFill.startsWith('#')) {
-        const curFill = lerpHexColor(t.fromFill, t.toFill, ease);
+      if (t.fromFill && t.toFill) {
+        let curFill;
+        if (t.fromFill.startsWith('#') && t.toFill.startsWith('#')) {
+          curFill = lerpHexColor(t.fromFill, t.toFill, ease);
+        } else if (t.fromFill === 'transparent' || t.fromFill === 'none') {
+          curFill = 'transparent';
+        } else {
+          curFill = t.toFill;
+        }
         const fillEl = el.querySelector('[data-fill]') || el;
         if (fillEl) {
           fillEl.style.fill = curFill;
@@ -312,6 +416,18 @@ export function runMorphTransition(fromSlide, toSlide, findEl, dur, onDone) {
         if (strokeEl) {
           strokeEl.style.stroke = curStroke;
         }
+      }
+      
+      // Interpolate shadow
+      if (t.fromShadow && t.toShadow) {
+        const curShadow = lerpShadow(t.fromShadow, t.toShadow, ease);
+        el.style.boxShadow = curShadow;
+      }
+      
+      // Interpolate border-radius
+      if (t.fromRadius != null && t.toRadius != null) {
+        const curRadius = lerpRadius(t.fromRadius, t.toRadius, ease);
+        el.style.borderRadius = curRadius;
       }
     });
 
@@ -329,6 +445,10 @@ export function runMorphTransition(fromSlide, toSlide, findEl, dur, onDone) {
           toEl.style.transform = toEl.dataset.morphOriginalTransform || '';
           toEl.style.opacity = toEl.dataset.morphOriginalOpacity || '';
           toEl.style.fontSize = toEl.dataset.morphOriginalFontSize || '';
+          toEl.style.color = toEl.dataset.morphOriginalColor || '';
+          toEl.style.backgroundColor = toEl.dataset.morphOriginalBg || '';
+          toEl.style.boxShadow = toEl.dataset.morphOriginalShadow || '';
+          toEl.style.borderRadius = toEl.dataset.morphOriginalRadius || '';
           toEl.style.willChange = '';
           
           // Clean up dataset
@@ -339,8 +459,24 @@ export function runMorphTransition(fromSlide, toSlide, findEl, dur, onDone) {
           delete toEl.dataset.morphOriginalTransform;
           delete toEl.dataset.morphOriginalOpacity;
           delete toEl.dataset.morphOriginalFontSize;
+          delete toEl.dataset.morphOriginalColor;
+          delete toEl.dataset.morphOriginalBg;
+          delete toEl.dataset.morphOriginalShadow;
+          delete toEl.dataset.morphOriginalRadius;
         }
       });
+      
+      // Fade in enter elements
+      enterPairs.forEach(({ toEl }) => {
+        if (toEl) {
+          toEl.style.transition = 'opacity 200ms ease';
+          toEl.style.opacity = '1';
+          setTimeout(() => {
+            toEl.style.transition = '';
+          }, 200);
+        }
+      });
+      
       if (onDone) onDone();
     }
   }
