@@ -42,6 +42,7 @@ import {
   parseUnderlineFromCs,
   stripUnderlineFromCs,
   applyStrikeToCs,
+  applyStrikeToSelection,
   parseStrikeFromCs,
   nextStrike,
   stripStrikeFromCs,
@@ -1561,8 +1562,22 @@ export const editorApi = {
   cycleTextStrikethrough() {
     const el = currentEl();
     if (!el || el.type !== 'text') return;
-    const cur = parseStrikeFromCs(el.cs);
+    const active = typeof document !== 'undefined' ? document.activeElement : null;
+    const editing = !!(active?.isContentEditable && active.closest?.(`[data-id="${el.id}"]`));
+    const selOn = !!(editing && hasNonCollapsedSelection(active));
+    const cur = editing
+      ? parseStrikeFromCs(el.cs)
+      : parseStrikeFromCs(el.cs);
     const next = nextStrike(cur);
+    if (selOn && applyStrikeToSelection(next)) {
+      withHistory(() =>
+        usePresentationStore.getState().patchElement(el.id, {
+          html: htmlFromEditable(active),
+          text: plainFromEditable(active),
+        })
+      );
+      return;
+    }
     withHistory(() =>
       usePresentationStore.getState().patchElement(el.id, {
         cs: applyStrikeToCs(el.cs, next),

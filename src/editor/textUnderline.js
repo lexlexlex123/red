@@ -312,3 +312,35 @@ export function applyUnderlineToSelection(kind) {
     return false;
   }
 }
+
+/** Wrap current selection with strikethrough style; returns true if applied. */
+export function applyStrikeToSelection(kind) {
+  if (typeof window === 'undefined') return false;
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount || sel.isCollapsed) return false;
+  const range = sel.getRangeAt(0);
+  const k = parseStrike(kind);
+  try {
+    const span = document.createElement('span');
+    const thin = 'text-decoration-thickness:1.25px;text-decoration-skip-ink:none;';
+    let strikeStyle = '';
+    if (k === 'line-through') {
+      strikeStyle = `text-decoration:line-through;${thin}`;
+    } else if (k === 'line-through double') {
+      strikeStyle = `text-decoration:line-through double;${thin}`;
+    } else {
+      strikeStyle = 'text-decoration:none;';
+    }
+    span.setAttribute('style', strikeStyle);
+    const contents = range.extractContents();
+    span.appendChild(contents);
+    range.insertNode(span);
+    sel.removeAllRanges();
+    const nr = document.createRange();
+    nr.selectNodeContents(span);
+    sel.addRange(nr);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
