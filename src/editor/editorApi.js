@@ -1540,26 +1540,20 @@ export const editorApi = {
     const active = typeof document !== 'undefined' ? document.activeElement : null;
     const editing = !!(active?.isContentEditable && active.closest?.(`[data-id="${el.id}"]`));
     
-    // Always determine current state from el.cs first
-    const curUl = parseUnderlineFromCs(el.cs);
-    const nextUl = nextUnderline(curUl);
-    
     // Check if user has a partial text selection (not the whole block)
     let partialSel = false;
     if (editing && active) {
       const sel = window.getSelection();
       if (sel && !sel.isCollapsed && sel.rangeCount > 0) {
         const range = sel.getRangeAt(0);
-        // Check if selection is within this element but doesn't cover everything
         const container = range.commonAncestorContainer;
         const editableEl = active.closest?.('[contenteditable]') || active;
         if (container.nodeType === 3) {
-          // Text node - check if it's inside this element
           let node = container.parentElement;
           while (node && node !== editableEl) {
             node = node.parentElement;
           }
-          // Only apply to selection if it's a partial selection (not the whole editable)
+          // Only partial if selection doesn't match the whole editable content
           if (node === editableEl && editableEl.textContent?.trim() !== sel.toString().trim()) {
             partialSel = true;
           }
@@ -1567,22 +1561,26 @@ export const editorApi = {
       }
     }
     
-    // Always update cs for the whole block
-    withHistory(() =>
-      usePresentationStore.getState().patchElement(el.id, {
-        cs: applyUnderlineToCs(el.cs, nextUl),
-      })
-    );
-    
-    // Also apply to partial selection for immediate visual feedback
     if (partialSel) {
-      applyUnderlineToSelection(nextUl);
+      // Apply ONLY to selection - detect current from DOM or cs
+      const cur = detectUnderlineFromEditable(active, el.cs);
+      const next = nextUnderline(cur);
+      applyUnderlineToSelection(next);
       try {
         usePresentationStore.getState().patchElement(el.id, {
           html: htmlFromEditable(active),
           text: plainFromEditable(active),
         });
       } catch (e) {}
+    } else {
+      // Apply to WHOLE block via cs
+      const cur = parseUnderlineFromCs(el.cs);
+      const next = nextUnderline(cur);
+      withHistory(() =>
+        usePresentationStore.getState().patchElement(el.id, {
+          cs: applyUnderlineToCs(el.cs, next),
+        })
+      );
     }
   },
 
@@ -1592,26 +1590,20 @@ export const editorApi = {
     const active = typeof document !== 'undefined' ? document.activeElement : null;
     const editing = !!(active?.isContentEditable && active.closest?.(`[data-id="${el.id}"]`));
     
-    // Always determine current state from el.cs first
-    const curStrike = parseStrikeFromCs(el.cs);
-    const nextStrikeStyle = nextStrike(curStrike);
-    
     // Check if user has a partial text selection (not the whole block)
     let partialSel = false;
     if (editing && active) {
       const sel = window.getSelection();
       if (sel && !sel.isCollapsed && sel.rangeCount > 0) {
         const range = sel.getRangeAt(0);
-        // Check if selection is within this element but doesn't cover everything
         const container = range.commonAncestorContainer;
         const editableEl = active.closest?.('[contenteditable]') || active;
         if (container.nodeType === 3) {
-          // Text node - check if it's inside this element
           let node = container.parentElement;
           while (node && node !== editableEl) {
             node = node.parentElement;
           }
-          // Only apply to selection if it's a partial selection (not the whole editable)
+          // Only partial if selection doesn't match the whole editable content
           if (node === editableEl && editableEl.textContent?.trim() !== sel.toString().trim()) {
             partialSel = true;
           }
@@ -1619,22 +1611,26 @@ export const editorApi = {
       }
     }
     
-    // Always update cs for the whole block
-    withHistory(() =>
-      usePresentationStore.getState().patchElement(el.id, {
-        cs: applyStrikeToCs(el.cs, nextStrikeStyle),
-      })
-    );
-    
-    // Also apply to partial selection for immediate visual feedback
     if (partialSel) {
-      applyStrikeToSelection(nextStrikeStyle);
+      // Apply ONLY to selection - detect current from DOM
+      const cur = detectStrikeFromEditable(active, el.cs);
+      const next = nextStrike(cur);
+      applyStrikeToSelection(next);
       try {
         usePresentationStore.getState().patchElement(el.id, {
           html: htmlFromEditable(active),
           text: plainFromEditable(active),
         });
       } catch (e) {}
+    } else {
+      // Apply to WHOLE block via cs
+      const cur = parseStrikeFromCs(el.cs);
+      const next = nextStrike(cur);
+      withHistory(() =>
+        usePresentationStore.getState().patchElement(el.id, {
+          cs: applyStrikeToCs(el.cs, next),
+        })
+      );
     }
   },
 
