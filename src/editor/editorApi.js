@@ -1540,36 +1540,17 @@ export const editorApi = {
     const active = typeof document !== 'undefined' ? document.activeElement : null;
     const editing = !!(active?.isContentEditable && active.closest?.(`[data-id="${el.id}"]`));
     
-    // Simple check: is there a non-collapsed selection in this element?
-    let partialSel = false;
-    if (editing && active) {
-      const sel = window.getSelection();
-      if (sel && !sel.isCollapsed && sel.rangeCount > 0 && sel.anchorNode) {
-        // Check if selection is within this element
-        let node = sel.anchorNode;
-        if (node.nodeType === 3) node = node.parentElement;
-        let found = false;
-        while (node) {
-          if (node === active) { found = true; break; }
-          node = node.parentElement;
-        }
-        if (found) partialSel = true;
-      }
-    }
-    
-    if (partialSel) {
-      // Apply ONLY to selection - detect current from DOM or cs
-      const cur = detectUnderlineFromEditable(active, el.cs);
-      const next = nextUnderline(cur);
-      applyUnderlineToSelection(next);
-      try {
+    if (editing) {
+      // Use native execCommand for selection
+      document.execCommand('underline', false, null);
+      withHistory(() =>
         usePresentationStore.getState().patchElement(el.id, {
           html: htmlFromEditable(active),
           text: plainFromEditable(active),
-        });
-      } catch (e) {}
+        })
+      );
     } else {
-      // Apply to WHOLE block via cs
+      // Apply to whole block
       const cur = parseUnderlineFromCs(el.cs);
       const next = nextUnderline(cur);
       withHistory(() =>
@@ -1586,34 +1567,15 @@ export const editorApi = {
     const active = typeof document !== 'undefined' ? document.activeElement : null;
     const editing = !!(active?.isContentEditable && active.closest?.(`[data-id="${el.id}"]`));
     
-    // Simple check: is there a non-collapsed selection in this element?
-    let partialSel = false;
-    if (editing && active) {
-      const sel = window.getSelection();
-      if (sel && !sel.isCollapsed && sel.rangeCount > 0 && sel.anchorNode) {
-        // Check if selection is within this element
-        let node = sel.anchorNode;
-        if (node.nodeType === 3) node = node.parentElement;
-        let found = false;
-        while (node) {
-          if (node === active) { found = true; break; }
-          node = node.parentElement;
-        }
-        if (found) partialSel = true;
-      }
-    }
-    
-    if (partialSel) {
-      // Apply ONLY to selection - detect current from DOM
-      const cur = detectStrikeFromEditable(active, el.cs);
-      const next = nextStrike(cur);
-      applyStrikeToSelection(next);
-      try {
+    if (editing) {
+      // Use native execCommand for strikethrough
+      document.execCommand('strikeThrough', false, null);
+      withHistory(() =>
         usePresentationStore.getState().patchElement(el.id, {
           html: htmlFromEditable(active),
           text: plainFromEditable(active),
-        });
-      } catch (e) {}
+        })
+      );
     } else {
       // Apply to WHOLE block via cs
       const cur = parseStrikeFromCs(el.cs);
