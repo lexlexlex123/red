@@ -9,6 +9,25 @@ export const TEXT_UL_CYCLE = [
   'none',
 ];
 
+/** Text strikethrough cycle: none → single → double. */
+export const TEXT_STRIKE_CYCLE = [
+  'line-through',
+  'line-through double',
+  'none',
+];
+
+export const TEXT_STRIKE_TITLES_RU = {
+  'line-through': 'одинарное',
+  'line-through double': 'двойное',
+  none: 'нет',
+};
+
+export const TEXT_STRIKE_TITLES_EN = {
+  'line-through': 'single',
+  'line-through double': 'double',
+  none: 'none',
+};
+
 export const TEXT_UL_TITLES_RU = {
   underline: 'одинарное',
   'underline double': 'двойное',
@@ -176,6 +195,61 @@ export function underlineBoxProps(cs) {
 
 export function underlineActive(cs) {
   return parseUnderlineFromCs(cs) !== 'none';
+}
+
+/** Parse strikethrough from cs. */
+export function parseStrikeFromCs(cs) {
+  const s = String(cs || '');
+  const m = /text-decoration(?:-line)?\s*:\s*([^;]+)/i.exec(s);
+  if (!m) return 'none';
+  const line = m[1].trim();
+  if (/^none$/i.test(line)) return 'none';
+  if (/\bdouble\b/i.test(line)) return 'line-through double';
+  if (/\bline-through\b/i.test(line)) return 'line-through';
+  return 'none';
+}
+
+export function nextStrike(cur) {
+  const i = TEXT_STRIKE_CYCLE.indexOf(cur);
+  return TEXT_STRIKE_CYCLE[(i < 0 ? 0 : i + 1) % TEXT_STRIKE_CYCLE.length];
+}
+
+export function strikeTitle(kind, ru) {
+  const map = ru ? TEXT_STRIKE_TITLES_RU : TEXT_STRIKE_TITLES_EN;
+  return map[kind] || map.none;
+}
+
+export function strikeActive(cs) {
+  return parseStrikeFromCs(cs) !== 'none';
+}
+
+export function applyStrikeToCs(cs, kind) {
+  let next = stripStrikeFromCs(cs);
+  const k = parseStrike(kind);
+  if (!k || k === 'none') return next;
+  const thin = 'text-decoration-thickness:1.25px;text-decoration-skip-ink:none;';
+  if (k === 'line-through') return `${next}text-decoration:line-through;${thin}`;
+  if (k === 'line-through double') return `${next}text-decoration:line-through double;${thin}`;
+  return next;
+}
+
+export function stripStrikeFromCs(cs) {
+  return String(cs || '')
+    .replace(/text-decoration(?:-line)?-?(?:thickness|offset)?\s*:[^;]+;?/gi, '')
+    .replace(/;;+/g, ';')
+    .replace(/^;|;$/g, '');
+}
+
+export function parseStrike(kind) {
+  const d = String(kind || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!d || d === 'none') return 'none';
+  if (d === 'single') return 'line-through';
+  if (d === 'double') return 'line-through double';
+  if (/\bline-through\b/.test(d)) {
+    if (/\bdouble\b/.test(d)) return 'line-through double';
+    return 'line-through';
+  }
+  return 'none';
 }
 
 /** Detect underline from selection / editable node. */

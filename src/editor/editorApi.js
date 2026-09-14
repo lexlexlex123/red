@@ -5,7 +5,7 @@ import { useHistoryStore } from '../stores/historyStore';
 import { useUiStore } from '../stores/uiStore';
 import { buildBasicShapeSVG } from '../shared/shapes.js';
 import { getShapeMeta } from '../shared/shapesCatalog.js';
-import { getTheme, resolveSchemeColor, hydrateImportedTextColors, stripInlineTextColors, THEMES } from './themes.js';
+import { getTheme, resolveSchemeColor, hydrateImportedTextColors, stripInlineTextColors, parseCsColor, THEMES } from './themes.js';
 import { buildInsertedShape } from './shapeInsert.js';
 import { makeDecorEl, getLayouts, prismLayoutIdx, ensureLayoutsLoaded, rebuildDecorEls } from './layouts.js';
 import { applyLayoutAnimatedToggle } from './decorAnim.js';
@@ -41,6 +41,10 @@ import {
   nextUnderline,
   parseUnderlineFromCs,
   stripUnderlineFromCs,
+  applyStrikeToCs,
+  parseStrikeFromCs,
+  nextStrike,
+  stripStrikeFromCs,
 } from './textUnderline.js';
 import { toggleStressInEditable, toggleStressInHtml } from './textStress.js';
 import { toggleScriptInEditable, toggleScriptInHtml } from './textScript.js';
@@ -53,7 +57,7 @@ import { cellRangeKeys, getTableCell, mapTableCells, stripCellHtml } from './tab
 import { buildNewTableFields } from './tableDefaults.js';
 import { importPptxFile } from './pptxImport.js';
 import { pnBuildHtml, pnDefaults, pnPresetXY, pnSize } from './pagenum.js';
-import { readOsClipboard, writeOsClipboard, writeOsSlideClipboard, markWindowBlur, readOsSlideClipboard, peekLocalSlides } from './osClipboard.js';
+import { readOsClipboard, writeOsClipboard, writeOsSlideClipboard, markWindowBlur, readOsSlideClipboard, peekLocalSlides, getCopySourceSlideIdx } from './osClipboard.js';
 import { handlePasteEvent, pasteWithoutEvent, buildPastedTextFields } from './osPaste.js';
 import {
   toggleListHtml,
@@ -1009,10 +1013,10 @@ export const editorApi = {
 
   deleteSelected() {
     const { selId, multiSel, selConnId, selInkIds } = useSelectionStore.getState();
-    if (selInkIds?.length && !selId && !(multiSel && multiSel.length) && !selConnId) {
+    // Always delete ink first if ink is selected (ink may be co-selected with objects)
+    if (selInkIds?.length) {
       withHistory(() => usePresentationStore.getState().deleteInkByIds(selInkIds));
       useSelectionStore.getState().clearInkSelection();
-      return;
     }
     if (selConnId && !selId && !(multiSel && multiSel.length)) {
       withHistory(() => usePresentationStore.getState().deleteConnector(selConnId));
@@ -1020,13 +1024,7 @@ export const editorApi = {
       return;
     }
     const ids = multiSel?.length ? multiSel : selId ? [selId] : [];
-    if (!ids.length) {
-      if (selInkIds?.length) {
-        withHistory(() => usePresentationStore.getState().deleteInkByIds(selInkIds));
-        useSelectionStore.getState().clearInkSelection();
-      }
-      return;
-    }
+    if (!ids.length) return;
     withHistory(() => usePresentationStore.getState().deleteIds(ids));
     pick(null);
   },
@@ -1560,6 +1558,18 @@ export const editorApi = {
     );
   },
 
+  cycleTextStrikethrough() {
+    const el = currentEl();
+    if (!el || el.type !== 'text') return;
+    const cur = parseStrikeFromCs(el.cs);
+    const next = nextStrike(cur);
+    withHistory(() =>
+      usePresentationStore.getState().patchElement(el.id, {
+        cs: applyStrikeToCs(el.cs, next),
+      })
+    );
+  },
+
   toggleTextStress() {
     const el = currentEl();
     if (!el || el.type !== 'text') {
@@ -1821,7 +1831,9 @@ export const editorApi = {
       cs = applyCsProp(cs, 'color', patch.color);
       data.textColor = patch.color;
       data.textColorScheme = patch.schemeRef === undefined ? el.textColorScheme : patch.schemeRef;
-      if (el.html) data.html = stripInlineTextColors(el.html);
+      // Pass the box's PREVIOUS color so words deliberately highlighted in a different
+      // color keep their own color/scheme mark instead of being wiped to the new scheme color.
+      if (el.html) data.html = stripInlineTextColors(el.html, el.textColor || parseCsColor(el.cs));
     }
     data.cs = cs;
     withHistory(() => usePresentationStore.getState().patchElement(el.id, data));
@@ -3384,8 +3396,8 @@ export const editorApi = {
       .filter((e) => e && ids.includes(String(e.id)) && !e._isDecor && e.type !== 'pagenum')
       .map((e) => JSON.parse(JSON.stringify(e)));
     if (!els.length) return;
-    usePresentationStore.setState({ clipboard: { els }, slideClipboard: null });
-    writeOsClipboard(els).catch(() => {});
+    usePresentationStore.setState({ clipboard: { els, sourceSlideIdx: cur }, slideClipboard: null, clipSource: 'elements' });
+    writeOsClipboard(els, cur).catch(() => {});
     useUiStore.getState().showToast(ru() ? `Скопировано: ${els.length}` : `Copied: ${els.length}`, 'ok');
   },
 
@@ -3426,12 +3438,21 @@ export const editorApi = {
       _pasteElements: (els) => {
         if (!els?.length) return;
         const newIds = [];
+        const { cur, clipboard } = usePresentationStore.getState();
+        // Only nudge the pasted copy away from the original when it lands on the SAME slide
+        // it was copied from — otherwise you'd paste an exact duplicate stacked invisibly on
+        // top of the original. Pasting onto a DIFFERENT slide keeps the exact x/y instead,
+        // since there's no risk of overlap there and matching the original position is what's
+        // expected when reusing an element across slides.
+        const sourceSlideIdx = clipboard?.sourceSlideIdx != null ? clipboard.sourceSlideIdx : getCopySourceSlideIdx();
+        const sameSlide = sourceSlideIdx != null && sourceSlideIdx === cur;
+        const offset = sameSlide ? 28 : 0;
         withHistory(() => {
           els.forEach((src) => {
             const copy = JSON.parse(JSON.stringify(src));
             delete copy.id;
-            copy.x = (copy.x || 0) + 28;
-            copy.y = (copy.y || 0) + 28;
+            copy.x = (copy.x || 0) + offset;
+            copy.y = (copy.y || 0) + offset;
             delete copy.groupId;
             const id = usePresentationStore.getState().addElement(copy);
             if (id) newIds.push(String(id));
@@ -4998,6 +5019,7 @@ export const editorApi = {
         rec.dur = nextPatch.dur;
         rec.duration = nextPatch.duration;
       }
+      if (nextPatch.trigger != null) rec.trigger = nextPatch.trigger;
       if (nextPatch.lane != null) rec.tlLane = Math.max(0, Math.round(nextPatch.lane));
       st.patchElement(el.id, { anims: el.anims.map((a, i) => (i === +ai ? rec : a)) });
     });
@@ -5336,9 +5358,8 @@ export const editorApi = {
     const slide = slides[cur];
     if (!slide) return;
     const theme = getTheme(usePresentationStore.getState().appliedThemeIdx);
-    const textColor = theme?.headingColor || (theme?.dark === false ? '#111827' : '#ffffff');
     withHistory(() => {
-      const els = buildSlideContentLayout(layoutId, slide, canvasW, canvasH, lang(), textColor);
+      const els = buildSlideContentLayout(layoutId, slide, canvasW, canvasH, lang(), theme);
       // assign ids for new els without id
       const withIds = els.map((el) => (el.id ? el : { ...el }));
       replaceSlideEls(cur, withIds);

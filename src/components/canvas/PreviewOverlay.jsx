@@ -1,13 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { usePresentationStore } from '../../stores/presentationStore';
 import { useUiStore } from '../../stores/uiStore';
-import { buildBasicShapeSVG, shapeOptsFromEl } from '../../shared/shapes.js';
+import { buildBasicShapeSVG, shapeOptsFromEl, shapeRxPx } from '../../shared/shapes.js';
 import { shapeNeedsOverflowVisible } from '../../shared/shapesCatalog.js';
 import { shapeBlurOverlayStyle, shapeBlurPx } from '../../editor/shapeBlur.js';
 import { shapeTextBoxStyle } from '../../editor/shapeText.js';
 import { versionAttr } from '../../editor/versions.js';
-import { effectiveTrans, effectiveTransDur, enterClass } from '../../editor/transitions.js';
-import { runMorphTransition, findElById } from '../../editor/morphPlay.js';
+import { effectiveTrans, effectiveTransDur, enterClass, exitClass } from '../../editor/transitions.js';
 import { readGroupLink, resolveSlideLinkIndex } from '../../editor/links.js';
 import { animCssClass, animDuration, collectSlidePlaybackSteps, isEntranceAnim, isExitAnim, isLiveAnim } from '../../editor/anims.js';
 import { resolveNavTargetSlideIndex } from '../../editor/slideTitles.js';
@@ -137,6 +136,7 @@ function HoverWrap({
   onElClick,
   interactive,
   backdrop,
+  zIndex,
   children,
 }) {
   const [hovered, setHovered] = useState(false);
@@ -153,6 +153,12 @@ function HoverWrap({
     top: el.y || 0,
     width: el.w || 100,
     height: el.h || 60,
+    // Explicit z-index matching the element's stacking order in the slide data. Without this,
+    // paint order relies on plain DOM order — which elements with a `filter` (drop-shadow) or
+    // that render as an <iframe> (HTML/code blocks) don't reliably respect in every browser,
+    // since both create their own compositing surface. This pins the intended layering so
+    // shadowed elements and HTML/code blocks always stack the same as in the editor.
+    zIndex: zIndex != null ? zIndex : undefined,
     opacity: hidden ? 0 : el.elOpacity != null ? el.elOpacity : 1,
     filter: elFilterCss(el),
     overflow:
@@ -266,6 +272,10 @@ function SlidePreview({ slide, canvasW, canvasH, onElClick, animState, stageRef,
     const st = animState?.[el.id];
     const hidden = st?.hidden;
     const playing = st?.cls;
+    // Els are already in z-order (their array position IS the stacking order) — pin it as an
+    // explicit z-index rather than relying on paint order (see the comment on `style.zIndex`
+    // in HoverWrap for why that isn't reliable for shadowed/iframe elements).
+    const zIndex = els.indexOf(el) + 1;
     const live =
       st?.live ||
       (playing && (playing.includes('dance') || playing.includes('swing') || playing.includes('float')));
@@ -290,6 +300,7 @@ function SlidePreview({ slide, canvasW, canvasH, onElClick, animState, stageRef,
         interactive={previewElIsInteractive(el, slide) || !!link}
         onElClick={onElClick}
         backdrop={backdrop || null}
+        zIndex={zIndex}
       >
         {node}
       </HoverWrap>
@@ -1014,11 +1025,16 @@ export default function PreviewOverlay() {
   const [animKey, setAnimKey] = useState(0);
   const [animClass, setAnimClass] = useState('');
   const [dur, setDur] = useState(500);
+  const [pvDir, setPvDir] = useState(1);
+  const [pvShift, setPvShift] = useState({ x: 0, y: 0 });
   const [animState, setAnimState] = useState({});
   const [iconsTick, setIconsTick] = useState(0);
   const [camTransform, setCamTransform] = useState(null);
   const [vp, setVp] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }));
   const [black, setBlack] = useState(false);
+  const [morphing, setMorphing] = useState(false);
+  const [morphFromIdx, setMorphFromIdx] = useState(-1);
+  const morphPairsRef = useRef([]);
   const busy = useRef(false);
   const overlayRef = useRef(null);
   const idxRef = useRef(from);
@@ -1096,6 +1112,219 @@ export default function PreviewOverlay() {
     } catch (e) {
       return root.querySelector(`[data-id="${String(elId).replace(/"/g, '\\"')}"]`);
     }
+  }
+
+  /** '#rgb' / '#rrggbb' → normalized '#rrggbb', else null (skip gradients/'none'/'transparent'). */
+  function morphHexOrNull(c) {
+    if (!c || typeof c !== 'string') return null;
+    const s = c.trim();
+    if (/^#[0-9a-fA-F]{6}$/.test(s)) return s;
+    if (/^#[0-9a-fA-F]{3}$/.test(s)) return '#' + s[1] + s[1] + s[2] + s[2] + s[3] + s[3];
+    return null;
+  }
+
+  /** Interpolate shadow / blur `filter` CSS between two element states during a morph transition. */
+  function applyMorphFilter(domEl, fromData, toData, ease) {
+    try {
+      const fromShadowOn = !!(fromData?.shadow === true || fromData?.shadow === 'true');
+      const toShadowOn = !!(toData?.shadow === true || toData?.shadow === 'true');
+      const parts = [];
+      const fromBlur = +(fromData?.blur || 0);
+      const toBlur = +(toData?.blur || 0);
+      const curBlur = fromBlur + (toBlur - fromBlur) * ease;
+      if (curBlur > 0.01) parts.push(`blur(${curBlur}px)`);
+      if (fromShadowOn || toShadowOn) {
+        const fromBlurS = fromShadowOn ? (fromData.shadowBlur != null ? +fromData.shadowBlur : 4) : 0;
+        const toBlurS = toShadowOn ? (toData.shadowBlur != null ? +toData.shadowBlur : 4) : 0;
+        const fromSize = fromShadowOn ? (fromData.shadowSize != null ? +fromData.shadowSize : 3) : 0;
+        const toSize = toShadowOn ? (toData.shadowSize != null ? +toData.shadowSize : 3) : 0;
+        const colorA = morphHexOrNull(fromData?.shadowColor) || morphHexOrNull(toData?.shadowColor) || '#000000';
+        const colorB = morphHexOrNull(toData?.shadowColor) || morphHexOrNull(fromData?.shadowColor) || '#000000';
+        const color = lerpHexColor(colorA, colorB, ease);
+        const curBlurS = fromBlurS + (toBlurS - fromBlurS) * ease;
+        const curSize = fromSize + (toSize - fromSize) * ease;
+        if (curBlurS > 0.01 || curSize > 0.01) {
+          parts.push(`drop-shadow(0 ${curSize}px ${Math.max(0, curBlurS)}px ${color})`);
+        }
+      }
+      domEl.style.filter = parts.length ? parts.join(' ') : '';
+    } catch (e) {}
+  }
+
+  /** Interpolate the most common color fields (text color, shape fill/stroke) during a morph. */
+  function applyMorphColor(domEl, fromData, toData, ease) {
+    try {
+      if (toData?.type === 'text' || toData?.type === 'formula') {
+        const fromC = morphHexOrNull(fromData?.textColor);
+        const toC = morphHexOrNull(toData?.textColor);
+        if (fromC && toC && fromC !== toC) {
+          const holder = Array.from(domEl.querySelectorAll('.react-el-text > div')).find(
+            (d) => !d.hasAttribute('aria-hidden')
+          );
+          if (holder) holder.style.color = lerpHexColor(fromC, toC, ease);
+        }
+      } else if (toData?.type === 'shape') {
+        const fromFill = morphHexOrNull(fromData?.fill);
+        const toFill = morphHexOrNull(toData?.fill);
+        const fromStroke = morphHexOrNull(fromData?.stroke);
+        const toStroke = morphHexOrNull(toData?.stroke);
+        const fromRx = fromData?.rx != null ? +fromData.rx : 0;
+        const toRx = toData?.rx != null ? +toData.rx : 0;
+        const fillChanged = fromFill && toFill && fromFill !== toFill;
+        const strokeChanged = fromStroke && toStroke && fromStroke !== toStroke;
+        const rxChanged = fromRx !== toRx;
+        if (fillChanged || strokeChanged || rxChanged) {
+          const svg = domEl.querySelector('svg');
+          if (svg) {
+            const curFill = fillChanged ? lerpHexColor(fromFill, toFill, ease) : null;
+            const curStroke = strokeChanged ? lerpHexColor(fromStroke, toStroke, ease) : null;
+            const curRx = rxChanged ? fromRx + (toRx - fromRx) * ease : toRx;
+            // Fast path: a plain rect (the common rounded-rectangle case, including gradient
+            // fills which just add a sibling <defs>) is one or two <rect> nodes — update
+            // their attributes IN PLACE instead of tearing down and rebuilding the whole SVG
+            // every frame. Rebuilding via innerHTML each frame is what caused the rounded
+            // corners to visibly flicker along the straight edges (the browser has to
+            // re-parse/re-rasterize brand new nodes 60 times/sec instead of just tweaking a
+            // number on ones already there).
+            const svgChildren = Array.from(svg.children);
+            const rectEls = svgChildren.filter((c) => c.tagName?.toLowerCase() === 'rect');
+            const otherEls = svgChildren.filter(
+              (c) => !['rect', 'defs'].includes(c.tagName?.toLowerCase())
+            );
+            if (rectEls.length > 0 && otherEls.length === 0) {
+              const rxAttr = shapeRxPx(curRx, toData.w, toData.h);
+              rectEls.forEach((rectEl) => {
+                rectEl.setAttribute('rx', rxAttr);
+                rectEl.setAttribute('ry', rxAttr);
+                if (curFill) rectEl.setAttribute('fill', curFill);
+                if (curStroke) rectEl.setAttribute('stroke', curStroke);
+              });
+            } else if (svg.parentNode) {
+              const synth = {
+                ...toData,
+                fill: curFill || toData.fill,
+                stroke: curStroke || toData.stroke,
+                rx: curRx,
+              };
+              svg.parentNode.innerHTML = buildBasicShapeSVG(toData.shape || 'rect', shapeOptsFromEl(synth));
+            }
+          }
+        }
+      }
+    } catch (e) {}
+  }
+
+  /** Undo any DOM color override left by applyMorphColor once the morph completes. */
+  function resetMorphColor(domEl, toData) {
+    try {
+      if (toData?.type === 'text' || toData?.type === 'formula') {
+        const holder = Array.from(domEl.querySelectorAll('.react-el-text > div')).find(
+          (d) => !d.hasAttribute('aria-hidden')
+        );
+        // Set the exact final color rather than clearing to '' — clearing removes the
+        // inline override entirely (rather than "restoring" React's own value), which is
+        // what caused text to flash black right as the morph finished.
+        if (holder) holder.style.color = toData.textColor || '#fff';
+      } else if (toData?.type === 'shape') {
+        const svg = domEl.querySelector('svg');
+        if (svg && svg.parentNode) {
+          svg.parentNode.innerHTML = buildBasicShapeSVG(toData.shape || 'rect', shapeOptsFromEl(toData));
+        }
+      }
+    } catch (e) {}
+  }
+
+  /**
+   * Build the wrapper's `transform` for one morph frame: translate (center-to-center offset)
+   * + rotate + scale, composed so the box — whose actual left/top/width/height are fixed at
+   * the TO values for the whole animation — visually sits at/looks like the FROM box at
+   * ease=0 and eases to identity (its own natural TO look) at ease=1. Doing geometry purely
+   * through `transform` (never touching width/height per frame) keeps this reflow-free, so
+   * text inside doesn't re-wrap/jitter while the box appears to resize.
+   */
+  function buildMorphGeometryTransform(fromData, toData, ease) {
+    const fromW = fromData.w || 100;
+    const fromH = fromData.h || 60;
+    const toW = toData.w || 100;
+    const toH = toData.h || 60;
+    const fCx = (fromData.x || 0) + fromW / 2;
+    const fCy = (fromData.y || 0) + fromH / 2;
+    const tCx = (toData.x || 0) + toW / 2;
+    const tCy = (toData.y || 0) + toH / 2;
+    const dx0 = fCx - tCx;
+    const dy0 = fCy - tCy;
+    const scaleX0 = fromW / Math.max(1, toW);
+    const scaleY0 = fromH / Math.max(1, toH);
+    const fromRot = +(fromData.rot || 0);
+    const toRot = +(toData.rot || 0);
+
+    const curDX = dx0 * (1 - ease);
+    const curDY = dy0 * (1 - ease);
+    let curScaleX = scaleX0 + (1 - scaleX0) * ease;
+    let curScaleY = scaleY0 + (1 - scaleY0) * ease;
+    const curRot = fromRot + (toRot - fromRot) * ease;
+    if (toData.shapeFlipH) curScaleX *= -1;
+    if (toData.shapeFlipV) curScaleY *= -1;
+
+    const parts = [];
+    if (curDX || curDY) parts.push(`translate(${curDX}px, ${curDY}px)`);
+    if (curRot) parts.push(`rotate(${curRot}deg)`);
+    if (curScaleX !== 1 || curScaleY !== 1) parts.push(`scale(${curScaleX}, ${curScaleY})`);
+    return parts.length ? parts.join(' ') : '';
+  }
+
+  /** Parse `font-size:Npx` out of an element's raw `cs` style string, or null. */
+  function morphFontSizePx(d) {
+    const m = String(d?.cs || '').match(/font-size\s*:\s*([\d.]+)px/i);
+    return m ? parseFloat(m[1]) : null;
+  }
+
+  /** Compute a text's true alignment anchor as a CSS transform-origin ("x% y%") so a font-size
+   *  scale grows/shrinks from where the text actually reads from, not the box's geometric
+   *  center (which visually "drags" left/top-anchored text sideways as it scales). */
+  function morphTextOrigin(d) {
+    const css = d?.cs || '';
+    const alignRaw = (css.match(/text-align\s*:\s*([^;]+)/i) || [])[1];
+    const align = (alignRaw || (d?.type === 'formula' ? 'center' : 'left')).trim();
+    const valign = d?.valign || (d?.type === 'formula' ? 'middle' : 'top');
+    const xPct = align === 'center' ? '50%' : align === 'right' || align === 'end' ? '100%' : '0%';
+    const yPct = valign === 'middle' ? '50%' : valign === 'bottom' ? '100%' : '0%';
+    return `${xPct} ${yPct}`;
+  }
+
+  /**
+   * Animate a font-size change during morph via a nested CSS scale on `.react-el-text`
+   * rather than by literally changing the `fontSize` style each frame. Changing font-size
+   * is a layout property — animating it directly forces the browser to re-wrap/re-flow the
+   * text on every frame, which is what caused the text to visibly jitter/shake. Scaling is
+   * compositor-only and reflow-free, and reaches an exact identity transform (no visible
+   * distortion) at ease=1.
+   */
+  function applyMorphTextSize(el, fromData, toData, ease) {
+    try {
+      if (toData?.type !== 'text' && toData?.type !== 'formula') return;
+      const dflt = toData?.type === 'formula' ? 40 : 36;
+      const fromFs = morphFontSizePx(fromData) ?? dflt;
+      const toFs = morphFontSizePx(toData) ?? dflt;
+      if (!fromFs || !toFs || fromFs === toFs) return;
+      const holder = el.querySelector('.react-el-text');
+      if (!holder) return;
+      const scale0 = fromFs / toFs;
+      const curScale = scale0 + (1 - scale0) * ease;
+      holder.style.transformOrigin = morphTextOrigin(toData);
+      holder.style.transform = Math.abs(curScale - 1) > 0.001 ? `scale(${curScale})` : '';
+    } catch (e) {}
+  }
+
+  /** Undo the temporary scale left by applyMorphTextSize — the correct rest state is none. */
+  function resetMorphTextSize(el) {
+    try {
+      const holder = el.querySelector('.react-el-text');
+      if (holder) {
+        holder.style.transform = '';
+        holder.style.transformOrigin = '';
+      }
+    } catch (e) {}
   }
 
   function revealEl(elId, patch = {}) {
@@ -1200,6 +1429,11 @@ export default function PreviewOverlay() {
     }
     busy.current = false;
     setAnimClass('');
+    // Clean up any outgoing-slide snapshot left over from an interrupted transition
+    // (e.g. the user advanced again before the previous transition finished).
+    try {
+      overlayRef.current?.querySelectorAll('.pv-exit-snapshot').forEach((n) => n.remove());
+    } catch (e) {}
     if (stageRef.current) {
       setCamTransform(stageRef.current.style.transform);
     }
@@ -1726,68 +1960,303 @@ export default function PreviewOverlay() {
     const dest = Math.max(0, Math.min(list.length - 1, next | 0));
     if (dest === idxRef.current) return;
     clearAutoTimer();
-    const fromSlide = list[idxRef.current] || {};
+    const fromSlide = slides[idxRef.current] || {};
     const toSlide = list[dest] || {};
     const gTrans = usePresentationStore.getState().globalTrans;
     const gDur = usePresentationStore.getState().globalTransDur;
     const trans = effectiveTrans(toSlide, gTrans);
     const ms = effectiveTransDur(toSlide, gDur);
-    idxRef.current = dest;
-    setDur(ms);
-    
-    // Handle morph transition specially - keep both slides in DOM and animate
-    if (trans === 'morph' && ms > 0) {
-      // Set animClass empty BEFORE React re-renders to prevent flash
-      setAnimClass('');
-      
-      // For morph, we need to keep the old slide visible while rendering the new one on top
-      // Then animate elements from old positions to new positions
-      const stage = stageRef.current;
-      if (!stage) {
+
+    // Morph transition: animate existing DOM elements
+    if (trans === 'morph' && ms > 0 && stageRef.current) {
+      // Build element pairs BEFORE React re-render (fromSlide's DOM is still present here).
+      const pairs = [];
+      const usedTo = new Set();
+      const usedFrom = new Set();
+
+      toSlide.els?.forEach((td) => {
+        if (!td || td._isDecor) return;
+        const hasEntrance = td.anims?.some((a) => a && isEntranceAnim(a.name));
+        if (hasEntrance) return;
+
+        // Find matching from element by id
+        let fd = fromSlide.els?.find((e) => e && e.id === td.id && !e._isDecor);
+        if (fd && !morphTextBlocksMatch(fd, td)) {
+          pairs.push({ fromId: fd.id, toId: td.id, fromData: fd, toData: td });
+          usedTo.add(td.id);
+          usedFrom.add(fd.id);
+        } else {
+          // Match by morphName or auto-label
+          const key = morphMatchKey(td, toSlide.els);
+          if (key) {
+            fd = fromSlide.els?.find((e) => 
+              e && !e._isDecor && !usedFrom.has(e.id) && e.type === td.type && 
+              !morphTextBlocksMatch(e, td) && 
+              morphMatchKey(e, fromSlide.els) === key
+            );
+          }
+        }
+        if (fd && !usedTo.has(td.id) && !usedFrom.has(fd.id)) {
+          pairs.push({ fromId: fd.id, toId: td.id, fromData: fd, toData: td });
+          usedTo.add(td.id);
+          usedFrom.add(fd.id);
+        }
+      });
+
+      // Elements that only exist on the FROM slide: capture a DOM snapshot now (before the
+      // slide switches) so they can fade out in place instead of just vanishing instantly.
+      const exitSnapshots = [];
+      (fromSlide.els || []).forEach((fd) => {
+        if (!fd || fd._isDecor || fd.type === 'pagenum' || usedFrom.has(fd.id)) return;
+        const node = findStageEl(fd.id);
+        if (!node) return;
+        try {
+          const clone = node.cloneNode(true);
+          clone.removeAttribute('data-id');
+          clone.style.position = 'absolute';
+          clone.style.margin = '0';
+          clone.style.left = (fd.x || 0) + 'px';
+          clone.style.top = (fd.y || 0) + 'px';
+          clone.style.width = (fd.w || 100) + 'px';
+          clone.style.height = (fd.h || 60) + 'px';
+          clone.style.transformOrigin = 'center center';
+          clone.style.transform = elBoxTransform(fd) || '';
+          clone.style.opacity = String(fd.elOpacity != null ? fd.elOpacity : 1);
+          clone.style.pointerEvents = 'none';
+          clone.style.transition = 'none';
+          exitSnapshots.push({ clone, fromData: fd });
+        } catch (e) {}
+      });
+
+      // Elements that only exist on the TO slide (and have no entrance animation of their
+      // own — those already fade in via the normal entrance system): fade them in instead of
+      // popping in instantly.
+      const enterIds = new Set(
+        (toSlide.els || [])
+          .filter((e) => e && !e._isDecor && e.type !== 'pagenum' && !usedTo.has(e.id))
+          .filter((e) => !e.anims?.some((a) => a && isEntranceAnim(a.name)))
+          .map((e) => e.id)
+      );
+
+      if (pairs.length > 0 || exitSnapshots.length > 0 || enterIds.size > 0) {
+        // Save pairs for animation
+        morphPairsRef.current = pairs;
+        
+        // Update state - React will render toSlide
+        idxRef.current = dest;
+        setDur(ms);
         setIdx(dest);
-        initSlideAnims(toSlide);
-        busy.current = false;
+        
+        // After React renders, animate from new positions back to old positions
+        requestAnimationFrame(() => {
+          const duration = Math.max(200, ms);
+          const startTime = performance.now();
+          const stage = stageRef.current;
+
+          if (!stage) return;
+
+          // Find DOM elements. Only the TO node exists in the DOM right now — the FROM
+          // slide's elements were already unmounted the moment React switched to `dest`.
+          // We manipulate the TO node directly: snap it to look like the FROM box/color/
+          // shadow, then animate it toward its own natural (TO) state.
+          const domPairs = pairs
+            .map((p) => ({ ...p, el: findStageEl(p.toId) }))
+            .filter((p) => p.el);
+          const enterPairs = (toSlide.els || [])
+            .filter((td) => enterIds.has(td.id))
+            .map((td) => ({ toData: td, el: findStageEl(td.id) }))
+            .filter((p) => p.el);
+
+          // Drop the exit clones into the stage now, on top of the freshly-rendered slide.
+          exitSnapshots.forEach(({ clone }) => {
+            try { stage.appendChild(clone); } catch (e) {}
+          });
+
+          if (domPairs.length > 0 || enterPairs.length > 0 || exitSnapshots.length > 0) {
+            busy.current = true;
+            setMorphing(true);
+
+            // Snap elements to look like the FROM box (position/size/rotation/color/shadow/
+            // font-size), then animate every property toward the TO state below.
+            // IMPORTANT: left/top/width/height are set ONCE here to their FINAL (TO) values
+            // and never touched again — all geometry animation happens purely through
+            // `transform` (translate+rotate+scale). Continuously changing width/height (and
+            // literally changing font-size) forces the browser to re-layout text every frame,
+            // which is what caused text to visibly jitter/shake while resizing during morph.
+            // Transform-only animation is compositor-driven and reflow-free.
+            domPairs.forEach((pair) => {
+              const { el, fromData, toData } = pair;
+              el.style.left = (toData.x || 0) + 'px';
+              el.style.top = (toData.y || 0) + 'px';
+              el.style.width = (toData.w || 100) + 'px';
+              el.style.height = (toData.h || 60) + 'px';
+              el.style.transformOrigin = 'center center';
+              el.style.transform = buildMorphGeometryTransform(fromData, toData, 0);
+              // NOTE: must pass the real (fromData, toData) pair here, not (fromData,
+              // fromData) — applyMorphColor decides WHETHER to touch fill/stroke/rx by
+              // comparing the two inputs directly (not just multiplying by ease), so passing
+              // the same object twice made it think nothing had changed and skip updating
+              // rx/fill/stroke at the snap step entirely. That left the shape showing
+              // React's own TO-rounded corners for one frame before the real animation loop
+              // corrected it a frame later — the visible "flicker" right as morph started.
+              applyMorphFilter(el, fromData, toData, 0);
+              applyMorphColor(el, fromData, toData, 0);
+              applyMorphTextSize(el, fromData, toData, 0);
+            });
+            enterPairs.forEach(({ el }) => {
+              el.style.opacity = '0';
+            });
+
+            // Force reflow
+            void stage.offsetHeight;
+
+            // Animate to TO rotation / scale / color / shadow / font-size, and fade
+            // unmatched elements in/out. Position/size never change again (see above).
+            function frame(now) {
+              const elapsed = now - startTime;
+              const progress = Math.min(elapsed / duration, 1);
+              const ease = 1 - Math.pow(1 - progress, 3);
+
+              domPairs.forEach((pair) => {
+                const { el, fromData, toData } = pair;
+                if (!el) return;
+                el.style.transform = buildMorphGeometryTransform(fromData, toData, ease);
+                applyMorphFilter(el, fromData, toData, ease);
+                applyMorphColor(el, fromData, toData, ease);
+                applyMorphTextSize(el, fromData, toData, ease);
+              });
+
+              enterPairs.forEach(({ el, toData }) => {
+                if (!el) return;
+                const target = toData.elOpacity != null ? toData.elOpacity : 1;
+                el.style.opacity = String(target * ease);
+              });
+
+              exitSnapshots.forEach(({ clone, fromData }) => {
+                const start = fromData.elOpacity != null ? fromData.elOpacity : 1;
+                clone.style.opacity = String(start * (1 - ease));
+              });
+
+              if (progress < 1) {
+                requestAnimationFrame(frame);
+              } else {
+                // Cleanup — explicitly set the exact final values (position/rotation/filter/
+                // color/font-size) rather than clearing styles to '': clearing a direct-style
+                // override doesn't "restore" React's own computed value, it just removes it —
+                // which is what caused rotation/shadow to snap back to their unrotated/
+                // unshadowed defaults right as the morph finished.
+                // NOTE: deliberately NOT bumping animKey here — animKey is used as a React
+                // `key` on the slide wrapper, so changing it would force a full unmount/
+                // remount of the slide (replaying entrance CSS animations for everything),
+                // causing a visible flash right as the morph settles.
+                domPairs.forEach(({ el, toData }) => {
+                  if (!el) return;
+                  el.style.left = (toData.x || 0) + 'px';
+                  el.style.top = (toData.y || 0) + 'px';
+                  el.style.width = (toData.w || 100) + 'px';
+                  el.style.height = (toData.h || 60) + 'px';
+                  el.style.transform = elBoxTransform(toData) || '';
+                  el.style.transformOrigin = '';
+                  el.style.filter = elFilterCss(toData) || '';
+                  resetMorphColor(el, toData);
+                  resetMorphTextSize(el);
+                });
+                enterPairs.forEach(({ el, toData }) => {
+                  if (!el) return;
+                  el.style.opacity = String(toData.elOpacity != null ? toData.elOpacity : 1);
+                });
+                exitSnapshots.forEach(({ clone }) => {
+                  try { clone.remove(); } catch (e) {}
+                });
+                busy.current = false;
+                setMorphing(false);
+                morphPairsRef.current = [];
+              }
+            }
+
+            requestAnimationFrame(frame);
+          } else {
+            // No DOM elements found, fall back to normal transition
+            setMorphing(false);
+            setAnimKey((k) => k + 1);
+            initSlideAnims(toSlide);
+          }
+        });
         return;
       }
-      
-      // CRITICAL: Do NOT call setIdx yet - keep old slide in DOM for morphing
-      // We will animate the existing elements, then switch idx after animation
-      
-      // Wait for next frame to ensure DOM is stable, then run morph
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          runMorphTransition(fromSlide, toSlide, (id) => findElById(stage, id), ms, () => {
-            // Only AFTER animation completes, switch to new slide
-            setIdx(dest);
-            initSlideAnims(toSlide);
-            busy.current = false;
-          });
-        });
-      });
-      return; // Exit early - don't do normal transition
-    } else {
-      // Normal transitions: trigger re-render with animation class
+    }
+
+    // Default path: change animKey to trigger React re-render
+    // Direction: forward (going to a later slide) pushes content left/up, like flipping
+    // ahead in a filmstrip; backward reverses it — matching how these push-style
+    // transitions read directionally rather than always sliding the same way.
+    const dir = dest > idxRef.current ? 1 : -1;
+    // Measure the shift in real pixels from ONE shared element (the overlay), and use that
+    // SAME number for both the outgoing snapshot and the incoming slide. Using CSS `100%`
+    // independently on each of the two layers can round to a fractional-pixel-different
+    // value between them (each is its own box), leaving a hairline seam/gap where the black
+    // background peeks through right at the join. A single shared pixel measurement can't
+    // disagree with itself.
+    const overlayRect = overlayRef.current?.getBoundingClientRect();
+    const shiftXPx = Math.ceil(overlayRect?.width || window.innerWidth) + 1;
+    const shiftYPx = Math.ceil(overlayRect?.height || window.innerHeight) + 1;
+    // Capture a snapshot of the OUTGOING slide first, so it can visibly leave (fade/slide/
+    // zoom away) at the same time the new slide arrives, instead of the new slide just
+    // materializing over the preview's black background on its own.
+    let exitSnap = null;
+    if (trans !== 'none' && ms > 0 && stageRef.current && overlayRef.current) {
+      try {
+        const clone = stageRef.current.cloneNode(true);
+        const wrap = document.createElement('div');
+        wrap.className = `pv-exit-snapshot ${exitClass(trans)}`;
+        wrap.style.position = 'absolute';
+        wrap.style.inset = '0';
+        wrap.style.display = 'flex';
+        wrap.style.alignItems = 'center';
+        wrap.style.justifyContent = 'center';
+        wrap.style.pointerEvents = 'none';
+        wrap.style.zIndex = '5';
+        wrap.style.setProperty('--pv-dur', `${ms}ms`);
+        wrap.style.setProperty('--pv-dir', String(dir));
+        wrap.style.setProperty('--pv-shift-x', `${shiftXPx}px`);
+        wrap.style.setProperty('--pv-shift-y', `${shiftYPx}px`);
+        wrap.appendChild(clone);
+        overlayRef.current.appendChild(wrap);
+        exitSnap = wrap;
+      } catch (e) {}
+    }
+
+    idxRef.current = dest;
+    setDur(ms);
+    setPvDir(dir);
+    setPvShift({ x: shiftXPx, y: shiftYPx });
+    setIdx(dest);
+    setAnimKey((k) => k + 1);
+    initSlideAnims(toSlide);
+
+    if (trans !== 'none' && ms > 0) {
       setAnimClass(enterClass(trans));
-      setAnimKey((k) => k + 1);
-      setIdx(dest);
-      initSlideAnims(toSlide);
-      
-      if (trans !== 'none' && ms > 0) {
-        busy.current = true;
-        clearBusyTimer();
-        busyTimerRef.current = window.setTimeout(() => {
-          busyTimerRef.current = null;
-          busy.current = false;
-          setAnimClass('');
-        }, ms);
-      }
+      busy.current = true;
+      clearBusyTimer();
+      busyTimerRef.current = window.setTimeout(() => {
+        busyTimerRef.current = null;
+        busy.current = false;
+        setAnimClass('');
+        if (exitSnap) {
+          try { exitSnap.remove(); } catch (e) {}
+        }
+      }, ms);
+    } else if (exitSnap) {
+      try { exitSnap.remove(); } catch (e) {}
     }
   };
 
   const goNext = () => {
+    // If a transition is still mid-flight, cut it short AND still advance right away —
+    // previously this just snapped the current transition to its end state and stopped,
+    // requiring a second click/keypress to actually move to the next slide.
     if (busy.current) {
       skipBusy();
-      return;
     }
     if (playNextAnimStep()) return;
     const list = usePresentationStore.getState().slides;
@@ -1911,7 +2380,6 @@ export default function PreviewOverlay() {
   const goPrev = () => {
     if (busy.current) {
       skipBusy();
-      return;
     }
     const list = usePresentationStore.getState().slides;
     const i = idxRef.current;
@@ -2122,7 +2590,12 @@ export default function PreviewOverlay() {
       <div
         key={`${animKey}-${iconsTick}`}
         className={`preview-anim-wrap ${animClass}`}
-        style={{ '--pv-dur': `${dur}ms` }}
+        style={{
+          '--pv-dur': `${dur}ms`,
+          '--pv-dir': pvDir,
+          '--pv-shift-x': `${pvShift.x}px`,
+          '--pv-shift-y': `${pvShift.y}px`,
+        }}
       >
         <SlidePreview
           slide={slide}
