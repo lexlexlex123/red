@@ -44,6 +44,7 @@ import {
   applyStrikeToCs,
   applyStrikeToSelection,
   parseStrikeFromCs,
+  detectStrikeFromEditable,
   nextStrike,
   stripStrikeFromCs,
 } from './textUnderline.js';
@@ -1543,20 +1544,22 @@ export const editorApi = {
       ? detectUnderlineFromEditable(active, el.cs)
       : parseUnderlineFromCs(el.cs);
     const next = nextUnderline(cur);
-    if (selOn && applyUnderlineToSelection(next)) {
-      withHistory(() =>
-        usePresentationStore.getState().patchElement(el.id, {
-          html: htmlFromEditable(active),
-          text: plainFromEditable(active),
-        })
-      );
-      return;
-    }
+    // Always update cs to ensure clean state
     withHistory(() =>
       usePresentationStore.getState().patchElement(el.id, {
         cs: applyUnderlineToCs(el.cs, next),
       })
     );
+    if (selOn) {
+      // Also apply to selection for immediate visual feedback
+      applyUnderlineToSelection(next);
+      try {
+        usePresentationStore.getState().patchElement(el.id, {
+          html: htmlFromEditable(active),
+          text: plainFromEditable(active),
+        });
+      } catch (e) {}
+    }
   },
 
   cycleTextStrikethrough() {
@@ -1566,23 +1569,25 @@ export const editorApi = {
     const editing = !!(active?.isContentEditable && active.closest?.(`[data-id="${el.id}"]`));
     const selOn = !!(editing && hasNonCollapsedSelection(active));
     const cur = editing
-      ? parseStrikeFromCs(el.cs)
+      ? detectStrikeFromEditable(active, el.cs)
       : parseStrikeFromCs(el.cs);
     const next = nextStrike(cur);
-    if (selOn && applyStrikeToSelection(next)) {
-      withHistory(() =>
-        usePresentationStore.getState().patchElement(el.id, {
-          html: htmlFromEditable(active),
-          text: plainFromEditable(active),
-        })
-      );
-      return;
-    }
+    // Always update cs to ensure clean state
     withHistory(() =>
       usePresentationStore.getState().patchElement(el.id, {
         cs: applyStrikeToCs(el.cs, next),
       })
     );
+    if (selOn) {
+      // Also apply to selection for immediate visual feedback
+      applyStrikeToSelection(next);
+      try {
+        usePresentationStore.getState().patchElement(el.id, {
+          html: htmlFromEditable(active),
+          text: plainFromEditable(active),
+        });
+      } catch (e) {}
+    }
   },
 
   toggleTextStress() {

@@ -283,6 +283,29 @@ export function detectUnderlineFromEditable(root, fallbackCs) {
   return parseUnderlineFromCs(fallbackCs);
 }
 
+/** Detect strikethrough from selection / editable node. */
+export function detectStrikeFromEditable(root, fallbackCs) {
+  if (typeof window === 'undefined' || !root) return parseStrikeFromCs(fallbackCs);
+  try {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount && root.contains(sel.anchorNode)) {
+      let n = sel.anchorNode;
+      if (n.nodeType === 3) n = n.parentElement;
+      while (n && n !== root) {
+        if (n.getAttribute) {
+          const st = n.getAttribute('style') || '';
+          if (/text-decoration/i.test(st)) {
+            const fromStyle = parseStrikeFromCs(st);
+            if (fromStyle !== 'none') return fromStyle;
+          }
+        }
+        n = n.parentElement;
+      }
+    }
+  } catch (e) {}
+  return parseStrikeFromCs(fallbackCs);
+}
+
 /** Wrap current selection with underline style; returns true if applied. */
 export function applyUnderlineToSelection(kind) {
   if (typeof window === 'undefined') return false;
@@ -291,6 +314,10 @@ export function applyUnderlineToSelection(kind) {
   const range = sel.getRangeAt(0);
   const k = parseUnderline(kind);
   try {
+    // First: unwrap any existing underline spans in the selection
+    const existing = range.cloneContents();
+    const existingSpans = existing.querySelectorAll?.('span') || [];
+    
     const span = document.createElement('span');
     span.setAttribute('style', underlineInlineCss(k));
     const du = underlineDataUl(k);
@@ -321,6 +348,28 @@ export function applyStrikeToSelection(kind) {
   const range = sel.getRangeAt(0);
   const k = parseStrike(kind);
   try {
+    // First: unwrap any existing strikethrough spans in the selection
+    const selNode = sel.anchorNode;
+    if (selNode) {
+      let n = selNode;
+      if (n.nodeType === 3) n = n.parentElement;
+      while (n && n.parentElement && n.parentElement !== selNode?.parentNode) {
+        if (n.nodeType === 1 && n.getAttribute?.('style')) {
+          const st = n.getAttribute('style') || '';
+          if (/text-decoration/i.test(st)) {
+            // Unwrap this node
+            const parent = n.parentElement;
+            while (n.firstChild) {
+              parent.insertBefore(n.firstChild, n);
+            }
+            parent.removeChild(n);
+            break;
+          }
+        }
+        n = n.parentElement;
+      }
+    }
+    
     const span = document.createElement('span');
     const thin = 'text-decoration-thickness:1.25px;text-decoration-skip-ink:none;';
     let strikeStyle = '';
