@@ -101,7 +101,7 @@ export function underlineTitle(kind, ru) {
   return map[kind] || map.none;
 }
 
-/** Strip ALL text-decoration properties from cs (both underline and line-through). */
+/** Strip ALL text-decoration properties from cs. */
 export function stripAllTextDecoration(cs) {
   return String(cs || '')
     .replace(/text-decoration(?:-line|-style|-thickness|-color)?\s*:[^;]+;?/gi, '')
@@ -112,6 +112,10 @@ export function stripAllTextDecoration(cs) {
 }
 
 export function stripUnderlineFromCs(cs) {
+  return stripAllTextDecoration(cs);
+}
+
+export function stripStrikeFromCs(cs) {
   return stripAllTextDecoration(cs);
 }
 
@@ -239,11 +243,6 @@ export function applyStrikeToCs(cs, kind) {
   if (k === 'line-through') return `${next}text-decoration:line-through;${thin}`;
   if (k === 'line-through double') return `${next}text-decoration:line-through double;${thin}`;
   return next;
-}
-
-export function stripStrikeFromCs(cs) {
-  // Strikethrough uses same text-decoration property, so use full strip
-  return stripAllTextDecoration(cs);
 }
 
 export function parseStrike(kind) {

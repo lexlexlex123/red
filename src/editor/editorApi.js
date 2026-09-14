@@ -1539,20 +1539,44 @@ export const editorApi = {
     if (!el || el.type !== 'text') return;
     const active = typeof document !== 'undefined' ? document.activeElement : null;
     const editing = !!(active?.isContentEditable && active.closest?.(`[data-id="${el.id}"]`));
-    const selOn = !!(editing && hasNonCollapsedSelection(active));
-    const cur = editing
-      ? detectUnderlineFromEditable(active, el.cs)
-      : parseUnderlineFromCs(el.cs);
-    const next = nextUnderline(cur);
-    // Always update cs to ensure clean state
+    
+    // Always determine current state from el.cs first
+    const curUl = parseUnderlineFromCs(el.cs);
+    const nextUl = nextUnderline(curUl);
+    
+    // Check if user has a partial text selection (not the whole block)
+    let partialSel = false;
+    if (editing && active) {
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed && sel.rangeCount > 0) {
+        const range = sel.getRangeAt(0);
+        // Check if selection is within this element but doesn't cover everything
+        const container = range.commonAncestorContainer;
+        const editableEl = active.closest?.('[contenteditable]') || active;
+        if (container.nodeType === 3) {
+          // Text node - check if it's inside this element
+          let node = container.parentElement;
+          while (node && node !== editableEl) {
+            node = node.parentElement;
+          }
+          // Only apply to selection if it's a partial selection (not the whole editable)
+          if (node === editableEl && editableEl.textContent?.trim() !== sel.toString().trim()) {
+            partialSel = true;
+          }
+        }
+      }
+    }
+    
+    // Always update cs for the whole block
     withHistory(() =>
       usePresentationStore.getState().patchElement(el.id, {
-        cs: applyUnderlineToCs(el.cs, next),
+        cs: applyUnderlineToCs(el.cs, nextUl),
       })
     );
-    if (selOn) {
-      // Also apply to selection for immediate visual feedback
-      applyUnderlineToSelection(next);
+    
+    // Also apply to partial selection for immediate visual feedback
+    if (partialSel) {
+      applyUnderlineToSelection(nextUl);
       try {
         usePresentationStore.getState().patchElement(el.id, {
           html: htmlFromEditable(active),
@@ -1567,20 +1591,44 @@ export const editorApi = {
     if (!el || el.type !== 'text') return;
     const active = typeof document !== 'undefined' ? document.activeElement : null;
     const editing = !!(active?.isContentEditable && active.closest?.(`[data-id="${el.id}"]`));
-    const selOn = !!(editing && hasNonCollapsedSelection(active));
-    const cur = editing
-      ? detectStrikeFromEditable(active, el.cs)
-      : parseStrikeFromCs(el.cs);
-    const next = nextStrike(cur);
-    // Always update cs to ensure clean state
+    
+    // Always determine current state from el.cs first
+    const curStrike = parseStrikeFromCs(el.cs);
+    const nextStrikeStyle = nextStrike(curStrike);
+    
+    // Check if user has a partial text selection (not the whole block)
+    let partialSel = false;
+    if (editing && active) {
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed && sel.rangeCount > 0) {
+        const range = sel.getRangeAt(0);
+        // Check if selection is within this element but doesn't cover everything
+        const container = range.commonAncestorContainer;
+        const editableEl = active.closest?.('[contenteditable]') || active;
+        if (container.nodeType === 3) {
+          // Text node - check if it's inside this element
+          let node = container.parentElement;
+          while (node && node !== editableEl) {
+            node = node.parentElement;
+          }
+          // Only apply to selection if it's a partial selection (not the whole editable)
+          if (node === editableEl && editableEl.textContent?.trim() !== sel.toString().trim()) {
+            partialSel = true;
+          }
+        }
+      }
+    }
+    
+    // Always update cs for the whole block
     withHistory(() =>
       usePresentationStore.getState().patchElement(el.id, {
-        cs: applyStrikeToCs(el.cs, next),
+        cs: applyStrikeToCs(el.cs, nextStrikeStyle),
       })
     );
-    if (selOn) {
-      // Also apply to selection for immediate visual feedback
-      applyStrikeToSelection(next);
+    
+    // Also apply to partial selection for immediate visual feedback
+    if (partialSel) {
+      applyStrikeToSelection(nextStrikeStyle);
       try {
         usePresentationStore.getState().patchElement(el.id, {
           html: htmlFromEditable(active),
