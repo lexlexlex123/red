@@ -313,49 +313,42 @@ export function applyUnderlineToSelection(kind) {
   const range = sel.getRangeAt(0);
   const k = parseUnderline(kind);
   try {
-    // Extract the selected content
-    const contents = range.extractContents();
+    // Use execCommand to toggle underline, then update with our specific style
+    document.execCommand('underline', false, null);
     
-    // First: unwrap any existing text-decoration spans in the extracted content
-    const tempDiv = document.createElement('div');
-    tempDiv.appendChild(contents);
-    
-    function unwrapTextDecorations(node) {
-      if (!node) return;
-      const children = Array.from(node.childNodes);
-      children.forEach(child => {
-        if (child.nodeType === 1 && child.getAttribute?.('style')) {
-          const st = child.getAttribute('style') || '';
-          if (/text-decoration/i.test(st)) {
-            // Unwrap: move children to parent
-            while (child.firstChild) {
-              node.insertBefore(child.firstChild, child);
-            }
-            node.removeChild(child);
-          }
-        } else if (child.nodeType === 1) {
-          unwrapTextDecorations(child);
+    // Now find the span that execCommand created and update its style
+    const sel2 = window.getSelection();
+    if (sel2 && sel2.rangeCount > 0) {
+      const node = sel2.anchorNode;
+      if (node) {
+        let span = node.nodeType === 3 ? node.parentElement : node;
+        if (span && span.nodeType === 1 && span.getAttribute('style')) {
+          const thin = '1.25px';
+          const offset = '0.12em';
+          let textDecorationValue = 'none';
+          if (k === 'underline') textDecorationValue = 'underline';
+          else if (k === 'underline double') textDecorationValue = 'underline double';
+          else if (k === 'underline wavy') textDecorationValue = 'underline wavy';
+          else if (k === 'underline dashed') textDecorationValue = 'underline dashed';
+          
+          span.style.setProperty('text-decoration', textDecorationValue, 'important');
+          span.style.setProperty('text-decoration-thickness', thin, 'important');
+          span.style.setProperty('text-underline-offset', offset, 'important');
+          span.style.setProperty('text-decoration-skip-ink', 'none', 'important');
+          
+          const du = underlineDataUl(k);
+          if (du) span.setAttribute('data-ul', du);
+          else span.removeAttribute('data-ul');
+          
+          // Update selection to reflect changes
+          sel2.removeAllRanges();
+          const nr = document.createRange();
+          nr.selectNodeContents(span);
+          sel2.addRange(nr);
         }
-      });
+      }
     }
-    unwrapTextDecorations(tempDiv);
     
-    // Now wrap the cleaned content with new style
-    const span = document.createElement('span');
-    span.setAttribute('style', underlineInlineCss(k));
-    const du = underlineDataUl(k);
-    if (du) span.setAttribute('data-ul', du);
-    else span.removeAttribute('data-ul');
-    if (k === 'none') {
-      span.setAttribute('style', underlineInlineCss('none'));
-      span.removeAttribute('data-ul');
-    }
-    span.appendChild(tempDiv.firstChild || tempDiv);
-    range.insertNode(span);
-    sel.removeAllRanges();
-    const nr = document.createRange();
-    nr.selectNodeContents(span);
-    sel.addRange(nr);
     return true;
   } catch (e) {
     return false;
@@ -370,51 +363,34 @@ export function applyStrikeToSelection(kind) {
   const range = sel.getRangeAt(0);
   const k = parseStrike(kind);
   try {
-    // Extract the selected content
-    const contents = range.extractContents();
+    // Use execCommand to toggle strikethrough
+    document.execCommand('strikeThrough', false, null);
     
-    // First: unwrap any existing text-decoration spans in the extracted content
-    const tempDiv = document.createElement('div');
-    tempDiv.appendChild(contents);
-    
-    function unwrapTextDecorations(node) {
-      if (!node) return;
-      const children = Array.from(node.childNodes);
-      children.forEach(child => {
-        if (child.nodeType === 1 && child.getAttribute?.('style')) {
-          const st = child.getAttribute('style') || '';
-          if (/text-decoration/i.test(st)) {
-            // Unwrap: move children to parent
-            while (child.firstChild) {
-              node.insertBefore(child.firstChild, child);
-            }
-            node.removeChild(child);
-          }
-        } else if (child.nodeType === 1) {
-          unwrapTextDecorations(child);
+    // Now find the span and update its style with thin line
+    const sel2 = window.getSelection();
+    if (sel2 && sel2.rangeCount > 0) {
+      const node = sel2.anchorNode;
+      if (node) {
+        let span = node.nodeType === 3 ? node.parentElement : node;
+        if (span && span.nodeType === 1 && span.getAttribute('style')) {
+          const thin = '1.25px';
+          let textDecorationValue = 'none';
+          if (k === 'line-through') textDecorationValue = 'line-through';
+          else if (k === 'line-through double') textDecorationValue = 'line-through double';
+          
+          span.style.setProperty('text-decoration', textDecorationValue, 'important');
+          span.style.setProperty('text-decoration-thickness', thin, 'important');
+          span.style.setProperty('text-decoration-skip-ink', 'none', 'important');
+          
+          // Update selection
+          sel2.removeAllRanges();
+          const nr = document.createRange();
+          nr.selectNodeContents(span);
+          sel2.addRange(nr);
         }
-      });
+      }
     }
-    unwrapTextDecorations(tempDiv);
     
-    // Now wrap the cleaned content with new style
-    const span = document.createElement('span');
-    const thin = 'text-decoration-thickness:1.25px;text-decoration-skip-ink:none;';
-    let strikeStyle = '';
-    if (k === 'line-through') {
-      strikeStyle = `text-decoration:line-through;${thin}`;
-    } else if (k === 'line-through double') {
-      strikeStyle = `text-decoration:line-through double;${thin}`;
-    } else {
-      strikeStyle = 'text-decoration:none;';
-    }
-    span.setAttribute('style', strikeStyle);
-    span.appendChild(tempDiv.firstChild || tempDiv);
-    range.insertNode(span);
-    sel.removeAllRanges();
-    const nr = document.createRange();
-    nr.selectNodeContents(span);
-    sel.addRange(nr);
     return true;
   } catch (e) {
     return false;

@@ -1540,9 +1540,25 @@ export const editorApi = {
     const active = typeof document !== 'undefined' ? document.activeElement : null;
     const editing = !!(active?.isContentEditable && active.closest?.(`[data-id="${el.id}"]`));
     
-    if (editing) {
-      // Use native execCommand for selection
-      document.execCommand('underline', false, null);
+    // Check for partial selection
+    let partialSel = false;
+    if (editing && active) {
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed && sel.rangeCount > 0 && sel.anchorNode) {
+        let node = sel.anchorNode;
+        if (node.nodeType === 3) node = node.parentElement;
+        while (node) {
+          if (node === active) { partialSel = true; break; }
+          node = node.parentElement;
+        }
+      }
+    }
+    
+    if (partialSel) {
+      // Cycle through styles for selection
+      const cur = detectUnderlineFromEditable(active, el.cs);
+      const next = nextUnderline(cur);
+      applyUnderlineToSelection(next);
       withHistory(() =>
         usePresentationStore.getState().patchElement(el.id, {
           html: htmlFromEditable(active),
@@ -1550,7 +1566,7 @@ export const editorApi = {
         })
       );
     } else {
-      // Apply to whole block
+      // Cycle for whole block
       const cur = parseUnderlineFromCs(el.cs);
       const next = nextUnderline(cur);
       withHistory(() =>
@@ -1567,9 +1583,25 @@ export const editorApi = {
     const active = typeof document !== 'undefined' ? document.activeElement : null;
     const editing = !!(active?.isContentEditable && active.closest?.(`[data-id="${el.id}"]`));
     
-    if (editing) {
-      // Use native execCommand for strikethrough
-      document.execCommand('strikeThrough', false, null);
+    // Check for partial selection
+    let partialSel = false;
+    if (editing && active) {
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed && sel.rangeCount > 0 && sel.anchorNode) {
+        let node = sel.anchorNode;
+        if (node.nodeType === 3) node = node.parentElement;
+        while (node) {
+          if (node === active) { partialSel = true; break; }
+          node = node.parentElement;
+        }
+      }
+    }
+    
+    if (partialSel) {
+      // Cycle through styles for selection
+      const cur = detectStrikeFromEditable(active, el.cs);
+      const next = nextStrike(cur);
+      applyStrikeToSelection(next);
       withHistory(() =>
         usePresentationStore.getState().patchElement(el.id, {
           html: htmlFromEditable(active),
@@ -1577,7 +1609,7 @@ export const editorApi = {
         })
       );
     } else {
-      // Apply to WHOLE block via cs
+      // Cycle for whole block
       const cur = parseStrikeFromCs(el.cs);
       const next = nextStrike(cur);
       withHistory(() =>
