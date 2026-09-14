@@ -101,13 +101,18 @@ export function underlineTitle(kind, ru) {
   return map[kind] || map.none;
 }
 
-export function stripUnderlineFromCs(cs) {
+/** Strip ALL text-decoration properties from cs (both underline and line-through). */
+export function stripAllTextDecoration(cs) {
   return String(cs || '')
     .replace(/text-decoration(?:-line|-style|-thickness|-color)?\s*:[^;]+;?/gi, '')
     .replace(/text-underline-offset\s*:[^;]+;?/gi, '')
     .replace(/--rt-ul\s*:[^;]+;?/gi, '')
     .replace(/;;+/g, ';')
     .replace(/^;|;$/g, '');
+}
+
+export function stripUnderlineFromCs(cs) {
+  return stripAllTextDecoration(cs);
 }
 
 export function parseUnderlineFromCs(cs) {
@@ -200,12 +205,15 @@ export function underlineActive(cs) {
 /** Parse strikethrough from cs. */
 export function parseStrikeFromCs(cs) {
   const s = String(cs || '');
+  // Check for line-through specifically
   const m = /text-decoration(?:-line)?\s*:\s*([^;]+)/i.exec(s);
   if (!m) return 'none';
   const line = m[1].trim();
   if (/^none$/i.test(line)) return 'none';
-  if (/\bdouble\b/i.test(line)) return 'line-through double';
-  if (/\bline-through\b/i.test(line)) return 'line-through';
+  if (/\bline-through\b/i.test(line)) {
+    if (/\bdouble\b/i.test(line)) return 'line-through double';
+    return 'line-through';
+  }
   return 'none';
 }
 
@@ -224,7 +232,7 @@ export function strikeActive(cs) {
 }
 
 export function applyStrikeToCs(cs, kind) {
-  let next = stripStrikeFromCs(cs);
+  let next = stripAllTextDecoration(cs);
   const k = parseStrike(kind);
   if (!k || k === 'none') return next;
   const thin = 'text-decoration-thickness:1.25px;text-decoration-skip-ink:none;';
@@ -234,10 +242,8 @@ export function applyStrikeToCs(cs, kind) {
 }
 
 export function stripStrikeFromCs(cs) {
-  return String(cs || '')
-    .replace(/text-decoration(?:-line)?-?(?:thickness|offset)?\s*:[^;]+;?/gi, '')
-    .replace(/;;+/g, ';')
-    .replace(/^;|;$/g, '');
+  // Strikethrough uses same text-decoration property, so use full strip
+  return stripAllTextDecoration(cs);
 }
 
 export function parseStrike(kind) {
