@@ -1540,24 +1540,20 @@ export const editorApi = {
     const active = typeof document !== 'undefined' ? document.activeElement : null;
     const editing = !!(active?.isContentEditable && active.closest?.(`[data-id="${el.id}"]`));
     
-    // Check if user has a partial text selection (not the whole block)
+    // Simple check: is there a non-collapsed selection in this element?
     let partialSel = false;
     if (editing && active) {
       const sel = window.getSelection();
-      if (sel && !sel.isCollapsed && sel.rangeCount > 0) {
-        const range = sel.getRangeAt(0);
-        const container = range.commonAncestorContainer;
-        const editableEl = active.closest?.('[contenteditable]') || active;
-        if (container.nodeType === 3) {
-          let node = container.parentElement;
-          while (node && node !== editableEl) {
-            node = node.parentElement;
-          }
-          // Only partial if selection doesn't match the whole editable content
-          if (node === editableEl && editableEl.textContent?.trim() !== sel.toString().trim()) {
-            partialSel = true;
-          }
+      if (sel && !sel.isCollapsed && sel.rangeCount > 0 && sel.anchorNode) {
+        // Check if selection is within this element
+        let node = sel.anchorNode;
+        if (node.nodeType === 3) node = node.parentElement;
+        let found = false;
+        while (node) {
+          if (node === active) { found = true; break; }
+          node = node.parentElement;
         }
+        if (found) partialSel = true;
       }
     }
     
@@ -1590,24 +1586,20 @@ export const editorApi = {
     const active = typeof document !== 'undefined' ? document.activeElement : null;
     const editing = !!(active?.isContentEditable && active.closest?.(`[data-id="${el.id}"]`));
     
-    // Check if user has a partial text selection (not the whole block)
+    // Simple check: is there a non-collapsed selection in this element?
     let partialSel = false;
     if (editing && active) {
       const sel = window.getSelection();
-      if (sel && !sel.isCollapsed && sel.rangeCount > 0) {
-        const range = sel.getRangeAt(0);
-        const container = range.commonAncestorContainer;
-        const editableEl = active.closest?.('[contenteditable]') || active;
-        if (container.nodeType === 3) {
-          let node = container.parentElement;
-          while (node && node !== editableEl) {
-            node = node.parentElement;
-          }
-          // Only partial if selection doesn't match the whole editable content
-          if (node === editableEl && editableEl.textContent?.trim() !== sel.toString().trim()) {
-            partialSel = true;
-          }
+      if (sel && !sel.isCollapsed && sel.rangeCount > 0 && sel.anchorNode) {
+        // Check if selection is within this element
+        let node = sel.anchorNode;
+        if (node.nodeType === 3) node = node.parentElement;
+        let found = false;
+        while (node) {
+          if (node === active) { found = true; break; }
+          node = node.parentElement;
         }
+        if (found) partialSel = true;
       }
     }
     
