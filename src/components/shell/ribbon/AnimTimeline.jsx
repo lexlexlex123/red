@@ -17,6 +17,36 @@ function snapMs(ms) {
   return Math.max(0, Math.round(ms / 25) * 25);
 }
 
+/**
+ * The timeline segment's visual `dur` for a few composite effects (captionSlide's
+ * fade+hold+fade, particles/inkDraw with a loop count) is intentionally LONGER than the
+ * animation's own editable duration field — it represents how long the whole effect occupies
+ * the sequence. Dragging must use THIS visual value as its reference the entire time (so the
+ * segment's rendered width never jumps when you grab it, and stays 1:1 with the cursor) — see
+ * rawDurFromChainDur below for how the final result gets converted back to a real duration
+ * only once, when the drag is committed.
+ */
+function rawDurFromChainDur(a, chainDur) {
+  if (!a) return chainDur;
+  if (a.name === 'captionSlide') {
+    const h = +(a.holdDuration || 2000) || 2000;
+    return Math.max(0, (chainDur - h) / 2);
+  }
+  if (a.name === 'particles') {
+    const life = +(a.ptLife || 900) || 900;
+    const cnt = a.swingCount != null ? a.swingCount : 1;
+    const loops = !Number.isFinite(+cnt) || +cnt >= 10 ? 1 : Math.max(1, +cnt || 1);
+    const perLoop = chainDur / loops;
+    return Math.max(0, perLoop - life * 1.5);
+  }
+  if (a.name === 'inkDraw') {
+    const cnt = a.swingCount != null ? a.swingCount : 1;
+    const loops = !Number.isFinite(+cnt) || +cnt >= 10 ? 1 : Math.max(1, +cnt || 1);
+    return Math.max(0, chainDur / loops);
+  }
+  return chainDur;
+}
+
 function ZoomBtn({ title, onClick, children }) {
   return (
     <button type="button" className="react-anim-tl-zoom-btn" title={title} onClick={onClick}>
@@ -40,8 +70,10 @@ export default function AnimTimeline({ docked = false }) {
   const tl = useMemo(() => computeSlideAnimTimeline(slide, lang), [slide, lang]);
   const [draft, setDraft] = useState(null);
   const [playMs, setPlayMs] = useState(0);
+  const [marquee, setMarquee] = useState(null);
   const scrollRef = useRef(null);
   const dragRef = useRef(null);
+  const marqueeRef = useRef(null);
 
   useEffect(() => {
     if (!playStartedAt) {
@@ -157,14 +189,118 @@ export default function AnimTimeline({ docked = false }) {
       dragRef.current = null;
       setDraft(null);
       if (!d) return;
-      if (d.moved && d.draft) {
+      if (!d.moved) {
+        pickSeg(d.seg);
+        return;
+      }
+      if (!d.draft) return;
+      if (d.seg.isPause || isCamElId(d.seg.elId)) {
         editorApi.applyTimelineSeg(d.seg.elId, d.seg.ai, {
           absDelay: d.draft.absDelay,
           dur: d.draft.dur,
           lane: d.draft.lane != null ? d.draft.lane : d.seg.lane,
         });
-      } else if (!d.moved) {
-        pickSeg(d.seg);
+        return;
+      }
+      if (d.mode === 'resize') {
+        // d.draft.dur is the visual/"chain" duration (matches what was rendered the whole
+        // drag) — convert it back to the animation's own real duration field once, here,
+        // rather than storing the inflated chain value directly (see rawDurFromChainDur).
+        const rawDur = rawDurFromChainDur(d.seg.anim, d.draft.dur);
+        editorApi.applyTimelineSeg(d.seg.elId, d.seg.ai, {
+          absDelay: d.draft.absDelay,
+          dur: rawDur,
+          lane: d.draft.lane != null ? d.draft.lane : d.seg.lane,
+        });
+        return;
+      }
+      // Moving (not resizing) a plain element animation: snap it to "together with previous"
+      // when dropped level with, or just after, the START of whichever segment comes right
+      // before it — without this, a moved segment always just becomes a new sequential "auto"
+      // step waiting for everything before it to finish, with no way to place two animations
+      // in parallel by hand. Dropping it clearly further right keeps normal sequential timing.
+      const idx = tl.segments.findIndex((s) => timelineSegKey(s.elId, s.ai) === d.key);
+      const prevSeg = idx > 0 ? tl.segments[idx - 1] : null;
+      const curPxMs = useUiStore.getState().animTlPxPerMs || 0.08;
+      const snapMsThresh = Math.max(40, 14 / curPxMs);
+      const target = d.draft.absDelay;
+      const canSnap = prevSeg && !prevSeg.isCamera && !prevSeg.isPause;
+      const withinSnap =
+        !!canSnap && target >= prevSeg.absDelay - 2 && target <= prevSeg.absDelay + snapMsThresh;
+      let trigger;
+      let delay;
+      if (withinSnap) {
+        trigger = 'withPrev';
+        delay = Math.max(0, Math.round(target - prevSeg.absDelay));
+      } else {
+        trigger = 'auto';
+        const prevEnd = tl.segments.slice(0, idx).reduce((m, s) => Math.max(m, s.absDelay + s.dur), 0);
+        delay = Math.max(0, Math.round(target - prevEnd));
+      }
+      editorApi.applyTimelineSeg(d.seg.elId, d.seg.ai, {
+        delay,
+        trigger,
+        lane: d.draft.lane != null ? d.draft.lane : d.seg.lane,
+      });
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }
+
+  /**
+   * Rectangular ("marquee") selection: mousedown on empty timeline background (segments call
+   * stopPropagation, so this only fires when you didn't hit one) drags out a selection box;
+   * anything it overlaps gets multi-selected, same as a marquee-select on the canvas.
+   */
+  function onTracksPointerDown(e) {
+    if (e.button != null && e.button !== 0) return;
+    const tracks = e.currentTarget;
+    const rect = tracks.getBoundingClientRect();
+    const startX = e.clientX - rect.left;
+    const startY = e.clientY - rect.top;
+    const state = { rect, startX, startY, x: startX, y: startY };
+    marqueeRef.current = state;
+    setMarquee({ left: startX, top: startY, width: 0, height: 0 });
+    const onMove = (ev) => {
+      const st = marqueeRef.current;
+      if (!st) return;
+      st.x = Math.max(0, Math.min(st.rect.width, ev.clientX - st.rect.left));
+      st.y = Math.max(0, Math.min(st.rect.height, ev.clientY - st.rect.top));
+      setMarquee({
+        left: Math.min(st.startX, st.x),
+        top: Math.min(st.startY, st.y),
+        width: Math.abs(st.x - st.startX),
+        height: Math.abs(st.y - st.startY),
+      });
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      const st = marqueeRef.current;
+      marqueeRef.current = null;
+      setMarquee(null);
+      if (!st) return;
+      const x1 = Math.min(st.startX, st.x);
+      const x2 = Math.max(st.startX, st.x);
+      const y1 = Math.min(st.startY, st.y);
+      const y2 = Math.max(st.startY, st.y);
+      if (x2 - x1 < 3 && y2 - y1 < 3) return; // a plain click on empty space, not a drag
+      const curPxMs = useUiStore.getState().animTlPxPerMs || 0.08;
+      const msFrom = x1 / curPxMs;
+      const msTo = x2 / curPxMs;
+      const laneFrom = Math.floor(y1 / Math.max(1, laneH));
+      const laneTo = Math.floor(y2 / Math.max(1, laneH));
+      const ids = new Set();
+      tl.segments.forEach((seg) => {
+        if (seg.isCamera || seg.isPause) return;
+        const segLane = seg.lane || 0;
+        if (segLane < laneFrom || segLane > laneTo) return;
+        const overlapsTime = seg.absDelay <= msTo && seg.absDelay + seg.dur >= msFrom;
+        if (overlapsTime) ids.add(String(seg.elId));
+      });
+      if (ids.size) {
+        useSelectionStore.getState().setMultiSel(Array.from(ids));
+        useSelectionStore.getState().setSelId(null);
       }
     };
     window.addEventListener('pointermove', onMove);
@@ -215,7 +351,17 @@ export default function AnimTimeline({ docked = false }) {
       </div>
       <div className="react-anim-tl-scroll" ref={scrollRef}>
         <div className="react-anim-tl-inner" style={{ width: widthPx }}>
-          <div className="react-anim-tl-tracks" style={{ height: tracksH }}>
+          <div
+            className="react-anim-tl-tracks"
+            style={{ height: tracksH }}
+            onPointerDown={onTracksPointerDown}
+          >
+            {marquee ? (
+              <div
+                className="react-anim-tl-marquee"
+                style={{ left: marquee.left, top: marquee.top, width: marquee.width, height: marquee.height }}
+              />
+            ) : null}
             {Array.from({ length: laneCount }, (_, li) => (
               <div
                 key={li}

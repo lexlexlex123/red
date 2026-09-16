@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  body { background:#101318; color:#fff; font-family: Georgia, serif; margin:0; padding:0; -webkit-font-smoothing: antialiased; }
+  .row { height: 74px; position: relative; }
+  .label { position: absolute; top: 2px; left: 6px; font-size: 11px; color: #889; font-family: monospace; }
+  .txt { position: absolute; top: 18px; left: 6px; white-space: nowrap; font-size: 18px; }
+  .single {
+    color: #ff2222;
+    -webkit-text-fill-color: transparent;
+    text-decoration: underline;
+    text-decoration-color: #ff2222;
+    text-decoration-thickness: 1.25px;
+    text-underline-offset: 0.12em;
+    text-decoration-skip-ink: none;
+  }
+  .dd {
+    color: #22ff88;
+    -webkit-text-fill-color: #ffffff;
+    text-decoration: none;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+    padding-bottom: 0.28em;
+    background-color: transparent;
+    background-image:
+      radial-gradient(circle 1.5px at 1.5px 50%, currentColor 99%, transparent 100%),
+      repeating-linear-gradient(90deg,
+        transparent 0, transparent 7px,
+        currentColor 7px, currentColor 16px,
+        transparent 16px, transparent 20px);
+    background-size: 20px 3px, 20px 1.25px;
+    background-repeat: repeat-x, repeat-x;
+    background-origin: padding-box;
+    background-clip: padding-box;
+  }
+  .cur { background-position: 0 calc(1em + 0.12em + 2px), 0 calc(1em + 0.12em + 2px + 0.875px); }
+  .v1  { background-position: 0 calc(1em + 0.12em), 0 calc(1em + 0.12em + 0.875px); }
+  .v2  { background-position: 0 calc(0.95em + 0.12em), 0 calc(0.95em + 0.12em + 0.875px); }
+  .v3  { background-position: 0 calc(0.9em + 0.12em), 0 calc(0.9em + 0.12em + 0.875px); }
+  .v4  { background-position: 0 calc(0.85em + 0.12em), 0 calc(0.85em + 0.12em + 0.875px); }
+  .v5  { background-position: 0 calc(0.9em + 0.06em), 0 calc(0.9em + 0.06em + 0.875px); }
+  .v6  { background-position: 0 calc(0.98em + 0.12em), 0 calc(0.98em + 0.12em + 0.875px); }
+</style>
+</head>
+<body>
+<div class="row"><span class="label">18-native</span><span class="txt single">Проверка текста Подчёркивание ЖЖЖ ррр уууу</span></div>
+<div class="row"><span class="label">18-cur</span><span class="txt dd cur">Проверка текста Подчёркивание ЖЖЖ ррр уууу</span></div>
+<div class="row"><span class="label">18-v6 .98</span><span class="txt dd v6">Проверка текста Подчёркивание ЖЖЖ ррр уууу</span></div>
+<div class="row"><span class="label">18-v1 1.0</span><span class="txt dd v1">Проверка текста Подчёркивание ЖЖЖ ррр уууу</span></div>
+<div class="row"><span class="label">18-v2 .95</span><span class="txt dd v2">Проверка текста Подчёркивание ЖЖЖ ррр уууу</span></div>
+<div class="row"><span class="label">18-v3 .90</span><span class="txt dd v3">Проверка текста Подчёркивание ЖЖЖ ррр уууу</span></div>
+<div class="row"><span class="label">18-v5 .90+.06</span><span class="txt dd v5">Проверка текста Подчёркивание ЖЖЖ ррр уууу</span></div>
+<div class="row"><span class="label">18-v4 .85</span><span class="txt dd v4">Проверка текста Подчёркивание ЖЖЖ ррр уууу</span></div>
+</body>
+</html>

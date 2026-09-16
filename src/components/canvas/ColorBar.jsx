@@ -41,7 +41,7 @@ export default function ColorBar() {
     <div className="react-color-bar" aria-label="Палитра цветов" {...versionAttr('ColorBar')}>
       <div className="color-bar-modes">
         <button type="button" className={`color-bar-mode${colorMode === 'bg' ? ' active' : ''}`} title="Заливка" onClick={() => setColorMode('bg')}>
-          <AppIcon id={APP_CHROME.colorFill} size={16} sw={1.6} fillOp={0.22} />
+          <AppIcon id={APP_CHROME.colorStroke} size={16} sw={1.6} fillOp={0.35} />
         </button>
         <button type="button" className={`color-bar-mode${colorMode === 'stroke' ? ' active' : ''}`} title="Обводка" onClick={() => setColorMode('stroke')}>
           <AppIcon id={APP_CHROME.colorStroke} size={16} sw={2} fillOp={0} />

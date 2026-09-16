@@ -53,6 +53,8 @@ function loadSnapStep() {
 export function extraGuidesKind(mode) {
   if (mode === 'grid' || mode === 'thirds') return 'grid';
   if (mode === 'margin' || mode === 'golden') return 'margin';
+  if (mode === 'col2') return 'col2';
+  if (mode === 'col3') return 'col3';
   return 'none';
 }
 

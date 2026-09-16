@@ -8,6 +8,7 @@ import AnimTimeline from './AnimTimeline.jsx';
 import SlideshowRibbon from './SlideshowRibbon.jsx';
 import TransitionsRibbon from './TransitionsRibbon.jsx';
 import DesignRibbon from './DesignRibbon.jsx';
+import LayoutPickerGroup from './LayoutPickerGroup.jsx';
 import RibbonImportExport from './RibbonImportExport.jsx';
 import { versionAttr } from '../../../editor/versions.js';
 import { RIBBON_BODY_H, ribbonTrapGeom } from './ribbonGeom.js';
@@ -229,6 +230,7 @@ export default function RibbonBody() {
     >
       <RibbonTrap tabWidth={trapTabW} height={trapH} startColor={trapStart} endColor={trapEnd} />
       <div className="react-ribbon-scroll" ref={scrollRef}>
+        {activeTab === 'home' ? <LayoutPickerGroup /> : null}
         {groups.map((group) => (
           <RibbonGroup key={group.label} label={group.label}>
             {group.buttons.map((btn) => (

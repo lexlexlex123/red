@@ -20,11 +20,13 @@ export default function SlideBgImgLayer({ slide, canvasW, canvasH }) {
     img.src = src;
   }, [src]);
 
+  // Compute layer
   if (!src) return null;
   const layer = slideBgImgLayer(slide.bgImg, canvasW, canvasH, imgAspect);
   if (!layer) return null;
 
-  // Tile mode: render individual tile elements
+  // Tile mode: render individual tile elements with smooth CSS transitions
+  // key={i} preserves DOM elements across renders, CSS transition animates style changes
   if (layer.mode === 'tile' && layer.tiles && layer.tiles.length > 0) {
     return (
       <div className="react-sbg-img" aria-hidden="true" style={layer.wrap}>
@@ -41,7 +43,7 @@ export default function SlideBgImgLayer({ slide, canvasW, canvasH }) {
                 backgroundImage: `url(${JSON.stringify(layer.tileSrc)})`,
                 backgroundSize: '100% 100%',
                 backgroundRepeat: 'no-repeat',
-                transition: 'left 0.15s ease-out, top 0.15s ease-out, width 0.15s ease-out, height 0.15s ease-out',
+                transition: 'left 0.2s ease-out, top 0.2s ease-out, width 0.2s ease-out, height 0.2s ease-out',
               }}
             />
           ))}

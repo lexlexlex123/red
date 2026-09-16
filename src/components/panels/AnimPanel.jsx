@@ -1030,6 +1030,14 @@ export default function AnimPanel() {
             );
           })
         )}
+        {order.length && dragFrom?.scope === 'top' ? (
+          <div
+            className={`anim-drop-end${dropTo?.scope === 'top' && dropTo.index === order.length ? ' is-drop-target' : ''}`}
+            onDragOver={(e) => allowDrop(e, { scope: 'top', index: order.length })}
+            onDrop={(e) => commitDrop(e, { scope: 'top', index: order.length })}
+            title={ru ? 'Переместить в конец списка' : 'Move to end of list'}
+          />
+        ) : null}
       </div>
 
       <div className="react-anim-cats" id="react-anim-slide-list">

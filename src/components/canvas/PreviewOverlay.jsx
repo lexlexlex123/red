@@ -24,7 +24,7 @@ import { getTableCell, tableCellBg, tableCellRadiusStyle, tableColWidthsPx, tabl
 import { getTheme, resolveElTextColor, resolveSchemeColor } from '../../editor/themes.js';
 import { buildChartSvg, chartWrapStyle } from '../../editor/tableChart.js';
 import { parseFontFamily, parseCsNumber } from '../../editor/fonts.js';
-import { underlineBoxProps } from '../../editor/textUnderline.js';
+import { underlineBoxProps, dashDotWrapHtml } from '../../editor/textUnderline.js';
 import { imageRenderStyles, normImgFrame, imgBorderSvgMarkup } from '../../editor/imgStyles.js';
 import { resolveMediaSrc } from '../../editor/mediaStore.js';
 import {
@@ -84,7 +84,24 @@ import { textGlyphShadowStyle, textBlockShadowStyle } from '../../editor/textSha
 import { textPadCss } from '../../editor/textPad.js';
 import { textBorderRadiusCss } from '../../editor/textRadius.js';
 import SlideBgImgLayer from './SlideBgImgLayer.jsx';
+import { morphMatchKey, morphEligible, lerpHexColor } from '../../editor/morphPlay.js';
 import { slideSolidBg } from '../../editor/slideBgImg.js';
+
+// Morph helper: plain text content comparison
+function morphPlainText(d) {
+  if (!d || d.type !== 'text') return null;
+  const tmp = document.createElement('div');
+  tmp.innerHTML = d.html || '';
+  return (tmp.textContent || '').trim().replace(/\s+/g, ' ');
+}
+
+function morphTextBlocksMatch(fd, td) {
+  if (!fd || !td || fd.type !== 'text' || td.type !== 'text') return false;
+  const hasLink = (fd.morphName && String(fd.morphName).trim()) || (td.morphName && String(td.morphName).trim());
+  if (hasLink) return false;
+  const a = morphPlainText(fd), b = morphPlainText(td);
+  return a !== null && b !== null && a !== b;
+}
 
 function isSpecialAnim(name) {
   return (
@@ -433,7 +450,7 @@ function SlidePreview({ slide, canvasW, canvasH, onElClick, animState, stageRef,
           const lineH = parseCsNumber(css, 'line-height');
           const letterSp = parseCsNumber(css, 'letter-spacing');
           const textTransform = (css.match(/text-transform\s*:\s*([^;]+)/i) || [])[1];
-          const html = el.html != null && el.html !== '' ? el.html : String(el.text || '');
+          const htmlRaw = el.html != null && el.html !== '' ? el.html : String(el.text || '');
           const bgLayer = el.type === 'text' ? textBgLayerStyle(el) : null;
           const colorGrad = el.type === 'text' && el.textRole !== 'toc' ? textColorGradStyle(el) : null;
           const borderSvg = el.type === 'text' ? textBorderSvgMarkup(el) : '';
@@ -442,11 +459,14 @@ function SlidePreview({ slide, canvasW, canvasH, onElClick, animState, stageRef,
           const blockSh = el.type === 'text' ? textBlockShadowStyle(el) : null;
           const hasList =
             el.type === 'text' &&
-            (/(data-list-bullet|data-list-num)/i.test(html) || el.bulletIconId);
+            (/(data-list-bullet|data-list-num)/i.test(htmlRaw) || el.bulletIconId);
           const valign = el.valign || (el.type === 'formula' ? 'middle' : 'top');
           const justify =
             valign === 'middle' ? 'center' : valign === 'bottom' ? 'flex-end' : 'flex-start';
           const ulBox = el.type === 'text' ? underlineBoxProps(css) : { style: {}, className: '' };
+          // Whole-box dash-dot is drawn via inline [data-ul="dash-dot"] spans (see textUnderline),
+          // so wrap the text runs here — a block-level background would span the whole box width.
+          const html = ulBox.kind === 'underline dash-dot' ? dashDotWrapHtml(htmlRaw) : htmlRaw;
           return wrap(
             el,
             <div

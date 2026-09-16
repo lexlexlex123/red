@@ -5,6 +5,7 @@ import { useUiStore } from '../../stores/uiStore';
 import { useHistoryStore } from '../../stores/historyStore';
 import { editorApi } from '../../editor/editorApi';
 import GSlider from '../ui/GSlider.jsx';
+import DragValueBox from '../ui/DragValueBox.jsx';
 import ColorField from '../ui/ColorField.jsx';
 import Toggle from '../ui/Toggle.jsx';
 import { FONT_FAMILIES, parseCsNumber, applyCsProp } from '../../editor/fonts.js';
@@ -1180,6 +1181,32 @@ export default function ElementPropsPanel() {
             onChange={(c, sr) => applyTextStyle({ color: c }, sr)}
             onClear={() => applyTextStyle({ color: '#ffffff' }, null)}
           />
+          <div className="react-props-grid">
+            <GSlider
+              label={ru ? 'Межстрочный' : 'Line H'}
+              min={0.5}
+              max={3}
+              step={0.1}
+              value={parseCsNumber(el.cs, 'line-height') ?? 1.2}
+              onChange={(v) => applyTextStyle({ lineHeight: v })}
+            />
+            <GSlider
+              label={ru ? 'Интервал' : 'Spacing'}
+              min={-10}
+              max={50}
+              step={0.1}
+              value={parseCsNumber(el.cs, 'letter-spacing') ?? 0}
+              onChange={(v) => applyTextStyle({ letterSpacing: v })}
+            />
+          </div>
+          <GSlider
+            label={ru ? 'Прозрачность элемента' : 'Element opacity'}
+            min={0}
+            max={1}
+            step={0.05}
+            value={el.elOpacity ?? 1}
+            onChange={(v) => patch({ elOpacity: v })}
+          />
           <ColorField
             label={ru ? 'Цвет фона' : 'Background'}
             value={el.textBg || ''}
@@ -1287,32 +1314,16 @@ export default function ElementPropsPanel() {
                 onChange={(c) => patch({ textColorGrad2: c })}
                 onClear={() => patch({ textColorGrad2: 'transparent' })}
               />
-              <div className="react-props-row react-props-seg" style={{ marginBottom: 8 }}>
-                {[0, 45, 90, 135, 180].map((deg) => (
-                  <button
-                    key={deg}
-                    type="button"
-                    className={`react-props-btn${(el.textColorGradDir ?? 90) === deg ? ' is-active' : ''}`}
-                    onClick={() => patch({ textColorGradDir: deg })}
-                  >
-                    {deg}°
-                  </button>
-                ))}
-              </div>
+              <GSlider
+                label={ru ? 'Угол градиента' : 'Gradient angle'}
+                min={0}
+                max={360}
+                step={1}
+                value={el.textColorGradDir ?? 90}
+                onChange={(v) => patch({ textColorGradDir: Math.round(v) })}
+              />
             </>
           ) : null}
-          <div className="react-props-grid">
-            <label className="react-props-field react-props-field-compact">
-              <span>{ru ? 'Рамка' : 'Border'}</span>
-              <input
-                type="number"
-                min="0"
-                max="24"
-                value={el.textBorderW ?? 0}
-                onChange={(e) => patch({ textBorderW: +e.target.value })}
-              />
-            </label>
-          </div>
           <div className="react-props-field" style={{ marginBottom: 8 }}>
             <div className="react-props-row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
               <span>{ru ? 'Скругление' : 'Corner radius'}</span>
@@ -1330,6 +1341,29 @@ export default function ElementPropsPanel() {
                 ))}
               </div>
             </div>
+            <DragValueBox
+              mode="corner"
+              max={el.rxUnit === '%' ? 50 : 200}
+              values={{
+                tl: el.rx_tl ?? el.rx ?? 0,
+                tr: el.rx_tr ?? el.rx ?? 0,
+                bl: el.rx_bl ?? el.rx ?? 0,
+                br: el.rx_br ?? el.rx ?? 0,
+              }}
+              onChange={(corner, val) => {
+                const base = el.rx ?? 0;
+                const next = {
+                  rxUnit: el.rxUnit || 'px',
+                  rx_tl: el.rx_tl ?? base,
+                  rx_tr: el.rx_tr ?? base,
+                  rx_br: el.rx_br ?? base,
+                  rx_bl: el.rx_bl ?? base,
+                  [`rx_${corner}`]: val,
+                };
+                next.rx = next.rx_tl;
+                patch(next);
+              }}
+            />
             <div className="react-props-grid">
               {[
                 { k: 'rx_tl', label: '↖' },
@@ -1337,65 +1371,31 @@ export default function ElementPropsPanel() {
                 { k: 'rx_bl', label: '↙' },
                 { k: 'rx_br', label: '↘' },
               ].map(({ k, label }) => (
-                <label key={k} className="react-props-field react-props-field-compact">
-                  <span>{label}</span>
-                  <input
-                    type="number"
-                    min="0"
-                    max={el.rxUnit === '%' ? 50 : 999}
-                    value={el[k] ?? el.rx ?? 0}
-                    onChange={(e) => {
-                      const v = Math.max(0, +e.target.value || 0);
-                      const base = el.rx ?? 0;
-                      const next = {
-                        rxUnit: el.rxUnit || 'px',
-                        rx_tl: el.rx_tl ?? base,
-                        rx_tr: el.rx_tr ?? base,
-                        rx_br: el.rx_br ?? base,
-                        rx_bl: el.rx_bl ?? base,
-                        [k]: v,
-                      };
-                      next.rx = next.rx_tl;
-                      patch(next);
-                    }}
-                  />
-                </label>
+                <GSlider
+                  key={k}
+                  label={label}
+                  min={0}
+                  max={el.rxUnit === '%' ? 50 : 200}
+                  step={1}
+                  value={el[k] ?? el.rx ?? 0}
+                  onChange={(v) => {
+                    const val = Math.max(0, +v || 0);
+                    const base = el.rx ?? 0;
+                    const next = {
+                      rxUnit: el.rxUnit || 'px',
+                      rx_tl: el.rx_tl ?? base,
+                      rx_tr: el.rx_tr ?? base,
+                      rx_br: el.rx_br ?? base,
+                      rx_bl: el.rx_bl ?? base,
+                      [k]: val,
+                    };
+                    next.rx = next.rx_tl;
+                    patch(next);
+                  }}
+                />
               ))}
             </div>
           </div>
-          {(el.textBorderW || 0) > 0 ? (
-            <>
-              <ColorField
-                label={ru ? 'Цвет рамки' : 'Border color'}
-                value={el.textBorderColor || '#ffffff'}
-                onChange={(c) => patch({ textBorderColor: c })}
-              />
-              <div className="react-props-field" style={{ marginBottom: 8 }}>
-                <span>{ru ? 'Стиль рамки' : 'Border style'}</span>
-                <div className="react-props-row react-props-seg" style={{ flexWrap: 'wrap', gap: 4 }}>
-                  {[
-                    { id: 'solid', title: ru ? 'Сплошная' : 'Solid', svg: '<line x1="1" y1="5" x2="27" y2="5" stroke="currentColor" stroke-width="2"/>' },
-                    { id: 'dashed', title: ru ? 'Пунктир' : 'Dashed', svg: '<line x1="1" y1="5" x2="27" y2="5" stroke="currentColor" stroke-width="2" stroke-dasharray="5 3"/>' },
-                    { id: 'dotted', title: ru ? 'Точки' : 'Dotted', svg: '<line x1="1" y1="5" x2="27" y2="5" stroke="currentColor" stroke-width="2.5" stroke-dasharray="0.1 4" stroke-linecap="round"/>' },
-                    { id: 'double', title: ru ? 'Двойная' : 'Double', svg: '<line x1="1" y1="3" x2="27" y2="3" stroke="currentColor" stroke-width="1.5"/><line x1="1" y1="7" x2="27" y2="7" stroke="currentColor" stroke-width="1.5"/>' },
-                    { id: 'wave', title: ru ? 'Волна' : 'Wave', svg: '<path d="M1 5 Q4 1 7 5 Q10 9 13 5 Q16 1 19 5 Q22 9 25 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>' },
-                    { id: 'zigzag', title: ru ? 'Зигзаг' : 'Zigzag', svg: '<polyline points="1,8 5,2 9,8 13,2 17,8 21,2 25,8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>' },
-                  ].map((b) => (
-                    <button
-                      key={b.id}
-                      type="button"
-                      title={b.title}
-                      className={`react-props-btn${(el.textBorderStyle || 'solid') === b.id ? ' is-active' : ''}`}
-                      onClick={() => patch({ textBorderStyle: b.id })}
-                      style={{ flex: '1 1 36px', minWidth: 36, padding: '3px 2px' }}
-                    >
-                      <svg viewBox="0 0 28 10" width="28" height="10" dangerouslySetInnerHTML={{ __html: b.svg }} />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </>
-          ) : null}
           <div className="react-props-field" style={{ marginTop: 8 }}>
             <div className="react-props-row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
               <span>{ru ? 'Отступ' : 'Padding'}</span>
@@ -1413,6 +1413,24 @@ export default function ElementPropsPanel() {
                 ))}
               </div>
             </div>
+            <DragValueBox
+              mode="edge"
+              max={el.padUnit === '%' ? 100 : 200}
+              values={{
+                t: el.pad_t ?? 0,
+                r: el.pad_r ?? 0,
+                b: el.pad_b ?? 0,
+                l: el.pad_l ?? 0,
+              }}
+              onChange={(side, val) => {
+                const unit = el.padUnit || 'px';
+                const next = { [`pad_${side}`]: val, padUnit: unit };
+                ['t', 'r', 'b', 'l'].forEach((s) => {
+                  if (s !== side && el[`pad_${s}`] === undefined) next[`pad_${s}`] = 0;
+                });
+                patch(next);
+              }}
+            />
             <div className="react-props-grid">
               {[
                 { k: 'pad_t', label: ru ? 'Верх' : 'Top' },
@@ -1420,86 +1438,97 @@ export default function ElementPropsPanel() {
                 { k: 'pad_b', label: ru ? 'Низ' : 'Bottom' },
                 { k: 'pad_l', label: ru ? 'Лево' : 'Left' },
               ].map(({ k, label }) => (
-                <label key={k} className="react-props-field react-props-field-compact">
-                  <span>{label}</span>
-                  <input
-                    type="number"
-                    min="0"
-                    max={el.padUnit === '%' ? 100 : 500}
-                    value={el[k] ?? 0}
-                    onChange={(e) => {
-                      const v = Math.max(0, +e.target.value || 0);
-                      const unit = el.padUnit || 'px';
-                      const next = { [k]: v, padUnit: unit };
-                      // Ensure all sides exist once user edits padding
-                      ['pad_t', 'pad_r', 'pad_b', 'pad_l'].forEach((side) => {
-                        if (side !== k && el[side] === undefined) next[side] = 0;
-                      });
-                      patch(next);
-                    }}
-                  />
-                </label>
+                <GSlider
+                  key={k}
+                  label={label}
+                  min={0}
+                  max={el.padUnit === '%' ? 100 : 200}
+                  step={1}
+                  value={el[k] ?? 0}
+                  onChange={(v) => {
+                    const val = Math.max(0, +v || 0);
+                    const unit = el.padUnit || 'px';
+                    const next = { [k]: val, padUnit: unit };
+                    ['pad_t', 'pad_r', 'pad_b', 'pad_l'].forEach((side) => {
+                      if (side !== k && el[side] === undefined) next[side] = 0;
+                    });
+                    patch(next);
+                  }}
+                />
               ))}
             </div>
           </div>
           <button type="button" className="react-props-btn" onClick={() => editorApi.autofitText(el.id)}>
             {ru ? 'Подогнать высоту' : 'Autofit height'}
           </button>
-          <div className="react-props-grid" style={{ marginTop: 8 }}>
-            <label className="react-props-field react-props-field-compact">
-              <span>{ru ? 'Интервал' : 'Line H'}</span>
+          <div className="react-props-field" style={{ marginTop: 8 }}>
+            <span>{ru ? 'Граница' : 'Border'}</span>
+            <div className="react-props-row" style={{ alignItems: 'center', gap: 6, marginBottom: 6 }}>
+              <ColorField
+                value={el.textBorderColor || '#ffffff'}
+                schemeRef={el.textBorderColorScheme}
+                onChange={(c, sr) => patch({ textBorderColor: c, textBorderColorScheme: sr })}
+              />
               <input
                 type="number"
-                min="0.5"
-                max="5"
-                step="0.1"
-                value={parseCsNumber(el.cs, 'line-height') ?? 1.2}
-                onChange={(e) => applyTextStyle({ lineHeight: +e.target.value || 1.2 })}
+                min="0"
+                max="24"
+                style={{ flex: 1 }}
+                value={el.textBorderW ?? 0}
+                onChange={(e) => patch({ textBorderW: Math.max(0, +e.target.value || 0) })}
               />
-            </label>
-            <label className="react-props-field react-props-field-compact">
-              <span>{ru ? 'Трекинг' : 'Spacing'}</span>
-              <input
-                type="number"
-                min="-10"
-                max="50"
-                step="0.1"
-                value={parseCsNumber(el.cs, 'letter-spacing') ?? 0}
-                onChange={(e) => applyTextStyle({ letterSpacing: +e.target.value || 0 })}
-              />
-            </label>
+              <button
+                type="button"
+                className="react-props-btn"
+                title={ru ? 'Убрать границу' : 'Remove border'}
+                onClick={() => patch({ textBorderW: 0 })}
+              >
+                ✕
+              </button>
+            </div>
+            {(el.textBorderW || 0) > 0 ? (
+              <div className="react-props-row react-props-seg" style={{ flexWrap: 'wrap', gap: 4 }}>
+                {[
+                  { id: 'solid', title: ru ? 'Сплошная' : 'Solid', svg: '<line x1="1" y1="5" x2="27" y2="5" stroke="currentColor" stroke-width="2"/>' },
+                  { id: 'dashed', title: ru ? 'Пунктир' : 'Dashed', svg: '<line x1="1" y1="5" x2="27" y2="5" stroke="currentColor" stroke-width="2" stroke-dasharray="5 3"/>' },
+                  { id: 'dotted', title: ru ? 'Точки' : 'Dotted', svg: '<line x1="1" y1="5" x2="27" y2="5" stroke="currentColor" stroke-width="2.5" stroke-dasharray="0.1 4" stroke-linecap="round"/>' },
+                  { id: 'double', title: ru ? 'Двойная' : 'Double', svg: '<line x1="1" y1="3" x2="27" y2="3" stroke="currentColor" stroke-width="1.5"/><line x1="1" y1="7" x2="27" y2="7" stroke="currentColor" stroke-width="1.5"/>' },
+                  { id: 'wave', title: ru ? 'Волна' : 'Wave', svg: '<path d="M1 5 Q4 1 7 5 Q10 9 13 5 Q16 1 19 5 Q22 9 25 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>' },
+                  { id: 'zigzag', title: ru ? 'Зигзаг' : 'Zigzag', svg: '<polyline points="1,8 5,2 9,8 13,2 17,8 21,2 25,8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>' },
+                ].map((b) => (
+                  <button
+                    key={b.id}
+                    type="button"
+                    title={b.title}
+                    className={`react-props-btn${(el.textBorderStyle || 'solid') === b.id ? ' is-active' : ''}`}
+                    onClick={() => patch({ textBorderStyle: b.id })}
+                    style={{ flex: '1 1 36px', minWidth: 36, padding: '3px 2px' }}
+                  >
+                    <svg viewBox="0 0 28 10" width="28" height="10" dangerouslySetInnerHTML={{ __html: b.svg }} />
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
-          <GSlider
-            label={ru ? 'Прозрачность' : 'Opacity'}
-            min={0}
-            max={1}
-            step={0.05}
-            value={el.elOpacity ?? 1}
-            onChange={(v) => patch({ elOpacity: v })}
-          />
           <div className="react-props-field" style={{ marginTop: 8 }}>
             <span>{ru ? 'Тень текста' : 'Text shadow'}</span>
             <div className="react-props-grid">
-              <label className="react-props-field react-props-field-compact">
-                <span>{ru ? 'Размытие' : 'Blur'}</span>
-                <input
-                  type="number"
-                  min="0"
-                  max="40"
-                  value={el.textShadowBlur ?? 0}
-                  onChange={(e) => patch({ textShadowBlur: +e.target.value })}
-                />
-              </label>
-              <label className="react-props-field react-props-field-compact">
-                <span>{ru ? 'Размер' : 'Size'}</span>
-                <input
-                  type="number"
-                  min="0"
-                  max="24"
-                  value={el.textShadowSize ?? 0}
-                  onChange={(e) => patch({ textShadowSize: +e.target.value })}
-                />
-              </label>
+              <GSlider
+                label={ru ? 'Размытие' : 'Blur'}
+                min={0}
+                max={40}
+                step={1}
+                value={el.textShadowBlur ?? 0}
+                onChange={(v) => patch({ textShadowBlur: v })}
+              />
+              <GSlider
+                label={ru ? 'Размер' : 'Size'}
+                min={0}
+                max={24}
+                step={1}
+                value={el.textShadowSize ?? 0}
+                onChange={(v) => patch({ textShadowSize: v })}
+              />
             </div>
             {(+(el.textShadowBlur || 0) > 0 || +(el.textShadowSize || 0) > 0) ? (
               <ColorField
@@ -1512,26 +1541,22 @@ export default function ElementPropsPanel() {
           <div className="react-props-field" style={{ marginTop: 8 }}>
             <span>{ru ? 'Тень блока' : 'Block shadow'}</span>
             <div className="react-props-grid">
-              <label className="react-props-field react-props-field-compact">
-                <span>{ru ? 'Размытие' : 'Blur'}</span>
-                <input
-                  type="number"
-                  min="0"
-                  max="40"
-                  value={el.textBlockShadowBlur ?? 0}
-                  onChange={(e) => patch({ textBlockShadowBlur: +e.target.value })}
-                />
-              </label>
-              <label className="react-props-field react-props-field-compact">
-                <span>{ru ? 'Размер' : 'Size'}</span>
-                <input
-                  type="number"
-                  min="0"
-                  max="24"
-                  value={el.textBlockShadowSize ?? 0}
-                  onChange={(e) => patch({ textBlockShadowSize: +e.target.value })}
-                />
-              </label>
+              <GSlider
+                label={ru ? 'Размытие' : 'Blur'}
+                min={0}
+                max={40}
+                step={1}
+                value={el.textBlockShadowBlur ?? 0}
+                onChange={(v) => patch({ textBlockShadowBlur: v })}
+              />
+              <GSlider
+                label={ru ? 'Размер' : 'Size'}
+                min={0}
+                max={24}
+                step={1}
+                value={el.textBlockShadowSize ?? 0}
+                onChange={(v) => patch({ textBlockShadowSize: v })}
+              />
             </div>
             {(+(el.textBlockShadowBlur || 0) > 0 || +(el.textBlockShadowSize || 0) > 0) ? (
               <>
@@ -2312,6 +2337,19 @@ export default function ElementPropsPanel() {
             />
             <span className="react-props-unit" title="pt">
               pt
+            </span>
+          </div>
+          <div className="react-props-el-rot">
+            <GSlider
+              label={ru ? 'Отступ подписи' : 'Label offset'}
+              min={-100}
+              max={100}
+              step={1}
+              value={el.labelOffset != null ? Math.round(+el.labelOffset) : 0}
+              onChange={(v) => patch({ labelOffset: Math.max(-100, Math.min(100, Math.round(+v || 0))) })}
+            />
+            <span className="react-props-unit" title="px">
+              px
             </span>
           </div>
           <div className="react-props-field" style={{ margin: 0 }}>

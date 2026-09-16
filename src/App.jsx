@@ -172,10 +172,16 @@ export default function App() {
       } else if (mod && k === 'd') {
         if (typing) return;
         e.preventDefault();
-        if (e.target?.closest?.('.thumb-strip')) {
-          editorApi.dupSlide(usePresentationStore.getState().cur);
-        } else {
-          editorApi.dupSelected();
+        // Clicking a slide thumbnail intentionally blurs focus right after selecting it (see
+        // ThumbStrip.jsx), so "is focus on .thumb-strip" is never true after a normal click —
+        // that made this fall through to duplicating an element almost every time you meant to
+        // duplicate the slide. Use actual selection state instead: nothing selected on the
+        // canvas means the intent is the current slide.
+        {
+          const { selId, multiSel, selConnId } = useSelectionStore.getState();
+          const hasSelection = !!(selId || multiSel?.length || selConnId);
+          if (hasSelection) editorApi.dupSelected();
+          else editorApi.dupSlide(usePresentationStore.getState().cur);
         }
       } else if (mod && e.shiftKey && k === 'c') {
         if (typing) return;
@@ -184,16 +190,23 @@ export default function App() {
       } else if (mod && k === 'c') {
         if (typing) return;
         e.preventDefault();
-        if (e.target?.closest?.('.thumb-strip')) editorApi.copySlidesSelected();
-        else editorApi.copySelected();
+        // Same fix as Ctrl+D above: use selection state, not keyboard focus, to decide
+        // element-copy vs slide-copy.
+        {
+          const { selId, multiSel, selConnId } = useSelectionStore.getState();
+          const hasSelection = !!(selId || multiSel?.length || selConnId);
+          if (hasSelection) editorApi.copySelected();
+          else editorApi.copySlidesSelected();
+        }
       } else if (mod && e.shiftKey && k === 'v') {
         if (typing) return;
         e.preventDefault();
         editorApi.pasteStyle();
       } else if (mod && k === 'v') {
-        // Do not preventDefault — native paste event carries clipboardData
-        // (images / URL / text). Keydown paste would steal from OS bitmap.
         if (typing) return;
+        e.preventDefault();
+        const onThumbStrip = !!e.target?.closest?.('.thumb-strip') || !!document.activeElement?.closest?.('.thumb-strip');
+        editorApi.pasteSelected({ preferThumbStrip: onThumbStrip });
       } else if (mod && k === 'a') {
         if (typing) return;
         e.preventDefault();
@@ -243,12 +256,19 @@ export default function App() {
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         if (typing) return;
         e.preventDefault();
-        if (e.target?.closest?.('.thumb-strip')) {
-          const st = usePresentationStore.getState();
+        const st = usePresentationStore.getState();
+        const { selId, multiSel, selInkIds } = useSelectionStore.getState();
+        const onThumbStrip = !!e.target?.closest?.('.thumb-strip');
+        // If thumb strip is focused, always delete slides
+        if (onThumbStrip || st.slideMultiSel?.length) {
           const ids = st.slideMultiSel?.length ? st.slideMultiSel : [st.cur];
           editorApi.delSlides(ids);
-        } else {
+        } else if (selId || multiSel?.length || selInkIds?.length) {
+          // Element(s) selected — delete elements
           editorApi.deleteSelected();
+        } else {
+          // Nothing selected — delete current slide
+          editorApi.delSlides([st.cur]);
         }
       } else if (!typing && !mod && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
         e.preventDefault();

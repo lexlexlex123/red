@@ -26,9 +26,14 @@ export default function TransitionsRibbon() {
     : [{ ms: dur, nameRu: `${dur} мс`, nameEn: `${dur} ms` }, ...TRANS_RIBBON_DURS];
 
   return (
-    <RibbonGroup label={ru ? 'Переход' : 'Transition'}>
-      <div className="react-trans-ribbon" {...versionAttr('TransitionsRibbon')}>
-        <div className="react-trans-grid" role="listbox" aria-label={ru ? 'Переходы' : 'Transitions'}>
+    <React.Fragment>
+      <RibbonGroup label={ru ? 'Переход' : 'Transition'}>
+        <div
+          className="react-trans-grid"
+          role="listbox"
+          aria-label={ru ? 'Переходы' : 'Transitions'}
+          {...versionAttr('TransitionsRibbon')}
+        >
           {TRANSITION_DEFS.map((t) => {
             const label = ru ? t.nameRu : t.nameEn;
             const on = activeId === t.id;
@@ -51,31 +56,30 @@ export default function TransitionsRibbon() {
             );
           })}
         </div>
-        <div className="react-trans-vdiv" />
-        <div className="react-trans-side">
-          <select
-            className="react-trans-dur"
-            value={String(dur)}
-            title={ru ? 'Длительность перехода' : 'Transition duration'}
-            onChange={(e) => editorApi.setTransitionDur(+e.target.value)}
-          >
-            {durOpts.map((d) => (
-              <option key={d.ms} value={d.ms}>
-                {ru ? d.nameRu : d.nameEn}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            className="react-trans-apply"
-            onClick={() => editorApi.applyTransitionToAll(activeId)}
-          >
-            {ru ? 'Применить ко всем' : 'Apply to all'}
-          </button>
-        </div>
-        <div className="react-trans-vdiv" />
-        <p className="react-trans-ribbon-hint">{ru ? def.descRu : def.descEn}</p>
+      </RibbonGroup>
+      <div className="react-trans-side">
+        <select
+          className="react-trans-dur"
+          value={String(dur)}
+          title={ru ? 'Длительность перехода' : 'Transition duration'}
+          onChange={(e) => editorApi.setTransitionDur(+e.target.value)}
+        >
+          {durOpts.map((d) => (
+            <option key={d.ms} value={d.ms}>
+              {ru ? d.nameRu : d.nameEn}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          className="react-trans-apply"
+          onClick={() => editorApi.applyTransitionToAll(activeId)}
+        >
+          {ru ? 'Применить ко всем' : 'Apply to all'}
+        </button>
       </div>
-    </RibbonGroup>
+      <div className="react-trans-vdiv" />
+      <p className="react-trans-ribbon-hint">{ru ? def.descRu : def.descEn}</p>
+    </React.Fragment>
   );
 }

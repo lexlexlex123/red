@@ -1,0 +1,63 @@
+{
+  "mcpServers": {
+    "sourcecraft": {
+      "type": "streamable-http",
+      "url": "https://api.sourcecraft.tech/mcp",
+      "enabledTools": [
+        "ListIssuesAssignedToAuthenticatedUser",
+        "ListRepositoryIssues",
+        "CreateIssue",
+        "GetIssue",
+        "DeleteIssue",
+        "UpdateIssue",
+        "CreateIssueComment",
+        "GetIssueComment",
+        "DeleteIssueComment",
+        "UpdateIssueComment",
+        "CreateLabel",
+        "DeleteLabel",
+        "GetLabels",
+        "RemoveLabels",
+        "AddLinkedPRs",
+        "GetLinkedPRs",
+        "RemoveLinkedPRs",
+        "ListMyPullRequests",
+        "ListRepositoryPullRequests",
+        "CreatePullRequest",
+        "GetPullRequest",
+        "UpdatePullRequest",
+        "DiscardPullRequest",
+        "PublishPullRequest",
+        "SetDecision",
+        "MergePullRequest",
+        "GetMergeChecks",
+        "ListPullRequestComments",
+        "ListPullRequestFiles",
+        "CreatePullRequestComment",
+        "GetPullRequestComment",
+        "DeletePullRequestComment",
+        "UpdatePullRequestComment",
+        "RunWorkflows",
+        "ListRuns",
+        "GetRun",
+        "GetWorkflow",
+        "GetCubeArtifacts",
+        "GetCubeLogs"
+      ]
+    },
+    "yandex-cloud-toolkit": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@yandex-cloud/mcp",
+        "-s",
+        "toolkit",
+        "-H",
+        "Cloud-Id:",
+        "-H",
+        "Folder-Id:"
+      ]
+    }
+  }
+}

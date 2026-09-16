@@ -1,5 +1,0 @@
-      function mistBeltFront(){
-        return fogFlameBand(h*1.18,h*0.40,0.7,4.6,fogOp)+
-          fogFlameBand(h*1.15,h*0.56,3.2,5.2,fogOp)+
-          fogFlameBand(h*1.10,h*0.72,5.0,6.0,fogOp);
-      }

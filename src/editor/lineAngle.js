@@ -1,6 +1,8 @@
 /** Line-angle markers between two shape lines (ported from js/09b-line-angle.js). */
 
 import { endJunctionId } from './lineJoins.js';
+import { getTheme, resolveSchemeColor } from './themes.js';
+import { usePresentationStore } from '../stores/presentationStore';
 
 const DEFAULT_R = 36;
 const DEFAULT_LABEL_FS = 18; // pt
@@ -106,7 +108,7 @@ export function measurePairFromData(dA, endA, dB, endB) {
 }
 
 /** Find nearest endpoint pair (joined lines). */
-export function findJoinEnds(d1, d2, maxDist = 28) {
+export function findJoinEnds(d1, d2, maxDist = 56) {
   const e1 = lineDataCanvasEnds(d1);
   const e2 = lineDataCanvasEnds(d2);
   if (!e1 || !e2) return null;
@@ -128,7 +130,7 @@ export function findJoinEnds(d1, d2, maxDist = 28) {
 }
 
 /** Junction id match, else geometric proximity (legacy `_findSharedJoin`). */
-export function findSharedJoin(d1, d2, maxDist = 28) {
+export function findSharedJoin(d1, d2, maxDist = 56) {
   if (!d1 || !d2 || d1.shape !== 'line' || d2.shape !== 'line') return null;
   for (const e1 of ['a', 'b']) {
     const j1 = endJunctionId(d1, e1);
@@ -179,7 +181,9 @@ export function buildLineAngleDrawModel(d, els) {
   const m = measurePairFromData(dA, d.endA || 'a', dB, d.endB || 'a');
   if (!m) return null;
   const r = d.radius || DEFAULT_R;
-  const col = d.color || '#64748b';
+  const theme = getTheme(usePresentationStore.getState().appliedThemeIdx);
+  const schemeColor = d.colorScheme ? resolveSchemeColor(d.colorScheme, theme) : null;
+  const col = schemeColor || d.color || '#64748b';
   const style = normLabelStyle(d.labelStyle);
   const nMarks = normMarkCount(d.markCount);
   const fsPt = labelFsPt(d);
@@ -191,7 +195,7 @@ export function buildLineAngleDrawModel(d, els) {
   let labelY = null;
   if (label) {
     const mid = m.a1 + m.delta / 2;
-    const lr = r + 14 + fsPx * 0.35;
+    const lr = r + 14 + fsPx * 0.35 + (+d.labelOffset || 0);
     labelX = m.j.x + Math.cos(mid) * lr;
     labelY = m.j.y + Math.sin(mid) * lr;
   }
@@ -229,7 +233,14 @@ export function buildLineAngleContent(d, els) {
   if (!m) return null;
 
   const r = d.radius || DEFAULT_R;
-  const col = d.color || '#64748b';
+  // d.color is only a plain-hex fallback for when there's no scheme reference — the scheme
+  // (d.colorScheme, e.g. code "15") is what should actually decide the color here, resolved
+  // against the presentation's current theme. Previously this always used d.color directly
+  // and never even looked at colorScheme, which is why the angle looked gray (the field's own
+  // hardcoded fallback) even though the scheme itself was set correctly.
+  const theme2 = getTheme(usePresentationStore.getState().appliedThemeIdx);
+  const schemeColor2 = d.colorScheme ? resolveSchemeColor(d.colorScheme, theme2) : null;
+  const col = schemeColor2 || d.color || '#64748b';
   const style = normLabelStyle(d.labelStyle);
   const nMarks = normMarkCount(d.markCount);
   const fsPt = labelFsPt(d);
@@ -265,7 +276,7 @@ export function buildLineAngleContent(d, els) {
   const label = labelText(style, m.deg, d.displayDeg);
   if (label) {
     const mid = m.a1 + m.delta / 2;
-    const lr = r + 14 + fsPx * 0.35;
+    const lr = r + 14 + fsPx * 0.35 + (+d.labelOffset || 0);
     const lx = j.x + Math.cos(mid) * lr;
     const ly = j.y + Math.sin(mid) * lr;
     mark += `<text class="lineangle-label" x="${lx - ox}" y="${ly - oy}" text-anchor="middle" dominant-baseline="middle" fill="${esc(col)}" font-size="${fsPx}" font-family="Segoe UI,system-ui,sans-serif" font-weight="600">${esc(label)}</text>`;
@@ -296,6 +307,7 @@ export function defaultLineAngleFields(pair) {
     labelStyle: 'deg',
     markCount: 1,
     labelFs: DEFAULT_LABEL_FS,
+    labelOffset: 0,
     anims: [],
   };
 }

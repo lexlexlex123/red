@@ -1,0 +1,15 @@
+{
+  "items": [
+    {
+      "type": "folder",
+      "name": "Пример папки",
+      "id": "example"
+    },
+    {
+      "type": "pres",
+      "name": "Пример презентации",
+      "file": "demo.html",
+      "thumb": "demo.png"
+    }
+  ]
+}

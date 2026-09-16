@@ -14,9 +14,14 @@ let ignoreStorage = false;
 let appClipAt = 0;
 let lastBlurAt = 0;
 let clipSource = 'elements';
+let copySourceSlideIdx = null;
 
 export function getAppClipAt() {
   return appClipAt;
+}
+
+export function getCopySourceSlideIdx() {
+  return copySourceSlideIdx;
 }
 
 export function getLastBlurAt() {
@@ -29,6 +34,14 @@ export function markWindowBlur() {
 
 export function getClipSource() {
   return clipSource;
+}
+
+/** Reset clip source to elements — call when user copies elements or selects canvas objects. */
+export function resetClipSource() {
+  clipSource = 'elements';
+  try {
+    localStorage.setItem(KEY_META, JSON.stringify({ kind: 'elements', t: Date.now() }));
+  } catch (e) {}
 }
 
 export function isSystemClipText(text) {
@@ -90,12 +103,20 @@ function readLocalKey(key) {
   }
 }
 
-function saveMeta(kind, t) {
+function saveMeta(kind, t, sourceSlideIdx) {
   try {
     const ts = t || Date.now();
-    localStorage.setItem(KEY_META, JSON.stringify({ kind, t: ts }));
+    localStorage.setItem(KEY_META, JSON.stringify({ kind, t: ts, sourceSlideIdx }));
     clipSource = kind;
     appClipAt = ts;
+    if (sourceSlideIdx != null) copySourceSlideIdx = sourceSlideIdx;
+  } catch (e) {}
+}
+
+/** Clear element clipboard state — call when copying slides to prevent element paste. */
+export function clearElementClipboard() {
+  try {
+    localStorage.removeItem(KEY_EL);
   } catch (e) {}
 }
 
@@ -141,15 +162,17 @@ async function writeSysPayload(payload) {
 /**
  * Write elements to OS clipboard + localStorage.
  * @param {object[]} els
+ * @param {number} [sourceSlideIdx] index of the slide these elements were copied from, so a
+ *   paste onto a DIFFERENT slide can keep the exact original x/y instead of nudging it.
  * @returns {Promise<boolean>}
  */
-export async function writeOsClipboard(els) {
+export async function writeOsClipboard(els, sourceSlideIdx) {
   if (!els?.length) return false;
   const slim = slimEls(els);
   writeLocalKey(KEY_EL, slim);
   writeLocalKey(KEY_SL, null);
   const t = Date.now();
-  saveMeta('elements', t);
+  saveMeta('elements', t, sourceSlideIdx);
   const payload = {
     app: 'slides',
     v: 1,
@@ -159,6 +182,7 @@ export async function writeOsClipboard(els) {
     slides: null,
     ink: null,
     hadInk: false,
+    sourceSlideIdx: sourceSlideIdx != null ? sourceSlideIdx : null,
   };
   return writeSysPayload(payload);
 }
@@ -199,6 +223,11 @@ export function hydrateFromSystemText(text, prevElements) {
     p.kind ||
     (p.slides?.length ? 'slides' : p.elements?.length ? 'elements' : null);
   if (!kind) return null;
+  // Guard against a stale OS clipboard write: if the async navigator.clipboard.writeText()
+  // from an earlier copy (e.g. a slide) never landed or lagged, the system clipboard can still
+  // hold an OLD magic payload while the in-app store already holds a NEWER copy (e.g. an element).
+  // Without this check, pasting would resurrect that older slide/element instead of the fresh copy.
+  if (p.t != null && appClipAt && p.t < appClipAt) return null;
   if (kind === 'slides' && p.slides?.length) {
     writeLocalKey(KEY_SL, p.slides);
     writeLocalKey(KEY_EL, null);
@@ -209,8 +238,8 @@ export function hydrateFromSystemText(text, prevElements) {
     const merged = mergeImageSrc(p.elements, prevElements);
     writeLocalKey(KEY_EL, merged);
     writeLocalKey(KEY_SL, null);
-    saveMeta('elements', p.t);
-    return { kind: 'elements', elements: merged };
+    saveMeta('elements', p.t, p.sourceSlideIdx != null ? p.sourceSlideIdx : undefined);
+    return { kind: 'elements', elements: merged, sourceSlideIdx: p.sourceSlideIdx != null ? p.sourceSlideIdx : null };
   }
   return null;
 }

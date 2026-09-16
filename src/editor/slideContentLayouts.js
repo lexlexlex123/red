@@ -1,6 +1,7 @@
 /** Slide content layouts (PowerPoint-style) — from js/11b-slide-layouts.js */
 
 import { paintTextPlaceholderHtml } from './textPlaceholder.js';
+import { resolveSchemeColor } from './themes.js';
 
 export const SLIDE_CONTENT_LAYOUTS = [
   { id: 'blank', nameRu: 'Пустой', nameEn: 'Blank', boxes: [] },
@@ -57,13 +58,22 @@ function keepEl(d) {
   return false;
 }
 
-function makeTextEl(box, canvasW, canvasH, lang, textColor) {
+/** Default color-scheme positions for freshly-applied layout placeholders (v7.1 parity):
+ *  heading → code "15" (col 0, row 4), body/subtitle → code "81" (col 7, row 0). These are
+ *  the colors that show once the user starts typing (see textPlaceholder.js — the placeholder
+ *  itself stays gray until then). */
+const HEADING_SCHEME = { col: 0, row: 4 };
+const BODY_SCHEME = { col: 7, row: 0 };
+
+function makeTextEl(box, canvasW, canvasH, lang, theme) {
   const ru = lang !== 'en';
   const raw = ru ? box.textRu : box.textEn;
   const fs = box.fs || 28;
   const weight = box.weight || (box.role === 'heading' ? 700 : 400);
   const align = box.align || 'left';
-  const color = textColor || '#ffffff';
+  const isHeading = box.role === 'heading';
+  const scheme = isHeading ? HEADING_SCHEME : BODY_SCHEME;
+  const color = resolveSchemeColor(scheme, theme) || (isHeading ? '#ffffff' : '#dddddd');
   return {
     type: 'text',
     x: Math.round(box.x * canvasW),
@@ -72,13 +82,14 @@ function makeTextEl(box, canvasW, canvasH, lang, textColor) {
     h: Math.round(box.h * canvasH),
     html: paintTextPlaceholderHtml(raw),
     cs: `font-size:${fs}px;font-weight:${weight};color:${color};text-align:${align};line-height:1.25;${
-      box.role === 'heading' ? 'text-transform:uppercase;' : ''
+      isHeading ? 'text-transform:uppercase;' : ''
     }`,
     rot: 0,
     anims: [],
-    textRole: box.role === 'heading' ? 'heading' : 'body',
+    textRole: isHeading ? 'heading' : 'body',
     textColor: color,
-    valign: box.valign || (box.role === 'heading' ? 'middle' : 'top'),
+    textColorScheme: scheme,
+    valign: box.valign || (isHeading ? 'middle' : 'top'),
     textPlaceholder: true,
     textPlaceholderLabel: raw,
     _fromSlideLayout: true,
@@ -88,11 +99,11 @@ function makeTextEl(box, canvasW, canvasH, lang, textColor) {
 /**
  * Apply content layout to a slide. Returns new els array.
  */
-export function buildSlideContentLayout(layoutId, slide, canvasW, canvasH, lang, textColor) {
+export function buildSlideContentLayout(layoutId, slide, canvasW, canvasH, lang, theme) {
   const layout = SLIDE_CONTENT_LAYOUTS.find((l) => l.id === layoutId);
   if (!layout) return slide?.els || [];
   const kept = (slide?.els || []).filter(keepEl);
-  const added = (layout.boxes || []).map((box) => makeTextEl(box, canvasW, canvasH, lang, textColor));
+  const added = (layout.boxes || []).map((box) => makeTextEl(box, canvasW, canvasH, lang, theme));
   return kept.concat(added);
 }
 

@@ -4,8 +4,7 @@ import { FONT_FAMILIES, parseFontFamily } from '../../editor/fonts.js';
 import { htmlHasList, htmlNumListStyle } from '../../editor/textLists.js';
 import { htmlHasStress } from '../../editor/textStress.js';
 import { htmlHasScript } from '../../editor/textScript.js';
-import { underlineActive, underlineTitle, parseUnderlineFromCs } from '../../editor/textUnderline.js';
-import { strikeActive, strikeTitle, parseStrikeFromCs } from '../../editor/textUnderline.js';
+import { underlineActive, underlineTitle, parseUnderlineFromCs, hasStrikeInCs, hasStrikeInHtml } from '../../editor/textUnderline.js';
 import { getQuoteCat, quoteCategories } from '../../editor/quotes.js';
 import { selectionTranslateLabel } from '../../editor/translateActions.js';
 import { useUiStore } from '../../stores/uiStore';
@@ -218,23 +217,18 @@ export default function TextPropsFmt({ el, ru, applyTextStyle }) {
                   ? `Подчёркивание: ${underlineTitle(parseUnderlineFromCs(el.cs), true)} → следующее (Ctrl+U)`
                   : `Underline: ${underlineTitle(parseUnderlineFromCs(el.cs), false)} → next (Ctrl+U)`
               }
-              on={underlineActive(el.cs)}
+              on={underlineActive(el.cs) || /text-decoration|data-ul|--rt-ul/i.test(el.html || '')}
               onClick={() => editorApi.cycleTextUnderline()}
             >
               <u>U</u>
             </FtBtn>
             <FtBtn
-              id="ft-st"
-              title={
-                ru
-                  ? `Зачёркивание: ${strikeTitle(parseStrikeFromCs(el.cs), true)} → следующее`
-                  : `Strikethrough: ${strikeTitle(parseStrikeFromCs(el.cs), false)} → next`
-              }
-              on={strikeActive(el.cs)}
-              onClick={() => editorApi.cycleTextStrikethrough()}
-              style={{ fontFamily: 'serif', textDecoration: 'line-through' }}
+              id="ft-strike"
+              title={ru ? 'Зачёркнутый' : 'Strikethrough'}
+              on={hasStrikeInCs(el.cs) || hasStrikeInHtml(el.html)}
+              onClick={() => editorApi.toggleTextStrike()}
             >
-              S
+              <s>S</s>
             </FtBtn>
             <FtBtn id="ft-stress" title={ru ? 'Ударение (а́)' : 'Stress mark'} on={htmlHasStress(el.html)} onClick={() => editorApi.toggleTextStress()} style={{ fontSize: 12, fontWeight: 600, minWidth: 22 }}>
               а́

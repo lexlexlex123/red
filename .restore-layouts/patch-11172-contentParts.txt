@@ -1,6 +1,0 @@
-        contentParts={
-          trees:extractById(FP.markup,'g11470')+loose,
-          deer:extractById(FP.markup,'path10598')+extractById(FP.markup,'path10595'),
-          grass1:extractById(FP.markup,'g9841'),
-          grass2:extractById(FP.markup,'g9841-2'),
-        };

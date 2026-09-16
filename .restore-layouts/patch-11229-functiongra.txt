@@ -1,2 +1,0 @@
-        function grassSwayChunk(markup,seed){
-          const painted='<g fill="'+fill+'">'+paintForestMarkup(markup,fill)+'</g>';

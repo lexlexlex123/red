@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  body { background:#000; color:#fff; font-family: Georgia, serif; margin:0; padding:0; }
+  #data { position: fixed; top: 0; left: 0; right: 0; height: 120px; overflow: hidden;
+          background: #05070a; color: #9fb; font: 10px monospace; padding: 4px; z-index: 5; white-space: pre; }
+  .row { height: 84px; position: relative; }
+  .label { position: absolute; top: 2px; left: 6px; font-size: 11px; color: #667; font-family: monospace; }
+  .txt { position: absolute; top: 20px; left: 6px; white-space: nowrap; font-size: 36px; }
+  .bp { display: inline-block; width: 0; height: 0; vertical-align: baseline; }
+
+  .nat {
+    color: #00ff00;
+    -webkit-text-fill-color: transparent;
+    text-decoration: underline;
+    text-decoration-color: #00ff00;
+    text-decoration-thickness: 3px;
+    text-underline-offset: 0.12em;
+    text-decoration-skip-ink: none;
+  }
+  .nat-ls { letter-spacing: 90px; }
+  .nat-under-ls { letter-spacing: 90px; text-underline-position: under; }
+
+  .dd {
+    color: #ffffff;
+    -webkit-text-fill-color: #ffffff;
+    text-decoration: none;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+    padding-bottom: 0.28em;
+    background-color: transparent;
+    background-image:
+      radial-gradient(circle 1.5px at 1.5px 50%, #ffff00 99%, transparent 100%),
+      repeating-linear-gradient(90deg,
+        transparent 0, transparent 7px,
+        #ff00ff 7px, #ff00ff 16px,
+        transparent 16px, transparent 20px);
+    background-size: 20px 3px, 20px 1.25px;
+    background-repeat: repeat-x, repeat-x;
+    background-origin: padding-box;
+    background-clip: padding-box;
+  }
+  .cur { background-position: 0 calc(1em + 0.12em + 2px), 0 calc(1em + 0.12em + 2px + 0.875px); }
+  .new { background-position: 0 calc(0.9em + 0.12em), 0 calc(0.9em + 0.12em + 0.875px); }
+</style>
+</head>
+<body>
+<pre id="data">…</pre>
+
+<div class="row" id="r-nat"><span class="label">native auto (normal)</span><span class="txt nat">Проверка текста ЖЖЖ<span class="bp"></span></span></div>
+<div class="row" id="r-natls"><span class="label">native auto +letter-spacing</span><span class="txt nat nat-ls">Проверка<span class="bp"></span></span></div>
+<div class="row" id="r-underls"><span class="label">native under +letter-spacing</span><span class="txt nat nat-under-ls">Проверка<span class="bp"></span></span></div>
+<div class="row" id="r-cur"><span class="label">dd current 1em+0.12em+2px</span><span class="txt dd cur">Проверка текста ЖЖЖ<span class="bp"></span></span></div>
+<div class="row" id="r-new"><span class="label">dd NEW 0.9em+0.12em</span><span class="txt dd new">Проверка текста ЖЖЖ<span class="bp"></span></span></div>
+
+<script>
+function collect() {
+  const out = [];
+  for (const id of ['r-nat','r-natls','r-underls','r-cur','r-new']) {
+    const row = document.getElementById(id);
+    const txt = row.querySelector('.txt');
+    const bp = row.querySelector('.bp');
+    const tr = txt.getBoundingClientRect();
+    const br = bp.getBoundingClientRect();
+    const fs = parseFloat(getComputedStyle(txt).fontSize);
+    out.push(id + ': rowTop=' + Math.round(tr.top - 20) + ' txtTop=' + Math.round(tr.top) +
+      ' baseY=' + Math.round(br.bottom) + ' fs=' + fs);
+  }
+  document.getElementById('data').textContent = out.join('\n');
+  console.log('ULGEOM\n' + out.join('\n'));
+}
+window.addEventListener('load', collect);
+setTimeout(collect, 300);
+</script>
+</body>
+</html>

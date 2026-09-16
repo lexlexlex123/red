@@ -10,14 +10,6 @@ export const TRANSITION_DEFS = [
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="8" y1="8" x2="16" y2="16"/></svg>',
   },
   {
-    id: 'fade',
-    nameRu: 'Затухание',
-    nameEn: 'Fade',
-    descRu: 'Плавное перекрёстное затухание: предыдущий слайд исчезает, новый проявляется.',
-    descEn: 'Smooth crossfade: the current slide fades out as the next fades in.',
-    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="6" width="16" height="12" rx="2" opacity=".35"/><rect x="6" y="8" width="16" height="12" rx="2"/></svg>',
-  },
-  {
     id: 'slide',
     nameRu: 'Сдвиг',
     nameEn: 'Slide',
@@ -89,55 +81,15 @@ export const TRANSITION_DEFS = [
     descEn: 'Objects with the same name smoothly move between slides.',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="8" width="7" height="7" rx="1.5"/><rect x="13" y="9" width="7" height="7" rx="3.5"/><path d="M11 11.5h2" stroke-linecap="round" stroke-dasharray="1.5 1.5"/></svg>',
   },
-  {
-    id: 'push',
-    nameRu: 'Выталкивание',
-    nameEn: 'Push',
-    descRu: 'Новый слайд выталкивает предыдущий в сторону.',
-    descEn: 'The next slide pushes the current slide aside.',
-    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="10" height="12" rx="2" opacity=".4"/><rect x="9" y="6" width="12" height="12" rx="2"/><path d="M13 12h5M17 9l3 3-3 3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  },
-  {
-    id: 'wipe',
-    nameRu: 'Шторка',
-    nameEn: 'Wipe',
-    descRu: 'Новый слайд открывается шторкой поверх предыдущего.',
-    descEn: 'The next slide wipes open over the current slide.',
-    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="5" width="16" height="14" rx="2" opacity=".35"/><path d="M4 5v14" stroke-width="2.5"/><path d="M8 12h10" stroke-linecap="round"/><path d="M16 9l3 3-3 3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  },
-  {
-    id: 'split',
-    nameRu: 'Раскрытие',
-    nameEn: 'Split',
-    descRu: 'Слайд раскрывается из центра — верхняя и нижняя части расходятся.',
-    descEn: 'The slide opens from the center — top and bottom halves split apart.',
-    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="5" width="14" height="6" rx="1.5"/><rect x="5" y="13" width="14" height="6" rx="1.5"/><path d="M8 12h8" stroke-linecap="round" stroke-dasharray="2 2"/></svg>',
-  },
-  {
-    id: 'reveal',
-    nameRu: 'Занавес',
-    nameEn: 'Reveal',
-    descRu: 'Новый слайд отодвигает предыдущий, как открывающийся занавес.',
-    descEn: 'The next slide pushes the previous one away like a curtain.',
-    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h8v14H4z" opacity=".45"/><path d="M12 5h8v14H12z"/><path d="M12 5v14" stroke-width="2.5"/></svg>',
-  },
-  {
-    id: 'glitch',
-    nameRu: 'Глитч',
-    nameEn: 'Glitch',
-    descRu: 'Цифровые искажения: смещение кадра, вспышки и цветовые артефакты.',
-    descEn: 'Digital glitch: frame shifts, flashes, and color artifacts.',
-    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h10M4 17h14" stroke-linecap="round"/><path d="M14 10l3-2M16 14l4 1" stroke-linecap="round" opacity=".7"/></svg>',
-  },
 ];
 
 export const TRANS_DUR_OPTIONS = [0, 250, 500, 750, 800, 1000, 1200, 1500, 2000];
 
 export const TRANS_RIBBON_DURS = [
-  { ms: 250, nameRu: 'Быстро', nameEn: 'Fast' },
-  { ms: 500, nameRu: 'Нормально', nameEn: 'Normal' },
-  { ms: 800, nameRu: 'Медленно', nameEn: 'Slow' },
-  { ms: 1200, nameRu: 'Очень медленно', nameEn: 'Very slow' },
+  { ms: 500, nameRu: 'Быстро', nameEn: 'Fast' },
+  { ms: 1000, nameRu: 'Нормально', nameEn: 'Normal' },
+  { ms: 1500, nameRu: 'Медленно', nameEn: 'Slow' },
+  { ms: 2000, nameRu: 'Очень медленно', nameEn: 'Very slow' },
 ];
 
 export function transitionDef(id) {
@@ -171,17 +123,58 @@ export function enterClass(trans) {
     case 'slideUp':
       return 'pv-enter-slide-up';
     case 'zoom':
-    case 'cube':
       return 'pv-enter-zoom';
+    case 'cube':
+      return 'pv-enter-cube';
     case 'zoomOut':
       return 'pv-enter-zoom-out';
     case 'flip':
-    case 'flipV':
       return 'pv-enter-flip';
+    case 'flipV':
+      return 'pv-enter-flipv';
     case 'glitch':
       return 'pv-enter-glitch';
     case 'split':
       return 'pv-enter-split';
+    default:
+      return '';
+  }
+}
+
+/**
+ * Matching "exit" animation for the OUTGOING slide snapshot, played at the same time as
+ * `enterClass`'s animation on the incoming slide. Without this, only the incoming slide
+ * animates (from partial opacity / offset / scale) over the preview's black background,
+ * which looks like the new slide "materializing out of darkness" rather than one slide
+ * replacing another. Playing both at once makes it read as a real transition between slides.
+ */
+export function exitClass(trans) {
+  switch (trans) {
+    case 'fade':
+    case 'dissolve':
+    case 'morph':
+      return 'pv-exit-fade';
+    case 'slide':
+    case 'push':
+    case 'wipe':
+    case 'reveal':
+      return 'pv-exit-slide';
+    case 'slideUp':
+      return 'pv-exit-slide-up';
+    case 'zoom':
+      return 'pv-exit-zoom';
+    case 'cube':
+      return 'pv-exit-cube';
+    case 'zoomOut':
+      return 'pv-exit-zoom-out';
+    case 'flip':
+      return 'pv-exit-flip';
+    case 'flipV':
+      return 'pv-exit-flipv';
+    case 'glitch':
+      return 'pv-exit-glitch';
+    case 'split':
+      return 'pv-exit-fade';
     default:
       return '';
   }

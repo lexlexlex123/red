@@ -188,19 +188,41 @@ export function resolveElTextColor(el, theme) {
   return '#ffffff';
 }
 
-/** Drop inline span colors so the box color from cs / scheme is what you see (v7.1 _apClearHtmlColors). */
-export function stripInlineTextColors(html) {
+/**
+ * Drop inline span colors so the box color from cs / scheme is what you see
+ * (v7.1 _apClearHtmlColors) — EXCEPT spans that were deliberately colored
+ * differently from the box's previous color (manually highlighted words).
+ * Pass `prevColor` (the box's color before this change) so runs that already
+ * differed from it are treated as intentional overrides and kept untouched;
+ * only runs that matched the old uniform color are cleared to inherit the
+ * new scheme color.
+ */
+export function stripInlineTextColors(html, prevColor) {
   const src = String(html || '');
   if (!src) return src;
+  const prevNorm = prevColor ? normCssColor(prevColor) : null;
   if (typeof document === 'undefined') {
-    return src.replace(/\bcolor\s*:\s*[^;\"']+;?/gi, '').replace(/-webkit-text-fill-color\s*:\s*[^;\"']+;?/gi, '');
+    if (!prevNorm) {
+      return src.replace(/\bcolor\s*:\s*[^;\"']+;?/gi, '').replace(/-webkit-text-fill-color\s*:\s*[^;\"']+;?/gi, '');
+    }
+    return src.replace(/\bcolor\s*:\s*([^;\"']+);?/gi, (m, c) => (sameCssColor(c, prevNorm) ? '' : m));
   }
   const tmp = document.createElement('div');
   tmp.innerHTML = src;
   tmp.querySelectorAll('[style], [color]').forEach((node) => {
-    if (node.hasAttribute('color')) node.removeAttribute('color');
+    if (node.hasAttribute('color')) {
+      const attrColor = node.getAttribute('color');
+      if (!prevNorm || sameCssColor(attrColor, prevNorm)) node.removeAttribute('color');
+    }
     const st = node.getAttribute('style');
     if (!st || !/\bcolor\s*:/i.test(st)) return;
+    // If this run's color is an intentional override (differs from the box's
+    // previous color), leave its style alone — don't wipe its manual highlight.
+    if (prevNorm) {
+      const m = st.match(/\bcolor\s*:\s*([^;]+)/i);
+      const runColor = m ? m[1] : '';
+      if (runColor && !sameCssColor(runColor, prevNorm)) return;
+    }
     let cleaned = st
       .replace(/\bcolor\s*:\s*[^;]+;?/gi, '')
       .replace(/-webkit-text-fill-color\s*:\s*[^;]+;?/gi, '')
@@ -337,7 +359,7 @@ export function remapElementForTheme(el, theme) {
       next.cs = applyCsProp(next.cs || '', 'color', next.textColor);
     }
     if (next.html && next.textColor && next.textColorScheme != null && next.textColorScheme.col != null) {
-      next.html = stripInlineTextColors(next.html);
+      next.html = stripInlineTextColors(next.html, prevColor);
     } else if (
       next.html &&
       next.textColor &&

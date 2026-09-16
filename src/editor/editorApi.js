@@ -38,15 +38,17 @@ import {
   applyUnderlineToCs,
   applyUnderlineToSelection,
   detectUnderlineFromEditable,
+  detectStrikeFromEditable,
   nextUnderline,
   parseUnderlineFromCs,
   stripUnderlineFromCs,
+  stripUnderlineFromHtml,
+  hasStrikeInCs,
+  hasStrikeInHtml,
   applyStrikeToCs,
-  applyStrikeToSelection,
-  parseStrikeFromCs,
-  detectStrikeFromEditable,
-  nextStrike,
   stripStrikeFromCs,
+  stripStrikeFromHtml,
+  applyStrikeToSelection,
 } from './textUnderline.js';
 import { toggleStressInEditable, toggleStressInHtml } from './textStress.js';
 import { toggleScriptInEditable, toggleScriptInHtml } from './textScript.js';
@@ -1539,85 +1541,88 @@ export const editorApi = {
     if (!el || el.type !== 'text') return;
     const active = typeof document !== 'undefined' ? document.activeElement : null;
     const editing = !!(active?.isContentEditable && active.closest?.(`[data-id="${el.id}"]`));
-    
-    // Check for partial selection
-    let partialSel = false;
-    if (editing && active) {
-      const sel = window.getSelection();
-      if (sel && !sel.isCollapsed && sel.rangeCount > 0 && sel.anchorNode) {
-        let node = sel.anchorNode;
-        if (node.nodeType === 3) node = node.parentElement;
-        while (node) {
-          if (node === active) { partialSel = true; break; }
-          node = node.parentElement;
-        }
+    const selOn = !!(editing && hasNonCollapsedSelection(active));
+    const cur = editing
+      ? detectUnderlineFromEditable(active, el.cs)
+      : parseUnderlineFromCs(el.cs);
+    const next = nextUnderline(cur);
+    if (selOn) {
+      // Restyle the selection cleanly instead of stacking. Because we move the box's
+      // decoration onto the selected run, clear element-level underline/strike so the
+      // wrapper can't draw a second line underneath the new inline span.
+      let applied = false;
+      let usedNextCs = el.cs;
+      try {
+        applied = applyUnderlineToSelection(next, active, hasStrikeInCs(el.cs));
+      } catch (e) {}
+      if (applied) {
+        usedNextCs = stripUnderlineFromCs(usedNextCs);
+        usedNextCs = stripStrikeFromCs(usedNextCs);
+        withHistory(() =>
+          usePresentationStore.getState().patchElement(el.id, {
+            html: htmlFromEditable(active),
+            text: plainFromEditable(active),
+            cs: usedNextCs,
+          })
+        );
+        return;
       }
     }
-    
-    if (partialSel) {
-      // Cycle through styles for selection
-      const cur = detectUnderlineFromEditable(active, el.cs);
-      const next = nextUnderline(cur);
-      applyUnderlineToSelection(next);
-      withHistory(() =>
-        usePresentationStore.getState().patchElement(el.id, {
-          html: htmlFromEditable(active),
-          text: plainFromEditable(active),
-        })
-      );
-    } else {
-      // Cycle for whole block
-      const cur = parseUnderlineFromCs(el.cs);
-      const next = nextUnderline(cur);
-      withHistory(() =>
-        usePresentationStore.getState().patchElement(el.id, {
-          cs: applyUnderlineToCs(el.cs, next),
-        })
-      );
-    }
+    // Whole-box path: strip any leftover inline underline from html first so repeated
+    // presses cycle cleanly off the box-level cs instead of stacking lines.
+    withHistory(() =>
+      usePresentationStore.getState().patchElement(el.id, {
+        html: stripUnderlineFromHtml(el.html),
+        cs: applyUnderlineToCs(el.cs, next),
+      })
+    );
   },
 
-  cycleTextStrikethrough() {
+  /** Strikethrough is a simple on/off toggle (unlike underline's style cycle), and combines
+   *  with whatever underline is currently active — see textUnderline.js. */
+  toggleTextStrike() {
     const el = currentEl();
     if (!el || el.type !== 'text') return;
     const active = typeof document !== 'undefined' ? document.activeElement : null;
     const editing = !!(active?.isContentEditable && active.closest?.(`[data-id="${el.id}"]`));
-    
-    // Check for partial selection
-    let partialSel = false;
-    if (editing && active) {
-      const sel = window.getSelection();
-      if (sel && !sel.isCollapsed && sel.rangeCount > 0 && sel.anchorNode) {
-        let node = sel.anchorNode;
-        if (node.nodeType === 3) node = node.parentElement;
-        while (node) {
-          if (node === active) { partialSel = true; break; }
-          node = node.parentElement;
-        }
+    const selOn = !!(editing && hasNonCollapsedSelection(active));
+    if (selOn) {
+      // Determine current strike from BOTH the inline content and the element-level cs
+      // marker, BEFORE mutating the DOM. Then apply the opposite to the selection and
+      // clear the box-level marker so the wrapper can't double-draw.
+      let alreadyStruck = false;
+      try {
+        alreadyStruck = detectStrikeFromEditable(active, el.cs);
+      } catch (e) {
+        alreadyStruck = hasStrikeInCs(el.cs);
+      }
+      let applied = false;
+      let usedNextCs = el.cs;
+      try {
+        applied = applyStrikeToSelection(!alreadyStruck, active);
+      } catch (e) {}
+      if (applied) {
+        usedNextCs = stripUnderlineFromCs(usedNextCs);
+        usedNextCs = stripStrikeFromCs(usedNextCs);
+        withHistory(() =>
+          usePresentationStore.getState().patchElement(el.id, {
+            html: htmlFromEditable(active),
+            text: plainFromEditable(active),
+            cs: usedNextCs,
+          })
+        );
+        return;
       }
     }
-    
-    if (partialSel) {
-      // Cycle through styles for selection
-      const cur = detectStrikeFromEditable(active, el.cs);
-      const next = nextStrike(cur);
-      applyStrikeToSelection(next);
-      withHistory(() =>
-        usePresentationStore.getState().patchElement(el.id, {
-          html: htmlFromEditable(active),
-          text: plainFromEditable(active),
-        })
-      );
-    } else {
-      // Cycle for whole block
-      const cur = parseStrikeFromCs(el.cs);
-      const next = nextStrike(cur);
-      withHistory(() =>
-        usePresentationStore.getState().patchElement(el.id, {
-          cs: applyStrikeToCs(el.cs, next),
-        })
-      );
-    }
+    // Whole-box path: consider BOTH the cs marker and any inline strike in html. When
+    // turning it off, strip the inline strike too so the line reliably clears.
+    const curStruck = hasStrikeInCs(el.cs) || hasStrikeInHtml(el.html);
+    withHistory(() =>
+      usePresentationStore.getState().patchElement(el.id, {
+        html: curStruck ? stripStrikeFromHtml(el.html) : el.html,
+        cs: applyStrikeToCs(el.cs, !curStruck),
+      })
+    );
   },
 
   toggleTextStress() {

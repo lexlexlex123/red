@@ -2,5 +2,81 @@
 <project version="4">
   <component name="GigaCodeAgentSettings">
     <option name="autoApproveEdits" value="true" />
+    <option name="autoApprovedCommands">
+      <list>
+        <Execute>
+          <option name="pattern" value="grep *" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="head *" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="findstr /n &quot;underline&quot; &quot;C:\github\red v8\src\editor\editorApi.js&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="findstr /n &quot;underlineBoxProps&quot; &quot;C:\github\red v8\src\components\canvas\PreviewOverlay.jsx&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="findstr /n &quot;underline&quot; &quot;C:\github\red v8\css\styles.css&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="findstr /n &quot;underline&quot; &quot;C:\github\red v8\js\30-rich-text.js&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="del &quot;C:\github\red v8\src\editor\morphPlay.js&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="findstr /n &quot;cycleTextUnderline&quot; &quot;C:\github\red v8\src\editor\editorApi.js&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="del &quot;C:\github\red v8\legacy.html&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="rmdir /s /q &quot;C:\github\red v8\js&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="Remove-Item -Recurse -Force &quot;C:\github\red v8\js&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="cd *" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="cmd /c &quot;cd \&quot;C:\github\red v8\&quot; &amp;&amp; npm run build&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="npm run *" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="git status" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="git add *" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="git diff *" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="git log *" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="git commit *" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="powershell -Command &quot;Select-String -Path 'C:/github/red v8/src/editor/editorApi.js' -Pattern 'toggleTextStrike'&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="powershell -Command &quot;$content = Get-Content 'C:/github/red v8/src/editor/editorApi.js' -Raw -Encoding UTF8; [System.IO.File]::WriteAllText('C:/github/red v8/src/editor/editorApi.js.tmp', $content, [System.Text.UTF8Encoding]::new($false))&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="powershell -Command &quot;$content = Get-Content 'C:/github/red v8/src/editor/editorApi.js' -Raw; [System.IO.File]::WriteAllText('C:/github/red v8/src/editor/editorApi.js.tmp', $content, [System.Text.UTF8Encoding]::new($false))&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="python &quot;C:/github/red v8/fix_strike.py&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="del &quot;C:/github/red v8/fix_strike.py&quot;" />
+        </Execute>
+      </list>
+    </option>
   </component>
 </project>

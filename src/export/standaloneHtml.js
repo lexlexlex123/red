@@ -39,7 +39,7 @@ import { textGlyphShadowStyle, textBlockShadowStyle } from '../editor/textShadow
 import { textPadCss } from '../editor/textPad.js';
 import { textBorderRadiusCss } from '../editor/textRadius.js';
 import { parseCsNumber, parseFontFamily } from '../editor/fonts.js';
-import { underlineBoxProps, TEXT_UL_DASH_DOT_CSS } from '../editor/textUnderline.js';
+import { underlineBoxProps, dashDotWrapHtml, TEXT_UL_DASH_DOT_CSS } from '../editor/textUnderline.js';
 import { TEXT_STRESS_CSS } from '../editor/textStress.js';
 import {
   PLAYBACK_ANIM_CSS,
@@ -225,10 +225,13 @@ function elHtml(el, slideEls, theme) {
     const valign = el.valign || (el.type === 'formula' ? 'middle' : 'top');
     const justify =
       valign === 'middle' ? 'center' : valign === 'bottom' ? 'flex-end' : 'flex-start';
+    const ulBox = el.type === 'text' ? underlineBoxProps(cs) : { style: {}, className: '' };
+    // Whole-box dash-dot is drawn via inline [data-ul="dash-dot"] spans (see textUnderline),
+    // so wrap the text runs here — a block-level background would span the whole box width.
+    const bodyOut = ulBox.kind === 'underline dash-dot' ? dashDotWrapHtml(body) : body;
     const hasList =
       el.type === 'text' &&
-      (/(data-list-bullet|data-list-num)/i.test(body) || el.bulletIconId);
-    const ulBox = el.type === 'text' ? underlineBoxProps(cs) : { style: {}, className: '' };
+      (/(data-list-bullet|data-list-num)/i.test(bodyOut) || el.bulletIconId);
     const boxCss = {
       ...style,
       padding: el.type === 'text' ? textPadCss(el) : '8px',
@@ -255,9 +258,9 @@ function elHtml(el, slideEls, theme) {
     };
     const ulCls = `el react-el-text${isToc ? ' has-toc' : ''}${ulBox.className ? ` ${ulBox.className}` : ''}`;
     if (bgCss.background && grad) {
-      return `<div class="${ulCls}" style="${css(boxCss)}">${borderSvg}<div style="${css({ ...gradCss, ...(glyphSh || {}) })}">${body}</div></div>`;
+      return `<div class="${ulCls}" style="${css(boxCss)}">${borderSvg}<div style="${css({ ...gradCss, ...(glyphSh || {}) })}">${bodyOut}</div></div>`;
     }
-    return `<div class="${ulCls}" style="${css({ ...boxCss, ...gradCss, ...(glyphSh || {}) })}">${borderSvg}${body}</div>`;
+    return `<div class="${ulCls}" style="${css({ ...boxCss, ...gradCss, ...(glyphSh || {}) })}">${borderSvg}${bodyOut}</div>`;
   }
 
   if (el.type === 'image' && el.src) {

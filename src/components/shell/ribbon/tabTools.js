@@ -53,6 +53,18 @@ export function getTabGroups(activeTab, lang, snap = {}) {
             on: extraGuidesKind(guides) === 'margin',
             title: ru ? 'Поля 40 px от краёв слайда' : '40 px slide margins',
           }),
+          B('2 колонки', '2 Columns', 'table', () => editorApi.toggleExtraGuides('col2'), {
+            on: extraGuidesKind(guides) === 'col2',
+            title: ru
+              ? 'Поля + 2 колонки (промежуток 40 px) + горизонтали на 120 и 160 px'
+              : 'Margins + 2 columns (40 px gutter) + horizontals at 120 & 160 px',
+          }),
+          B('3 колонки', '3 Columns', 'table', () => editorApi.toggleExtraGuides('col3'), {
+            on: extraGuidesKind(guides) === 'col3',
+            title: ru
+              ? 'Поля + 3 колонки (промежутки 40 px) + горизонтали на 120 и 160 px'
+              : 'Margins + 3 columns (40 px gutters) + horizontals at 120 & 160 px',
+          }),
           B('История', 'History', 'history', () => editorApi.openVersionHistory()),
         ]),
       ];

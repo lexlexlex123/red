@@ -11,6 +11,7 @@ import { hasTextBg, toRgba } from './textBg.js';
 import { lineCanvasEnds } from './lineGeom.js';
 import { buildLineAngleDrawModel } from './lineAngle.js';
 import { tableCellBg } from './tableCells.js';
+import { buildBasicShapeSVG, shapeOptsFromEl } from '../shared/shapes.js';
 
 const formulaImgCache = new Map();
 const formulaPending = new Set();
@@ -18,6 +19,8 @@ const graphImgCache = new Map();
 const graphPending = new Set();
 const thumbImgCache = new Map();
 const thumbImgPending = new Set();
+const thumbShapeCache = new Map();
+const thumbShapePending = new Set();
 const thumbIconCache = new Map();
 const thumbIconPending = new Set();
 const thumbSvgElCache = new Map();
@@ -73,6 +76,31 @@ function htmlToLines(html) {
     .replace(/&quot;/g, '"');
   // Split by newlines, filter empty, trim
   return t.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+}
+
+/**
+ * Word-wrap a single line of text to fit `maxWidth`, using the font already set on `ctx`
+ * (via ctx.measureText) — same idea as real CSS line-wrapping, so a long paragraph with no
+ * explicit <br> becomes several thumbnail lines instead of one line squeezed/scaled to fit
+ * (which is what ctx.fillText's built-in maxWidth argument does, and is why long paragraphs
+ * used to render as a single squashed line on the thumbnail instead of wrapping).
+ */
+function wrapCanvasLine(ctx, text, maxWidth) {
+  const words = String(text || '').split(/\s+/).filter(Boolean);
+  if (!words.length) return [''];
+  const lines = [];
+  let cur = words[0];
+  for (let i = 1; i < words.length; i++) {
+    const test = cur + ' ' + words[i];
+    if (ctx.measureText(test).width <= maxWidth || !cur) {
+      cur = test;
+    } else {
+      lines.push(cur);
+      cur = words[i];
+    }
+  }
+  lines.push(cur);
+  return lines;
 }
 
 function parseColorFromCs(cs, fallback = '#ffffff') {
@@ -251,37 +279,9 @@ export function drawSlideThumb(canvas, slide, canvasW = DEFAULT_CANVAS_W, canvas
     if (el.type === 'shape' && el.shape === 'line') {
       drawThumbLine(ctx, el, sx, sy, op);
     } else if (el.type === 'shape') {
-      const fill = el.fill && el.fill !== 'none' ? el.fill : 'transparent';
-      const fillOp = el.fillOp != null ? +el.fillOp : 1;
       const sb = Math.max(0, +(el.shapeBlur || 0)) * Math.min(sx, sy);
       applyThumbBackdropBlur(ctx, x, y, w, h, sb, () => clipThumbBox(ctx, x, y, w, h, el, sx));
-      if (fill !== 'transparent' && fillOp > 0) {
-        ctx.save();
-        ctx.globalAlpha = op * Math.max(0, Math.min(1, fillOp));
-        ctx.fillStyle = fill.charAt(0) === '#' ? toRgba(fill, 1) : fill;
-        if (el.shape === 'ellipse' || el.shape === 'circle') {
-          ctx.beginPath();
-          ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
-          ctx.fill();
-        } else {
-          const rx = Math.min(w, h, (el.rx != null ? el.rx : 4) * sx);
-          roundRect(ctx, x, y, w, h, rx);
-          ctx.fill();
-        }
-        ctx.restore();
-      }
-      if (el.stroke && el.stroke !== 'none' && (el.sw || 0) > 0) {
-        ctx.strokeStyle = el.stroke;
-        ctx.lineWidth = Math.max(0.5, (el.sw || 2) * sx);
-        if (el.shape === 'ellipse' || el.shape === 'circle') {
-          ctx.beginPath();
-          ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
-          ctx.stroke();
-        } else {
-          roundRect(ctx, x, y, w, h, Math.min(w, h, (el.rx != null ? el.rx : 4) * sx));
-          ctx.stroke();
-        }
-      }
+      drawThumbElShape(ctx, el, x, y, w, h, sx, sy, onReady);
     } else if (el.type === 'image') {
       drawThumbElImage(ctx, el, x, y, w, h, sx, sy, onReady);
     } else if (el.type === 'icon') {
@@ -378,8 +378,8 @@ export function drawSlideThumb(canvas, slide, canvasW = DEFAULT_CANVAS_W, canvas
       } else {
         fillThumbTextBg(ctx, el, x, y, w, h, sx, sy);
         const color = el.textColor || parseColorFromCs(el.cs, '#e2e8f0');
-        const lines = htmlToLines(el.html || el.text || '');
-        if (lines.length) {
+        const rawLines = htmlToLines(el.html || el.text || '');
+        if (rawLines.length) {
           ctx.fillStyle = color;
           const fs = Math.max(6, Math.min(14, (parseFontSize(el.cs) || 18) * sy * 0.85));
           ctx.font = `${fs}px system-ui,sans-serif`;
@@ -388,8 +388,18 @@ export function drawSlideThumb(canvas, slide, canvasW = DEFAULT_CANVAS_W, canvas
           const maxLines = Math.max(1, Math.floor((h - 2) / lineH));
           const padX = 2;
           const maxW = Math.max(4, w - padX * 2);
+          // Word-wrap each explicit line to the box width first (see wrapCanvasLine) instead
+          // of squeezing a whole long paragraph onto one line.
+          const lines = [];
+          for (const raw of rawLines) {
+            for (const wrapped of wrapCanvasLine(ctx, raw, maxW)) {
+              lines.push(wrapped);
+              if (lines.length >= maxLines) break;
+            }
+            if (lines.length >= maxLines) break;
+          }
           for (let li = 0; li < Math.min(lines.length, maxLines); li++) {
-            ctx.fillText(lines[li].slice(0, 48), x + padX, y + 2 + li * lineH, maxW);
+            ctx.fillText(lines[li], x + padX, y + 2 + li * lineH, maxW);
           }
         }
       }
@@ -748,6 +758,74 @@ function drawThumbElMarkdown(ctx, el, x, y, w, h, sx, sy) {
     }
   });
   ctx.restore();
+}
+
+function drawThumbElShape(ctx, el, x, y, w, h, sx, sy, onReady) {
+  const placeholder = () => {
+    const fill = el.fill && el.fill !== 'none' ? el.fill : 'transparent';
+    if (fill !== 'transparent') {
+      ctx.save();
+      ctx.globalAlpha *= Math.max(0, Math.min(1, el.fillOp != null ? +el.fillOp : 1));
+      ctx.fillStyle = fill.charAt(0) === '#' ? toRgba(fill, 1) : fill;
+      roundRect(ctx, x, y, w, h, Math.min(w, h, 4 * sx));
+      ctx.fill();
+      ctx.restore();
+    }
+  };
+  const pw = Math.max(1, Math.round(w));
+  const ph = Math.max(1, Math.round(h));
+  const gen = thumbCacheGen;
+  const key = `shape_${el.id}_${pw}x${ph}_${el.shape}_${el.fill}_${el.fillOp}_${el.stroke}_${el.sw}_${el.rx}_g${gen}`;
+  const cached = thumbShapeCache.get(key);
+  const drawImg = (img) => {
+    ctx.save();
+    if (el.rot) {
+      ctx.translate(x + w / 2, y + h / 2);
+      ctx.rotate((el.rot * Math.PI) / 180);
+      ctx.translate(-(x + w / 2), -(y + h / 2));
+    }
+    try {
+      ctx.drawImage(img, x, y, w, h);
+    } catch (e) {
+      placeholder();
+    }
+    ctx.restore();
+  };
+  if (cached) {
+    drawImg(cached);
+    return;
+  }
+  placeholder();
+  if (thumbShapePending.has(key)) return;
+  thumbShapePending.add(key);
+  try {
+    // Reuse the SAME shape-geometry code the real editor/preview uses (buildBasicShapeSVG),
+    // instead of the old thumbnail-only approximation that only ever drew an ellipse or a
+    // rounded rectangle for every shape (so a star, triangle, arrow, etc. all showed up as a
+    // plain rounded box on the thumbnail).
+    const svgStr = buildBasicShapeSVG(el.shape || 'rect', shapeOptsFromEl(el));
+    const sized = svgStr.replace(/^<svg([^>]*)>/i, (m, attrs) => {
+      const noWH = String(attrs).replace(/\s*width="[^"]*"/g, '').replace(/\s*height="[^"]*"/g, '');
+      return `<svg${noWH} width="${pw}" height="${ph}">`;
+    });
+    const blob = new Blob([sized], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      thumbShapePending.delete(key);
+      URL.revokeObjectURL(url);
+      if (gen !== thumbCacheGen) return;
+      thumbShapeCache.set(key, img);
+      if (typeof onReady === 'function') onReady();
+    };
+    img.onerror = () => {
+      thumbShapePending.delete(key);
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+  } catch (e) {
+    thumbShapePending.delete(key);
+  }
 }
 
 function stripSvgAnimForThumb(svgStr) {

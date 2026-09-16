@@ -55,7 +55,7 @@ export default defineConfig({
   appType: 'spa',
   plugins: [
     react(),
-    serveStaticDirs(['themes', 'fonts', 'images', 'libs', 'audio', 'css', 'icons', 'config']),
+    serveStaticDirs(['themes', 'fonts', 'images', 'libs', 'audio', 'icons']),
   ],
   resolve: {
     alias: {

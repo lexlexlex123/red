@@ -127,11 +127,19 @@ export function playAnimHoverPreview(animName, animData = {}) {
       Object.assign(patch, { pulseName: name, swingCount: 1 });
     }
     if (isEntranceAnim(name)) {
+      // Capture which hover "session" this is. The actual patch is applied one frame later
+      // (so the hidden→visible transition animates instead of snapping); if the mouse has
+      // already left and cleared the hover in the meantime, hoverElId will have moved on
+      // (or been cleared to null) by the time this frame fires. Applying the patch anyway
+      // would resurrect a preview with no timer left to clear it — stuck until a page
+      // refresh, which is exactly what was happening here.
+      const sessionElId = hoverElId;
       useUiStore.getState().setAnimPlay({
         ...(useUiStore.getState().animPlay || {}),
         [targetEl.id]: { hidden: true },
       });
       requestAnimationFrame(() => {
+        if (hoverElId !== sessionElId) return;
         useUiStore.getState().setAnimPlay({
           ...(useUiStore.getState().animPlay || {}),
           [targetEl.id]: patch,

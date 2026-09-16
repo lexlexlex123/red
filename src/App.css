@@ -497,6 +497,7 @@ html:not(.light) .react-ribbon-body[data-tab='slideshow'] { --ribbon-ink: #bbf7d
 .react-props-icon-btn:hover:not(:disabled) {
   color: var(--text, #e2e8f0);
   border-color: var(--accent, #6366f1);
+  background: var(--surface4, #3d3d42);
 }
 .react-props-icon-btn:disabled {
   opacity: 0.4;
@@ -572,6 +573,40 @@ html:not(.light) .react-ribbon-body[data-tab='slideshow'] { --ribbon-ink: #bbf7d
   flex-direction: column;
   gap: 4px;
   margin-bottom: var(--props-gap, 8px);
+}
+
+/* Legacy-style "drag the marker" box for corner-radius / padding (see DragValueBox.jsx). */
+.react-dragbox {
+  position: relative;
+  width: 100%;
+  border: 1px dashed var(--border2, #4a4f5a);
+  border-radius: 6px;
+  background: var(--surface2, #22252c);
+  margin: 6px 0 10px;
+  box-sizing: border-box;
+}
+.react-dragbox-inner {
+  position: absolute;
+  border: 1px dashed var(--accent, #4c8dff);
+  opacity: 0.6;
+  border-radius: 3px;
+  pointer-events: none;
+}
+.react-dragbox-handle {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  margin: -5.5px 0 0 -5.5px;
+  border-radius: 50%;
+  background: var(--accent, #4c8dff);
+  border: 2px solid var(--surface1, #fff);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  touch-action: none;
+}
+.react-dragbox-handle:hover,
+.react-dragbox-handle:active {
+  transform: scale(1.15);
 }
 
 /* Nested fields in a grid already use gap — don't double the vertical space. */
@@ -2192,6 +2227,14 @@ html:not(.light) .react-rtab.active {
   position: relative;
   flex: 0 0 auto;
   margin: 0;
+}
+.react-anim-tl-marquee {
+  position: absolute;
+  z-index: 20;
+  background: color-mix(in srgb, var(--accent, #3b82f6) 18%, transparent);
+  border: 1px solid var(--accent, #3b82f6);
+  border-radius: 2px;
+  pointer-events: none;
 }
 .react-anim-tl-lane-bg {
   position: absolute;
@@ -4891,6 +4934,12 @@ body.preview-mode {
   user-select: none;
   -webkit-user-select: none;
   touch-action: pan-y;
+  /* Shared 3D space for the flip/cube transitions below: both the outgoing snapshot and the
+     incoming slide are separate sibling elements, so they need to share ONE perspective/
+     vanishing point here (on their common parent) to look like two faces of the same turning
+     page or cube — each having its own independent perspective is what made them look like
+     two flat cards warping on their own instead of one coherent 3D motion. */
+  perspective: 2200px;
 }
 .preview-overlay:fullscreen,
 .preview-overlay:-webkit-full-screen {
@@ -4922,7 +4971,6 @@ body.preview-mode {
   position: relative;
   transform-origin: center center;
   overflow: hidden;
-  box-shadow: 0 0 0 1px #222;
   /* Promote slideshow stage to its own layer (helps when GPU compositing is on). */
   transform: translateZ(0);
   will-change: transform;
@@ -5881,7 +5929,7 @@ html:not(.light) .slide-tpl-item.active {
   font-size: 10px;
 }
 .trans-btn:hover {
-  background: #35383f;
+  background: var(--surface3, #35383f);
 }
 .trans-btn.active {
   border-color: #3b82f6;
@@ -5920,21 +5968,6 @@ html:not(.light) .slide-tpl-item.active {
 }
 
 /* Transitions ribbon (v7.1 2-row grid + duration) */
-.react-ribbon-body[data-tab='transitions'] .react-rg {
-  flex: 1;
-  min-width: 0;
-  justify-content: flex-start;
-}
-.react-trans-ribbon {
-  display: flex;
-  align-items: stretch;
-  gap: 8px;
-  min-width: 0;
-  flex: 1;
-  height: 100%;
-  padding: 4px 0 14px;
-  box-sizing: border-box;
-}
 .react-trans-grid {
   display: grid;
   grid-template-rows: repeat(2, 24px);
@@ -6013,18 +6046,24 @@ html:not(.light) .slide-tpl-item.active {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Same pill shape as the standard .react-rg::after group separator (e.g. on Home), so the
+   Transitions tab's dividers match the rest of the ribbon instead of a plain hairline. */
 .react-trans-vdiv {
-  width: 1px;
-  background: var(--border, #3a3d44);
+  width: 3px;
+  height: 21px;
+  border-radius: 2px;
+  background: var(--ribbon-ink, #8b93a3);
+  opacity: 0.55;
   flex-shrink: 0;
-  align-self: stretch;
+  align-self: center;
+  margin: 0 8px;
 }
 .react-trans-side {
   display: flex;
   flex-direction: column;
   gap: 4px;
   flex-shrink: 0;
-  justify-content: center;
+  align-self: center;
 }
 .react-trans-dur {
   background: var(--surface2, #2b2d31);
@@ -6186,6 +6225,20 @@ html:not(.light) .slide-tpl-item.active {
 .react-anim-panel-v71 .anim-row.is-drop-target {
   border-color: var(--accent, #3b82f6);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent, #3b82f6) 40%, transparent);
+}
+/* Drop zone below the last row so an item can actually be moved to the very end of the
+   list — dropping ON the last row only ever inserted BEFORE it (there was no way to target
+   "after everything"), so a block could never truly reach the bottom. */
+.react-anim-panel-v71 .anim-drop-end {
+  height: 10px;
+  margin: -2px 0 4px;
+  border-radius: 4px;
+  border: 1px dashed transparent;
+}
+.react-anim-panel-v71 .anim-drop-end.is-drop-target {
+  height: 22px;
+  border-color: var(--accent, #3b82f6);
+  background: color-mix(in srgb, var(--accent, #3b82f6) 15%, transparent);
 }
 .react-anim-panel-v71 .anim-block {
   background: color-mix(in srgb, #94a3b8 8%, transparent);
@@ -6542,6 +6595,17 @@ html:not(.light) .slide-tpl-item.active {
 .pv-enter-flip {
   animation: pvFlip var(--pv-dur, 500ms) ease both;
   transform-style: preserve-3d;
+  backface-visibility: hidden;
+  /* Hinge on the edge where the new page meets the departing one: left edge coming from a
+     forward turn, right edge coming from a backward turn — same direction convention as the
+     slide/push transitions. */
+  transform-origin: calc(50% - var(--pv-dir, 1) * 50%) center;
+}
+.pv-enter-flipv {
+  animation: pvFlipV var(--pv-dur, 500ms) ease both;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  transform-origin: center calc(50% - var(--pv-dir, 1) * 50%);
 }
 .pv-enter-glitch {
   animation: pvGlitch var(--pv-dur, 500ms) steps(2, end) both;
@@ -6549,17 +6613,23 @@ html:not(.light) .slide-tpl-item.active {
 .pv-enter-split {
   animation: pvFade var(--pv-dur, 500ms) ease both;
 }
+.pv-enter-cube {
+  animation: pvCubeIn var(--pv-dur, 500ms) ease both;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  transform-origin: calc(50% - var(--pv-dir, 1) * 50%) center;
+}
 @keyframes pvFade {
   from { opacity: 0; }
   to { opacity: 1; }
 }
 @keyframes pvSlide {
-  from { opacity: 0.4; transform: translateX(8%); }
-  to { opacity: 1; transform: none; }
+  from { transform: translateX(calc(var(--pv-dir, 1) * var(--pv-shift-x, 100%))); }
+  to { transform: none; }
 }
 @keyframes pvSlideUp {
-  from { opacity: 0.4; transform: translateY(10%); }
-  to { opacity: 1; transform: none; }
+  from { transform: translateY(calc(var(--pv-dir, 1) * var(--pv-shift-y, 100%))); }
+  to { transform: none; }
 }
 @keyframes pvZoom {
   from { opacity: 0.3; transform: scale(0.86); }
@@ -6569,15 +6639,110 @@ html:not(.light) .slide-tpl-item.active {
   from { opacity: 0.3; transform: scale(1.14); }
   to { opacity: 1; transform: none; }
 }
+/* A real page turn: rotate around the shared spine (see transform-origin above), no fade —
+   backface-visibility:hidden makes each face vanish once it's edge-on to the viewer, which is
+   what actually reads as "flipping" rather than a card fading/warping in place. */
 @keyframes pvFlip {
-  from { opacity: 0.5; transform: perspective(1200px) rotateY(-55deg); }
-  to { opacity: 1; transform: none; }
+  from { transform: rotateY(calc(var(--pv-dir, 1) * 100deg)); }
+  to { transform: rotateY(0deg); }
+}
+@keyframes pvFlipV {
+  from { transform: rotateX(calc(var(--pv-dir, 1) * -100deg)); }
+  to { transform: rotateX(0deg); }
+}
+/* Cube: same hinge as the flip above, but each face is pushed out along its own local Z axis
+   before rotating (translateZ applied before rotateY in the transform list) — the classic
+   CSS 3D-cube-face technique, so the two slides read as adjoining faces of one rotating box
+   rather than a flat page. */
+@keyframes pvCubeIn {
+  from { transform: rotateY(calc(var(--pv-dir, 1) * 90deg)) translateZ(calc(var(--pv-shift-x, 100vw) / 2)); }
+  to { transform: rotateY(0deg) translateZ(calc(var(--pv-shift-x, 100vw) / 2)); }
 }
 @keyframes pvGlitch {
   0% { transform: translate(0, 0); filter: none; }
   25% { transform: translate(-6px, 2px); filter: hue-rotate(90deg); }
   50% { transform: translate(5px, -2px); filter: hue-rotate(-40deg); }
   100% { transform: none; filter: none; }
+}
+
+/* Outgoing-slide snapshot: plays alongside the pv-enter-* animation above so the old
+   slide visibly leaves while the new one arrives, instead of the new slide fading in
+   over the (black) preview background on its own. */
+.pv-exit-snapshot {
+  animation-fill-mode: both;
+}
+.pv-exit-fade {
+  animation: pvFadeOut var(--pv-dur, 500ms) ease both;
+}
+.pv-exit-slide {
+  animation: pvSlideOut var(--pv-dur, 500ms) ease both;
+}
+.pv-exit-slide-up {
+  animation: pvSlideUpOut var(--pv-dur, 500ms) ease both;
+}
+.pv-exit-zoom {
+  animation: pvZoomOutFwd var(--pv-dur, 500ms) ease both;
+}
+.pv-exit-zoom-out {
+  animation: pvZoomOutBack var(--pv-dur, 500ms) ease both;
+}
+.pv-exit-flip {
+  animation: pvFlipOut var(--pv-dur, 500ms) ease both;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  transform-origin: calc(50% + var(--pv-dir, 1) * 50%) center;
+}
+.pv-exit-flipv {
+  animation: pvFlipVOut var(--pv-dur, 500ms) ease both;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  transform-origin: center calc(50% + var(--pv-dir, 1) * 50%);
+}
+.pv-exit-glitch {
+  animation: pvGlitchOut var(--pv-dur, 500ms) steps(2, end) both;
+}
+.pv-exit-cube {
+  animation: pvCubeOut var(--pv-dur, 500ms) ease both;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  transform-origin: calc(50% + var(--pv-dir, 1) * 50%) center;
+}
+@keyframes pvFadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes pvSlideOut {
+  from { transform: none; }
+  to { transform: translateX(calc(var(--pv-dir, 1) * -1 * var(--pv-shift-x, 100%))); }
+}
+@keyframes pvSlideUpOut {
+  from { transform: none; }
+  to { transform: translateY(calc(var(--pv-dir, 1) * -1 * var(--pv-shift-y, 100%))); }
+}
+@keyframes pvZoomOutFwd {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: scale(1.12); }
+}
+@keyframes pvZoomOutBack {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: scale(0.85); }
+}
+@keyframes pvFlipOut {
+  from { transform: rotateY(0deg); }
+  to { transform: rotateY(calc(var(--pv-dir, 1) * -100deg)); }
+}
+@keyframes pvFlipVOut {
+  from { transform: rotateX(0deg); }
+  to { transform: rotateX(calc(var(--pv-dir, 1) * 100deg)); }
+}
+@keyframes pvCubeOut {
+  from { transform: rotateY(0deg) translateZ(calc(var(--pv-shift-x, 100vw) / 2)); }
+  to { transform: rotateY(calc(var(--pv-dir, 1) * -90deg)) translateZ(calc(var(--pv-shift-x, 100vw) / 2)); }
+}
+@keyframes pvGlitchOut {
+  0% { transform: translate(0, 0); filter: none; opacity: 1; }
+  40% { transform: translate(6px, -2px); filter: hue-rotate(60deg); opacity: 0.8; }
+  100% { transform: translate(0, 0); filter: none; opacity: 0; }
 }
 
 /* Extra guides: light core + dark hairline so they read on yellow/dark/any fill */
@@ -8520,14 +8685,14 @@ html.light .settings-modal button.shape-card.is-selected:hover {
   top: -0.06em;
 }
 
-/* Dash-dot underline (legacy .ec [data-ul="dash-dot"]) */
-.react-el-text [data-ul="dash-dot"],
-.react-text-ul-dash-dot > [contenteditable],
-.react-text-ul-dash-dot > .react-text-body {
+/* Dash-dot underline. Painted via a background-image trick on inline [data-ul="dash-dot"]
+   spans only (whole-box dash-dot is wrapped into such spans at render time), so the line
+   hugs the text width / line fragments instead of spanning the whole block. Vertical
+   position matches the native single underline (text-underline-offset: 0.12em). */
+.react-el-text [data-ul="dash-dot"] {
   text-decoration: none !important;
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
-  padding-bottom: 0.28em !important;
   background-color: transparent !important;
   background-image:
     radial-gradient(circle 1.5px at 1.5px 50%, currentColor 99%, transparent 100%),
@@ -8543,8 +8708,8 @@ html.light .settings-modal button.shape-card.is-selected:hover {
   background-size: 20px 3px, 20px 1.25px !important;
   background-repeat: repeat-x, repeat-x !important;
   background-position:
-    0 calc(1em + 0.12em + 2px),
-    0 calc(1em + 0.12em + 2px + 0.875px) !important;
+    0 calc(0.88em + 0.12em),
+    0 calc(0.88em + 0.12em + 0.875px) !important;
   background-origin: padding-box !important;
   background-clip: padding-box !important;
 }

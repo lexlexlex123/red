@@ -73,7 +73,7 @@ import { iconAnimEnabled } from '../../editor/iconAnim.js';
 import AnimatedIcon from './AnimatedIcon.jsx';
 import { parseFontFamily, parseCsNumber } from '../../editor/fonts.js';
 import { getTheme, resolveElTextColor, resolveSchemeColor } from '../../editor/themes.js';
-import { underlineBoxProps } from '../../editor/textUnderline.js';
+import { underlineBoxProps, dashDotWrapHtml } from '../../editor/textUnderline.js';
 import { getTableCell, tableCellBg, tableCellRadiusStyle, tableColWidthsPx, tableRowHeightsPx } from '../../editor/tableCells.js';
 import { imageRenderStyles, normImgFrame, imgBorderSvgMarkup } from '../../editor/imgStyles.js';
 import ImageCropOverlay from './ImageCropOverlay.jsx';
@@ -139,6 +139,9 @@ function pulseNameFromCls(cls) {
 const EXTRA_GUIDE_TH = 7;
 const GRID_GUIDE_STEP = 120;
 const MARGIN_GUIDE_INSET = 40;
+const COL_GUTTER = 40;
+const COL_TOP_GUIDE_1 = 120;
+const COL_TOP_GUIDE_2 = 160;
 
 function extraGuideLines(mode, canvasW, canvasH) {
   const kind = extraGuidesKind(mode);
@@ -149,6 +152,23 @@ function extraGuideLines(mode, canvasW, canvasH) {
   } else if (kind === 'margin') {
     lines.push({ t: 'v', pos: MARGIN_GUIDE_INSET }, { t: 'v', pos: canvasW - MARGIN_GUIDE_INSET });
     lines.push({ t: 'h', pos: MARGIN_GUIDE_INSET }, { t: 'h', pos: canvasH - MARGIN_GUIDE_INSET });
+  } else if (kind === 'col2' || kind === 'col3') {
+    // Same outer margins as "Поля", plus vertical gutter guides splitting the content area
+    // into 2 or 3 equal columns (each gutter COL_GUTTER px wide), plus two fixed horizontal
+    // guides near the top for aligning a title/header block.
+    lines.push({ t: 'v', pos: MARGIN_GUIDE_INSET }, { t: 'v', pos: canvasW - MARGIN_GUIDE_INSET });
+    const contentW = Math.max(0, canvasW - MARGIN_GUIDE_INSET * 2);
+    const cols = kind === 'col2' ? 2 : 3;
+    const gutters = cols - 1;
+    const colW = Math.max(0, (contentW - gutters * COL_GUTTER) / cols);
+    let x = MARGIN_GUIDE_INSET;
+    for (let i = 0; i < gutters; i++) {
+      x += colW;
+      lines.push({ t: 'v', pos: x }, { t: 'v', pos: x + COL_GUTTER });
+      x += COL_GUTTER;
+    }
+    lines.push({ t: 'h', pos: MARGIN_GUIDE_INSET }, { t: 'h', pos: canvasH - MARGIN_GUIDE_INSET });
+    lines.push({ t: 'h', pos: COL_TOP_GUIDE_1 }, { t: 'h', pos: COL_TOP_GUIDE_2 });
   }
   return lines;
 }
@@ -470,7 +490,10 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
     const valign = el.valign || (el.type === 'formula' ? 'middle' : 'top');
     const justify =
       valign === 'middle' ? 'center' : valign === 'bottom' ? 'flex-end' : 'flex-start';
-    const html = el.html != null && el.html !== '' ? el.html : textFromEl(el);
+    // Whole-box dash-dot is drawn via inline [data-ul="dash-dot"] spans (see textUnderline),
+    // so wrap the text runs here — a block-level background would span the whole box width.
+    const rawHtml = el.html != null && el.html !== '' ? el.html : textFromEl(el);
+    const html = ulBox.kind === 'underline dash-dot' ? dashDotWrapHtml(rawHtml) : rawHtml;
     const theme = getTheme(usePresentationStore.getState().appliedThemeIdx);
     const showAsPlaceholder = !!el.textPlaceholder && !editing;
     const resolvedText = showAsPlaceholder
@@ -524,9 +547,9 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
           width: '100%',
           outline: 'none',
           cursor: editing ? 'text' : undefined,
+          color: colorGrad ? undefined : (hfx && hfx.color) || resolvedText,
           ...(colorGrad || {}),
           ...(glyphSh || {}),
-          color: colorGrad ? undefined : (hfx && hfx.color) || resolvedText,
         }}
       />
     );
@@ -2660,7 +2683,33 @@ export default function SlideCanvas() {
           const y = el.y || 0;
           const w = el.w || 0;
           const h = el.h || 0;
-          return x < R && x + w > L && y < B && y + h > T;
+          const rot = +el.rot || 0;
+          if (!rot) {
+            return x < R && x + w > L && y < B && y + h > T;
+          }
+          // Rotated elements (very commonly true for the "Line" shape, which is usually a
+          // thin rotated rectangle) live on-screen somewhere quite different from their raw,
+          // pre-rotation x/y/w/h box — testing against that raw box made a marquee drawn
+          // around the actual (rotated) line miss it entirely. Test against the bounding box
+          // of its 4 rotated corners instead.
+          const cx = x + w / 2;
+          const cy = y + h / 2;
+          const rad = (rot * Math.PI) / 180;
+          const cos = Math.cos(rad);
+          const sin = Math.sin(rad);
+          const hw = w / 2;
+          const hh = h / 2;
+          const corners = [
+            [-hw, -hh],
+            [hw, -hh],
+            [hw, hh],
+            [-hw, hh],
+          ].map(([dx, dy]) => [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos]);
+          const minX = Math.min(...corners.map((p) => p[0]));
+          const maxX = Math.max(...corners.map((p) => p[0]));
+          const minY = Math.min(...corners.map((p) => p[1]));
+          const maxY = Math.max(...corners.map((p) => p[1]));
+          return minX < R && maxX > L && minY < B && maxY > T;
         })
         .map((el) => String(el.id));
       const inkHits = [];
