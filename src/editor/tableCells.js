@@ -39,32 +39,84 @@ export function applyTableColorOp(color, op = 1) {
   return color;
 }
 
+function cellFromRaw(raw, r, c) {
+  if (raw == null) return { r, c, html: '' };
+  if (typeof raw === 'string') return { r, c, html: raw };
+  if (typeof raw !== 'object') return { r, c, html: '' };
+  return {
+    r,
+    c,
+    html: raw.html != null ? raw.html : '',
+    align: raw.align,
+    valign: raw.valign,
+    bg: raw.bg,
+    bgScheme: raw.bgScheme,
+    fs: raw.fs,
+    // v7.1 stored per-cell text color as `tc` / `tcScheme`
+    textColor: raw.textColor != null ? raw.textColor : raw.tc,
+    textColorScheme: raw.textColorScheme != null ? raw.textColorScheme : raw.tcScheme,
+    ff: raw.ff,
+    fw: raw.fw,
+    fst: raw.fst,
+    colspan: raw.colspan || 1,
+    rowspan: raw.rowspan || 1,
+    hidden: !!raw.hidden,
+    borders: raw.borders,
+  };
+}
+
+/**
+ * LLM / nested exports often use cells as row arrays: [[{html},…], …].
+ * Canonical form is a flat list of {r,c,html,…}.
+ */
+export function normalizeTableElement(el) {
+  if (!el || el.type !== 'table' || !Array.isArray(el.cells) || !el.cells.length) return el;
+  const cells = el.cells;
+  const nested = Array.isArray(cells[0]);
+  if (!nested) {
+    // Flat but missing r/c — stamp indices from rows×cols order when possible.
+    if (cells.some((x) => x && typeof x === 'object' && (x.r == null || x.c == null))) {
+      const cols = Math.max(1, +el.cols || 1);
+      const next = cells.map((raw, i) => {
+        if (raw && typeof raw === 'object' && raw.r != null && raw.c != null) return raw;
+        const r = Math.floor(i / cols);
+        const c = i % cols;
+        return cellFromRaw(raw, r, c);
+      });
+      return { ...el, cells: next };
+    }
+    return el;
+  }
+  const rows = Math.max(+el.rows || 0, cells.length) || cells.length;
+  let cols = +el.cols || 0;
+  if (!(cols > 0)) {
+    cols = cells.reduce((m, row) => Math.max(m, Array.isArray(row) ? row.length : 0), 1);
+  }
+  const flat = [];
+  for (let r = 0; r < rows; r++) {
+    const row = cells[r];
+    for (let c = 0; c < cols; c++) {
+      flat.push(cellFromRaw(Array.isArray(row) ? row[c] : null, r, c));
+    }
+  }
+  return { ...el, rows, cols, cells: flat };
+}
+
 export function getTableCell(el, r, c) {
   const cells = el?.cells || [];
+  // Nested rows: [[{html},…],…] (common LLM JSON)
+  if (Array.isArray(cells[0])) {
+    const row = cells[r];
+    return cellFromRaw(Array.isArray(row) ? row[c] : null, r, c);
+  }
   const hit = cells.find((x) => x && Number(x.r) === r && Number(x.c) === c);
   if (hit) return hit;
   const cols = el?.cols || 1;
   const flat = cells[r * cols + c];
-  if (flat && typeof flat === 'object') {
-    return {
-      r,
-      c,
-      html: flat.html != null ? flat.html : '',
-      align: flat.align,
-      valign: flat.valign,
-      bg: flat.bg,
-      bgScheme: flat.bgScheme,
-      fs: flat.fs,
-      // v7.1 stored per-cell text color as `tc` / `tcScheme`
-      textColor: flat.textColor != null ? flat.textColor : flat.tc,
-      textColorScheme: flat.textColorScheme != null ? flat.textColorScheme : flat.tcScheme,
-      ff: flat.ff,
-      colspan: flat.colspan || 1,
-      rowspan: flat.rowspan || 1,
-      hidden: !!flat.hidden,
-    };
+  if (flat && typeof flat === 'object' && !Array.isArray(flat)) {
+    return cellFromRaw(flat, r, c);
   }
-  if (flat != null) return { r, c, html: typeof flat === 'string' ? flat : '' };
+  if (flat != null && !Array.isArray(flat)) return { r, c, html: typeof flat === 'string' ? flat : '' };
   return { r, c, html: '' };
 }
 
@@ -83,15 +135,50 @@ export function coveringCell(el, r, c) {
   return cell;
 }
 
+/** Cell font weight / style — header row defaults to bold unless overridden. */
+export function tableCellFontStyle(el, r, c, cell) {
+  const isH = r === 0 && el?.headerRow !== false;
+  return {
+    fontWeight: cell?.fw != null ? cell.fw : isH ? 700 : 400,
+    fontStyle: cell?.fst || undefined,
+  };
+}
+
+/** Fake text-box view so the format toolbar can read cell B/I/size/align. */
+export function tableCellAsTextView(el, cell, r) {
+  const isH = r === 0 && el?.headerRow !== false;
+  const fs = cell?.fs != null ? +cell.fs : el?.fs || 15;
+  const ff = cell?.ff || el?.ff || '';
+  const fw = cell?.fw != null ? cell.fw : isH ? 700 : 400;
+  const fst = cell?.fst || 'normal';
+  const align = cell?.align || 'left';
+  return {
+    type: 'table',
+    html: cell?.html || '',
+    cs: `font-size:${fs}px;font-family:${ff};font-weight:${fw};font-style:${fst};text-align:${align}`,
+    valign: cell?.valign || 'middle',
+    textColor: cell?.textColor || el?.textColor,
+    textColorScheme: cell?.textColorScheme,
+  };
+}
+
+/** Alt-row stripe is on when a color or scheme pin is set (empty hex still counts). */
+export function tableAltRowsOn(el) {
+  return !!(el?.altBg || el?.altBgScheme);
+}
+
 /** Resolved background for a table cell (header / alt / cellBg / per-cell). Legacy: alt on even non-header rows. */
 export function tableCellBg(el, r, c, cell, theme) {
   const op = el?.tableBgOp != null ? +el.tableBgOp : 1;
   let raw;
+  if (cell?.bg === 'transparent' || cell?.bg === 'none') {
+    return 'transparent';
+  }
   if (cell?.bg || cell?.bgScheme != null) {
     raw = resolvedColor(cell.bg, cell.bgScheme, theme, '');
   } else if (r === 0 && el.headerRow !== false) {
     raw = resolvedColor(el.headerBg, el.headerBgScheme, theme, 'rgba(59,130,246,.35)');
-  } else if (el.altBg && r % 2 === 0) {
+  } else if (tableAltRowsOn(el) && r % 2 === 0) {
     raw = resolvedColor(el.altBg, el.altBgScheme, theme, '');
   } else {
     raw = resolvedColor(el.cellBg, el.cellBgScheme, theme, '');
@@ -150,6 +237,35 @@ export function cellRangeKeys(r0, c0, r1, c1) {
   const keys = [];
   for (let r = minR; r <= maxR; r++) for (let c = minC; c <= maxC; c++) keys.push({ r, c });
   return keys;
+}
+
+/**
+ * Expand a cell selection to every grid slot covered by selected / merged cells.
+ * Hidden slots resolve to their covering anchor and take its full colspan×rowspan.
+ * @returns {Set<string>} keys `"r:c"`
+ */
+export function expandTableSelectionOccupied(el, keys) {
+  const occupied = new Set();
+  (keys || []).forEach((k) => {
+    let r = +k.r;
+    let c = +k.c;
+    if (!Number.isFinite(r) || !Number.isFinite(c)) return;
+    let cell = getTableCell(el, r, c);
+    if (cell?.hidden) {
+      const cov = coveringCell(el, r, c);
+      if (cov && cov.r != null && cov.c != null) {
+        r = +cov.r;
+        c = +cov.c;
+        cell = cov;
+      }
+    }
+    const cs = Math.max(1, +(cell?.colspan || 1));
+    const rs = Math.max(1, +(cell?.rowspan || 1));
+    for (let rr = r; rr < r + rs; rr++) {
+      for (let cc = c; cc < c + cs; cc++) occupied.add(`${rr}:${cc}`);
+    }
+  });
+  return occupied;
 }
 
 /** v7.1 `_tblStripCellHtml`: strip inline formatting from cell content. */

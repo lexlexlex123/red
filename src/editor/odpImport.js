@@ -1,11 +1,14 @@
 /**
  * OpenDocument Presentation (.odp) → React slides.
- * Handles JPEG-per-page files from our own export and a native subset
- * (text boxes, images, rect/ellipse/line) from LibreOffice / PowerPoint ODP.
+ * Handles JPEG-per-page files and native ODF (text boxes, images,
+ * rect/ellipse/line/custom-shape, tables) from LibreOffice / our export.
  */
 
 import { DEFAULT_CANVAS_W, DEFAULT_CANVAS_H } from './canvasDims.js';
 import { ensureJSZip } from '../shared/jszip.js';
+import { enrichImportedTextEl } from './importEnrich.js';
+import { ODP_TYPE_TO_SHAPE } from '../export/nativeShared.js';
+import { fontCssFamily } from './fonts.js';
 
 const XLINK = 'http://www.w3.org/1999/xlink';
 
@@ -105,6 +108,7 @@ function parseStyleMap(doc) {
         attr(gp, 'svg:stroke-color') || attr(gp, 'draw:stroke-color') || attr(gp, 'stroke-color');
       const strokeW = attr(gp, 'svg:stroke-width') || attr(gp, 'stroke-width');
       const fontSize = attr(gp, 'fo:font-size') || attr(gp, 'font-size');
+      const fontFamily = attr(gp, 'fo:font-family') || attr(gp, 'font-family');
       const color = attr(gp, 'fo:color') || attr(gp, 'color');
       const align = attr(gp, 'fo:text-align') || attr(gp, 'text-align');
       if (fill) entry.fillKind = fill;
@@ -113,6 +117,7 @@ function parseStyleMap(doc) {
       if (strokeColor) entry.stroke = strokeColor;
       if (strokeW) entry.strokeWcm = odpLenToCm(strokeW);
       if (fontSize) entry.fs = Math.max(10, Math.round(odpLenToCm(fontSize) * (72 / 2.54)));
+      if (fontFamily) entry.ff = fontCssFamily(String(fontFamily).replace(/^"|"$/g, ''));
       if (color) entry.color = color;
       if (align) entry.align = align === 'end' ? 'right' : align === 'center' ? 'center' : 'left';
     }
@@ -154,7 +159,11 @@ function isFullPageBox(box, canvasW, canvasH) {
 
 function shapeFromDraw(el) {
   const n = el.localName;
-  if (n === 'rect' || n === 'custom-shape') return 'rect';
+  const geom = n === 'custom-shape' ? localAll(el, 'enhanced-geometry')[0] : null;
+  const dt = (geom && (attr(geom, 'draw:type') || attr(geom, 'type'))) || attr(el, 'draw:type') || '';
+  if (dt && ODP_TYPE_TO_SHAPE[dt]) return ODP_TYPE_TO_SHAPE[dt];
+  if (n === 'rect') return 'rect';
+  if (n === 'custom-shape') return 'rect';
   if (n === 'ellipse' || n === 'circle') return 'ellipse';
   if (n === 'line' || n === 'connector') return 'line';
   if (n === 'polygon' || n === 'polyline') return 'polygon';
@@ -242,8 +251,8 @@ export async function importOdpZip(zip, opts = {}) {
     const pageStyle = applyStyle(page, styles);
     const bgc = pageStyle.fill || '#1a1a2e';
     const frames = localAll(page, 'frame');
-    const drawShapes = ['rect', 'ellipse', 'circle', 'line', 'custom-shape', 'polygon'].flatMap((nm) =>
-      localAll(page, nm).filter((el) => el.parentNode === page || el.parentNode?.localName === 'g')
+    const drawShapes = ['rect', 'ellipse', 'circle', 'line', 'custom-shape', 'polygon', 'polyline', 'connector'].flatMap(
+      (nm) => localAll(page, nm).filter((el) => el.parentNode === page || el.parentNode?.localName === 'g')
     );
 
     const imageFrames = [];
@@ -259,7 +268,8 @@ export async function importOdpZip(zip, opts = {}) {
     const rasterOnly =
       imageFrames.length === 1 &&
       isFullPageBox(imageFrames[0].box, canvasW, canvasH) &&
-      frames.every((fr) => localAll(fr, 'image')[0] || !collectText(fr));
+      frames.every((fr) => localAll(fr, 'image')[0] || !collectText(fr)) &&
+      !drawShapes.length;
 
     const els = [];
     if (rasterOnly) {
@@ -277,7 +287,12 @@ export async function importOdpZip(zip, opts = {}) {
       continue;
     }
 
+    let bgImg = null;
     for (const im of imageFrames) {
+      if (!bgImg && isFullPageBox(im.box, canvasW, canvasH)) {
+        bgImg = { src: im.src, mode: 'stretch', opacity: 1, blur: 0 };
+        continue;
+      }
       els.push({
         id: nid(idBase, ++n),
         type: 'image',
@@ -293,6 +308,49 @@ export async function importOdpZip(zip, opts = {}) {
 
     for (const fr of frames) {
       if (localAll(fr, 'image')[0]) continue;
+      const tbl = localAll(fr, 'table')[0];
+      if (tbl) {
+        const box = frameBox(fr, wCm, hCm, canvasW, canvasH);
+        const rowsEls = localAll(tbl, 'table-row');
+        const rows = rowsEls.length || 1;
+        const firstCells = rowsEls[0] ? localAll(rowsEls[0], 'table-cell') : [];
+        const cols = firstCells.length || 1;
+        const cells = [];
+        rowsEls.forEach((row, r) => {
+          localAll(row, 'table-cell').forEach((cell, c) => {
+            const text = collectText(cell);
+            cells.push({
+              r,
+              c,
+              html: text
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .split(/\n/)
+                .map((ln) => `<div>${ln || '<br>'}</div>`)
+                .join(''),
+            });
+          });
+        });
+        els.push({
+          id: nid(idBase, ++n),
+          type: 'table',
+          x: box.x,
+          y: box.y,
+          w: box.w,
+          h: box.h,
+          rows,
+          cols,
+          cells,
+          fs: 14,
+          textColor: '#ffffff',
+          fill: '#1e293b',
+          stroke: '#64748b',
+          rot: 0,
+          anims: [],
+        });
+        continue;
+      }
       const box = frameBox(fr, wCm, hCm, canvasW, canvasH);
       const textBox = localAll(fr, 'text-box')[0] || fr;
       const text = collectText(textBox);
@@ -301,21 +359,32 @@ export async function importOdpZip(zip, opts = {}) {
       const fs = st.fs || Math.max(16, Math.round(box.h * 0.22));
       const color = st.color || '#ffffff';
       const align = st.align || 'left';
-      els.push({
-        id: nid(idBase, ++n),
-        type: 'text',
-        x: box.x,
-        y: box.y,
-        w: box.w,
-        h: box.h,
-        html: text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br/>'),
-        text,
-        cs: `font-size:${fs}px;color:${color};text-align:${align};font-family:Georgia,serif;`,
-        textColor: color,
-        textColorScheme: null,
-        rot: 0,
-        anims: [],
-      });
+      const html = text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .split(/\n/)
+        .map((ln) => `<div>${ln || '<br>'}</div>`)
+        .join('');
+      els.push(
+        enrichImportedTextEl(
+          {
+            id: nid(idBase, ++n),
+            x: box.x,
+            y: box.y,
+            w: box.w,
+            h: box.h,
+            html,
+            text,
+            cs: `font-size:${fs}px;color:${color};text-align:${align};font-family:${st.ff || fontCssFamily('Georgia')};`,
+            textColor: color,
+            textColorScheme: null,
+            rot: 0,
+            anims: [],
+          },
+          { fs, themeDark: false }
+        )
+      );
     }
 
     for (const sh of drawShapes) {
@@ -338,7 +407,8 @@ export async function importOdpZip(zip, opts = {}) {
       }
       const st = applyStyle(sh, styles);
       const noFill = st.fillKind === 'none';
-      els.push({
+      const text = collectText(sh);
+      const shapeEl = {
         id: nid(idBase, ++n),
         type: 'shape',
         shape: kind,
@@ -352,7 +422,14 @@ export async function importOdpZip(zip, opts = {}) {
         fillOp: noFill ? 0 : 1,
         rot: 0,
         anims: [],
-      });
+      };
+      if (text) {
+        shapeEl.shapeHtml = text
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+      }
+      els.push(shapeEl);
     }
 
     slides.push({
@@ -361,6 +438,7 @@ export async function importOdpZip(zip, opts = {}) {
       name: attr(page, 'draw:name') || `Slide ${i + 1}`,
       bg: 'custom',
       bgc,
+      bgImg: bgImg || undefined,
       els,
       ink: [],
       connectors: [],

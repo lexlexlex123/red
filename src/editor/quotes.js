@@ -91,9 +91,9 @@ export function buildQuoteHtml(text, author, color, opts = {}) {
   const a = String(author || '').trim();
   const col = preserve ? '' : color ? `color:${color};` : '';
   return (
-    `<i style="font-style:italic;font-size:${QUOTE_FS}px;${col}">${escHtml(q)}</i>` +
+    `<i style="font-style:italic;font-size:1em;${col}">${escHtml(q)}</i>` +
     `<br><br>` +
-    `<span style="font-style:normal;font-size:${QUOTE_AUTHOR_FS}px;${col}">${escHtml(a)}</span>`
+    `<span style="font-style:normal;font-size:0.75em;${col}">${escHtml(a)}</span>`
   );
 }
 

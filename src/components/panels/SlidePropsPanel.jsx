@@ -7,15 +7,14 @@ import {
   ensureLayoutsLoaded,
   getLayouts,
   layoutDisplayName,
-  prismLayoutIdx,
   solidPreviewBg,
   tplThumbSvg,
   tplVariantsFor,
 } from '../../editor/layouts.js';
-import { PN_POSITIONS, PN_STYLES } from '../../editor/pagenum.js';
+import { PN_POSITIONS, PN_STYLES, pnNormalize } from '../../editor/pagenum.js';
 import ColorField from '../ui/ColorField.jsx';
 import Toggle from '../ui/Toggle.jsx';
-import { solidColor } from '../../editor/themes.js';
+import { getTheme, resolveSchemeColor, solidColor } from '../../editor/themes.js';
 import {
   SBG_MODES,
   SBG_ANCHORS,
@@ -23,6 +22,8 @@ import {
   normalizeBgImg,
 } from '../../editor/slideBgImg.js';
 import GSlider from '../ui/GSlider.jsx';
+import PromptCopyBox from '../ui/PromptCopyBox.jsx';
+import { DECK_LLM_PROMPT } from '../../editor/llmPrompts.js';
 import TransitionsPanel from './TransitionsPanel.jsx';
 
 function slideLabel(slide, i, ru) {
@@ -47,7 +48,7 @@ export default function SlidePropsPanel() {
   const layoutIdx = usePresentationStore((s) => s.layoutIdx);
   const layoutAnimated = usePresentationStore((s) => s.layoutAnimated);
   const appliedThemeIdx = usePresentationStore((s) => s.appliedThemeIdx);
-  const pnSettings = usePresentationStore((s) => s.pnSettings);
+  const pnSettings = pnNormalize(usePresentationStore((s) => s.pnSettings));
   const lang = useUiStore((s) => s.lang);
   const [layoutsReady, setLayoutsReady] = useState(
     !!(typeof window !== 'undefined' && window.LAYOUTS?.length)
@@ -55,6 +56,7 @@ export default function SlidePropsPanel() {
   const slide = slides[cur] || {};
   const ru = lang !== 'en';
   const title = slide.title || slide.name || '';
+  const theme = getTheme(appliedThemeIdx);
   const previewBg = solidPreviewBg();
   const bgSolid =
     typeof slide.bgc === 'string' && slide.bgc.startsWith('#')
@@ -73,12 +75,13 @@ export default function SlidePropsPanel() {
   const tplIdx = useMemo(() => {
     if (meta && meta.layoutIdx != null && meta.layoutIdx >= 0) return meta.layoutIdx;
     if (layoutIdx >= 0) return layoutIdx;
-    return prismLayoutIdx();
+    // No silent Prism fallback — empty slide stays without a decor family.
+    return -1;
   }, [meta, layoutIdx, layoutsReady]);
 
-  const L = layouts[tplIdx];
+  const L = tplIdx >= 0 ? layouts[tplIdx] : null;
   const variants = useMemo(
-    () => (layoutsReady ? tplVariantsFor(tplIdx, ru) : []),
+    () => (layoutsReady && tplIdx >= 0 ? tplVariantsFor(tplIdx, ru) : []),
     [tplIdx, ru, appliedThemeIdx, layoutsReady]
   );
   const layoutName = layoutDisplayName(L, lang);
@@ -88,15 +91,24 @@ export default function SlidePropsPanel() {
     <section className="react-props-section" aria-label={ru ? 'Слайд' : 'Slide'}>
       <div className="react-props-hdr">{ru ? 'слайд' : 'slide'}</div>
 
-      <label className="react-props-field">
-        <span>{ru ? 'Заголовок слайда' : 'Slide title'}</span>
+
+      <div className="react-props-field react-slide-title-row">
+        <label className="react-sntog" title={ru ? 'Скрыть в показе' : 'Hide in slideshow'}>
+          <Toggle
+            checked={!!slide.hidden}
+            onChange={() => editorApi.toggleSlideHidden(cur)}
+            aria-label={ru ? 'Скрыть' : 'Hide'}
+          />
+          <span>{ru ? 'Скрыть' : 'Hide'}</span>
+        </label>
         <input
           type="text"
           value={title}
           placeholder={slideLabel(slide, cur, ru)}
+          aria-label={ru ? 'Заголовок слайда' : 'Slide title'}
           onChange={(e) => editorApi.setSlideTitle(e.target.value)}
         />
-      </label>
+      </div>
 
       <div className="react-props-field">
         <span>
@@ -435,6 +447,16 @@ export default function SlidePropsPanel() {
         </button>
       </div>
 
+      <div className="react-props-hdr" style={{ marginTop: 12 }}>
+        {ru ? 'Промпт для нейросети' : 'LLM deck prompt'}
+      </div>
+      <p className="react-props-muted" style={{ margin: '4px 0 0', fontSize: 11 }}>
+        {ru
+          ? 'Инструкция: размеры слайдов, типы объектов и JSON-колода'
+          : 'Instructions: slide sizes, object types, and deck JSON'}
+      </p>
+      <PromptCopyBox text={DECK_LLM_PROMPT} maxHeight={160} />
+
       <div className="react-props-hdr">
         {ru ? 'номера слайдов' : 'page numbers'}
       </div>
@@ -484,28 +506,30 @@ export default function SlidePropsPanel() {
           </label>
           <ColorField
             label={ru ? 'Цвет' : 'Color'}
-            value={pnSettings.color || '#3b82f6'}
-            onChange={(c) => editorApi.setPageNumbers({ color: c, customColor: true })}
+            value={resolveSchemeColor(pnSettings.colorScheme, theme) || pnSettings.color || '#3b82f6'}
+            schemeRef={pnSettings.colorScheme || null}
+            onChange={(c, sr) =>
+              editorApi.setPageNumbers({ color: c, colorScheme: sr ?? null, customColor: !sr })
+            }
           />
           <ColorField
             label={ru ? 'Текст' : 'Text'}
-            value={pnSettings.textColor || '#ffffff'}
-            onChange={(c) => editorApi.setPageNumbers({ textColor: c })}
+            value={resolveSchemeColor(pnSettings.textColorScheme, theme) || pnSettings.textColor || '#ffffff'}
+            schemeRef={pnSettings.textColorScheme || null}
+            onChange={(c, sr) =>
+              editorApi.setPageNumbers({ textColor: c, textColorScheme: sr ?? null })
+            }
           />
-          <label className="react-props-field react-props-field-compact">
-            <span>{ru ? 'Кегль' : 'Size'}</span>
-            <input
-              type="number"
-              min="10"
-              max="48"
-              value={pnSettings.fontSize ?? 14}
-              onChange={(e) =>
-                editorApi.setPageNumbers({
-                  fontSize: Math.max(10, Math.min(48, +e.target.value || 14)),
-                })
-              }
-            />
-          </label>
+          <GSlider
+            label={ru ? 'Кегль' : 'Size'}
+            min={10}
+            max={48}
+            step={1}
+            value={pnSettings.fontSize ?? 14}
+            onChange={(v) =>
+              editorApi.setPageNumbers({ fontSize: Math.max(10, Math.min(48, +v || 14)) })
+            }
+          />
           <GSlider
             label={ru ? 'Прозрачность' : 'Opacity'}
             min={0.15}
@@ -514,15 +538,6 @@ export default function SlidePropsPanel() {
             value={pnSettings.opacity ?? 1}
             onChange={(v) => editorApi.setPageNumbers({ opacity: v })}
           />
-          {pnSettings.customXY ? (
-            <button
-              type="button"
-              className="react-props-btn"
-              onClick={() => editorApi.setPageNumbers({ customXY: null })}
-            >
-              {ru ? 'Сбросить позицию' : 'Reset position'}
-            </button>
-          ) : null}
         </div>
       ) : null}
     </section>

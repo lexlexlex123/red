@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useUiStore } from '../../stores/uiStore';
 import { editorApi } from '../../editor/editorApi';
 import { buildImageCats, imagesForCategory } from '../../editor/image-index.js';
@@ -17,6 +17,11 @@ export default function ImagePicker() {
   const [q, setQ] = useState('');
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState(null);
+  // Freeze pick mode for the open session (setPanel(null) clears imagePickMode).
+  const modeRef = useRef(imagePickMode || { kind: 'insert' });
+  useEffect(() => {
+    if (imagePickMode && imagePickMode.kind) modeRef.current = imagePickMode;
+  }, [imagePickMode]);
 
   const filtered = useMemo(() => {
     let list = imagesForCategory(cat === 'all' ? 'all' : cat);
@@ -33,14 +38,15 @@ export default function ImagePicker() {
 
   if (panel !== 'images') return null;
   const ru = lang !== 'en';
-  const mode = imagePickMode || { kind: 'insert' };
+  const mode = modeRef.current || imagePickMode || { kind: 'insert' };
   const isBg = mode.kind === 'slideBg';
   const isFlip = mode.kind === 'flip';
+  const isShapeFill = mode.kind === 'shapeFill';
   const confirmLab = isBg
     ? ru
       ? 'Поставить фон'
       : 'Set background'
-    : isFlip
+    : isFlip || isShapeFill
       ? ru
         ? 'Выбрать'
         : 'Choose'
@@ -51,13 +57,17 @@ export default function ImagePicker() {
     ? ru
       ? 'Фон слайда'
       : 'Slide background'
-    : isFlip
+    : isShapeFill
       ? ru
-        ? 'Картинка перевёртыша'
-        : 'Flip card image'
-      : ru
-        ? 'Галерея изображений'
-        : 'Image gallery';
+        ? 'Изображение в фигуре'
+        : 'Shape fill image'
+      : isFlip
+        ? ru
+          ? 'Картинка перевёртыша'
+          : 'Flip card image'
+        : ru
+          ? 'Галерея изображений'
+          : 'Image gallery';
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE));
   const curPage = Math.min(page, totalPages - 1);
@@ -70,6 +80,12 @@ export default function ImagePicker() {
   function applySelected(path) {
     const p = path || selected;
     if (!p) return;
+    const pickMode = modeRef.current || useUiStore.getState().imagePickMode || { kind: 'insert' };
+    if (pickMode.kind === 'slideBg' || pickMode.kind === 'flip' || pickMode.kind === 'shapeFill') {
+      const src = '/' + String(p).replace(/^\//, '');
+      editorApi.applyPickedImageSrc(src, String(p).split('/').pop() || '', { ...pickMode });
+      return;
+    }
     editorApi.addImageFromPath(p);
   }
 

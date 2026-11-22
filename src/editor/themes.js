@@ -244,38 +244,147 @@ export function stripInlineTextColors(html, prevColor) {
  * If a scheme pin is leftover but HTML still has a uniform imported color
  * (often white), keep that color and drop the pin so the field matches the slide.
  */
+/** Resolve LLM palette codes ("15") or scheme strings into {col,row} + #hex. */
+function pinPalettePair(el, colorKey, schemeKey, theme, patch) {
+  const rawScheme = el[schemeKey];
+  if (typeof rawScheme === 'string' || typeof rawScheme === 'number') {
+    const parsed = parseColorField(String(rawScheme), theme);
+    if (parsed?.schemeRef) {
+      patch[schemeKey] = parsed.schemeRef;
+      if (parsed.color) patch[colorKey] = parsed.color;
+    }
+  }
+  const rawColor = patch[colorKey] !== undefined ? patch[colorKey] : el[colorKey];
+  if (typeof rawColor === 'string' && /^[1-8][0-9]$/.test(rawColor.trim())) {
+    const parsed = parseColorField(rawColor.trim(), theme);
+    if (parsed?.schemeRef) {
+      patch[schemeKey] = parsed.schemeRef;
+      if (parsed.color) patch[colorKey] = parsed.color;
+    }
+  } else if (
+    patch[schemeKey] &&
+    patch[schemeKey].col != null &&
+    (patch[colorKey] == null || patch[colorKey] === '')
+  ) {
+    const c = resolveSchemeColor(patch[schemeKey], theme);
+    if (c) patch[colorKey] = c;
+  } else if (
+    el[schemeKey] &&
+    typeof el[schemeKey] === 'object' &&
+    el[schemeKey].col != null &&
+    (el[colorKey] == null ||
+      el[colorKey] === '' ||
+      (typeof el[colorKey] === 'string' && /^[1-8][0-9]$/.test(el[colorKey].trim())))
+  ) {
+    const c = resolveSchemeColor(el[schemeKey], theme);
+    if (c) {
+      patch[schemeKey] = el[schemeKey];
+      patch[colorKey] = c;
+    }
+  }
+}
+
 export function hydrateImportedTextColors(slides, theme) {
   if (!Array.isArray(slides)) return slides;
   let changed = false;
   const next = slides.map((s) => {
+    const slidePatch = {};
+    pinPalettePair(s, 'bgc', 'bgScheme', theme, slidePatch);
+
     const els = (s.els || []).map((el) => {
-      if (!el || (el.type !== 'text' && el.type !== 'formula')) return el;
+      if (!el) return el;
       const patch = {};
-      if (el.textColorScheme === undefined) patch.textColorScheme = null;
-      const scheme = patch.textColorScheme !== undefined ? patch.textColorScheme : el.textColorScheme;
-      const pinned = scheme != null && scheme.col != null;
-      const inline = uniformInlineTextColor(el.html);
-      const csColor = parseCsColor(el.cs);
-      if (pinned) {
-        const schemeC = resolveSchemeColor(scheme, theme);
-        if (inline && schemeC && !sameCssColor(inline, schemeC)) {
-          patch.textColorScheme = null;
-          patch.textColor = inline;
-          patch.cs = applyCsProp(el.cs || '', 'color', inline);
-        } else if (schemeC) {
-          patch.textColor = schemeC;
-          patch.cs = applyCsProp(el.cs || '', 'color', schemeC);
-          if (inline && !sameCssColor(inline, schemeC)) patch.html = stripInlineTextColors(el.html);
+
+      if (el.type === 'text' || el.type === 'formula') {
+        if (el.type === 'formula') {
+          pinPalettePair(el, 'formulaColor', 'formulaColorScheme', theme, patch);
+          if (patch.formulaColor) {
+            patch.textColor = patch.formulaColor;
+            patch.textColorScheme =
+              patch.formulaColorScheme !== undefined
+                ? patch.formulaColorScheme
+                : el.formulaColorScheme;
+          }
         }
-      } else if (!el.textColor) {
-        const c = inline || csColor || '#ffffff';
-        patch.textColor = c;
-        if (c) patch.cs = applyCsProp(el.cs || '', 'color', c);
+        pinPalettePair(
+          { ...el, textColor: patch.textColor ?? el.textColor, textColorScheme: patch.textColorScheme ?? el.textColorScheme },
+          'textColor',
+          'textColorScheme',
+          theme,
+          patch
+        );
+        if (el.type === 'formula' && patch.textColor && !patch.formulaColor) {
+          patch.formulaColor = patch.textColor;
+          patch.formulaColorScheme = patch.textColorScheme;
+        }
+
+        if (el.textColorScheme === undefined && patch.textColorScheme === undefined) {
+          patch.textColorScheme = null;
+        }
+        const scheme =
+          patch.textColorScheme !== undefined
+            ? patch.textColorScheme
+            : patch.formulaColorScheme !== undefined
+              ? patch.formulaColorScheme
+              : el.textColorScheme;
+        const pinned = scheme != null && scheme.col != null;
+        const inline = uniformInlineTextColor(el.html);
+        const csColor = parseCsColor(el.cs);
+        if (el.type === 'text') {
+          if (pinned) {
+            const schemeC = resolveSchemeColor(scheme, theme);
+            if (inline && schemeC && !sameCssColor(inline, schemeC)) {
+              patch.textColorScheme = null;
+              patch.textColor = inline;
+              patch.cs = applyCsProp(el.cs || '', 'color', inline);
+            } else if (schemeC) {
+              patch.textColor = schemeC;
+              patch.cs = applyCsProp(el.cs || '', 'color', schemeC);
+              if (inline && !sameCssColor(inline, schemeC)) patch.html = stripInlineTextColors(el.html);
+            }
+          } else if (!el.textColor || /^[1-8][0-9]$/.test(String(el.textColor).trim())) {
+            const c = patch.textColor || inline || csColor || '#ffffff';
+            patch.textColor = c;
+            if (c && String(c).startsWith('#')) patch.cs = applyCsProp(el.cs || '', 'color', c);
+          }
+        } else if (el.type === 'formula' && pinned && !patch.formulaColor) {
+          const schemeC = resolveSchemeColor(scheme, theme);
+          if (schemeC) {
+            patch.formulaColor = schemeC;
+            patch.textColor = schemeC;
+            patch.formulaColorScheme = scheme;
+            patch.textColorScheme = scheme;
+          }
+        }
+      } else if (el.type === 'shape') {
+        pinPalettePair(el, 'fill', 'fillScheme', theme, patch);
+        pinPalettePair(el, 'stroke', 'strokeScheme', theme, patch);
+        pinPalettePair(el, 'shadowColor', 'shadowColorScheme', theme, patch);
+      } else if (el.type === 'icon') {
+        pinPalettePair(el, 'iconColor', 'iconColorScheme', theme, patch);
+        pinPalettePair(el, 'shadowColor', 'shadowColorScheme', theme, patch);
+      } else if (el.type === 'lego') {
+        pinPalettePair(el, 'legoColor', 'legoColorScheme', theme, patch);
+      } else if (el.type === 'model3d') {
+        pinPalettePair(el, 'objColor', 'objColorScheme', theme, patch);
+        pinPalettePair(el, 'objBg', 'objBgScheme', theme, patch);
       }
+      if (el.type === 'text' || el.type === 'markdown' || el.type === 'formula') {
+        pinPalettePair(el, 'shadowColor', 'shadowColorScheme', theme, patch);
+      }
+      if (el.type === 'image') {
+        pinPalettePair(el, 'imgShadowColor', 'imgShadowColorScheme', theme, patch);
+      }
+
       if (!Object.keys(patch).length) return el;
       changed = true;
       return { ...el, ...patch };
     });
+
+    if (Object.keys(slidePatch).length) {
+      changed = true;
+      return { ...s, ...slidePatch, els };
+    }
     return changed ? { ...s, els } : s;
   });
   return changed ? next : slides;
@@ -283,11 +392,12 @@ export function hydrateImportedTextColors(slides, theme) {
 
 export function parseColorField(str, theme) {
   const s = String(str || '').trim();
-  const pos = s.match(/^([1-8])([1-9])$/);
+  const pos = s.match(/^([1-8])([0-9])$/);
   if (pos) {
     const scheme = { col: +pos[1] - 1, row: +pos[2] - 1 };
     const color = theme ? schemeSwatchColor(theme, scheme.col, scheme.row) : null;
-    if (color) return { color, schemeRef: scheme };
+    // Scheme codes like "15" are valid even before a theme is known.
+    return { color: color || null, schemeRef: scheme };
   }
   if (/^#[0-9a-fA-F]{6}$/.test(s)) return { color: s, schemeRef: null };
   if (/^[0-9a-fA-F]{6}$/.test(s)) return { color: `#${s}`, schemeRef: null };
@@ -385,12 +495,81 @@ export function remapElementForTheme(el, theme) {
       next.textColorScheme = next.formulaColorScheme;
     }
   }
+  if (next.type === 'lego') {
+    pin('legoColorScheme', 'legoColor', { col: 0, row: 4 });
+  }
+  if (next.type === 'model3d') {
+    // Palette two-digit codes: «15» accent, «19» dark fill (col+1,row+1).
+    pin('objColorScheme', 'objColor', { col: 0, row: 4 });
+    pin('objBgScheme', 'objBg', { col: 0, row: 8 });
+  }
   if (next.type === 'shape') {
     pin('fillScheme', 'fill', { col: 0, row: 4 });
+    pin('fillGradScheme', 'fillGrad', null);
     pin('strokeScheme', 'stroke', { col: 0, row: 3 });
   }
+  // Transform anim from/to keep palette slots — refresh baked hex for the new theme.
+  if (Array.isArray(next.anims)) {
+    let animsChanged = false;
+    const anims = next.anims.map((a) => {
+      if (!a || a.name !== 'transform') return a;
+      const remapSnap = (snap) => {
+        if (!snap || typeof snap !== 'object') return snap;
+        const s = { ...snap };
+        let dirty = false;
+        // Older snaps stored only #hex — adopt the element's scheme pin when colors still match.
+        const adopt = (schemeKey, colorKey) => {
+          if (s[schemeKey] != null) return;
+          const liveScheme = next[schemeKey];
+          if (liveScheme == null || liveScheme.col == null) return;
+          if (!sameCssColor(s[colorKey], el[colorKey])) return;
+          s[schemeKey] = { col: liveScheme.col, row: liveScheme.row };
+          dirty = true;
+        };
+        adopt('fillScheme', 'fill');
+        adopt('strokeScheme', 'stroke');
+        adopt('textColorScheme', 'textColor');
+        const pinSnap = (schemeKey, colorKey) => {
+          const sr = s[schemeKey];
+          if (sr == null || sr.col == null) return;
+          const c = resolveSchemeColor(sr, theme);
+          if (c && c !== s[colorKey]) {
+            s[colorKey] = c;
+            dirty = true;
+          }
+        };
+        pinSnap('fillScheme', 'fill');
+        pinSnap('strokeScheme', 'stroke');
+        pinSnap('textColorScheme', 'textColor');
+        if (!dirty) return snap;
+        animsChanged = true;
+        return s;
+      };
+      const from = remapSnap(a.from);
+      const to = remapSnap(a.to);
+      if (from === a.from && to === a.to) return a;
+      animsChanged = true;
+      return { ...a, from, to };
+    });
+    if (animsChanged) next.anims = anims;
+  }
   if (next.type === 'icon') {
-    pin('textColorScheme', 'textColor', { col: 0, row: 2 });
+    pin('iconColorScheme', 'iconColor', { col: 0, row: 4 });
+    if (next.iconColor) next.textColor = next.iconColor;
+  }
+  if (next.type === 'image') {
+    // Only theme-pin border color when a border is actually drawn — otherwise
+    // import/theme apply invented a pale frame around every picture.
+    if (+(next.imgBw) > 0) {
+      if (next.imgBcScheme != null) {
+        pin('imgBcScheme', 'imgBc', null);
+      } else if (next.imgBc == null) {
+        pin('imgBcScheme', 'imgBc', { col: 7, row: 8 });
+      }
+    } else if (next.imgBcScheme != null || next.imgBc != null) {
+      delete next.imgBcScheme;
+      delete next.imgBc;
+    }
   }
   if (next.type === 'applet') {
     pin('genColorScheme', 'genColor', null);

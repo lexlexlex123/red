@@ -4,7 +4,8 @@ window._THEME_01_PRISM = {
 name:'Призма',nameEn:'Prism',
     desc:'Острые грани, световые блики',descEn:'Sharp refracting light beams',
     animated: true,
-    _layoutRev: 9,
+    // Bump when corner geometry changes so live decks refresh.
+    _layoutRev: 10,
 
     _peekStripe(x1, y1, x2, y2, cx, cy, color, doAnimate, begin, dur, fillOp){
       const peek = 0.34;
@@ -39,6 +40,24 @@ name:'Призма',nameEn:'Prism',
       return out;
     },
 
+    /**
+     * Equal pixel depth on both axes → ~45° hypotenuse on any AR.
+     * Depths are fractions of min(w,h) so portrait doesn't stretch stripes.
+     */
+    _cornerSpecs(w, h, corner, isTitle, a1, a2){
+      const m = Math.min(w, h);
+      const layers = isTitle
+        ? [[0.50, a1, 0.30], [0.36, a2, 0.26], [0.24, a1, 0.22], [0.12, a2, 0.18]]
+        : [[0.28, a1, 0.24], [0.14, a2, 0.18]];
+      return layers.map(([t, col, op]) => {
+        const d = m * t;
+        if (corner === 'tr') return [w - d, 0, w, d, col, op];
+        if (corner === 'bl') return [0, h - d, d, h, col, op];
+        if (corner === 'tl') return [0, d, d, 0, col, op];
+        return [w - d, h, w, h - d, col, op]; // br
+      });
+    },
+
     _build(w, h, a1, a2, isTitle, doAnimate, mirror){
       const uid = 'prm' + Math.random().toString(36).slice(2, 7);
       const dur = isTitle ? 8 : 6.4;
@@ -47,61 +66,22 @@ name:'Призма',nameEn:'Prism',
       const cycleBegin = doAnimate ? midBegin(3.7, dur, 0.12, 0.88) : '0';
       let extra = '';
       const mir = !!mirror;
-
-      const trTitle = [
-        [w * .52, 0, w, h * .68, a1, 0.30],
-        [w * .64, 0, w, h * .42, a2, 0.26],
-        [w * .74, 0, w, h * .24, a1, 0.22],
-        [w * .84, 0, w, h * .10, a2, 0.18],
-      ];
-      const trContent = [
-        [w * .76, 0, w, h * .30, a1, 0.24],
-        [w * .88, 0, w, h * .12, a2, 0.18],
-      ];
-      const blTitle = [
-        [0, h * .66, w * .34, h, a1, 0.30],
-        [0, h * .76, w * .20, h, a2, 0.26],
-        [0, h * .86, w * .12, h, a1, 0.22],
-        [0, h * .94, w * .06, h, a2, 0.18],
-      ];
-      const blContent = [
-        [0, h * .82, w * .16, h, a1, 0.22],
-        [0, h * .92, w * .08, h, a2, 0.16],
-      ];
-      const tlTitle = [
-        [0, h * .68, w * .48, 0, a1, 0.30],
-        [0, h * .42, w * .36, 0, a2, 0.26],
-        [0, h * .24, w * .26, 0, a1, 0.22],
-        [0, h * .10, w * .16, 0, a2, 0.18],
-      ];
-      const tlContent = [
-        [0, h * .30, w * .24, 0, a1, 0.24],
-        [0, h * .12, w * .12, 0, a2, 0.18],
-      ];
-      const brTitle = [
-        [w * .66, h, w, h * .66, a1, 0.30],
-        [w * .80, h, w, h * .76, a2, 0.26],
-        [w * .88, h, w, h * .86, a1, 0.22],
-        [w * .94, h, w, h * .94, a2, 0.18],
-      ];
-      const brContent = [
-        [w * .84, h, w, h * .82, a1, 0.22],
-        [w * .92, h, w, h * .92, a2, 0.16],
-      ];
+      const m = Math.min(w, h);
 
       if (isTitle){
         const gx = mir ? w * .18 : w * .82;
+        const gr = m * 0.28;
         extra = `<defs><filter id="${uid}pgf"><feGaussianBlur stdDeviation="16"/></filter></defs>
-          <ellipse cx="${gx.toFixed(1)}" cy="${(h * .72).toFixed(1)}" rx="${(h * .28).toFixed(1)}" ry="${(h * .28).toFixed(1)}" fill="${a1}" opacity="0.04" filter="url(#${uid}pgf)"/>`;
+          <ellipse cx="${gx.toFixed(1)}" cy="${(h * .72).toFixed(1)}" rx="${gr.toFixed(1)}" ry="${gr.toFixed(1)}" fill="${a1}" opacity="0.04" filter="url(#${uid}pgf)"/>`;
       }
 
       let a, b;
       if (mir){
-        a = this._cornerStripes(w, h, 'tl', isTitle ? tlTitle : tlContent, 0, 0, doAnimate, dur, cycleBegin);
-        b = this._cornerStripes(w, h, 'br', isTitle ? brTitle : brContent, w, h, doAnimate, dur, cycleBegin);
+        a = this._cornerStripes(w, h, 'tl', this._cornerSpecs(w, h, 'tl', isTitle, a1, a2), 0, 0, doAnimate, dur, cycleBegin);
+        b = this._cornerStripes(w, h, 'br', this._cornerSpecs(w, h, 'br', isTitle, a1, a2), w, h, doAnimate, dur, cycleBegin);
       } else {
-        a = this._cornerStripes(w, h, 'tr', isTitle ? trTitle : trContent, w, 0, doAnimate, dur, cycleBegin);
-        b = this._cornerStripes(w, h, 'bl', isTitle ? blTitle : blContent, 0, h, doAnimate, dur, cycleBegin);
+        a = this._cornerStripes(w, h, 'tr', this._cornerSpecs(w, h, 'tr', isTitle, a1, a2), w, 0, doAnimate, dur, cycleBegin);
+        b = this._cornerStripes(w, h, 'bl', this._cornerSpecs(w, h, 'bl', isTitle, a1, a2), 0, h, doAnimate, dur, cycleBegin);
       }
 
       return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden">${extra}${a}${b}</svg>`;

@@ -181,30 +181,36 @@ name:'Болото', nameEn:'Swamp',
       const {c19,c18}=this._schemeCols(a1,a2);
       const m=Math.min(w,h);
       const leaves=isTitle?[this._leafPlace(w,h)]:(isArc?this._leafPlaceArc(w,h):this._leafPlaceContent(w,h));
-      const areaK=Math.min(1.85, Math.max(0.5,(w*h)/(960*540)));
-      const nBlur=Math.round(48*areaK*(isTitle?1:0.65));
-      const sharpMul=isTitle?1:3;
-      const nBig=Math.round(52*areaK*sharpMul);
-      const nMid=Math.round(78*areaK*sharpMul);
-      const nTiny=Math.round(110*areaK*sharpMul);
+      // Cap density — hundreds of SMIL transforms + per-circle blur killed FPS.
+      const areaK=Math.min(1.15, Math.max(0.55,(w*h)/(960*540)));
+      const nBlur=Math.round((doAnimate?18:28)*areaK*(isTitle?1:0.7));
+      const sharpMul=isTitle?1:(doAnimate?1.55:2.2);
+      const nBig=Math.round((doAnimate?28:40)*areaK*sharpMul);
+      const nMid=Math.round((doAnimate?36:56)*areaK*sharpMul);
+      const nTiny=Math.round((doAnimate?48:78)*areaK*sharpMul);
       const blur=this._pack(w,h,nBlur, m*0.018, m*0.058, rng, 401, null, null, 0.14);
       const big=this._pack(w,h,nBig, m*0.014, m*0.024, rng, 907, null, leaves, isTitle?0.32:0.28);
       const mid=this._pack(w,h,nMid, m*0.008, m*0.014, rng, 1403, big, leaves, isTitle?0.28:0.24);
       const tiny=this._pack(w,h,nTiny, m*0.004, m*0.008, rng, 2201, big.concat(mid), leaves, isTitle?0.26:0.22);
       const sharp=big.concat(mid,tiny);
-      const blurStd=Math.max(1.6, m*0.005).toFixed(1);
+      const blurStd=Math.max(1.4, m*0.0042).toFixed(1);
       let svg=`<defs>
-        <filter id="${uid}d" x="-80%" y="-80%" width="260%" height="260%">
+        <filter id="${uid}d" x="-50%" y="-50%" width="200%" height="200%" color-interpolation-filters="sRGB">
           <feGaussianBlur stdDeviation="${blurStd}"/>
         </filter>
       </defs>`;
-      blur.forEach(c=>{
-        const amp=this._safeAmp(c, blur, null, 0.48);
-        svg+=this._floatCirc(c,c18, 0.22+rng(c.seed+9)*0.12, doAnimate, uid+'d', {slow:true, safeAmp:amp, ampMul:1.35});
+      // One static filter pass on a group — never animate inside a blurred <g>
+      // (SMIL under feGaussianBlur forces a full filter re-raster every frame).
+      let blurLayer='';
+      blur.forEach((c)=>{
+        blurLayer+=this._floatCirc(c,c18, 0.22+rng(c.seed+9)*0.12, false, null, null);
       });
-      sharp.forEach(c=>{
+      svg+=`<g filter="url(#${uid}d)">${blurLayer}</g>`;
+      sharp.forEach((c,i)=>{
         const amp=this._safeAmp(c, sharp, leaves, 0.34);
-        svg+=this._floatCirc(c,c19, 0.92, doAnimate, null, {safeAmp:amp});
+        // Animate a sparse subset so duckweed still drifts without flooding the SVG clock.
+        const animThis=doAnimate && (i%3===0);
+        svg+=this._floatCirc(c,c19, 0.92, animThis, null, {safeAmp:amp});
       });
       leaves.forEach(lf=>{ svg+=this._leafSvg(c19, lf); });
       return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden">${svg}</svg>`;

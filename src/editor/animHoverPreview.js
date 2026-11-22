@@ -13,12 +13,15 @@ import { fireParticlesAnim, isParticlesAnim, clearParticles } from './particlesP
 import { fireInkDrawAnim, isInkDrawAnim, clearInkDraw } from './inkDrawPlay.js';
 import { fireCosmosTitleAnimGroup, isCosmosTitleAnim, clearCosmosTitle } from './cosmosTitlePlay.js';
 import { fireCaptionSlideAnim, isCaptionSlideAnim } from './captionSlidePlay.js';
+import { fireTransformAnim, isTransformAnim, snapshotTransformProps } from './transformPlay.js';
 import { clearFloat } from './floatPlay.js';
 import { clearDance } from './dancePlay.js';
 import { clearSwing } from './swingPlay.js';
 import { isPulseFamilyAnim } from './pulsePlay.js';
 import { elBoxTransform } from './elTransform.js';
 import { isElSpecificAnim } from './animOrder.js';
+import { imageHasCrop, isUncropAnim } from './imgUncrop.js';
+import { getTheme } from './themes.js';
 
 let hoverTimer = null;
 let hoverElId = null;
@@ -89,11 +92,14 @@ export function playAnimHoverPreview(animName, animData = {}) {
   const el = (slide?.els || []).find((e) => e && String(e.id) === String(selId));
   if (!el || el._isDecor) return;
 
-  const targets = isElSpecificAnim(animName)
-    ? [el]
-    : el.groupId
+  const targets =
+    isCosmosTitleAnim(animName) && el.groupId
       ? (slide.els || []).filter((e) => e && e.groupId === el.groupId)
-      : [el];
+      : isElSpecificAnim(animName)
+        ? [el]
+        : el.groupId
+          ? (slide.els || []).filter((e) => e && e.groupId === el.groupId)
+          : [el];
 
   const dur = Math.max(
     200,
@@ -202,6 +208,26 @@ export function playAnimHoverPreview(animName, animData = {}) {
       if (dom) fireCaptionSlideAnim(dom, a, { hideAfter: false });
       return;
     }
+    if (isUncropAnim(animName)) {
+      if (t.type === 'image' && imageHasCrop(t)) {
+        useUiStore.getState().setAnimPlay({
+          ...(useUiStore.getState().animPlay || {}),
+          [t.id]: { uncrop: true, uncropDone: true, dur },
+        });
+      }
+      return;
+    }
+    if (isTransformAnim(animName)) {
+      if (dom) {
+        const from = a.from || snapshotTransformProps(t);
+        const to = a.to || from;
+        const theme = getTheme(usePresentationStore.getState().appliedThemeIdx);
+        fireTransformAnim(dom, from, to, a, { theme });
+      }
+      return;
+    }
+    // No CSS class for special anims — avoid fake fadeIn fallback.
+    if (!animCssClass(animName)) return;
     applyCss(t, animName);
   });
 

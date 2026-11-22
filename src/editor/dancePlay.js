@@ -31,6 +31,20 @@ export function danceWaitMs(anim) {
   return delay + dur * loops;
 }
 
+export function danceWaitMsForPlayback(anim, opts = {}) {
+  if (!opts.inRepeat) return danceWaitMs(anim);
+  const delay = Math.max(0, +(anim?.delay || 0));
+  const dur = Math.max(200, +(anim?.dur ?? anim?.duration ?? 1200) || 1200);
+  if (danceIsInfinite(anim)) return delay + dur;
+  return danceWaitMs(anim);
+}
+
+export function danceAnimForRepeatCycle(anim) {
+  if (!anim) return { name: 'dance', dur: 1200, swingCount: 1 };
+  if (!danceIsInfinite(anim)) return anim;
+  return { ...anim, swingCount: 1 };
+}
+
 function ensureDanceWrap(el) {
   let wrap = el.querySelector('._dance_wrap');
   if (!wrap) {

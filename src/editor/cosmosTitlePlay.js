@@ -3,6 +3,8 @@
  * From js/10c-anim-engine.js _fireCosmosTitleAnimGroup.
  */
 
+import { slideGroupMembers } from './animOrder.js';
+
 let activeRun = null;
 
 export function isCosmosTitleAnim(name) {
@@ -206,6 +208,32 @@ export function fireCosmosTitleAnimGroup(entries, anim, opts = {}) {
   }, delay);
 
   return { waitMs: cosmosTitleWaitMs(anim), cancel };
+}
+
+function defaultCosmosDom(id) {
+  if (typeof document === 'undefined' || id == null) return null;
+  return document.querySelector(`.react-slide-stage .react-el[data-id="${String(id).replace(/"/g, '')}"]`);
+}
+
+/** Play cosmos title for an object — grouped members fly together. */
+export function fireCosmosTitleForEl(elData, slide, anim, opts = {}, queryDom = defaultCosmosDom) {
+  if (!elData || !anim) return { waitMs: 0, cancel: () => {} };
+  const members = slideGroupMembers(elData, slide);
+  const entries = members
+    .map((m) => {
+      const dom = queryDom(m.id);
+      return dom ? { el: dom, x: m.x, y: m.y, w: m.w, h: m.h } : null;
+    })
+    .filter(Boolean);
+  if (!entries.length) return { waitMs: 0, cancel: () => {} };
+  const ids = members.map((m) => String(m.id));
+  const onHide = opts.onHide;
+  return fireCosmosTitleAnimGroup(entries, anim, {
+    ...opts,
+    onHide: () => {
+      if (typeof onHide === 'function') onHide(ids);
+    },
+  });
 }
 
 /** Single-element helper. */

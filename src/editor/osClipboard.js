@@ -4,6 +4,8 @@
  * Cross-origin: navigator.clipboard text with magic prefix.
  */
 
+import { slimMediaEl } from './mediaStore.js';
+
 const KEY_EL = 'red-xclip-elements-v1';
 const KEY_SL = 'red-xclip-slides-v1';
 const KEY_META = 'red-xclip-meta-v1';
@@ -57,12 +59,15 @@ function byteLen(s) {
 }
 
 function slimImageFields(d) {
-  if (!d || typeof d !== 'object' || d.type !== 'image') return d;
-  const src = d.src || '';
-  if (src.startsWith('data:') || src.startsWith('blob:') || src.length > 8000) {
-    return { ...d, src: '', _srcOmitted: true };
+  if (!d || typeof d !== 'object') return d;
+  let next = d;
+  if (d.type === 'image') {
+    const src = d.src || '';
+    if (src.startsWith('data:') || src.startsWith('blob:') || src.length > 8000) {
+      next = { ...d, src: '', _srcOmitted: true };
+    }
   }
-  return d;
+  return slimMediaEl(next);
 }
 
 function slimEls(arr) {
@@ -118,6 +123,81 @@ export function clearElementClipboard() {
   try {
     localStorage.removeItem(KEY_EL);
   } catch (e) {}
+}
+
+/**
+ * Mark that the OS clipboard now holds plain/HTML text from an in-canvas selection
+ * (not a Slidy element payload). Clears the local element clip so paste doesn't
+ * resurrect a previous object copy.
+ */
+export function markPlainTextClipboard() {
+  clipSource = 'text';
+  appClipAt = Date.now();
+  clearElementClipboard();
+  try {
+    localStorage.setItem(KEY_META, JSON.stringify({ kind: 'text', t: appClipAt }));
+  } catch (e) {}
+}
+
+/**
+ * Non-collapsed text selection inside a slide canvas contentEditable (text / shape text).
+ * Works even when focus has moved to the format toolbar but the selection remains.
+ * @returns {{ text: string, html: string }|null}
+ */
+export function readCanvasTextSelection() {
+  const sel = typeof window !== 'undefined' ? window.getSelection?.() : null;
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+  let range;
+  try {
+    range = sel.getRangeAt(0);
+  } catch (e) {
+    return null;
+  }
+  const node = range.commonAncestorContainer;
+  const el = node?.nodeType === 1 ? node : node?.parentElement;
+  if (!el || typeof el.closest !== 'function') return null;
+  const editable = el.closest('[contenteditable="true"]');
+  if (!editable) return null;
+  if (
+    !editable.closest(
+      '.react-el, .react-slide-stage, .react-canvas-host, .react-canvas-viewport, .slide-canvas-host'
+    )
+  ) {
+    return null;
+  }
+  const text = String(sel.toString() || '');
+  if (!text) return null;
+  let html = '';
+  try {
+    const div = document.createElement('div');
+    div.appendChild(range.cloneContents());
+    html = div.innerHTML || '';
+  } catch (e) {}
+  return { text, html };
+}
+
+/** Write a canvas text selection to the OS clipboard. */
+export async function writePlainTextClipboard(text, html) {
+  const plain = String(text || '');
+  if (!plain) return false;
+  markPlainTextClipboard();
+  try {
+    if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+      const parts = {
+        'text/plain': new Blob([plain], { type: 'text/plain' }),
+      };
+      if (html) parts['text/html'] = new Blob([String(html)], { type: 'text/html' });
+      await navigator.clipboard.write([new ClipboardItem(parts)]);
+      return true;
+    }
+  } catch (e) {}
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(plain);
+      return true;
+    }
+  } catch (e) {}
+  return false;
 }
 
 function unpackText(text) {

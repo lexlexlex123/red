@@ -34,7 +34,7 @@ export default function InsertPanel() {
     [ru ? 'Химия' : 'Chem', () => void editorApi.addChemGraph('H2O')],
     [ru ? 'Логика' : 'Logic', () => void editorApi.addLogicGraph('A \\land B')],
     [ru ? 'QR-код' : 'QR code', () => void editorApi.addQrCode()],
-    [ru ? 'LEGO' : 'LEGO', () => void editorApi.addLego()],
+    [ru ? 'LEGO' : 'LEGO', () => editorApi.openLegoPicker()],
     [ru ? 'Оглавление' : 'TOC', () => editorApi.fillToc()],
   ];
 

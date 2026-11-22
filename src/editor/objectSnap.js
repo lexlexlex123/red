@@ -138,5 +138,6 @@ export function snapBox(box, others, opts) {
     });
   }
 
-  return { x: Math.round(x), y: Math.round(y), guides };
+  const q = (n) => Math.round(n * 100) / 100;
+  return { x: q(x), y: q(y), guides };
 }

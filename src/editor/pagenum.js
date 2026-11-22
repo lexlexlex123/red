@@ -2,6 +2,11 @@
 
 import { DEFAULT_CANVAS_W, DEFAULT_CANVAS_H } from './canvasDims.js';
 
+/** Palette 15 — first hue, mid tint. */
+export const PN_COLOR_SCHEME = { col: 0, row: 4 };
+/** Palette 89 — gray column, paper / white on light themes. */
+export const PN_TEXT_SCHEME = { col: 7, row: 8 };
+
 export function pnDefaults() {
   return {
     enabled: false,
@@ -9,12 +14,27 @@ export function pnDefaults() {
     position: 'br',
     customXY: null,
     color: '#3b82f6',
+    colorScheme: { ...PN_COLOR_SCHEME },
     textColor: '#ffffff',
+    textColorScheme: { ...PN_TEXT_SCHEME },
     fontSize: 14,
     opacity: 1,
     showTotal: false,
-    customColor: true,
+    customColor: false,
   };
+}
+
+/** Fill missing palette refs so factory hex still shows as 15 / 89. */
+export function pnNormalize(s) {
+  const next = { ...pnDefaults(), ...(s || {}) };
+  const hex = (v) => String(v || '').toLowerCase();
+  if (!next.colorScheme && (!next.color || hex(next.color) === '#3b82f6')) {
+    next.colorScheme = { ...PN_COLOR_SCHEME };
+  }
+  if (!next.textColorScheme && (!next.textColor || hex(next.textColor) === '#ffffff')) {
+    next.textColorScheme = { ...PN_TEXT_SCHEME };
+  }
+  return next;
 }
 
 export function pnSize(fontSize) {

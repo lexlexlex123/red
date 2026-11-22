@@ -1,6 +1,6 @@
 /** PDF export: JPEG pages → PDF-1.4 (no external libs). */
 
-import { captureStageCanvas } from './exportPng.js';
+import { captureStageCanvas, slideNeedsHtmlFrameSnapshot } from './exportPng.js';
 import { DEFAULT_CANVAS_W, DEFAULT_CANVAS_H } from '../editor/canvasDims.js';
 import { waitFrame, downloadBlob } from './exportDom.js';
 
@@ -35,12 +35,24 @@ export async function captureSlidesAsJpegs(opts = {}) {
   const H = Math.max(1, Math.round(canvasH || DEFAULT_CANVAS_H));
   const prev = cur | 0;
   const jpegs = [];
+  // Fonts once for the whole deck — not 600ms before every page.
+  try {
+    if (document.fonts?.ready) {
+      await Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 600))]);
+    }
+  } catch (e) {}
   try {
     for (let i = 0; i < slides.length; i++) {
+      const slide = slides[i];
       setCur(i);
       await waitFrame();
       await waitFrame();
-      const cnv = await captureStageCanvas(W, H);
+      // Only give HTML frames extra settle time on pages that actually have them.
+      if (slideNeedsHtmlFrameSnapshot(slide)) {
+        await waitFrame();
+        await waitFrame();
+      }
+      const cnv = await captureStageCanvas(W, H, { slide, skipFonts: true });
       jpegs.push(await canvasToJpegBytes(cnv, quality != null ? quality : 0.92));
     }
   } finally {
@@ -144,5 +156,66 @@ export async function exportAllSlidesPdf(opts = {}) {
   const { jpegs, W, H } = await captureSlidesAsJpegs(opts);
   const pdf = buildPdfFromJpegs(jpegs, W, H);
   downloadBlob(new Blob([pdf], { type: 'application/pdf' }), (title || 'slides') + '.pdf');
+  return jpegs.length;
+}
+
+/**
+ * Print all slides — via a generated PDF loaded into a hidden iframe, not window.print()
+ * on the app page itself. window.print() would print the whole editor UI (ribbons, panels,
+ * everything currently on screen); a browser's built-in PDF viewer inside the iframe prints
+ * only the PDF's own pages. Reusing exportAllSlidesPdf's pipeline also gets correct page
+ * orientation for free — each page is built at exactly canvasW × canvasH, so a 16:9 deck
+ * naturally produces landscape-shaped pages and a 9:16 deck naturally produces
+ * portrait-shaped ones, without a manual @page CSS rule to keep in sync with the deck's
+ * own aspect ratio.
+ * @param {{ slides, canvasW, canvasH, setCur, cur, quality? }} opts
+ * @returns {Promise<number>} number of slides printed
+ */
+export async function printAllSlides(opts = {}) {
+  const { jpegs, W, H } = await captureSlidesAsJpegs(opts);
+  const pdf = buildPdfFromJpegs(jpegs, W, H);
+  const blob = new Blob([pdf], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const iframe = document.createElement('iframe');
+  iframe.setAttribute('aria-hidden', 'true');
+  iframe.style.position = 'fixed';
+  iframe.style.right = '0';
+  iframe.style.bottom = '0';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = '0';
+  iframe.src = url;
+  document.body.appendChild(iframe);
+  await new Promise((resolve, reject) => {
+    iframe.onload = resolve;
+    iframe.onerror = () => reject(new Error('PDF failed to load for printing'));
+  });
+  // Give the browser's built-in PDF viewer a couple of frames to actually paint the first
+  // page before invoking print — printing immediately on 'load' can race the viewer's own
+  // render and either print a blank page or silently no-op in some browsers.
+  await waitFrame();
+  await waitFrame();
+  const cleanup = () => {
+    try {
+      document.body.removeChild(iframe);
+    } catch (e) {
+      /* already removed */
+    }
+    URL.revokeObjectURL(url);
+  };
+  try {
+    iframe.contentWindow.focus();
+    iframe.contentWindow.print();
+  } catch (e) {
+    // Some browsers refuse to script a cross-origin-looking blob PDF viewer — fall back to
+    // opening it in a new tab so the person can still print it themselves from there.
+    cleanup();
+    window.open(url, '_blank');
+    return jpegs.length;
+  }
+  // The print dialog is modal in most browsers, so by the time control returns here the
+  // person has already finished with it (printed or cancelled) — but keep a generous
+  // fallback timer in case a browser returns control earlier than that.
+  setTimeout(cleanup, 60000);
   return jpegs.length;
 }

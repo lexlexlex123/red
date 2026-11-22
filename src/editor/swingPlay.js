@@ -33,6 +33,20 @@ export function swingWaitMs(anim) {
   return delay + dur * loops;
 }
 
+export function swingWaitMsForPlayback(anim, opts = {}) {
+  if (!opts.inRepeat) return swingWaitMs(anim);
+  const delay = Math.max(0, +(anim?.delay || 0));
+  const dur = Math.max(200, +(anim?.dur ?? anim?.duration ?? 1200) || 1200);
+  if (swingIsInfinite(anim)) return delay + dur;
+  return swingWaitMs(anim);
+}
+
+export function swingAnimForRepeatCycle(anim) {
+  if (!anim) return { name: 'swing', dur: 1200, swingCount: 1 };
+  if (!swingIsInfinite(anim)) return anim;
+  return { ...anim, swingCount: 1 };
+}
+
 /** Pivot as CSS transform-origin (percent). Default: top-center-ish (0, h/2 → 50% 100%? legacy: ox=0 → 50%, oy=h/2 → 100%). */
 export function swingOriginCss(elData, anim) {
   const w = Math.max(1, +(elData?.w || 100));

@@ -53,9 +53,14 @@ export default function GSlider({
   label,
   min = 0,
   max = 1,
+  /** Optional higher clamp for typed values; drag/scrub still uses `max`. */
+  inputMax,
   step = 0.05,
   value = 0,
   onChange,
+  onScrubStart,
+  onScrubChange,
+  onScrubEnd,
   hidden = false,
   row2 = false,
   className = '',
@@ -69,6 +74,8 @@ export default function GSlider({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [scrubbing, setScrubbing] = useState(false);
+  const scrubFrameRef = useRef(0);
+  const pendingScrubValueRef = useRef(null);
 
   useEffect(() => {
     const el = outerRef.current;
@@ -99,7 +106,31 @@ export default function GSlider({
     if (disabled) return;
     const n = parseFloat(String(draft).replace(',', '.'));
     if (!Number.isFinite(n)) return;
-    onChange?.(Math.max(+min, Math.min(+max, n)));
+    const hi =
+      inputMax != null && Number.isFinite(+inputMax) ? Math.max(+max, +inputMax) : +max;
+    onChange?.(Math.max(+min, Math.min(hi, n)));
+  }
+
+  function flushScrubValue() {
+    if (scrubFrameRef.current) {
+      cancelAnimationFrame(scrubFrameRef.current);
+      scrubFrameRef.current = 0;
+    }
+    if (pendingScrubValueRef.current != null) {
+      onScrubChange?.(pendingScrubValueRef.current);
+      pendingScrubValueRef.current = null;
+    }
+  }
+
+  function queueScrubValue(next) {
+    pendingScrubValueRef.current = next;
+    if (scrubFrameRef.current) return;
+    scrubFrameRef.current = requestAnimationFrame(() => {
+      scrubFrameRef.current = 0;
+      const pending = pendingScrubValueRef.current;
+      pendingScrubValueRef.current = null;
+      if (pending != null) onScrubChange?.(pending);
+    });
   }
 
   function onTrackPointerDown(e) {
@@ -121,14 +152,23 @@ export default function GSlider({
     if (!d0.scrubbing && Math.abs(dx) > 4) {
       d0.scrubbing = true;
       setScrubbing(true);
+      if (onScrubChange) onScrubStart?.();
     }
-    if (d0.scrubbing) onChange?.(valueFromTrackX(e.clientX, outerRef.current, min, max, step));
+    if (d0.scrubbing) {
+      const next = valueFromTrackX(e.clientX, outerRef.current, min, max, step);
+      if (onScrubChange) queueScrubValue(next);
+      else onChange?.(next);
+    }
   }
 
   function endTrackDrag(e) {
     const d0 = dragRef.current;
     if (!d0 || e.pointerId !== d0.id) return;
     const wasScrub = d0.scrubbing;
+    if (wasScrub && onScrubChange) {
+      flushScrubValue();
+      onScrubEnd?.();
+    }
     dragRef.current = null;
     setScrubbing(false);
     try {
@@ -193,12 +233,13 @@ export default function GSlider({
           min={min}
           max={max}
           step={step}
-          value={value}
+          value={Math.max(+min, Math.min(+max, +value))}
           disabled={disabled}
           tabIndex={-1}
-          aria-label={label || 'slider'}
+          aria-label={typeof label === 'string' && label ? label : 'slider'}
           onChange={(e) => {
             if (disabled) return;
+            if (dragRef.current && onScrubChange) return;
             onChange?.(+e.target.value);
           }}
         />

@@ -7,6 +7,7 @@ import { DEFAULT_CANVAS_W, DEFAULT_CANVAS_H } from './canvasDims.js';
 
 export const DEFAULT_IMPORT_BASE = 'http://pyabc.ru/prezi/';
 const LS_KEY = 'slides_import_base';
+const LS_PATH_KEY = 'slides_import_rel';
 /** Absolute path so SPA routers / subfolder deploys still hit the PHP proxy. */
 function proxyPhpPath() {
   const base = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.BASE_URL) || '/';
@@ -14,13 +15,29 @@ function proxyPhpPath() {
   return `${root}prezi-proxy.php`;
 }
 
+/** pyabc.ru catalog only works over HTTP — HTTPS does not serve presentations. */
+function preferHttpPyabc(url) {
+  try {
+    const u = new URL(url);
+    const host = String(u.hostname || '').toLowerCase();
+    if (host === 'pyabc.ru' || host === 'www.pyabc.ru' || host === 'slides.pyabc.ru') {
+      u.protocol = 'http:';
+      let out = u.toString();
+      if (!out.endsWith('/')) out += '/';
+      return out;
+    }
+  } catch (e) {}
+  return url;
+}
+
 export function normBase(url) {
   let u = String(url || '').trim();
   if (!u) return DEFAULT_IMPORT_BASE;
   if (!/^https?:\/\//i.test(u)) u = `http://${u}`;
-  u = u.replace(/^https:\/\/(www\.)?pyabc\.ru\//i, 'http://pyabc.ru/');
+  // Keep the scheme the user set (HTTPS on Synology / NAS must not be forced to HTTP),
+  // except pyabc.ru which must stay on HTTP.
   if (!u.endsWith('/')) u += '/';
-  return u;
+  return preferHttpPyabc(u);
 }
 
 export function sanitizeCatalogBase(url) {
@@ -39,23 +56,27 @@ export function sanitizeCatalogBase(url) {
   return normBase(u);
 }
 
+/**
+ * Normalize a stored/typed catalog URL.
+ * Only light cleanup (scheme for pyabc, trailing slash, strip list.php).
+ * Do NOT collapse longer paths back to DEFAULT_IMPORT_BASE — that made «Изменить»
+ * look broken: the field snapped back to http://pyabc.ru/prezi/ after every edit.
+ */
 function fixStoredCatalogRoot(url) {
-  const u = sanitizeCatalogBase(url);
-  const def = normBase(DEFAULT_IMPORT_BASE);
-  if (u === def) return u;
-  try {
-    const uu = new URL(u);
-    const dd = new URL(def);
-    if (uu.origin === dd.origin && u.startsWith(def) && u.length > def.length) return def;
-  } catch (e) {}
-  return u;
+  return sanitizeCatalogBase(url);
 }
 
 export function getStoredImportBase() {
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return DEFAULT_IMPORT_BASE;
-    return fixStoredCatalogRoot(raw);
+    const fixed = fixStoredCatalogRoot(raw);
+    if (fixed !== raw) {
+      try {
+        localStorage.setItem(LS_KEY, fixed);
+      } catch (e) {}
+    }
+    return fixed;
   } catch (e) {
     return DEFAULT_IMPORT_BASE;
   }
@@ -67,6 +88,42 @@ export function setStoredImportBase(url) {
     localStorage.setItem(LS_KEY, base);
   } catch (e) {}
   return base;
+}
+
+/** Catalog-relative folder: `math/algebra/` or '' for the catalog root. */
+export function normalizeImportRelPath(path) {
+  const segs = String(path || '')
+    .replace(/\\/g, '/')
+    .split('/')
+    .filter((p) => p && p !== '.' && p !== '..');
+  return segs.length ? `${segs.join('/')}/` : '';
+}
+
+export function getStoredImportRelPath(base) {
+  try {
+    const raw = localStorage.getItem(LS_PATH_KEY);
+    if (!raw) return '';
+    const data = JSON.parse(raw);
+    if (!data || typeof data !== 'object') return '';
+    const storedBase = fixStoredCatalogRoot(sanitizeCatalogBase(data.base || ''));
+    const current = fixStoredCatalogRoot(sanitizeCatalogBase(base));
+    if (storedBase !== current) return '';
+    return normalizeImportRelPath(data.path);
+  } catch (e) {
+    return '';
+  }
+}
+
+export function setStoredImportRelPath(base, path) {
+  try {
+    localStorage.setItem(
+      LS_PATH_KEY,
+      JSON.stringify({
+        base: fixStoredCatalogRoot(sanitizeCatalogBase(base)),
+        path: normalizeImportRelPath(path),
+      })
+    );
+  } catch (e) {}
 }
 
 export function joinUrl(base, rel) {
@@ -89,7 +146,13 @@ export function prettyCatalogName(name) {
 
 export function needsProxyForBase(base) {
   try {
-    return location.protocol === 'https:' && /^http:\/\//i.test(normBase(base));
+    const b = normBase(base);
+    // Same origin (typical Synology: editor + prezi on one host) — talk directly.
+    try {
+      if (new URL(b).origin === location.origin) return false;
+    } catch (e) {}
+    // Only bridge mixed content: HTTPS page → HTTP catalog.
+    return location.protocol === 'https:' && /^http:\/\//i.test(b);
   } catch (e) {
     return false;
   }
@@ -117,7 +180,7 @@ export function getPhpUrl(base, pathRel = '') {
 export async function fetchCatalogText(url) {
   let res;
   try {
-    res = await fetch(url, { mode: 'cors', cache: 'no-cache' });
+    res = await fetch(url, { mode: 'cors', cache: 'no-cache', redirect: 'follow' });
   } catch (e) {
     const pageHttps = typeof location !== 'undefined' && location.protocol === 'https:';
     const targetHttp = /^http:\/\//i.test(url);
@@ -127,10 +190,19 @@ export async function fetchCatalogText(url) {
       );
     }
     throw new Error(
-      'Failed to fetch — скорее всего нет CORS на сервере. Залейте list.php и get.php в папку prezi/.'
+      'Failed to fetch — нет CORS или PHP не отвечает. На Synology: Web Station + PHP, файлы list.php и get.php в prezi/.'
     );
   }
-  if (!res.ok) throw new Error(`HTTP ${res.status} — ${url}`);
+  if (!res.ok) {
+    const loc = res.headers && res.headers.get ? res.headers.get('Location') : '';
+    const extra = loc ? ` → ${loc}` : '';
+    if (res.status === 301 || res.status === 302 || res.status === 307 || res.status === 308) {
+      throw new Error(
+        `HTTP ${res.status}${extra} — сервер перенаправляет каталог. Укажите итоговый https:// URL и нажмите «Изменить».`
+      );
+    }
+    throw new Error(`HTTP ${res.status} — ${url}`);
+  }
   return res.text();
 }
 
@@ -176,7 +248,17 @@ function parseDirListing(html, absUrl) {
       href = decodeURIComponent(href);
     } catch (e) {}
     const seg = href.split('/').filter(Boolean).pop() || '';
-    if (!seg || seg === 'index.json' || seg === 'list.php' || seg === 'get.php' || seen[seg]) continue;
+    if (
+      !seg ||
+      seg === 'index.json' ||
+      seg === 'list.php' ||
+      seg === 'get.php' ||
+      seg[0] === '.' ||
+      seg[0] === '@' ||
+      seg[0] === '#' ||
+      seen[seg]
+    )
+      continue;
     seen[seg] = 1;
     if (href.endsWith('/') || !/\./.test(seg)) {
       out.push({ type: 'folder', name: seg, id: seg });
@@ -222,8 +304,8 @@ export async function listCatalogDir(base, relPath = '') {
     htmlErr = e2;
   }
   const hint = needsProxyForBase(b)
-    ? 'На HTTPS нужен prezi-proxy.php в корне сайта (рядом с index.html).'
-    : 'Залейте list.php и get.php в папку prezi/.';
+    ? 'На HTTPS нужен prezi-proxy.php в корне сайта (рядом с index.html), либо укажите https:// URL каталога.'
+    : 'Залейте list.php и get.php в папку prezi/ (на Synology включите PHP в Web Station).';
   throw new Error(
     `Не удалось прочитать каталог.\n${hint}\n${
       (phpErr && phpErr.message) || (htmlErr && htmlErr.message) || 'пустой ответ'

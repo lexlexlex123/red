@@ -1,27 +1,36 @@
 import { create } from 'zustand';
+import { useSelectionStore } from './selectionStore.js';
 
 const PRES_DISPLAY_KEY = 'sf_pres_display';
 
 function loadPresDisplay() {
   try {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(PRES_DISPLAY_KEY) : null;
-    if (!raw) return { footer: true, sidenav: true, esc: true };
+    if (!raw) return { footer: true, sidenav: true, esc: true, brush: true, showScreen: '' };
     const o = JSON.parse(raw);
     return {
       footer: typeof o.footer === 'boolean' ? o.footer : true,
       sidenav: typeof o.sidenav === 'boolean' ? o.sidenav : true,
       esc: typeof o.esc === 'boolean' ? o.esc : true,
+      brush: typeof o.brush === 'boolean' ? o.brush : true,
+      showScreen: typeof o.showScreen === 'string' ? o.showScreen : '',
     };
   } catch (e) {
-    return { footer: true, sidenav: true, esc: true };
+    return { footer: true, sidenav: true, esc: true, brush: true, showScreen: '' };
   }
 }
 
-function savePresDisplay(footer, sidenav, esc) {
+function savePresDisplay(footer, sidenav, esc, showScreen, brush) {
   try {
     localStorage.setItem(
       PRES_DISPLAY_KEY,
-      JSON.stringify({ footer: !!footer, sidenav: !!sidenav, esc: !!esc })
+      JSON.stringify({
+        footer: !!footer,
+        sidenav: !!sidenav,
+        esc: !!esc,
+        brush: brush !== false,
+        showScreen: String(showScreen || ''),
+      })
     );
   } catch (e) {}
 }
@@ -49,6 +58,21 @@ function loadSnapStep() {
   return Number.isFinite(n) && n >= 1 && n <= 50 ? n : 20;
 }
 
+export const DEFAULT_TEXT_QUICK_SIZES = { h1: 40, h2: 36, h3: 32, h4: 20, p: 18 };
+
+function loadTextQuickSizes() {
+  const out = { ...DEFAULT_TEXT_QUICK_SIZES };
+  try {
+    const raw = lsGet('sf-text-quick-sizes', '');
+    const o = raw ? JSON.parse(raw) : {};
+    for (const k of Object.keys(out)) {
+      const n = Math.round(+o[k]);
+      if (Number.isFinite(n)) out[k] = Math.max(8, Math.min(200, n));
+    }
+  } catch (e) {}
+  return out;
+}
+
 /** Normalize extra-guide mode; old thirds/golden keys still map. */
 export function extraGuidesKind(mode) {
   if (mode === 'grid' || mode === 'thirds') return 'grid';
@@ -68,25 +92,43 @@ export const useUiStore = create((set, get) => ({
   layoutModalOpen: false,
   activeTab: 'home',
   panel: null,
-  /** Image gallery target: null | { kind:'insert' } | { kind:'slideBg' } | { kind:'flip', elId, side } */
+  /** Image gallery target: null | { kind:'insert' } | { kind:'slideBg' } | { kind:'flip', elId, side } | { kind:'shapeFill', elId } */
   imagePickMode: null,
+  /** Shape fill-image transform edit (move / rotate / resize inside the shape). */
+  shapeFillImgEditId: null,
   pendingRideConnId: null,
   toast: null,
   previewOpen: false,
   previewFrom: 0,
   componentUpdates: [],
-  themeMode: typeof localStorage !== 'undefined' ? localStorage.getItem('sf-theme') || 'dark' : 'dark',
+  themeMode: typeof localStorage !== 'undefined' ? localStorage.getItem('sf-theme') || 'light' : 'light',
   lang: typeof localStorage !== 'undefined' ? localStorage.getItem('sf-lang') || 'ru' : 'ru',
   snapEnabled: lsGet('sf-snap', '1') !== '0',
   snapStep: loadSnapStep(),
+  textQuickSizes: loadTextQuickSizes(),
   colorBarEnabled: lsGet('sf-color-bar', '1') !== '0',
   aiFabEnabled: lsGet('sf-ai-fab', '0') === '1',
   voiceLogEnabled: lsGet('sf-voice-log-btn', '0') === '1',
   fpsEnabled: lsGet('sf-fps', '0') === '1',
   canvasZoom: 1,
   curveEditMode: false,
+  curveNodeSel: [],
+  shapeNodeMode: false,
+  /** Edit/manage deck-wide custom guides (Design → Guides). */
+  guidesEditMode: false,
+  /**
+   * Live «Трансформация»: edit end-state of anim on canvas/props.
+   * { elId, ai } while capturing the «to» snapshot.
+   */
+  transformEditMode: null,
+  /** Show deck-wide guides on every slide (and use them for snap). Persisted. */
+  guidesVisible: lsGet('sf_guides_visible', '1') !== '0',
+  selGuideId: null,
+  hfxHoverId: null,
   extraGuidesMode: 'none', // 'none' | 'grid' | 'margin' (aliases: thirds→grid, golden→margin)
   linkModalOpen: false,
+  /** Inline link under caret while editing text/table: { href, hover, hostId, cellR, cellC } */
+  caretLink: null,
   historyModalOpen: false,
   formulaModalOpen: false,
   htmlFrameModalOpen: false,
@@ -109,6 +151,12 @@ export const useUiStore = create((set, get) => ({
   slideAnimPlaying: false,
   /** Pick canvas object as anim trigger: { elId, ai } */
   animTriggerPick: null,
+  /** Pick canvas object as audio trigger: { audioElId, slideIdx } */
+  mediaTriggerPick: null,
+  /** Pick canvas object as timer start trigger: { timerElId, slideIdx } */
+  timerTriggerPick: null,
+  /** Selected image-sort marker id (while imagesort applet is selected). */
+  imageSortMarkerId: null,
   animTlPxPerMs: 0.08,
   animTlDocked: false,
   animTlDockH: 176,
@@ -120,8 +168,14 @@ export const useUiStore = create((set, get) => ({
   presShowFooter: _presDisp.footer,
   presShowSideNav: _presDisp.sidenav,
   presShowEsc: _presDisp.esc,
+  presShowBrush: _presDisp.brush !== false,
+  presShowScreenKey: _presDisp.showScreen || '',
   ribbonCollapsed:
     typeof localStorage !== 'undefined' && localStorage.getItem('sf_ribbon_collapsed') === '1',
+  thumbsCollapsed:
+    typeof localStorage !== 'undefined' && localStorage.getItem('sf_thumbs_collapsed') === '1',
+  /** Mobile (≤900px): properties sheet open as overlay. */
+  mobilePropsOpen: false,
   findOpen: false,
   findQuery: '',
   findReplace: '',
@@ -132,14 +186,24 @@ export const useUiStore = create((set, get) => ({
   shapeReplaceId: null,
   /** When set, IconPicker applies the icon to this text element's list markers. */
   iconPickerForList: null,
+  /** Optional paragraph indices for list marker icon apply (null = all bullets). */
+  iconPickerListLines: null,
   /** When set, IconPicker replaces this icon element's iconId. */
   iconPickerForEl: null,
 
   /** Request canvas to enter inline edit for element id (text/shape). */
   inlineEditRequestId: null,
+  /** Clear existing text when entering edit (type-to-replace). */
+  inlineEditClear: false,
+  /** First character to insert after clear/focus. */
+  inlineEditSeed: null,
+  symbolsModalOpen: false,
 
   styleClipboard: null, // { type, patch }
   stylePaintMode: false,
+  /** Table border pencil: null | { color, width, erase } */
+  tableBorderPaint: null,
+  stylePipetteTargets: null,
   voiceListening: false,
   dictationOn: false,
   dictationMode: null,
@@ -162,8 +226,20 @@ export const useUiStore = create((set, get) => ({
       get().clearAnimTriggerPick();
       return true;
     }
+    if (s.mediaTriggerPick) {
+      get().clearMediaTriggerPick();
+      return true;
+    }
+    if (s.timerTriggerPick) {
+      get().clearTimerTriggerPick();
+      return true;
+    }
     if (s.cropModeElId) {
       get().setCropModeElId(null);
+      return true;
+    }
+    if (s.shapeFillImgEditId) {
+      get().setShapeFillImgEditId(null);
       return true;
     }
     if (s.autoPlacePreviewOpen) {
@@ -204,6 +280,10 @@ export const useUiStore = create((set, get) => ({
     }
     if (s.importModalOpen) {
       get().closeImportModal();
+      return true;
+    }
+    if (s.symbolsModalOpen) {
+      get().closeSymbolsModal();
       return true;
     }
     if (s.linkModalOpen) {
@@ -250,6 +330,14 @@ export const useUiStore = create((set, get) => ({
       get().setStylePaintMode(false);
       return true;
     }
+    if (s.tableBorderPaint) {
+      get().setTableBorderPaint(null);
+      return true;
+    }
+    if (s.stylePipetteTargets) {
+      get().setStylePipetteTargets(null);
+      return true;
+    }
     return false;
   },
   openThemeModal: () => set({ themeModalOpen: true }),
@@ -258,6 +346,7 @@ export const useUiStore = create((set, get) => ({
   closeLayoutModal: () => set({ layoutModalOpen: false }),
   openLinkModal: () => set({ linkModalOpen: true }),
   closeLinkModal: () => set({ linkModalOpen: false }),
+  setCaretLink: (caretLink) => set({ caretLink: caretLink || null }),
   openHistoryModal: () => set({ historyModalOpen: true }),
   closeHistoryModal: () => set({ historyModalOpen: false }),
   openFormulaModal: () => set({ formulaModalOpen: true }),
@@ -305,8 +394,18 @@ export const useUiStore = create((set, get) => ({
         : null,
     })),
   setSlideAnimPlaying: (slideAnimPlaying) => set({ slideAnimPlaying: !!slideAnimPlaying }),
-  setAnimTriggerPick: (animTriggerPick) => set({ animTriggerPick: animTriggerPick || null }),
+  setAnimTriggerPick: (animTriggerPick) =>
+    set({ animTriggerPick: animTriggerPick || null, mediaTriggerPick: null, timerTriggerPick: null }),
   clearAnimTriggerPick: () => set({ animTriggerPick: null }),
+  setMediaTriggerPick: (mediaTriggerPick) =>
+    set({ mediaTriggerPick: mediaTriggerPick || null, animTriggerPick: null, timerTriggerPick: null }),
+  clearMediaTriggerPick: () => set({ mediaTriggerPick: null }),
+  setTimerTriggerPick: (timerTriggerPick) =>
+    set({ timerTriggerPick: timerTriggerPick || null, animTriggerPick: null, mediaTriggerPick: null }),
+  clearTimerTriggerPick: () => set({ timerTriggerPick: null }),
+  setImageSortMarkerId: (imageSortMarkerId) =>
+    set({ imageSortMarkerId: imageSortMarkerId != null ? String(imageSortMarkerId) : null }),
+  clearImageSortMarkerId: () => set({ imageSortMarkerId: null }),
   setAnimTlPxPerMs: (v) =>
     set({ animTlPxPerMs: Math.max(0.025, Math.min(0.35, Number(v) || 0.08)) }),
   zoomAnimTl: (dir) =>
@@ -325,20 +424,32 @@ export const useUiStore = create((set, get) => ({
   togglePresShowFooter: () =>
     set((s) => {
       const presShowFooter = !s.presShowFooter;
-      savePresDisplay(presShowFooter, s.presShowSideNav, s.presShowEsc);
+      savePresDisplay(presShowFooter, s.presShowSideNav, s.presShowEsc, s.presShowScreenKey, s.presShowBrush);
       return { presShowFooter };
     }),
   togglePresShowSideNav: () =>
     set((s) => {
       const presShowSideNav = !s.presShowSideNav;
-      savePresDisplay(s.presShowFooter, presShowSideNav, s.presShowEsc);
+      savePresDisplay(s.presShowFooter, presShowSideNav, s.presShowEsc, s.presShowScreenKey, s.presShowBrush);
       return { presShowSideNav };
     }),
   togglePresShowEsc: () =>
     set((s) => {
       const presShowEsc = !s.presShowEsc;
-      savePresDisplay(s.presShowFooter, s.presShowSideNav, presShowEsc);
+      savePresDisplay(s.presShowFooter, s.presShowSideNav, presShowEsc, s.presShowScreenKey, s.presShowBrush);
       return { presShowEsc };
+    }),
+  togglePresShowBrush: () =>
+    set((s) => {
+      const presShowBrush = !s.presShowBrush;
+      savePresDisplay(s.presShowFooter, s.presShowSideNav, s.presShowEsc, s.presShowScreenKey, presShowBrush);
+      return { presShowBrush };
+    }),
+  setPresShowScreenKey: (key) =>
+    set((s) => {
+      const presShowScreenKey = String(key || '');
+      savePresDisplay(s.presShowFooter, s.presShowSideNav, s.presShowEsc, presShowScreenKey, s.presShowBrush);
+      return { presShowScreenKey };
     }),
   toggleRibbonCollapsed: () =>
     set((s) => {
@@ -348,7 +459,16 @@ export const useUiStore = create((set, get) => ({
       } catch (e) {}
       return { ribbonCollapsed };
     }),
+  toggleThumbsCollapsed: () =>
+    set((s) => {
+      const thumbsCollapsed = !s.thumbsCollapsed;
+      try {
+        localStorage.setItem('sf_thumbs_collapsed', thumbsCollapsed ? '1' : '0');
+      } catch (e) {}
+      return { thumbsCollapsed };
+    }),
   setCropModeElId: (cropModeElId) => set({ cropModeElId: cropModeElId || null }),
+  setShapeFillImgEditId: (id) => set({ shapeFillImgEditId: id ? String(id) : null }),
   openFind: (opts = {}) =>
     set((s) => ({
       findOpen: true,
@@ -359,10 +479,28 @@ export const useUiStore = create((set, get) => ({
   setFindQuery: (findQuery) => set({ findQuery: String(findQuery || ''), findHit: -1 }),
   setFindReplace: (findReplace) => set({ findReplace: String(findReplace || '') }),
   setFindHit: (findHit) => set({ findHit: findHit | 0 }),
-  requestInlineEdit: (id) => set({ inlineEditRequestId: id || null }),
+  requestInlineEdit: (id, opts = {}) =>
+    set({
+      inlineEditRequestId: id || null,
+      inlineEditClear: !!opts.clear,
+      inlineEditSeed: opts.seed != null && opts.seed !== '' ? String(opts.seed) : null,
+    }),
+  /** Only drops the request id — clear/seed stay until the editor consumes them. */
   clearInlineEditRequest: () => set({ inlineEditRequestId: null }),
+  clearInlineEditSeed: () => set({ inlineEditSeed: null }),
+  consumeInlineEditFlags: () => set({ inlineEditClear: false, inlineEditSeed: null }),
+  openSymbolsModal: () => set({ symbolsModalOpen: true }),
+  closeSymbolsModal: () => {
+    set({ symbolsModalOpen: false });
+    // Restore text caret after any close path (X / outside / Esc / closeTopOverlay).
+    void import('../editor/editorApi').then(({ editorApi }) => {
+      editorApi.restoreSymbolsCaret?.();
+    });
+  },
   setStyleClipboard: (styleClipboard) => set({ styleClipboard: styleClipboard || null }),
   setStylePaintMode: (stylePaintMode) => set({ stylePaintMode: !!stylePaintMode }),
+  setTableBorderPaint: (tableBorderPaint) => set({ tableBorderPaint: tableBorderPaint || null }),
+  setStylePipetteTargets: (stylePipetteTargets) => set({ stylePipetteTargets: stylePipetteTargets || null }),
   setVoiceListening: (voiceListening) => set({ voiceListening: !!voiceListening }),
   setDictationOn: (dictationOn, dictationMode = null) =>
     set({ dictationOn: !!dictationOn, dictationMode: dictationOn ? dictationMode || 'text' : null }),
@@ -372,17 +510,32 @@ export const useUiStore = create((set, get) => ({
       panel,
       shapeReplaceId: panel ? s.shapeReplaceId : null,
       iconPickerForList: panel === 'icons' ? s.iconPickerForList : null,
+      iconPickerListLines: panel === 'icons' ? s.iconPickerListLines : null,
       iconPickerForEl: panel === 'icons' ? s.iconPickerForEl : null,
       imagePickMode: panel === 'images' ? s.imagePickMode : null,
     })),
   setImagePickMode: (imagePickMode) => set({ imagePickMode: imagePickMode || null }),
   setIconPickerForList: (id) => set({ iconPickerForList: id || null }),
+  setIconPickerListLines: (lines) =>
+    set({
+      iconPickerListLines: Array.isArray(lines) && lines.length ? lines.map((i) => +i) : null,
+    }),
   setIconPickerForEl: (id) => set({ iconPickerForEl: id || null }),
   setPendingRideConnId: (pendingRideConnId) => set({ pendingRideConnId: pendingRideConnId || null }),
   showToast: (msg, type = '') => set({ toast: { msg, type, id: Date.now() } }),
   clearToast: () => set({ toast: null }),
   openPreview: (from = 0) => set({ previewOpen: true, previewFrom: from | 0 }),
-  closePreview: () => set({ previewOpen: false }),
+  closePreview: () => {
+    const tab = get().activeTab;
+    // After show: drop stale selection so the right panel shows slide props
+    // (selId from another slide left ElementPropsPanel empty).
+    useSelectionStore.getState().clearSelection();
+    set({
+      previewOpen: false,
+      // Anim/objects tabs hide plain slide props — return to home after show.
+      activeTab: tab === 'anim' || tab === 'objects' ? 'home' : tab,
+    });
+  },
   setComponentUpdates: (componentUpdates) => set({ componentUpdates }),
   setThemeMode: (themeMode) => {
     try {
@@ -408,10 +561,19 @@ export const useUiStore = create((set, get) => ({
     lsSet('sf-snap-step', String(snapStep));
     set({ snapStep });
   },
+  setTextQuickSize: (id, n) => {
+    if (!Object.prototype.hasOwnProperty.call(DEFAULT_TEXT_QUICK_SIZES, id)) return;
+    const v = Math.max(8, Math.min(200, Math.round(+n || DEFAULT_TEXT_QUICK_SIZES[id])));
+    const textQuickSizes = { ...get().textQuickSizes, [id]: v };
+    lsSet('sf-text-quick-sizes', JSON.stringify(textQuickSizes));
+    set({ textQuickSizes });
+  },
   setColorBarEnabled: (on) => {
     lsSet('sf-color-bar', on ? '1' : '0');
     set({ colorBarEnabled: !!on });
   },
+  setMobilePropsOpen: (on) => set({ mobilePropsOpen: !!on }),
+  toggleMobileProps: () => set((s) => ({ mobilePropsOpen: !s.mobilePropsOpen })),
   setAiFabEnabled: (on) => {
     lsSet('sf-ai-fab', on ? '1' : '0');
     set({ aiFabEnabled: !!on });
@@ -437,5 +599,47 @@ export const useUiStore = create((set, get) => ({
     set({ canvasZoom: Math.max(0.25, Math.min(20, n)) });
   },
   resetCanvasZoom: () => set({ canvasZoom: 1 }),
-  setCurveEditMode: (on) => set({ curveEditMode: !!on }),
+  setCurveEditMode: (on) =>
+    set((s) => ({ curveEditMode: !!on, curveNodeSel: on ? s.curveNodeSel : [] })),
+  setCurveNodeSel: (ids) => set({ curveNodeSel: Array.isArray(ids) ? ids.map((n) => +n) : [] }),
+  setShapeNodeMode: (on) =>
+    set((s) => ({ shapeNodeMode: !!on, shapeFillImgEditId: on ? null : s.shapeFillImgEditId })),
+  setGuidesEditMode: (on) => {
+    // Do not clear object selection — only switch the right-hand props panel.
+    // Closing the panel leaves deck guides visible (unless guidesVisible is off).
+    if (on) {
+      set({
+        guidesEditMode: true,
+        shapeNodeMode: false,
+        curveEditMode: false,
+        curveNodeSel: [],
+        transformEditMode: null,
+      });
+    } else {
+      set({ guidesEditMode: false, selGuideId: null });
+    }
+  },
+  setTransformEditMode: (mode) => {
+    if (mode && mode.elId != null && mode.ai != null) {
+      set({
+        transformEditMode: { elId: String(mode.elId), ai: +mode.ai },
+        guidesEditMode: false,
+        selGuideId: null,
+      });
+    } else {
+      set({ transformEditMode: null });
+    }
+  },
+  setGuidesVisible: (on) => {
+    const guidesVisible = !!on;
+    lsSet('sf_guides_visible', guidesVisible ? '1' : '0');
+    set({ guidesVisible });
+  },
+  toggleGuidesVisible: () => {
+    const guidesVisible = !get().guidesVisible;
+    lsSet('sf_guides_visible', guidesVisible ? '1' : '0');
+    set({ guidesVisible });
+  },
+  setSelGuideId: (id) => set({ selGuideId: id != null ? String(id) : null }),
+  setHfxHoverId: (id) => set({ hfxHoverId: id || null }),
 }));

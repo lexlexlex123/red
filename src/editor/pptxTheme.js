@@ -260,24 +260,48 @@ export function pptxDefaultTextColor(bgHex,theme){
   }
   return t.tx1||t.dk1||'#000000';
 }
+/** Direct child only — do not pick `<a:noFill>` from text outlines or effects. */
+export function pptxDirectChild(parent, localName){
+  if(!parent?.childNodes) return null;
+  for(const n of parent.childNodes){
+    if(n.localName===localName) return n;
+  }
+  return null;
+}
+
+/** OOXML alpha is 0..100000 (or already 0..1). */
+export function pptxAlphaFromClr(colorParent){
+  if(!colorParent) return 1;
+  const el=colorParent.getElementsByTagNameNS(PPTX_NS_A,'alpha')[0];
+  if(!el) return 1;
+  const v=+el.getAttribute('val');
+  if(!Number.isFinite(v)) return 1;
+  if(v<=1) return Math.max(0,v);
+  return Math.max(0,Math.min(1,v/100000));
+}
+
 export function pptxSpStyle(sp,theme){
   const spPr=sp.getElementsByTagNameNS(NS_P,'spPr')[0]
     ||sp.getElementsByTagNameNS(PPTX_NS_A,'spPr')[0];
   if(!spPr) return {};
   let fill='',fillOp=1;
-  if(spPr.getElementsByTagNameNS(PPTX_NS_A,'noFill')[0]) fillOp=0;
+  if(pptxDirectChild(spPr,'noFill')) fillOp=0;
   else{
-    const sf=spPr.getElementsByTagNameNS(PPTX_NS_A,'solidFill')[0];
-    if(sf) fill=pptxColorFromSolidFill(sf,theme);
+    const sf=pptxDirectChild(spPr,'solidFill');
+    if(sf){
+      fill=pptxColorFromSolidFill(sf,theme);
+      const a=pptxAlphaFromClr(sf);
+      if(fill&&a<1) fillOp=a;
+    }
   }
   let stroke='',sw=0;
-  const ln=spPr.getElementsByTagNameNS(PPTX_NS_A,'ln')[0];
+  const ln=pptxDirectChild(spPr,'ln');
   if(ln){
     const lw=+(ln.getAttribute('w')||0);
     if(lw>0) sw=Math.max(1,Math.round(lw/12700));
-    const lnSf=ln.getElementsByTagNameNS(PPTX_NS_A,'solidFill')[0];
+    const lnSf=pptxDirectChild(ln,'solidFill');
     if(lnSf) stroke=pptxColorFromSolidFill(lnSf,theme);
-    if(ln.getElementsByTagNameNS(PPTX_NS_A,'noFill')[0]) sw=0;
+    if(pptxDirectChild(ln,'noFill')) sw=0;
   }
   return {fill,fillOp,stroke,sw};
 }

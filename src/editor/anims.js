@@ -29,6 +29,7 @@ export const ANIM_CATS = [
       { name: 'recolor', labelRu: 'Цвет', labelEn: 'Recolor', icon: '🎨' },
       { name: 'rotate', labelRu: 'Вращение', labelEn: 'Rotate', icon: '🔁' },
       { name: 'mirror', labelRu: 'Зеркало', labelEn: 'Mirror', icon: '⇆' },
+      { name: 'uncrop', labelRu: 'Не обрезать', labelEn: 'Uncrop', icon: '⛶', imageOnly: true },
     ],
   },
   {
@@ -63,6 +64,7 @@ export const ANIM_CATS = [
       { name: 'camera', labelRu: 'Камера', labelEn: 'Camera', icon: '📷' },
       { name: 'particles', labelRu: 'Частицы', labelEn: 'Particles', icon: '✨' },
       { name: 'typewriter', labelRu: 'Смена текста', labelEn: 'Typewriter', icon: '⌨' },
+      { name: 'transform', labelRu: 'Трансформация', labelEn: 'Transform', icon: '⟡' },
       { name: 'langFade', labelRu: 'Перевод', labelEn: 'Translate fade', icon: '🌐' },
       { name: 'captionSlide', labelRu: 'Титр в сторону', labelEn: 'Caption slide', icon: '📰' },
       { name: 'cosmosTitle', labelRu: 'Титр в космос', labelEn: 'Cosmos title', icon: '🛰' },
@@ -136,19 +138,24 @@ export function animDuration(a, fallback = 600) {
 
 /** Defaults when adding an animation from the panel. */
 export function defaultAnimFields(name) {
-  const base = { name, dur: 600, delay: 0, trigger: 'auto' };
+  const base = { name, dur: 600, delay: 0, trigger: 'auto', easing: 'linear' };
   if (name === 'dance') return { ...base, dur: 1200, swingCount: 1 };
   if (name === 'swing') return { ...base, dur: 1200, swingCount: 1, swingOx: 0, swingOy: null };
   if (name === 'float') return { ...base, dur: 5000, swingCount: 10 };
   if (name === 'pulse' || name === 'shake' || name === 'flash') return { ...base, dur: 600, swingCount: 1 };
   if (name === 'moveTo') return { ...base, dur: 800, tx: 100, ty: 0 };
+  if (name === 'pathTo') {
+    return { ...base, dur: 1000, tx: 180, ty: 0, pathPts: [{ x: 90, y: -70 }, { x: 180, y: 0 }] };
+  }
   if (name === 'orbitTo') {
-    return { ...base, dur: 1200, orbitR: 120, orbitDir: 'cw', orbitDeg: 360, orbitCx: 0, orbitCy: -120 };
+    return { ...base, dur: 1200, orbitR: 120, orbitDir: 'cw', orbitDeg: 270, orbitCx: 0, orbitCy: -120 };
   }
   if (name === 'rotate') return { ...base, dur: 800, rotateDir: 'cw', rotateDeg: 360 };
   if (name === 'mirror') return { ...base, dur: 600, mirrorAxis: 'h' };
   if (name === 'recolor') return { ...base, dur: 600, recolorColor: '#000000', recolorInvert: false };
+  if (name === 'uncrop') return { ...base, dur: 400 };
   if (name === 'typewriter') return { ...base, dur: 600, charDelay: 40, fromHtml: '', toHtml: '' };
+  if (name === 'transform') return { ...base, dur: 800, from: null, to: null };
   if (name === 'langFade') {
     return { ...base, dur: 800, fromHtml: '', toHtml: '', fromLang: '', toLang: '' };
   }
@@ -197,10 +204,28 @@ export function animCssClass(name) {
     swing: 'el-anim-swing',
     float: 'el-anim-float',
   };
-  return map[name] || 'el-anim-fadein';
+  // Do not fall back to fadeIn — transform / typewriter / etc. are not CSS entrance anims.
+  // A missing map entry used to make transform look like an extra "appear" animation.
+  return map[name] || '';
 }
 
-function stepFromAnim(el, a, ai) {
+/**
+ * Inside Repeat, later siblings/loops get forceAuto so they don't wait for a click.
+ * Do NOT rewrite withPrev → auto: that would serialize moves that should start together.
+ * At a cycle boundary, withPrev has nothing safe to join (would attach to the previous
+ * loop), so fall back to auto.
+ */
+function applyRepeatForceTrigger(step, row) {
+  if (!step || !row?.forceAuto) return;
+  if (step.trigger === 'withPrev') {
+    if (row.repeatCycleStart) step.trigger = 'auto';
+    return;
+  }
+  step.trigger = 'auto';
+}
+
+/** Build a playback step from an element anim (click advance, object trigger, applet). */
+export function stepFromAnim(el, a, ai) {
   if (!el || !a || !a.name) return null;
   const step = {
     kind: 'el',
@@ -211,8 +236,14 @@ function stepFromAnim(el, a, ai) {
     delay: a.delay != null ? +a.delay : 0,
     trigger: a.trigger || 'click',
     rot: el.rot || 0,
+    easing: a.easing || 'linear',
   };
   if (a.name === 'moveTo') {
+    step.tx = a.tx || 0;
+    step.ty = a.ty || 0;
+  }
+  if (a.name === 'pathTo' || (a.pathPts && a.pathPts.length)) {
+    step.pathPts = a.pathPts;
     step.tx = a.tx || 0;
     step.ty = a.ty || 0;
   }
@@ -239,6 +270,10 @@ function stepFromAnim(el, a, ai) {
     step.fromHtml = a.fromHtml || '';
     step.toHtml = a.toHtml || '';
   }
+  if (a.name === 'transform') {
+    step.from = a.from || null;
+    step.to = a.to || null;
+  }
   if (a.name === 'langFade') {
     step.fromHtml = a.fromHtml || '';
     step.toHtml = a.toHtml || '';
@@ -260,7 +295,10 @@ function stepFromAnim(el, a, ai) {
   }
   if (a.name === 'inkDraw') {
     step.swingCount = a.swingCount != null ? +a.swingCount : 1;
-    step.inkParallel = a.inkParallel != null ? +a.inkParallel : 1;
+    // 'all' is a valid, deliberate non-numeric value (draw every line at once) — coercing
+    // it with a blind `+a.inkParallel` turns it into NaN before it ever reaches
+    // parallelCount(), silently falling back to "one at a time" regardless of the checkbox.
+    step.inkParallel = a.inkParallel === 'all' ? 'all' : a.inkParallel != null ? +a.inkParallel : 1;
   }
   if (a.name === 'float') {
     step.swingCount = a.swingCount != null ? +a.swingCount : 10;
@@ -286,7 +324,7 @@ export function collectSlideAnimSteps(slide) {
 
 /**
  * Full slideshow steps: cameras interleaved with anim bundles via animOrder.
- * Fallback: all cameras first, then el bundles (legacy React behaviour).
+ * Fallback: prepend cameras that are missing from older animation orders.
  */
 export function collectSlidePlaybackSteps(slide) {
   const ordered = expandAnimOrderFlat(slide, { includeCameras: true });
@@ -299,64 +337,91 @@ export function collectSlidePlaybackSteps(slide) {
       cam,
       dur: cam.duration != null ? +cam.duration : 1200,
       delay: cam.delay != null ? +cam.delay : 0,
+      trigger: cam.trigger || 'auto',
     }));
-    return [...cams, ...collectSlideAnimSteps(slide)];
+    const flat = [...cams, ...flattenOrderedAnimRows(slide, { includeCameras: false })];
+    return bundlePlaybackSteps(flat);
   }
 
+  const prependCams = [];
   // If cameras exist but none appear in order (older decks), prepend them once.
-  const steps = [];
   if (!hasCamInOrder && (slide?.cameras || []).length) {
     (slide.cameras || []).forEach((cam) => {
       if (!cam) return;
-      steps.push({
+      prependCams.push({
         kind: 'camera',
         cam,
         dur: cam.duration != null ? +cam.duration : 1200,
         delay: cam.delay != null ? +cam.delay : 0,
+        trigger: cam.trigger || 'auto',
       });
     });
   }
 
-  const flat = [];
+  const flat = [...prependCams];
   ordered.forEach((row) => {
     if (row.kind === 'camera') {
-      flat.push({ kind: 'camera', cam: row.cam, dur: row.dur, delay: row.delay });
+      flat.push({
+        kind: 'camera',
+        cam: row.cam,
+        dur: row.dur,
+        delay: row.delay,
+        trigger: row.cam?.trigger || 'auto',
+      });
       return;
     }
     if (row.kind === 'pause') {
-      flat.push({
+      const pauseStep = {
         kind: 'pause',
         elId: `__pause_${row.pauseId || 'x'}`,
         name: 'pause',
         dur: row.dur || 0,
         delay: 0,
         trigger: 'auto',
-      });
+      };
+      if (row.repeatCycleStart) pauseStep.repeatCycleStart = true;
+      if (row.repeatId) pauseStep.repeatId = row.repeatId;
+      if (row.repeatInfinite) pauseStep.repeatInfinite = true;
+      if (row.repeatLoop != null) pauseStep.repeatLoop = row.repeatLoop;
+      flat.push(pauseStep);
       return;
     }
     if (row.kind === 'el' && row.el && row.anim) {
       if (row.el.objHidden) return;
       const step = stepFromAnim(row.el, row.anim, row.ai);
-      if (step) flat.push(step);
+      if (!step) return;
+      // Repeat body: later loops / siblings after the first must auto-chain,
+      // but keep withPrev so parallel moves stay parallel.
+      applyRepeatForceTrigger(step, row);
+      if (row.repeatCycleStart) step.repeatCycleStart = true;
+      if (row.repeatId) step.repeatId = row.repeatId;
+      if (row.repeatInfinite) step.repeatInfinite = true;
+      if (row.repeatLoop != null) step.repeatLoop = row.repeatLoop;
+      flat.push(step);
     }
   });
 
+  return bundlePlaybackSteps(flat);
+}
+
+function bundlePlaybackSteps(flat) {
+  const steps = [];
   let cur = null;
   flat.forEach((s) => {
-    if (s.kind === 'camera') {
-      cur = null;
-      steps.push(s);
-      return;
-    }
-    const t = s.trigger || 'click';
-    if (t === 'withPrev' && cur && cur.kind === 'bundle') {
+    let t = s.trigger || 'click';
+    const prevHasCamera = cur?.items.some((item) => item.kind === 'camera');
+    if (t === 'withPrev' && cur && !(s.kind === 'camera' && prevHasCamera)) {
       cur.items.push(s);
       return;
     }
+    if (t === 'withPrev' && s.kind === 'camera' && prevHasCamera) t = 'auto';
     cur = {
       kind: 'bundle',
       items: [s],
       auto: t === 'auto',
+      repeatCycleStart: !!s.repeatCycleStart,
+      repeatInfinite: !!s.repeatInfinite,
+      repeatId: s.repeatId || undefined,
     };
     steps.push(cur);
   });
@@ -369,20 +434,31 @@ function flattenOrderedAnimRows(slide, opts) {
   if (ordered.length) {
     ordered.forEach((row) => {
       if (row.kind === 'pause') {
-        flat.push({
+        const pauseStep = {
           kind: 'pause',
           elId: `__pause_${row.pauseId || 'x'}`,
           name: 'pause',
           dur: row.dur || 0,
           delay: 0,
           trigger: 'auto',
-        });
+        };
+        if (row.repeatCycleStart) pauseStep.repeatCycleStart = true;
+        if (row.repeatId) pauseStep.repeatId = row.repeatId;
+        if (row.repeatInfinite) pauseStep.repeatInfinite = true;
+        if (row.repeatLoop != null) pauseStep.repeatLoop = row.repeatLoop;
+        flat.push(pauseStep);
         return;
       }
       if (row.kind === 'el' && row.el && row.anim) {
         if (row.el.objHidden) return;
         const step = stepFromAnim(row.el, row.anim, row.ai);
-        if (step) flat.push(step);
+        if (!step) return;
+        applyRepeatForceTrigger(step, row);
+        if (row.repeatCycleStart) step.repeatCycleStart = true;
+        if (row.repeatId) step.repeatId = row.repeatId;
+        if (row.repeatInfinite) step.repeatInfinite = true;
+        if (row.repeatLoop != null) step.repeatLoop = row.repeatLoop;
+        flat.push(step);
       }
     });
   } else {

@@ -4,6 +4,8 @@
  * No autoplace/autofit. Uses real slide size (often 4:3), scaled to React canvas.
  */
 import { DEFAULT_CANVAS_W, DEFAULT_CANVAS_H } from './canvasDims.js';
+import { enrichImportedTextEl } from './importEnrich.js';
+import { fitImportedImageAspect } from './imgAspect.js';
 
 export function isOleCompound(buf) {
   try {
@@ -218,7 +220,16 @@ function normalizeUrl(s){
 function isJunkText(t){
   const s = String(t||'').trim();
   if(!s) return true;
+  // Lone decorative bullet glyphs (separate shapes) — drop
   if(s.length <= 2 && /^[*!•·●○◦▪▫]$/.test(s)) return true;
+  return false;
+}
+function looksMonoText(text){
+  const lines = String(text||'').split(/\n/).filter(function(l){ return l.trim(); });
+  if(lines.length < 2) return false;
+  const indented = lines.filter(function(l){ return /^[ \t]{2,}\S/.test(l); }).length;
+  if(indented >= 2) return true;
+  if(/[{};]|=>|\bdef\b|\bfunction\b|\bclass\b|#include/.test(text)) return true;
   return false;
 }
 function escHtml(s){
@@ -633,6 +644,11 @@ function parsePptBinary(buf){
           else if(shapeType === 4 || shapeType === 10) shapeKind = 'rect'; // diamond, etc.
         }
         if(shapeKind) {
+          // Full-slide bg rectangle — theme paints the slide bg instead
+          if(shapeKind === 'rect' && x <= slideW * 0.02 && y <= slideH * 0.02 && w >= slideW * 0.92 && h >= slideH * 0.92) return;
+          // Hairline / speck decorations that PPTX usually drops
+          if(w < 14 && h < 14) return;
+          if((w < 8 || h < 8) && (w / Math.max(1, h) > 8 || h / Math.max(1, w) > 8)) return;
           els.push({ kind:'shape', shape: shapeKind, x:x, y:y, w:w, h:h, link: link });
           return;
         }
@@ -647,12 +663,19 @@ function parsePptBinary(buf){
         if(u) link = normalizeUrl(u);
       }
       if(!link && isRealUrl(text)) link = normalizeUrl(text.split(/\s+/)[0]);
-      const isTitle = y < slideH * 0.18 && texts.length === 1 && text.length < 80;
+      const plainOneLine = text.replace(/\s+/g, ' ').trim();
+      const isTitle =
+        y < slideH * 0.16 &&
+        texts.length === 1 &&
+        plainOneLine.length < 70 &&
+        !/\n/.test(text.trim()) &&
+        h < slideH * 0.22;
       const fsScale = slideW / 1200;
+      const bodyFs = h < 48 * fsScale ? 16 : 22;
       els.push({
         kind:'text', x:x, y:y, w:w, h:h,
         text: text,
-        fs: Math.round((isTitle ? 34 : (h < 40 * fsScale ? 16 : 20)) * fsScale),
+        fs: Math.round((isTitle ? 36 : bodyFs) * fsScale),
         fw: isTitle ? '700' : '400',
         align: isTitle ? 'center' : 'left',
         link: link
@@ -695,40 +718,60 @@ function pptBinaryToSlides(parsed){
         if(si === 0 && !els.length) title = e.text.replace(/\s+/g,' ').slice(0, 60);
         else if(els.filter(function(x){return x.type==='text';}).length === 0)
           title = e.text.replace(/\s+/g,' ').slice(0, 60);
-        const lines = String(e.text).split(/\n+/).filter(Boolean);
+        // Keep blank lines for preformatted / code blocks
+        const lines = String(e.text).split(/\n/);
         const fw = e.fw || '400';
         // Wrap in <b> if bold so preserveInlineWeight can detect it
         const html = lines.map(function(ln){
+          if(!ln) return '<div><br></div>';
           const escaped = escHtml(ln);
           return '<div>' + (fw === '700' ? '<b>' + escaped + '</b>' : escaped) + '</div>';
         }).join('');
         const fs = e.fs || 20;
         const align = e.align || 'left';
         const textColor = '#1e293b';
-        const d = {
-          id: 'e'+(ec++), type:'text',
-          x: e.x, y: e.y, w: e.w, h: e.h,
-          html: html,
-          fs: fs, fw: fw,
-          color: textColor, align: align,
-          font: 'Arial, sans-serif', rot: 0, anims: [],
-          // mkEl reads color from cs; textColorScheme:null locks against theme white
-          cs: 'font-size:'+fs+'px;font-weight:'+fw+';color:'+textColor+';text-align:'+align+';',
-          textColor: textColor,
-          textColorScheme: null
-        };
+        const plain = String(e.text || '').trim();
+        if(!plain) return;
+        let boxW = e.w, boxH = e.h;
+        // Expand collapsed boxes so text doesn't stack one glyph per line
+        const contentLines = lines.map(function(l){ return String(l || '').trim(); }).filter(Boolean);
+        const maxLen = contentLines.reduce(function(m, l){ return Math.max(m, l.length); }, 0);
+        const needW = Math.max(120, Math.min(1600, Math.round(maxLen * fs * 0.58 + 32)));
+        const needH = Math.max(36, Math.round(Math.max(1, contentLines.length) * fs * 1.35 + 16));
+        if(boxW < needW * 0.5 || boxW < 48) boxW = needW;
+        if(boxH < needH * 0.5 || boxH < 24) boxH = needH;
+        const d = enrichImportedTextEl(
+          {
+            id: 'e'+(ec++),
+            x: e.x, y: e.y, w: boxW, h: boxH,
+            html: html,
+            fs: fs, fw: fw,
+            color: textColor, align: align,
+            font: 'Arial, sans-serif', rot: 0, anims: [],
+            cs: 'font-size:'+fs+'px;font-weight:'+fw+';color:'+textColor+';text-align:'+align+';',
+            textColor: textColor,
+            textColorScheme: null
+          },
+          {
+            mono: looksMonoText(e.text),
+            fs: fs,
+            themeDark: false,
+          }
+        );
         if(e.link){ d.link = e.link; d.linkt = '_blank'; }
         els.push(d);
       } else if(e.kind === 'image'){
-        const d = {
+        const d = fitImportedImageAspect({
           id:'e'+(ec++), type:'image',
           x:e.x, y:e.y, w:e.w, h:e.h,
-          src:e.src, rot:0, anims:[]
-        };
+          src:e.src, imgBw:0, rot:0, anims:[]
+        });
         if(e.link){ d.link = e.link; d.linkt = '_blank'; }
         els.push(d);
       } else if(e.kind === 'shape'){
-        // Shape element — colors will be reset by resetImportedTextFormatting
+        // Skip tiny decorative dots left as empty blocks
+        if((e.w||0) < 28 && (e.h||0) < 28) return;
+        if((e.w||0) < 8 || (e.h||0) < 8) return;
         const d = {
           id:'e'+(ec++), type:'shape',
           shape: e.shape || 'rect',

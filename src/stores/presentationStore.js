@@ -1,8 +1,9 @@
 import { create } from 'zustand';
-import { applyThemeToSlides, getTheme, hydrateImportedTextColors, schemeSwatchColor } from '../editor/themes.js';
-import { scheduleIdbSave } from '../editor/versionHistory.js';
-import { pnDefaults } from '../editor/pagenum.js';
-import { slimSlidesForPersist } from '../editor/mediaStore.js';
+import { applyThemeToSlides, getTheme, hydrateImportedTextColors, schemeSwatchColor, THEMES } from '../editor/themes.js';
+import { useUiStore } from './uiStore.js';
+import { isQuotaError, scheduleIdbSave, scheduleLiveSave, idbLoadLive, idbClearLive } from '../editor/versionHistory.js';
+import { pnDefaults, pnNormalize } from '../editor/pagenum.js';
+import { slimSlidesForPersist, slimMediaEl } from '../editor/mediaStore.js';
 import { rebuildAppletHtml } from '../editor/applets.js';
 import { DEFAULT_CANVAS_W, DEFAULT_CANVAS_H, DEFAULT_AR } from '../editor/canvasDims.js';
 import { scaleSlidesToCanvas } from '../editor/scaleDeck.js';
@@ -16,9 +17,14 @@ import {
 } from '../editor/inkHost.js';
 import { patchesSyncJoinsAfterMove } from '../editor/lineJoins.js';
 import { normalizeLinesInSlides } from '../editor/lineGeom.js';
+import { inheritSectionsBeforeDelete } from '../editor/slideSections.js';
+import { ensureSlideNums, nextSlideNum } from '../editor/slideElNum.js';
+import { normalizeFontsInSlides } from '../editor/fonts.js';
+import { liftGuidesFromSlides } from '../editor/slideGuides.js';
+import { syncTransformRestFromElement } from '../editor/transformPlay.js';
 
 const LS_KEY = 'sf_react_v1';
-const DEFAULT_THEME_IDX = 0;
+const DEFAULT_THEME_IDX = Math.max(0, THEMES.findIndex((theme) => theme.name === 'Clean White'));
 
 function hydrateSlideApplets(slides, themeIdx) {
   const theme = getTheme(themeIdx);
@@ -28,8 +34,28 @@ function hydrateSlideApplets(slides, themeIdx) {
   }));
 }
 
+function withStableSlideNums(slides) {
+  return (slides || []).map((s) => {
+    const { els } = ensureSlideNums(s?.els || []);
+    return { ...s, els };
+  });
+}
+
+function stripModel3dMesh(slides) {
+  (slides || []).forEach((s) => {
+    (s.els || []).forEach((el) => {
+      if (el && el._mesh != null) delete el._mesh;
+    });
+  });
+  return slides;
+}
+
 function hydrateSlides(slides, themeIdx) {
-  return normalizeLinesInSlides(hydrateSlideApplets(slides, themeIdx));
+  return stripModel3dMesh(
+    normalizeFontsInSlides(
+      normalizeLinesInSlides(hydrateSlideApplets(withStableSlideNums(slides), themeIdx))
+    )
+  );
 }
 
 export const emptySlide = () => ({
@@ -40,6 +66,7 @@ export const emptySlide = () => ({
   cameras: [],
   animOrder: [],
   lineJunctions: {},
+  guides: [],
   bg: 'solid',
   bgc: '#1e293b',
   bgImg: null,
@@ -47,6 +74,10 @@ export const emptySlide = () => ({
   title: '',
   trans: null,
   transDur: 500,
+  hidden: false,
+  notes: '',
+  sectionTitle: '',
+  sectionCollapsed: false,
 });
 
 function nextId(prefix = 'e') {
@@ -62,16 +93,129 @@ function ensureElIds(els) {
 }
 
 function clone(v) {
-  return JSON.parse(JSON.stringify(v));
+  // Never serialize model3d._mesh — Float32Arrays become plain objects and the
+  // WebGL viewer draws a blank box until objText is re-parsed.
+  return JSON.parse(JSON.stringify(v, (k, val) => (k === '_mesh' ? undefined : val)));
+}
+
+function remapAnimOrderIds(order, elMap, camMap) {
+  if (!Array.isArray(order)) return [];
+  return order
+    .map((e) => {
+      if (!e) return null;
+      if (e.kind === 'pause') return { ...e, id: e.id ? nextId('pau') : e.id };
+      if (e.kind === 'repeat') {
+        return {
+          ...e,
+          id: e.id ? nextId('rep') : e.id,
+          children: remapAnimOrderIds(e.children || [], elMap, camMap),
+        };
+      }
+      if (e.kind === 'camera') {
+        const camId = camMap.get(String(e.camId));
+        return camId ? { ...e, camId } : null;
+      }
+      if (e.elId != null) {
+        const elId = elMap.get(String(e.elId));
+        return elId ? { ...e, elId } : null;
+      }
+      return e;
+    })
+    .filter(Boolean);
 }
 
 function cloneSlideFresh(src) {
   const copy = clone(src);
-  copy.els = (copy.els || []).map((el) => ({ ...el, id: nextId() }));
-  copy.ink = (copy.ink || []).map((st) => ({ ...st, id: nextId('k') }));
-  copy.inkFills = (copy.inkFills || []).map((f) => ({ ...f, id: nextId('f') }));
-  copy.connectors = (copy.connectors || []).map((c) => ({ ...c, id: nextId('c') }));
-  copy.cameras = (copy.cameras || []).map((c) => ({ ...c, id: nextId('cam') }));
+  copy.id = nextId('s');
+
+  const elMap = new Map();
+  const groupMap = new Map();
+  const inkMap = new Map();
+  const fillMap = new Map();
+  const camMap = new Map();
+
+  copy.els = (copy.els || []).map((el) => {
+    if (!el) return el;
+    const oldId = String(el.id);
+    const id = nextId();
+    elMap.set(oldId, id);
+    if (el.groupId) {
+      const g = String(el.groupId);
+      if (!groupMap.has(g)) groupMap.set(g, nextId('g'));
+    }
+    // Keep shared mediaId; drop heavy mediaSrc so duped slides don't re-embed audio bytes.
+    return slimMediaEl({ ...el, id });
+  });
+
+  copy.ink = (copy.ink || []).map((st) => {
+    if (!st) return st;
+    const id = nextId('k');
+    if (st.id != null) inkMap.set(String(st.id), id);
+    return { ...st, id };
+  });
+  copy.inkFills = (copy.inkFills || []).map((f) => {
+    if (!f) return f;
+    const id = nextId('f');
+    if (f.id != null) fillMap.set(String(f.id), id);
+    return { ...f, id };
+  });
+  copy.cameras = (copy.cameras || []).map((c) => {
+    if (!c) return c;
+    const id = nextId('cam');
+    if (c.id != null) camMap.set(String(c.id), id);
+    return { ...c, id };
+  });
+
+  const mapElRef = (v) => (v != null && elMap.has(String(v)) ? elMap.get(String(v)) : v);
+  const mapAnimRef = (ref) => {
+    if (ref == null || ref === '') return ref;
+    const s = String(ref);
+    const m = s.match(/^([^:]+):(\d+)$/);
+    if (m && elMap.has(m[1])) return `${elMap.get(m[1])}:${m[2]}`;
+    return elMap.has(s) ? elMap.get(s) : ref;
+  };
+
+  copy.els = (copy.els || []).map((el) => {
+    if (!el) return el;
+    const next = { ...el };
+    if (next.groupId && groupMap.has(String(next.groupId))) {
+      next.groupId = groupMap.get(String(next.groupId));
+    }
+    if (next.tmStartElId) next.tmStartElId = mapElRef(next.tmStartElId);
+    if (next.tmOnEndAnim) next.tmOnEndAnim = mapAnimRef(next.tmOnEndAnim);
+    if (Array.isArray(next.inkIds)) {
+      next.inkIds = next.inkIds.map((id) => (inkMap.has(String(id)) ? inkMap.get(String(id)) : id));
+    }
+    if (Array.isArray(next.anims)) {
+      next.anims = next.anims.map((a) => {
+        if (!a) return a;
+        const anim = { ...a };
+        if (anim.triggerElId) anim.triggerElId = mapElRef(anim.triggerElId);
+        return anim;
+      });
+    }
+    return next;
+  });
+
+  copy.connectors = (copy.connectors || []).map((c) => {
+    if (!c) return c;
+    return {
+      ...c,
+      id: nextId('c'),
+      fromId: mapElRef(c.fromId),
+      toId: mapElRef(c.toId),
+    };
+  });
+
+  if (copy.lineJunctions && typeof copy.lineJunctions === 'object') {
+    const junctions = {};
+    Object.entries(copy.lineJunctions).forEach(([k, v]) => {
+      junctions[mapElRef(k) || k] = v;
+    });
+    copy.lineJunctions = junctions;
+  }
+
+  copy.animOrder = remapAnimOrderIds(copy.animOrder || [], elMap, camMap);
   return copy;
 }
 
@@ -80,6 +224,7 @@ function loadSaved() {
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return null;
     const data = JSON.parse(raw);
+    if (data.idb && (!Array.isArray(data.slides) || !data.slides.length)) return null;
     if (!Array.isArray(data.slides) || !data.slides.length) return null;
     data.slides = hydrateSlides(data.slides, data.appliedThemeIdx);
     return data;
@@ -105,13 +250,18 @@ function freshDeck() {
     globalTransDur: 500,
     title: 'Новая презентация',
     pnSettings: pnDefaults(),
+    /** Deck-wide guides — shown on every slide when visible. */
+    guides: [],
   };
 }
 
 const saved = typeof localStorage !== 'undefined' ? loadSaved() : null;
+const bootLifted = saved
+  ? liftGuidesFromSlides(saved.slides, saved.guides)
+  : { guides: [], slides: null };
 const boot = saved
   ? {
-      slides: saved.slides,
+      slides: bootLifted.slides,
       cur: saved.cur || 0,
       canvasW: saved.canvasW || DEFAULT_CANVAS_W,
       canvasH: saved.canvasH || DEFAULT_CANVAS_H,
@@ -129,7 +279,8 @@ const boot = saved
       globalTrans: saved.globalTrans || 'fade',
       globalTransDur: saved.globalTransDur > 0 ? saved.globalTransDur : 500,
       title: saved.title || 'Новая презентация',
-      pnSettings: { ...pnDefaults(), ...(saved.pnSettings || {}) },
+      pnSettings: pnNormalize(saved.pnSettings || {}),
+      guides: bootLifted.guides,
     }
   : freshDeck();
 
@@ -141,7 +292,9 @@ if (saved && (saved.appliedThemeIdx == null || saved.appliedThemeIdx < 0)) {
     boot.appliedThemeIdx = DEFAULT_THEME_IDX;
   }
 }
-boot.slides = hydrateImportedTextColors(boot.slides, getTheme(boot.appliedThemeIdx));
+boot.slides = withStableSlideNums(
+  hydrateImportedTextColors(boot.slides, getTheme(boot.appliedThemeIdx)),
+);
 
 export const usePresentationStore = create((set, get) => ({
   ...boot,
@@ -173,26 +326,115 @@ export const usePresentationStore = create((set, get) => ({
   },
 
   persist() {
+    const s = get();
+    const payload = {
+      v: 1,
+      savedAt: Date.now(),
+      slides: slimSlidesForPersist(s.slides),
+      cur: s.cur,
+      title: s.title,
+      canvasW: s.canvasW,
+      canvasH: s.canvasH,
+      ar: s.ar,
+      appliedThemeIdx: s.appliedThemeIdx,
+      layoutIdx: s.layoutIdx,
+      layoutAnimated: s.layoutAnimated,
+      decorPausedAt: s.layoutAnimated ? {} : s.decorPausedAt || {},
+      globalTrans: s.globalTrans,
+      globalTransDur: s.globalTransDur,
+      pnSettings: s.pnSettings || pnDefaults(),
+      guides: Array.isArray(s.guides) ? s.guides : [],
+    };
+    scheduleLiveSave(payload, (err, quota) => {
+      const ru = useUiStore.getState().lang !== 'en';
+      useUiStore.getState().showToast(
+        quota
+          ? ru
+            ? 'Не хватает места для сохранения. Сохраните файл (Ctrl+S) или удалите старые презентации.'
+            : 'Storage is full. Save a file (Ctrl+S) or remove old presentations.'
+          : ru
+            ? 'Не удалось сохранить в браузере'
+            : 'Could not save in the browser',
+        'err'
+      );
+      console.warn('[persist] IDB error', err);
+    });
+    let str = '';
     try {
-      const s = get();
-      const payload = JSON.stringify({
-        slides: slimSlidesForPersist(s.slides),
-        cur: s.cur,
-        title: s.title,
-        canvasW: s.canvasW,
-        canvasH: s.canvasH,
-        ar: s.ar,
-        appliedThemeIdx: s.appliedThemeIdx,
-        layoutIdx: s.layoutIdx,
-        layoutAnimated: s.layoutAnimated,
-        decorPausedAt: s.layoutAnimated ? {} : s.decorPausedAt || {},
-        globalTrans: s.globalTrans,
-        globalTransDur: s.globalTransDur,
-        pnSettings: s.pnSettings || pnDefaults(),
-      });
-      localStorage.setItem(LS_KEY, payload);
-      scheduleIdbSave(payload);
-    } catch (e) {}
+      str = JSON.stringify(payload);
+      scheduleIdbSave(str);
+    } catch (e) {
+      console.warn('[persist] stringify', e);
+    }
+    try {
+      if (str) localStorage.setItem(LS_KEY, str);
+    } catch (e) {
+      try {
+        localStorage.setItem(
+          LS_KEY,
+          JSON.stringify({
+            idb: true,
+            title: payload.title,
+            ts: payload.savedAt,
+            cur: payload.cur,
+          })
+        );
+      } catch (_) {
+        /* ignore pointer write */
+      }
+      if (isQuotaError(e)) {
+        const ru = useUiStore.getState().lang !== 'en';
+        useUiStore.getState().showToast(
+          ru
+            ? 'localStorage переполнен — презентация хранится в IndexedDB. Сохраните копию (Ctrl+S).'
+            : 'localStorage is full — the deck is in IndexedDB. Save a copy (Ctrl+S).',
+          'err'
+        );
+      }
+    }
+  },
+
+  async hydrateFromIdb() {
+    const rec = await idbLoadLive();
+    const data = rec?.data;
+    if (!data || !Array.isArray(data.slides) || !data.slides.length) return false;
+    const localTs = (() => {
+      try {
+        const raw = localStorage.getItem(LS_KEY);
+        const parsed = raw ? JSON.parse(raw) : null;
+        return parsed?.savedAt || 0;
+      } catch (_) {
+        return 0;
+      }
+    })();
+    if (localTs && data.savedAt && data.savedAt < localTs - 2000) return false;
+    const lifted = liftGuidesFromSlides(data.slides, data.guides);
+    set({
+      slides: hydrateSlides(lifted.slides, data.appliedThemeIdx),
+      cur: Math.max(0, Math.min((data.cur | 0) || 0, data.slides.length - 1)),
+      title: data.title != null ? String(data.title) : get().title,
+      canvasW: data.canvasW || get().canvasW,
+      canvasH: data.canvasH || get().canvasH,
+      ar: data.ar || get().ar,
+      appliedThemeIdx: data.appliedThemeIdx != null ? data.appliedThemeIdx : get().appliedThemeIdx,
+      layoutIdx: data.layoutIdx != null ? data.layoutIdx : get().layoutIdx,
+      layoutAnimated: data.layoutAnimated != null ? !!data.layoutAnimated : get().layoutAnimated,
+      decorPausedAt: data.decorPausedAt && typeof data.decorPausedAt === 'object' ? data.decorPausedAt : get().decorPausedAt,
+      globalTrans: data.globalTrans != null ? data.globalTrans : get().globalTrans,
+      globalTransDur: data.globalTransDur != null ? data.globalTransDur : get().globalTransDur,
+      pnSettings: data.pnSettings || get().pnSettings,
+      guides: lifted.guides,
+    });
+    return true;
+  },
+
+  async clearPersistedSession() {
+    try {
+      localStorage.removeItem(LS_KEY);
+    } catch (_) {
+      /* ignore */
+    }
+    await idbClearLive();
   },
 
   setCanvasSize(w, h, ar) {
@@ -211,22 +453,46 @@ export const usePresentationStore = create((set, get) => ({
     const oldW = get().canvasW || DEFAULT_CANVAS_W;
     const oldH = get().canvasH || DEFAULT_CANVAS_H;
     // scaleSlidesToCanvas scales line endpoints (preserves joins / angles).
+    const sx = W / Math.max(1, oldW);
+    const sy = H / Math.max(1, oldH);
     const slides = scaleSlidesToCanvas(clone(get().slides), oldW, oldH, W, H).map((s) =>
       s ? { ...s, ar: ar || s.ar } : s
     );
-    set({ slides, canvasW: W, canvasH: H, ar: ar || get().ar });
+    const guides = (get().guides || []).map((g) =>
+      g
+        ? {
+            ...g,
+            x: Math.round((+g.x || 0) * sx * 100) / 100,
+            y: Math.round((+g.y || 0) * sy * 100) / 100,
+          }
+        : g
+    );
+    set({ slides, guides, canvasW: W, canvasH: H, ar: ar || get().ar });
+    get().persist();
+  },
+
+  /**
+   * Switch aspect ratio with per-format layout memory.
+   * @param {object[]} slides already prepared (saved from-key + scaled or restored to-key)
+   */
+  applyAspectSlides(slides, w, h, ar) {
+    const W = Math.max(320, Math.min(3840, Math.round(+w || DEFAULT_CANVAS_W)));
+    const H = Math.max(180, Math.min(3840, Math.round(+h || DEFAULT_CANVAS_H)));
+    const next = (slides || []).map((s) => (s ? { ...s, ar: ar || s.ar } : s));
+    set({ slides: next, canvasW: W, canvasH: H, ar: ar || get().ar });
     get().persist();
   },
 
   setPnSettings(patch) {
-    const pnSettings = { ...pnDefaults(), ...(get().pnSettings || {}), ...patch };
+    const pnSettings = pnNormalize({ ...get().pnSettings, ...patch });
     set({ pnSettings });
     get().persist();
   },
 
   restoreSnapshot(data) {
+    const lifted = liftGuidesFromSlides(data.slides, data.guides);
     set({
-      slides: data.slides,
+      slides: lifted.slides,
       cur: data.cur,
       title: data.title,
       canvasW: data.canvasW,
@@ -234,8 +500,24 @@ export const usePresentationStore = create((set, get) => ({
       ar: data.ar,
       appliedThemeIdx: data.appliedThemeIdx != null ? data.appliedThemeIdx : get().appliedThemeIdx,
       layoutIdx: data.layoutIdx != null ? data.layoutIdx : get().layoutIdx,
+      guides: lifted.guides,
     });
     get().persist();
+  },
+
+  /** Replace deck-wide guides. */
+  setGuides(next, opts = {}) {
+    set({ guides: Array.isArray(next) ? next : [] });
+    if (!opts.live) get().persist();
+  },
+
+  /** Mutate a clone of deck guides (same pattern as mutateCurrentSlide). */
+  mutateGuides(fn, opts = {}) {
+    if (typeof fn !== 'function') return;
+    const list = clone(Array.isArray(get().guides) ? get().guides : []);
+    fn(list);
+    set({ guides: list });
+    if (!opts.live) get().persist();
   },
 
   setTitle: (title) => {
@@ -356,6 +638,8 @@ export const usePresentationStore = create((set, get) => ({
     const src = slides[i];
     if (!src) return;
     const copy = cloneSlideFresh(src);
+    copy.sectionTitle = '';
+    copy.sectionCollapsed = false;
     slides.splice(i + 1, 0, copy);
     set({ slides, cur: i + 1, slideMultiSel: [], slideSelAnchor: i + 1 });
     get().persist();
@@ -366,7 +650,11 @@ export const usePresentationStore = create((set, get) => ({
     const pack = (indices || [])
       .map((idx) => slides[idx])
       .filter(Boolean)
-      .map((s) => clone(s));
+      .map((s) => {
+        const c = clone(s);
+        c.els = (c.els || []).map((el) => slimMediaEl(el));
+        return c;
+      });
     if (!pack.length) return 0;
     set({ slideClipboard: pack, clipboard: null, clipSource: 'slides' });
     return pack.length;
@@ -392,6 +680,7 @@ export const usePresentationStore = create((set, get) => ({
       .sort((a, b) => b - a);
     if (!uniq.length) return 0;
     if (slides.length - uniq.length < 1) return 0;
+    inheritSectionsBeforeDelete(slides, uniq);
     const wasCur = get().cur;
     uniq.forEach((idx) => slides.splice(idx, 1));
     let cur = wasCur;
@@ -412,6 +701,7 @@ export const usePresentationStore = create((set, get) => ({
       get().persist();
       return;
     }
+    inheritSectionsBeforeDelete(slides, [i]);
     slides.splice(i, 1);
     const cur = Math.min(i, slides.length - 1);
     set({ slides, cur, slideMultiSel: [], slideSelAnchor: cur });
@@ -482,18 +772,59 @@ export const usePresentationStore = create((set, get) => ({
     const i = get().cur;
     if (!slides[i]) slides[i] = emptySlide();
     const item = { id: nextId(), rot: 0, elOpacity: 1, ...el };
-    slides[i].els = [...(slides[i].els || []), item];
+    const existing = slides[i].els || [];
+    const want = Math.round(+item.slideNum);
+    const taken = new Set(
+      existing.map((e) => Math.round(+e?.slideNum)).filter((n) => Number.isFinite(n) && n >= 1),
+    );
+    if (!(want >= 1) || taken.has(want)) {
+      item.slideNum = nextSlideNum(existing);
+    } else {
+      item.slideNum = want;
+    }
+    slides[i].els = [...existing, item];
     set({ slides });
     get().persist();
     return item.id;
   },
 
-  patchElement(id, data) {
+  /** Assign slideNum to elements that lack it; never renumbers existing. */
+  ensureSlideNumsOnSlide(slideIdx) {
+    const i = slideIdx == null ? get().cur : slideIdx;
     const slides = clone(get().slides);
-    const i = get().cur;
-    const els = slides[i]?.els || [];
+    if (!slides[i]) return false;
+    const { els, changed } = ensureSlideNums(slides[i].els || []);
+    if (!changed) return false;
+    slides[i].els = els;
+    set({ slides });
+    get().persist();
+    return true;
+  },
+
+  /** Patch an element on a specific slide instead of the currently displayed slide. */
+  patchElementOnSlide(slideIdx, id, data) {
+    const slides = clone(get().slides);
+    const els = slides[slideIdx]?.els || [];
     const el = els.find((e) => e && String(e.id) === String(id));
-    if (!el) return;
+    if (!el) return false;
+    Object.assign(el, data);
+    if (Object.prototype.hasOwnProperty.call(data, 'link') && !data.link) {
+      delete el.link;
+      delete el.linkt;
+    }
+    set({ slides });
+    get().persist();
+    return true;
+  },
+
+  patchElement(id, data, opts = {}) {
+    const state = get();
+    const slides = opts.live ? state.slides.slice() : clone(state.slides);
+    const i = state.cur;
+    const els = slides[i]?.els || [];
+    const elIdx = els.findIndex((e) => e && String(e.id) === String(id));
+    if (elIdx < 0) return;
+    const el = opts.live ? { ...els[elIdx] } : els[elIdx];
     Object.assign(el, data);
     if (Object.prototype.hasOwnProperty.call(data, 'link') && !data.link) {
       delete el.link;
@@ -514,8 +845,45 @@ export const usePresentationStore = create((set, get) => ({
     ) {
       delete el.lineMark;
     }
+    // Outside transform capture: rest pose edits must refresh transform `from`
+    // (and matching colors on `to`), otherwise playback keeps the old snapshot.
+    if (!opts.skipTransformSync && data && !Object.prototype.hasOwnProperty.call(data, 'anims')) {
+      const mode = useUiStore.getState().transformEditMode;
+      if (!(mode && String(mode.elId) === String(id))) {
+        const nextAnims = syncTransformRestFromElement(el, data);
+        if (nextAnims) el.anims = nextAnims;
+      }
+    }
+    if (opts.live) {
+      const nextEls = els.slice();
+      nextEls[elIdx] = el;
+      slides[i] = { ...slides[i], els: nextEls };
+    }
     set({ slides });
-    get().persist();
+    if (!opts.live) get().persist();
+  },
+
+  /** Apply many element patches in one set (fill-image network sync, etc.). */
+  patchElements(patchMap, opts = {}) {
+    const entries = Object.entries(patchMap || {});
+    if (!entries.length) return;
+    const state = get();
+    const i = state.cur;
+    if (!state.slides[i]) return;
+    const slides = opts.live ? state.slides.slice() : clone(state.slides);
+    const baseEls = slides[i].els || [];
+    const nextEls = opts.live ? baseEls.slice() : baseEls;
+    const byId = new Map(nextEls.map((e, idx) => [String(e?.id), idx]));
+    for (const [id, data] of entries) {
+      const elIdx = byId.get(String(id));
+      if (elIdx == null || !data) continue;
+      const el = opts.live ? { ...nextEls[elIdx] } : nextEls[elIdx];
+      Object.assign(el, data);
+      if (opts.live) nextEls[elIdx] = el;
+    }
+    if (opts.live) slides[i] = { ...slides[i], els: nextEls };
+    set({ slides });
+    if (!opts.live) get().persist();
   },
 
   /** Translate multiple elements by dx/dy (no history — caller handles undo).
@@ -549,14 +917,26 @@ export const usePresentationStore = create((set, get) => ({
   /** Apply per-id patches. opts.live skips persist (during drag). */
   applyElementPatches(patches, opts = {}) {
     if (!patches || typeof patches !== 'object') return;
-    const slides = clone(get().slides);
-    const els = slides[get().cur]?.els || [];
+    const state = get();
+    const slides = opts.live ? state.slides.slice() : clone(state.slides);
+    const slideIdx = state.cur;
+    const slide = slides[slideIdx];
+    const els = slide?.els || [];
+    let nextEls = els;
     let n = 0;
-    els.forEach((el) => {
+    els.forEach((el, idx) => {
       if (!el || el._isDecor) return;
       const p = patches[el.id] || patches[String(el.id)];
       if (!p) return;
-      Object.assign(el, p);
+      if (opts.live) {
+        if (!n) {
+          nextEls = els.slice();
+          slides[slideIdx] = { ...slide, els: nextEls };
+        }
+        nextEls[idx] = Object.assign({ ...el }, p);
+      } else {
+        Object.assign(el, p);
+      }
       n += 1;
     });
     if (!n) return;
@@ -760,43 +1140,175 @@ export const usePresentationStore = create((set, get) => ({
     return true;
   },
 
-  /** Remove ink strokes that pass within `radius` of any eraser point. @returns {boolean} */
-  eraseInkNear(points, radius = 16) {
+  /**
+   * Merge several separately-hosted ink strokes/fills (e.g. from a rubber-band or shift
+   * multi-select) into one combined inkhost, so a single animation (inkDraw in particular)
+   * can address them all together instead of only the one host it happens to be attached
+   * to. Reuses the same groupId-based consolidation ensureAllInkHosts already does for
+   * migrating older decks — tag every item with a shared groupId, then rebuild just that
+   * one host from them. @returns {string|null} the merged host's id.
+   */
+  mergeInkIntoOneHost(inkIds) {
+    const ids = (inkIds || []).map(String).filter(Boolean);
+    if (ids.length < 2) return null;
+    const idSet = new Set(ids);
+    const slides = clone(get().slides);
+    const slide = slides[get().cur];
+    if (!slide) return null;
+    const gid = 'ig' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    let touched = 0;
+    (slide.ink || []).forEach((s) => {
+      if (s && idSet.has(String(s.id))) {
+        s.groupId = gid;
+        touched += 1;
+      }
+    });
+    (slide.inkFills || []).forEach((f) => {
+      if (f && idSet.has(String(f.id))) {
+        f.groupId = gid;
+        touched += 1;
+      }
+    });
+    if (touched < 2) return null;
+    const items = (slide.ink || [])
+      .filter((s) => s && idSet.has(String(s.id)))
+      .concat((slide.inkFills || []).filter((f) => f && idSet.has(String(f.id))));
+    const host = ensureInkHostForItems(slide, items, gid, nextId);
+    if (!host) return null;
+    pruneEmptyInkHosts(slide);
+    set({ slides });
+    get().persist();
+    return host.id;
+  },
+
+  /**
+   * Undo mergeInkIntoOneHost: clear the shared groupId this host's strokes/fills were
+   * merged under, drop the combined host itself, and let ensureAllInkHosts rebuild one
+   * individual host per stroke again. @returns {number} strokes/fills split back out.
+   */
+  splitInkHost(hostId) {
     const slides = clone(get().slides);
     const i = get().cur;
-    if (!slides[i] || !points?.length) return false;
+    const slide = slides[i];
+    if (!slide) return 0;
+    const host = (slide.els || []).find(
+      (e) => e && String(e.id) === String(hostId) && e.type === 'inkhost'
+    );
+    if (!host || !(host.inkIds || []).length) return 0;
+    const idSet = new Set((host.inkIds || []).map(String));
+    let touched = 0;
+    (slide.ink || []).forEach((s) => {
+      if (s && idSet.has(String(s.id)) && s.groupId) {
+        s.groupId = null;
+        touched += 1;
+      }
+    });
+    (slide.inkFills || []).forEach((f) => {
+      if (f && idSet.has(String(f.id)) && f.groupId) {
+        f.groupId = null;
+        touched += 1;
+      }
+    });
+    if (!touched) return 0;
+    slide.els = (slide.els || []).filter((e) => e && String(e.id) !== String(hostId));
+    ensureAllInkHosts(slide, nextId);
+    set({ slides });
+    get().persist();
+    return touched;
+  },
+
+  /** Remove ink strokes that pass within `radius` of any eraser point. @returns {boolean} */
+  eraseInkNear(points, radius = 16, opts = {}) {
+    const i = get().cur;
+    const slidesBefore = get().slides;
+    if (!slidesBefore[i] || !points?.length) return false;
     const r2 = radius * radius;
-    const near = (st) =>
-      (st.points || []).some((pt) => {
-        const x = Array.isArray(pt) ? pt[0] : pt.x;
-        const y = Array.isArray(pt) ? pt[1] : pt.y;
-        return points.some(([px, py]) => {
-          const dx = x - px;
-          const dy = y - py;
-          return dx * dx + dy * dy <= r2;
-        });
-      });
+    // Point-to-segment squared distance (clamped projection onto [a,b]).
+    const distSqToSeg = (px, py, ax, ay, bx, by) => {
+      const abx = bx - ax;
+      const aby = by - ay;
+      const len2 = abx * abx + aby * aby;
+      if (len2 < 1e-6) {
+        const dx = px - ax;
+        const dy = py - ay;
+        return dx * dx + dy * dy;
+      }
+      let t = ((px - ax) * abx + (py - ay) * aby) / len2;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const cx = ax + t * abx;
+      const cy = ay + t * aby;
+      const dx = px - cx;
+      const dy = py - cy;
+      return dx * dx + dy * dy;
+    };
+    // Both the eraser drag path *and* a stroke are polylines, not point clouds — checking
+    // only point-to-point distance (as before) misses a hit whenever either side's points
+    // are sparse relative to the other (a fast mouse move between two eraser samples, or a
+    // long straight run of a stroke with few vertices): the two polylines can visibly cross
+    // without any single pair of points landing within `radius` of each other. Testing each
+    // side's points against the other side's *segments* catches that corridor-crossing case
+    // in both directions without needing full segment-vs-segment intersection math.
+    const near = (st) => {
+      const sp = (st.points || []).map((pt) =>
+        Array.isArray(pt) ? { x: +pt[0] || 0, y: +pt[1] || 0 } : { x: +pt.x || 0, y: +pt.y || 0 }
+      );
+      if (!sp.length) return false;
+      for (let k = 0; k < points.length; k++) {
+        const [px, py] = points[k];
+        if (sp.length === 1) {
+          const dx = sp[0].x - px;
+          const dy = sp[0].y - py;
+          if (dx * dx + dy * dy <= r2) return true;
+        } else {
+          for (let j = 1; j < sp.length; j++) {
+            if (distSqToSeg(px, py, sp[j - 1].x, sp[j - 1].y, sp[j].x, sp[j].y) <= r2) return true;
+          }
+        }
+      }
+      if (points.length > 1) {
+        for (let k = 0; k < sp.length; k++) {
+          for (let i2 = 1; i2 < points.length; i2++) {
+            const [ax, ay] = points[i2 - 1];
+            const [bx, by] = points[i2];
+            if (distSqToSeg(sp[k].x, sp[k].y, ax, ay, bx, by) <= r2) return true;
+          }
+        }
+      }
+      return false;
+    };
+    // Clone only the current slide, not the whole deck. This used to be
+    // `clone(get().slides)` — a full JSON.parse(JSON.stringify(...)) of every slide — run on
+    // every single pointermove sample while erasing, so cost scaled with total presentation
+    // size rather than with how much ink there was to check, and made even the very first
+    // erase (on pointerdown) feel delayed on anything but a tiny deck.
+    const cur = clone(slidesBefore[i]);
     let changed = false;
-    if (slides[i].ink?.length) {
-      const next = slides[i].ink.filter((st) => !near(st));
-      if (next.length !== slides[i].ink.length) {
-        slides[i].ink = next;
+    if (cur.ink?.length) {
+      const next = cur.ink.filter((st) => !near(st));
+      if (next.length !== cur.ink.length) {
+        cur.ink = next;
         changed = true;
       }
     }
-    if (slides[i].inkFills?.length) {
-      const nextF = slides[i].inkFills.filter(
+    if (cur.inkFills?.length) {
+      const nextF = cur.inkFills.filter(
         (f) => !points.some(([px, py]) => fillHitsEraser(f, px, py, radius))
       );
-      if (nextF.length !== slides[i].inkFills.length) {
-        slides[i].inkFills = nextF;
+      if (nextF.length !== cur.inkFills.length) {
+        cur.inkFills = nextF;
         changed = true;
       }
     }
     if (!changed) return false;
-    pruneEmptyInkHosts(slides[i]);
-    syncInkHostBBoxes(slides[i]);
+    pruneEmptyInkHosts(cur);
+    syncInkHostBBoxes(cur);
+    const slides = slidesBefore.slice();
+    slides[i] = cur;
     set({ slides });
+    // `opts.live`: skip persist() during a continuous erase drag (mirrors moveInkByIds'
+    // `{live:true}`) — the caller persists once when the gesture ends instead of on every
+    // sample.
+    if (opts.live) return true;
     get().persist();
     return true;
   },
@@ -906,6 +1418,132 @@ export const usePresentationStore = create((set, get) => ({
     return true;
   },
 
+  /**
+   * Scale ink strokes/fills belonging to `ids` from `fromBBox` to `toBBox` (both
+   * {x,y,w,h}, in the same absolute/unrotated canvas space the points are stored in — any
+   * rotation is applied later as a pure display transform on the host element, same as for
+   * translation in moveInkByIds, so it doesn't need to be accounted for here).
+   * Used when resizing an inkhost: previously resize only patched the host element's own
+   * x/y/w/h, and since the rendered stroke content is positioned purely from its own
+   * absolute point data (not from the host's box), the drawing never visibly changed size.
+   */
+  scaleInkByIds(ids, fromBBox, toBBox, opts = {}) {
+    if (!ids?.length || !fromBBox || !toBBox) return false;
+    if (!fromBBox.w || !fromBBox.h) return false;
+    const idSet = new Set(ids.map(String));
+    const slides = clone(get().slides);
+    const i = get().cur;
+    if (!slides[i]) return false;
+    const sx = toBBox.w / fromBBox.w;
+    const sy = toBBox.h / fromBBox.h;
+    const tx = (x) => toBBox.x + (x - fromBBox.x) * sx;
+    const ty = (y) => toBBox.y + (y - fromBBox.y) * sy;
+    const scalePts = (pts) =>
+      (pts || []).map((p) => {
+        if (Array.isArray(p)) return [tx(+p[0] || 0), ty(+p[1] || 0), p[2]];
+        return { ...p, x: tx(+p.x || 0), y: ty(+p.y || 0) };
+      });
+    const widthScale = Math.max(0.05, (Math.abs(sx) + Math.abs(sy)) / 2);
+    let changed = false;
+    if (slides[i].ink?.length) {
+      slides[i].ink = slides[i].ink.map((s) => {
+        if (!s || !idSet.has(String(s.id))) return s;
+        changed = true;
+        return {
+          ...s,
+          points: scalePts(s.points),
+          width: s.width != null ? Math.max(0.5, (+s.width || 4) * widthScale) : s.width,
+        };
+      });
+    }
+    if (slides[i].inkFills?.length) {
+      slides[i].inkFills = slides[i].inkFills.map((f) => {
+        if (!f || !idSet.has(String(f.id))) return f;
+        changed = true;
+        const points = scalePts(f.points).map((p) =>
+          Array.isArray(p) ? { x: +p[0] || 0, y: +p[1] || 0 } : { x: +p.x || 0, y: +p.y || 0 }
+        );
+        return { ...f, points, d: contourToSmoothPath(points) || f.d };
+      });
+    }
+    if (!changed) return false;
+    syncInkHostBBoxes(slides[i]);
+    set({ slides });
+    if (opts.live) return true;
+    get().persist();
+    return true;
+  },
+
+  /**
+   * Rotate ink strokes/fills by `deltaDeg` around `pivot` ({x,y}), starting from the
+   * `snapshot` point arrays (captured once when the gesture began) rather than whatever is
+   * currently stored — so repeatedly calling this with the *total* delta for the drag so far
+   * (the same pattern rotateGroupMembers already uses for regular elements) doesn't compound
+   * rotation frame over frame. Used for a *grouped* multi-select that includes drawing
+   * objects: rotating a group used to only patch each inkhost's own x/y/rot, which — since
+   * the rendered stroke is positioned purely from its own absolute point data, not the host
+   * box — just spun each drawing in place around its own center instead of orbiting the
+   * whole group around one shared pivot like every other element type does.
+   * @param snapshot {{strokes:[{id,points}], fills:[{id,points}]}}
+   */
+  rotateInkFromSnapshot(snapshot, pivot, deltaDeg, opts = {}) {
+    if (!snapshot || !pivot) return false;
+    const strokeMap = new Map((snapshot.strokes || []).map((s) => [String(s.id), s.points]));
+    const fillMap = new Map((snapshot.fills || []).map((f) => [String(f.id), f.points]));
+    if (!strokeMap.size && !fillMap.size) return false;
+    const slides = clone(get().slides);
+    const i = get().cur;
+    if (!slides[i]) return false;
+    const rad = (deltaDeg * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    const cx = pivot.x;
+    const cy = pivot.y;
+    const rot = (x, y) => {
+      const dx = x - cx;
+      const dy = y - cy;
+      return { x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos };
+    };
+    let changed = false;
+    if (slides[i].ink?.length && strokeMap.size) {
+      slides[i].ink = slides[i].ink.map((s) => {
+        const orig = s && strokeMap.get(String(s.id));
+        if (!orig) return s;
+        changed = true;
+        const points = orig.map((p) => {
+          if (Array.isArray(p)) {
+            const r = rot(+p[0] || 0, +p[1] || 0);
+            return [r.x, r.y, p[2]];
+          }
+          const r = rot(+p.x || 0, +p.y || 0);
+          return { ...p, x: r.x, y: r.y };
+        });
+        return { ...s, points };
+      });
+    }
+    if (slides[i].inkFills?.length && fillMap.size) {
+      slides[i].inkFills = slides[i].inkFills.map((f) => {
+        const orig = f && fillMap.get(String(f.id));
+        if (!orig) return f;
+        changed = true;
+        const points = orig
+          .map((p) => {
+            const px = Array.isArray(p) ? +p[0] || 0 : +p.x || 0;
+            const py = Array.isArray(p) ? +p[1] || 0 : +p.y || 0;
+            return rot(px, py);
+          })
+          .map((r) => ({ x: r.x, y: r.y }));
+        return { ...f, points, d: contourToSmoothPath(points) || f.d };
+      });
+    }
+    if (!changed) return false;
+    syncInkHostBBoxes(slides[i]);
+    set({ slides });
+    if (opts.live) return true;
+    get().persist();
+    return true;
+  },
+
   copyInkByIds(ids, offset = 24) {
     const idSet = new Set((ids || []).map(String).filter(Boolean));
     if (!idSet.size) return [];
@@ -964,16 +1602,33 @@ export const usePresentationStore = create((set, get) => ({
     return newIds;
   },
 
-  dupElement(id) {
+  dupElement(id, opts = {}) {
     const slides = clone(get().slides);
-    const els = slides[get().cur]?.els || [];
+    const slide = slides[get().cur];
+    const els = slide?.els || [];
     const el = els.find((e) => String(e.id) === String(id));
     if (!el) return null;
-    const copy = clone(el);
+    const copy = slimMediaEl(clone(el));
     copy.id = nextId();
+    copy.slideNum = nextSlideNum(els);
     copy.x = (copy.x || 0) + 24;
     copy.y = (copy.y || 0) + 24;
+    // Keep multi-member groups together via groupMap; never stay linked to the originals.
+    if (copy.groupId != null && copy.groupId !== '') {
+      const g = String(copy.groupId);
+      const map = opts.groupMap;
+      if (map && map.has(g)) copy.groupId = map.get(g);
+      else delete copy.groupId;
+    }
     els.push(copy);
+    // Keep timeline in sync — otherwise transform (etc.) sits on the el but not in animOrder
+    // until ensureAnimOrder later appends it at the end in a surprising place.
+    if (Array.isArray(copy.anims) && copy.anims.length) {
+      if (!Array.isArray(slide.animOrder)) slide.animOrder = [];
+      copy.anims.forEach((a, ai) => {
+        if (a && a.name) slide.animOrder.push({ elId: copy.id, ai });
+      });
+    }
     set({ slides });
     get().persist();
     return copy.id;
@@ -1001,9 +1656,10 @@ export const usePresentationStore = create((set, get) => ({
       canvasH = targetH;
       ar = targetAr;
     }
+    const lifted = liftGuidesFromSlides(slides, data.guides);
     set({
-      slides: hydrateSlides(slides, data.appliedThemeIdx != null ? data.appliedThemeIdx : get().appliedThemeIdx),
-      cur: Math.max(0, Math.min((data.cur | 0) || 0, slides.length - 1)),
+      slides: hydrateSlides(lifted.slides, data.appliedThemeIdx != null ? data.appliedThemeIdx : get().appliedThemeIdx),
+      cur: Math.max(0, Math.min((data.cur | 0) || 0, lifted.slides.length - 1)),
       title: data.title != null ? String(data.title) : get().title,
       canvasW,
       canvasH,
@@ -1017,8 +1673,9 @@ export const usePresentationStore = create((set, get) => ({
           : {},
       globalTrans: data.globalTrans != null ? data.globalTrans : get().globalTrans,
       globalTransDur: data.globalTransDur != null ? data.globalTransDur : get().globalTransDur,
+      guides: lifted.guides,
       slideMultiSel: [],
-      slideSelAnchor: Math.max(0, Math.min((data.cur | 0) || 0, slides.length - 1)),
+      slideSelAnchor: Math.max(0, Math.min((data.cur | 0) || 0, lifted.slides.length - 1)),
     });
     get().persist();
     return true;
@@ -1039,6 +1696,7 @@ export const usePresentationStore = create((set, get) => ({
       decorPausedAt: s.layoutAnimated ? {} : s.decorPausedAt || {},
       globalTrans: s.globalTrans,
       globalTransDur: s.globalTransDur,
+      guides: Array.isArray(s.guides) ? s.guides : [],
       slides: s.slides,
     };
   },

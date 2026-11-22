@@ -27,16 +27,11 @@ export const TEXT_UL_TITLES_EN = {
   none: 'none',
 };
 
-/** CSS for dash-dot painted underline. The line is drawn via a background-image trick on
- *  inline `[data-ul="dash-dot"]` spans (real text-decoration stays "none"), so it hugs the
- *  text width and follows line breaks (box-decoration-break: clone). Whole-box dash-dot is
- *  materialized into such inline spans at render time (see dashDotWrapHtml), which is why
- *  only the inline selector is needed here — a block-level background would span the whole
- *  box instead of the text, and (unlike native text-decoration) can't hug short lines.
- *
- *  Vertical position matches the native single underline (text-underline-offset:0.12em):
- *  the painted line sits at ~0.88em + 0.12em from the em-box top, measured against Chrome's
- *  `auto` underline position for common serif/sans fonts (Georgia, Arial, Segoe UI…). */
+/**
+ * Dash-dot via background-image on `[data-ul="dash-dot"]` (native can't do dash-dot).
+ * Wavy stays native `text-decoration: underline wavy` — looks smooth; continuity across
+ * glyph/span breaks is handled by mergeAdjacentUnderlineSpans + skip-ink:none.
+ */
 export const TEXT_UL_DASH_DOT_CSS = `
 .react-el-text [data-ul="dash-dot"]{
   text-decoration:none!important;
@@ -55,7 +50,35 @@ export const TEXT_UL_DASH_DOT_CSS = `
   background-origin:padding-box!important;
   background-clip:padding-box!important;
 }
+.react-el-text:has([data-ul="wavy"]){overflow:visible!important}
+.react-el-text [data-ul="wavy"]{
+  text-decoration:none!important;
+  -webkit-box-decoration-break:clone;
+  box-decoration-break:clone;
+  position:relative;
+  display:inline;
+}
+.react-el-text [data-ul="wavy"]::after{
+  content:'';
+  position:absolute;
+  left:0;
+  width:100%;
+  top:calc(0.88em + 0.08em);
+  height:0.2em;
+  pointer-events:none;
+  background-color:currentColor;
+  -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='4' viewBox='0 0 14 4'%3E%3Cpath d='M0 2 Q3.5 0 7 2 T14 2' fill='none' stroke='%23000' stroke-width='1.35' stroke-linecap='round'/%3E%3C/svg%3E");
+  mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='4' viewBox='0 0 14 4'%3E%3Cpath d='M0 2 Q3.5 0 7 2 T14 2' fill='none' stroke='%23000' stroke-width='1.35' stroke-linecap='round'/%3E%3C/svg%3E");
+  -webkit-mask-repeat:repeat-x;
+  mask-repeat:repeat-x;
+  -webkit-mask-size:14px 100%;
+  mask-size:14px 100%;
+  -webkit-mask-position:0 50%;
+  mask-position:0 50%;
+}
 `.trim();
+
+export const TEXT_UL_PAINTED_CSS = TEXT_UL_DASH_DOT_CSS;
 
 export function parseUnderline(dec) {
   const d = String(dec || '')
@@ -88,9 +111,11 @@ export function underlineTitle(kind, ru) {
 
 export function stripUnderlineFromCs(cs) {
   return String(cs || '')
-    .replace(/text-decoration(?:-line|-style|-thickness|-color)?\s*:[^;]+;?/gi, '')
+    .replace(/text-decoration(?:-line|-style|-thickness|-color|-skip-ink)?\s*:[^;]+;?/gi, '')
     .replace(/text-underline-offset\s*:[^;]+;?/gi, '')
     .replace(/--rt-ul\s*:[^;]+;?/gi, '')
+    .replace(/background-(?:image|size|position|repeat)\s*:[^;]+;?/gi, '')
+    .replace(/padding-bottom\s*:\s*0(?:px)?\s*;?/gi, '')
     .replace(/;;+/g, ';')
     .replace(/^;|;$/g, '');
 }
@@ -116,6 +141,7 @@ export function applyStrikeToCs(cs, on) {
 export function parseUnderlineFromCs(cs) {
   const s = String(cs || '');
   if (/--rt-ul\s*:\s*dash-dot/i.test(s)) return 'underline dash-dot';
+  if (/--rt-ul\s*:\s*wavy/i.test(s)) return 'underline wavy';
   const m = /text-decoration(?:-line)?\s*:\s*([^;]+)/i.exec(s);
   if (!m) return 'none';
   const line = m[1].trim();
@@ -125,6 +151,26 @@ export function parseUnderlineFromCs(cs) {
   return parseUnderline(combined);
 }
 
+/** True when underline is drawn via background (not native text-decoration). */
+export function isPaintedUnderline(kind) {
+  const k = parseUnderline(kind);
+  return k === 'underline dash-dot' || k === 'underline wavy';
+}
+
+/** Compact cs snippet that represents a painted or native underline kind. */
+function underlineKindToCs(kind) {
+  const k = parseUnderline(kind);
+  if (!k || k === 'none') return '';
+  if (k === 'underline dash-dot') return 'text-decoration:none;--rt-ul:dash-dot;';
+  if (k === 'underline wavy') return 'text-decoration:none;--rt-ul:wavy;';
+  return `text-decoration:${k};`;
+}
+
+const UL_COLOR = 'text-decoration-color:currentColor;';
+const UL_THIN =
+  'text-decoration-thickness:1.25px;text-underline-offset:0.12em;text-decoration-skip-ink:none;' +
+  UL_COLOR;
+
 export function applyUnderlineToCs(cs, kind) {
   let next = stripUnderlineFromCs(cs);
   const k = parseUnderline(kind);
@@ -132,13 +178,14 @@ export function applyUnderlineToCs(cs, kind) {
   if (k === 'underline dash-dot') {
     return `${next}text-decoration:none;--rt-ul:dash-dot;`;
   }
-  const thin =
-    'text-decoration-thickness:1.25px;text-underline-offset:0.12em;text-decoration-skip-ink:none;';
-  if (k === 'underline') return `${next}text-decoration:underline;${thin}`;
-  if (k === 'underline double') return `${next}text-decoration:underline double;${thin}`;
-  if (k === 'underline wavy') return `${next}text-decoration:underline wavy;${thin}`;
+  if (k === 'underline wavy') {
+    // Painted continuous wave (native wavy restarts after ф / span breaks).
+    return `${next}text-decoration:none;--rt-ul:wavy;`;
+  }
+  if (k === 'underline') return `${next}text-decoration:underline;${UL_THIN}`;
+  if (k === 'underline double') return `${next}text-decoration:underline double;${UL_THIN}`;
   if (k === 'underline dashed') {
-    return `${next}text-decoration:underline dashed;text-decoration-thickness:1.25px;text-underline-offset:0.12em;text-decoration-skip-ink:none;`;
+    return `${next}text-decoration:underline dashed;${UL_THIN}`;
   }
   return next;
 }
@@ -146,18 +193,16 @@ export function applyUnderlineToCs(cs, kind) {
 /** Inline CSS for a span (selection wrap). */
 export function underlineInlineCss(kind) {
   const k = parseUnderline(kind);
-  const thin =
-    'text-decoration-thickness:1.25px;text-underline-offset:0.12em;text-decoration-skip-ink:none;';
   const clearBg =
     'background-image:none;background-size:auto;background-position:0 0;background-repeat:no-repeat;padding-bottom:0;';
   if (!k || k === 'none') return `text-decoration:none;${clearBg}`;
-  if (k === 'underline') return `text-decoration:underline;${thin}${clearBg}`;
-  if (k === 'underline double') return `text-decoration:underline double;${thin}${clearBg}`;
-  if (k === 'underline wavy') return `text-decoration:underline wavy;${thin}${clearBg}`;
+  if (k === 'underline') return `text-decoration:underline;${UL_THIN}${clearBg}`;
+  if (k === 'underline double') return `text-decoration:underline double;${UL_THIN}${clearBg}`;
+  // Wavy + dash-dot: decoration comes from App.css [data-ul] background rules
+  if (k === 'underline wavy' || k === 'underline dash-dot') return 'text-decoration:none;';
   if (k === 'underline dashed') {
-    return `text-decoration:underline dashed;text-decoration-thickness:1.25px;text-underline-offset:0.12em;text-decoration-skip-ink:none;${clearBg}`;
+    return `text-decoration:underline dashed;${UL_THIN}${clearBg}`;
   }
-  if (k === 'underline dash-dot') return 'text-decoration:none;';
   return '';
 }
 
@@ -171,12 +216,17 @@ export function underlineDataUl(kind) {
   return '';
 }
 
-/** Wrap every non-whitespace text run of an HTML fragment in `<span data-ul="dash-dot">`.
- *  Used at render time for the whole-box dash-dot underline, so the painted line hugs the
- *  actual text width (and each wrapped line fragment) instead of spanning the whole block.
- *  Runs already inside any existing `data-ul` element are skipped, so repeated application
- *  is idempotent — e.g. after an edit commits innerHTML that still carries the wrappers. */
-export function dashDotWrapHtml(html) {
+/** Wrap every non-whitespace text run in an underline span (or data-ul for dash-dot).
+ *  Used at render time for whole-box underline so the line uses each run's currentColor
+ *  (nested colored spans keep a matching underline). Idempotent via data-ul skip. */
+export function underlineWrapHtml(html, kind) {
+  const k = parseUnderline(kind);
+  if (!k || k === 'none') return String(html || '');
+  const du = underlineDataUl(k);
+  const style = k === 'underline dash-dot' ? '' : underlineInlineCss(k);
+  const open = isPaintedUnderline(k)
+    ? `<span data-ul="${du}">`
+    : `<span data-ul="${du}" style="${style}">`;
   const src = String(html || '');
   if (!src) return src;
   const VOID = /^(?:br|img|hr|input|meta|link|wbr|area|base|col|embed|source|track)$/i;
@@ -199,7 +249,11 @@ export function dashDotWrapHtml(html) {
         if (closing) {
           if (stack.length) stack.pop();
         } else if (!selfClose) {
-          stack.push({ ul: /data-ul\s*=/.test(tag) });
+          // Skip runs already under any underline (data-ul OR text-decoration) — otherwise
+          // overlapping selections stack a second line under the same glyphs.
+          const st = /\bstyle\s*=\s*"([^"]*)"/i.exec(tag);
+          const styleUl = st ? parseUnderlineFromCs(st[1]) !== 'none' : false;
+          stack.push({ ul: /data-ul\s*=/.test(tag) || styleUl });
         }
       }
       out += tag;
@@ -211,7 +265,7 @@ export function dashDotWrapHtml(html) {
     i = next === -1 ? src.length : next;
     const insideUl = stack.some((s) => s.ul);
     if (!insideUl && /\S/.test(text)) {
-      out += `<span data-ul="dash-dot">${text}</span>`;
+      out += `${open}${text}</span>`;
     } else {
       out += text;
     }
@@ -219,35 +273,254 @@ export function dashDotWrapHtml(html) {
   return out;
 }
 
+/** @deprecated use underlineWrapHtml(html, 'underline dash-dot') */
+export function dashDotWrapHtml(html) {
+  return underlineWrapHtml(html, 'underline dash-dot');
+}
+
+function elHasExplicitColor(el) {
+  if (!el || el.nodeType !== 1) return false;
+  if (el.tagName === 'FONT' && el.getAttribute('color')) return true;
+  const st = el.getAttribute('style') || '';
+  return /(?:^|;)\s*color\s*:/i.test(st);
+}
+
+function applyUlAttrsToEl(el, kind) {
+  const k = parseUnderline(kind);
+  if (!k || k === 'none' || !el) return;
+  const du = underlineDataUl(k);
+  if (isPaintedUnderline(k)) {
+    const st = stripUnderlineFromCs(el.getAttribute('style') || '');
+    if (st) el.setAttribute('style', st);
+    else el.removeAttribute('style');
+    if (du) el.setAttribute('data-ul', du);
+    return;
+  }
+  const prev = stripUnderlineFromCs(el.getAttribute('style') || '');
+  const ulCss = underlineInlineCss(k);
+  el.setAttribute('style', prev ? `${prev};${ulCss}` : ulCss);
+  if (du) el.setAttribute('data-ul', du);
+}
+
+function stripUlAttrsFromEl(el) {
+  if (!el) return;
+  const st = el.getAttribute('style') || '';
+  const cleaned = stripUnderlineFromCs(st)
+    .replace(/;;+/g, ';')
+    .replace(/^;|;\s*$/g, '')
+    .trim();
+  if (cleaned) el.setAttribute('style', cleaned);
+  else el.removeAttribute('style');
+  el.removeAttribute('data-ul');
+}
+
+/** Set underline on a DOM element (span or <a>). kind "none" clears it. */
+export function setElementUnderline(el, kind) {
+  if (!el) return;
+  const k = parseUnderline(kind);
+  if (!k || k === 'none') {
+    stripUlAttrsFromEl(el);
+    // Keep explicit none on anchors so CSS default dashed does not come back.
+    if (el.tagName === 'A') el.setAttribute('data-ul', 'none');
+    return;
+  }
+  applyUlAttrsToEl(el, k);
+}
+
+/** Read underline kind from a node (climbs parents). */
+export function readUnderlineFromNode(node, root) {
+  return detectUnderlineFromNode(node, root);
+}
+
+/**
+ * When an underline span wraps differently-colored children, browsers paint the line
+ * with the wrapper's color. Push the decoration onto each colored host / text run so
+ * the wavy (or other) line matches the glyphs above it.
+ */
+export function syncInlineUnderlineColors(html) {
+  if (typeof document === 'undefined') return String(html || '');
+  const src = String(html || '');
+  if (!src || (!/data-ul|text-decoration/i.test(src) && !/--rt-ul/i.test(src))) return src;
+  try {
+    const root = document.createElement('div');
+    root.innerHTML = src;
+    const hosts = Array.from(
+      root.querySelectorAll('[data-ul], [style*="text-decoration"], [style*="--rt-ul"]')
+    ).reverse();
+    for (const host of hosts) {
+      const kind = detectUnderlineFromNode(host, root);
+      if (kind === 'none') continue;
+      const colored = Array.from(host.querySelectorAll('*')).filter(elHasExplicitColor);
+      if (!colored.length) {
+        // Same color as host — keep underline, force currentColor (native only)
+        const st = host.getAttribute('style') || '';
+        if (!isPaintedUnderline(kind) && !/text-decoration-color/i.test(st)) {
+          host.setAttribute('style', `${st};${UL_COLOR}`.replace(/^;/, ''));
+        }
+        continue;
+      }
+      const texts = [];
+      const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) {
+        if (/\S/.test(walker.currentNode.nodeValue || '')) texts.push(walker.currentNode);
+      }
+      for (const tn of texts) {
+        let colorHost = null;
+        let n = tn.parentElement;
+        while (n && n !== host) {
+          if (elHasExplicitColor(n)) colorHost = n;
+          n = n.parentElement;
+        }
+        if (colorHost) {
+          applyUlAttrsToEl(colorHost, kind);
+        } else {
+          const parent = tn.parentElement;
+          if (
+            parent &&
+            parent !== host &&
+            parent.childNodes.length === 1 &&
+            parent.tagName === 'SPAN' &&
+            !parent.getAttribute('data-ul')
+          ) {
+            applyUlAttrsToEl(parent, kind);
+          } else {
+            const span = document.createElement('span');
+            applyUlAttrsToEl(span, kind);
+            parent.insertBefore(span, tn);
+            span.appendChild(tn);
+          }
+        }
+      }
+      stripUlAttrsFromEl(host);
+    }
+    return root.innerHTML;
+  } catch (e) {
+    return src;
+  }
+}
+
+export function htmlHasInlineColor(html) {
+  return /style\s*=\s*"[^"]*color\s*:/i.test(String(html || '')) || /<\s*font\b[^>]*\bcolor\s*=/i.test(String(html || ''));
+}
+
+/**
+ * Fix mixed-color underlines; for dash-dot or box+colored runs, materialize wraps so
+ * each glyph color drives the line. Returns { html, paintBoxUnderline }.
+ */
+/** Convert legacy native `underline wavy` styles to painted data-ul markers. */
+function convertNativePaintedUnderlinesInHtml(html) {
+  if (typeof document === 'undefined') return String(html || '');
+  const src = String(html || '');
+  if (!/text-decoration/i.test(src) && !/--rt-ul/i.test(src)) return src;
+  try {
+    const root = document.createElement('div');
+    root.innerHTML = src;
+    root.querySelectorAll('[style*="text-decoration"], [style*="--rt-ul"]').forEach((el) => {
+      const kind = parseUnderlineFromCs(el.getAttribute('style') || '');
+      if (isPaintedUnderline(kind)) applyUlAttrsToEl(el, kind);
+    });
+    return root.innerHTML;
+  } catch (e) {
+    return src;
+  }
+}
+
+/**
+ * Merge adjacent sibling spans that share the same data-ul so a wavy/dash-dot
+ * background tile stays phase-continuous across the joined run.
+ */
+export function mergeAdjacentUnderlineSpans(html) {
+  if (typeof document === 'undefined') return String(html || '');
+  const src = String(html || '');
+  if (!/data-ul\s*=/.test(src)) return src;
+  try {
+    const root = document.createElement('div');
+    root.innerHTML = src;
+    let guard = 0;
+    while (guard++ < 48) {
+      let merged = false;
+      const spans = Array.from(root.querySelectorAll('span[data-ul]'));
+      for (const a of spans) {
+        if (!a.parentNode) continue;
+        const b = a.nextSibling;
+        if (!b || b.nodeType !== 1 || b.tagName !== 'SPAN') continue;
+        const ua = a.getAttribute('data-ul');
+        const ub = b.getAttribute('data-ul');
+        if (!ua || ua !== ub) continue;
+        // Same underline kind — join (keep a's other styles; drop b's wrapper)
+        while (b.firstChild) a.appendChild(b.firstChild);
+        b.remove();
+        merged = true;
+        break;
+      }
+      if (!merged) break;
+    }
+    return root.innerHTML;
+  } catch (e) {
+    return src;
+  }
+}
+
+export function prepareTextUnderlineHtml(html, cs) {
+  const kind = parseUnderlineFromCs(cs);
+  let out = convertNativePaintedUnderlinesInHtml(html);
+  out = unnestUnderlinesInHtml(syncInlineUnderlineColors(out));
+  const mixed = htmlHasInlineColor(out);
+  const needWrap =
+    isPaintedUnderline(kind) || (kind !== 'none' && mixed);
+  if (needWrap) out = underlineWrapHtml(out, kind);
+  out = unnestUnderlinesInHtml(out);
+  out = mergeAdjacentUnderlineSpans(out);
+  return {
+    html: out,
+    // Box CSS underline only when native decoration is safe (no nested colors;
+    // wavy/dash-dot are always painted on inline spans).
+    paintBoxUnderline: kind !== 'none' && !isPaintedUnderline(kind) && !mixed,
+    kind,
+  };
+}
+
 /** React style + class for the text box from cs. */
-export function underlineBoxProps(cs) {
+export function underlineBoxProps(cs, opts = {}) {
   const kind = parseUnderlineFromCs(cs);
   const strike = hasStrikeInCs(cs);
-  if (kind === 'none') {
+  const paintUl = opts.paintBoxUnderline !== false;
+  if (kind === 'none' || isPaintedUnderline(kind) || !paintUl) {
     return strike
-      ? { style: { textDecorationLine: 'line-through' }, className: '', kind }
-      : { style: {}, className: '', kind };
+      ? {
+          style: {
+            textDecorationLine: 'line-through',
+            textDecorationColor: 'currentColor',
+            textDecorationThickness: '1.25px',
+            textDecorationSkipInk: 'none',
+          },
+          className: '',
+          kind,
+        }
+      : {
+          style: kind !== 'none' ? { textDecorationLine: 'none' } : {},
+          className: '',
+          kind,
+        };
   }
-  if (kind === 'underline dash-dot') {
-    // dash-dot underline is drawn via inline `[data-ul="dash-dot"]` spans (the box html is
-    // wrapped by dashDotWrapHtml at render time), so real text-decoration stays "none" and
-    // a plain line-through can be layered on top of it independently.
-    return {
-      style: strike ? { textDecorationLine: 'line-through' } : { textDecorationLine: 'none' },
-      className: '',
-      kind,
-    };
-  }
-  const lineWord = { underline: 'underline', 'underline double': 'underline', 'underline wavy': 'underline', 'underline dashed': 'underline' };
-  const styleWord = { underline: 'solid', 'underline double': 'double', 'underline wavy': 'wavy', 'underline dashed': 'dashed' };
+  const lineWord = {
+    underline: 'underline',
+    'underline double': 'underline',
+    'underline wavy': 'underline',
+    'underline dashed': 'underline',
+  };
+  const styleWord = {
+    underline: 'solid',
+    'underline double': 'double',
+    'underline wavy': 'wavy',
+    'underline dashed': 'dashed',
+  };
   return {
     style: {
-      // Longhand line/style instead of the `textDecoration` shorthand so a strikethrough line
-      // can be added alongside the underline in one declaration (the shorthand can't combine
-      // an extra line value in without clobbering the style keyword). When strike is also on,
-      // both lines share the underline's style (double/wavy/dashed) — combining truly
-      // independent styles per-line isn't supported by CSS text-decoration.
-      textDecorationLine: strike ? `${lineWord[kind] || 'underline'} line-through` : lineWord[kind] || 'underline',
+      textDecorationLine: strike
+        ? `${lineWord[kind] || 'underline'} line-through`
+        : lineWord[kind] || 'underline',
+      textDecorationColor: 'currentColor',
       textDecorationStyle: styleWord[kind] || 'solid',
       textDecorationThickness: '1.25px',
       textUnderlineOffset: '0.12em',
@@ -265,11 +538,13 @@ export function strikeInlineCss(cs, on) {
   if (!on) {
     return kind === 'none' ? 'text-decoration-line:none;' : underlineInlineCss(kind);
   }
-  if (kind === 'none') return 'text-decoration-line:line-through;';
+  const strikeCss =
+    'text-decoration-line:line-through;text-decoration-color:currentColor;text-decoration-thickness:1.25px;text-decoration-skip-ink:none;';
+  if (kind === 'none') return strikeCss;
   const lineWord = { underline: 'underline', 'underline double': 'underline', 'underline wavy': 'underline', 'underline dashed': 'underline' };
   const styleWord = { underline: 'solid', 'underline double': 'double', 'underline wavy': 'wavy', 'underline dashed': 'dashed' };
-  if (kind === 'underline dash-dot') return 'text-decoration-line:line-through;';
-  return `text-decoration-line:${lineWord[kind] || 'underline'} line-through;text-decoration-style:${styleWord[kind] || 'solid'};text-decoration-thickness:1.25px;text-underline-offset:0.12em;text-decoration-skip-ink:none;`;
+  if (isPaintedUnderline(kind)) return strikeCss;
+  return `text-decoration-line:${lineWord[kind] || 'underline'} line-through;text-decoration-style:${styleWord[kind] || 'solid'};${UL_THIN}`;
 }
 
 export function underlineActive(cs) {
@@ -282,23 +557,121 @@ export function detectUnderlineFromEditable(root, fallbackCs) {
   try {
     const sel = window.getSelection();
     if (sel && sel.rangeCount && root.contains(sel.anchorNode)) {
-      let n = sel.anchorNode;
-      if (n.nodeType === 3) n = n.parentElement;
-      while (n && n !== root) {
-        if (n.getAttribute) {
-          const du = n.getAttribute('data-ul');
-          if (du) return parseUnderline(du);
-          const st = n.getAttribute('style') || '';
-          if (/text-decoration/i.test(st) || /--rt-ul/i.test(st)) {
-            const fromStyle = parseUnderlineFromCs(st);
-            if (fromStyle !== 'none') return fromStyle;
+      const range = sel.getRangeAt(0);
+      const kinds = new Set();
+      const consider = (node) => {
+        let n = node;
+        if (n && n.nodeType === 3) n = n.parentElement;
+        while (n && n !== root) {
+          if (n.getAttribute) {
+            const du = n.getAttribute('data-ul');
+            if (du) {
+              kinds.add(parseUnderline(du));
+              return;
+            }
+            const st = n.getAttribute('style') || '';
+            if (/text-decoration/i.test(st) || /--rt-ul/i.test(st)) {
+              const fromStyle = parseUnderlineFromCs(st);
+              if (fromStyle !== 'none') {
+                kinds.add(fromStyle);
+                return;
+              }
+            }
           }
+          n = n.parentElement;
         }
-        n = n.parentElement;
+      };
+      if (!sel.isCollapsed) {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        let node = walker.nextNode();
+        while (node) {
+          if ((node.textContent || '').replace(/[\s\u200b]/g, '') && range.intersectsNode(node)) {
+            consider(node);
+          }
+          node = walker.nextNode();
+        }
       }
+      if (!kinds.size) consider(sel.anchorNode);
+      if (kinds.size === 1) return [...kinds][0];
+      if (kinds.size > 1) return [...kinds][0];
     }
   } catch (e) {}
   return parseUnderlineFromCs(fallbackCs);
+}
+
+/** The one underline shared by every text run, or null when runs disagree / there is none to read. */
+export function uniformUnderlineInHtml(html) {
+  if (typeof document === 'undefined') return null;
+  const src = String(html || '');
+  if (!src || !/data-ul|text-decoration|--rt-ul/i.test(src)) return null;
+  try {
+    const root = document.createElement('div');
+    root.innerHTML = src;
+    const kinds = new Set();
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let node = walker.nextNode();
+    while (node) {
+      if (/\S/.test(node.nodeValue || '')) kinds.add(detectUnderlineFromNode(node, root));
+      node = walker.nextNode();
+    }
+    if (kinds.size !== 1) return null;
+    return [...kinds][0];
+  } catch (e) {
+    return null;
+  }
+}
+
+/** Character offsets of the current selection inside root (survives innerHTML rewrite). */
+export function captureSelectionOffsets(root) {
+  if (typeof window === 'undefined' || !root) return null;
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount || !root.contains(sel.anchorNode)) return null;
+  try {
+    const range = sel.getRangeAt(0);
+    const before = document.createRange();
+    before.selectNodeContents(root);
+    before.setEnd(range.startContainer, range.startOffset);
+    const start = before.toString().length;
+    const end = start + range.toString().length;
+    return { start, end };
+  } catch (e) {
+    return null;
+  }
+}
+
+export function restoreSelectionOffsets(root, off) {
+  if (!root || !off || typeof window === 'undefined') return;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let pos = 0;
+  let startNode = null;
+  let startOff = 0;
+  let endNode = null;
+  let endOff = 0;
+  let node = walker.nextNode();
+  while (node) {
+    const len = (node.nodeValue || '').length;
+    if (!startNode && pos + len >= off.start) {
+      startNode = node;
+      startOff = Math.max(0, off.start - pos);
+    }
+    if (pos + len >= off.end) {
+      endNode = node;
+      endOff = Math.max(0, off.end - pos);
+      break;
+    }
+    pos += len;
+    node = walker.nextNode();
+  }
+  if (!startNode) return;
+  try {
+    const range = document.createRange();
+    range.setStart(startNode, Math.min(startOff, startNode.nodeValue.length));
+    const endN = endNode || startNode;
+    range.setEnd(endN, Math.min(endOff, endN.nodeValue.length));
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  } catch (e) {}
 }
 
 /** Detect if node or its parents have strike (line-through). */
@@ -358,65 +731,139 @@ export function stripUnderlineFromHtml(html) {
   );
 }
 
-/** Remove underline styles from all nested spans in a node, but preserve strike (line-through). */
+function elHasUnderline(el) {
+  if (!el || el.nodeType !== 1) return false;
+  if (el.getAttribute?.('data-ul')) return true;
+  const st = el.getAttribute?.('style') || '';
+  return parseUnderlineFromCs(st) !== 'none';
+}
+
+/** Remove underline styles from all nested elements, but preserve strike (line-through). */
 function stripUnderlineFromChildren(node) {
   if (!node) return;
-  // Process all child nodes
-  const walker = document.createTreeWalker(node, NodeFilter.SHOW_ELEMENT, {
-    acceptNode: (n) => n.tagName === 'SPAN' ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT
-  });
-  const spans = [];
-  while (walker.nextNode()) spans.push(walker.currentNode);
-  
-  for (const span of spans) {
-    const style = span.getAttribute('style') || '';
-    // First check if this span had strike
+  const els = node.querySelectorAll
+    ? Array.from(node.querySelectorAll('[data-ul], [style*="text-decoration"], [style*="--rt-ul"]'))
+    : [];
+  // Also check the node itself when it's an element
+  if (node.nodeType === 1 && elHasUnderline(node)) els.push(node);
+  for (const el of els) {
+    const style = el.getAttribute('style') || '';
     const hadStrike = /line-through/i.test(style) || /--rt-strike\s*:\s*1/i.test(style);
-    
-    // Remove all text-decoration related properties
-    let cleaned = style
-      .replace(/text-decoration(?:-line|-style|-thickness|-color)?\s*:[^;]+;?/gi, '')
-      .replace(/text-underline-offset\s*:[^;]+;?/gi, '')
-      .replace(/--rt-ul\s*:[^;]+;?/gi, '')
+    let cleaned = stripUnderlineFromCs(style)
       .replace(/;;+/g, ';')
       .replace(/^;|;\s*$/g, '')
       .trim();
-    
-    // Restore strike if it was there
     if (hadStrike) {
-      cleaned = cleaned ? `${cleaned};text-decoration-line:line-through;` : 'text-decoration-line:line-through;';
+      cleaned = cleaned
+        ? `${cleaned};text-decoration-line:line-through;`
+        : 'text-decoration-line:line-through;';
     }
-    
-    if (cleaned) {
-      span.setAttribute('style', cleaned);
-    } else {
-      span.removeAttribute('style');
-    }
-    span.removeAttribute('data-ul');
+    if (cleaned) el.setAttribute('style', cleaned);
+    else el.removeAttribute('style');
+    el.removeAttribute('data-ul');
   }
 }
 
-/** Remove underline decorations from ancestor <span>s of `node` within `root`, so a freshly
- *  wrapped selection span doesn't stack a second line on top of leftover inline underlines. */
-function stripUnderlineFromAncestors(node, root) {
-  let n = node.parentElement;
-  while (n && n !== root && n !== document.body) {
-    if (n.nodeType === 1 && n.tagName === 'SPAN') {
-      const st = n.getAttribute('style') || '';
-      if (/text-decoration|--rt-ul/.test(st)) {
-        const cleaned = st
-          .replace(/text-decoration(?:-line|-style|-thickness|-color)?\s*:[^;]+;?/gi, '')
-          .replace(/text-underline-offset\s*:[^;]+;?/gi, '')
-          .replace(/--rt-ul\s*:[^;]+;?/gi, '')
-          .replace(/;;+/g, ';')
-          .replace(/^;|;\s*$/g, '')
-          .trim();
-        if (cleaned) n.setAttribute('style', cleaned);
-        else n.removeAttribute('style');
-        n.removeAttribute('data-ul');
+/**
+ * Lift `node` out of any underline ancestors (splitting them into before/after),
+ * so a new underline never nests under an old one — overlapping selections keep
+ * a single line (the new style) on the shared glyphs.
+ */
+function splitOutFromUnderlineAncestors(node, root) {
+  if (!node || !root) return;
+  let guard = 0;
+  while (guard++ < 32) {
+    let parent = node.parentElement;
+    let ulHost = null;
+    while (parent && parent !== root && parent !== document.body) {
+      if (elHasUnderline(parent)) {
+        ulHost = parent;
+        break;
       }
+      parent = parent.parentElement;
     }
-    n = n.parentElement;
+    if (!ulHost) return;
+
+    const grand = ulHost.parentNode;
+    if (!grand) return;
+
+    // Clone attrs for the "after" half (same underline style as the host)
+    const after = ulHost.cloneNode(false);
+    while (node.nextSibling) after.appendChild(node.nextSibling);
+
+    // Pull node out: [ulHost: before...] [node] [after: ...]
+    ulHost.removeChild(node);
+    const insertAt = ulHost.nextSibling;
+    if (after.childNodes.length) grand.insertBefore(after, insertAt);
+    grand.insertBefore(node, after.childNodes.length ? after : insertAt);
+
+    // Drop empty halves; strip underline from a host that no longer needs it
+    if (!ulHost.hasChildNodes()) ulHost.remove();
+    if (after.parentNode && !after.hasChildNodes()) after.remove();
+  }
+}
+
+/** Flatten nested underlines in a DOM subtree (outer line removed on shared runs). */
+export function unnestUnderlinesIn(root) {
+  if (!root || typeof document === 'undefined') return;
+  let guard = 0;
+  while (guard++ < 32) {
+    const all = Array.from(
+      root.querySelectorAll('[data-ul], [style*="text-decoration"], [style*="--rt-ul"]')
+    ).filter(elHasUnderline);
+    // Find an underline node that still sits inside another underline
+    let nested = null;
+    for (const el of all) {
+      let p = el.parentElement;
+      while (p && p !== root) {
+        if (elHasUnderline(p)) {
+          nested = el;
+          break;
+        }
+        p = p.parentElement;
+      }
+      if (nested) break;
+    }
+    if (!nested) {
+      pruneUnderlineDebris(root);
+      return;
+    }
+    splitOutFromUnderlineAncestors(nested, root);
+  }
+  pruneUnderlineDebris(root);
+}
+
+/** Drop empty underline shells left when a selection is split across colored runs. */
+function pruneUnderlineDebris(root) {
+  if (!root) return;
+  const els = Array.from(root.querySelectorAll('span')).reverse();
+  for (const el of els) {
+    if (!el.parentNode) continue;
+    if (!/\S/.test(el.textContent || '') && !el.querySelector('br, img')) {
+      el.remove();
+      continue;
+    }
+    const style = (el.getAttribute('style') || '').replace(/;;+/g, ';').replace(/^;|;$/g, '').trim();
+    if (style) el.setAttribute('style', style);
+    else el.removeAttribute('style');
+    if (!el.getAttribute('data-ul') && !el.getAttribute('style') && el.attributes.length === 0) {
+      el.replaceWith(...el.childNodes);
+    }
+  }
+}
+
+/** HTML string helper — unnest stacked underlines after overlapping edits. */
+export function unnestUnderlinesInHtml(html) {
+  if (typeof document === 'undefined') return String(html || '');
+  const src = String(html || '');
+  if (!src || !/data-ul|text-decoration/i.test(src)) return src;
+  try {
+    const root = document.createElement('div');
+    root.innerHTML = src;
+    unnestUnderlinesIn(root);
+    return root.innerHTML;
+  } catch (e) {
+    return src;
   }
 }
 
@@ -445,11 +892,7 @@ export function applyUnderlineToSelection(kind, root, preserveStrike) {
     // Create span with new style
     const span = document.createElement('span');
     if (hadStrike) {
-      // Combine underline with strike using strikeInlineCss logic with proper cs
-      const tempCs = k === 'underline dash-dot' ? 'text-decoration:none;--rt-ul:dash-dot;'
-        : k === 'none' ? ''
-        : `text-decoration:${k};`;
-      span.setAttribute('style', strikeInlineCss(tempCs, true));
+      span.setAttribute('style', strikeInlineCss(underlineKindToCs(k), true));
     } else {
       span.setAttribute('style', underlineInlineCss(k));
     }
@@ -461,13 +904,47 @@ export function applyUnderlineToSelection(kind, root, preserveStrike) {
     span.appendChild(contents);
     range.insertNode(span);
 
-    // Collapse any leftover inline underline on ancestors so we never stack lines
-    if (root) stripUnderlineFromAncestors(span, root);
+    // If the new span landed inside an older underline, split that ancestor so the
+    // overlapping glyphs keep only this underline (no double line).
+    if (root) {
+      splitOutFromUnderlineAncestors(span, root);
+      unnestUnderlinesIn(root);
+    }
+
+    // Mixed-color selection: push decoration onto colored runs so the line matches glyphs
+    let focus = span;
+    if (k !== 'none' && span.parentNode) {
+      try {
+        const fixed = syncInlineUnderlineColors(span.outerHTML);
+        if (fixed && fixed !== span.outerHTML) {
+          const tmp = document.createElement('div');
+          tmp.innerHTML = fixed;
+          const frag = document.createDocumentFragment();
+          while (tmp.firstChild) frag.appendChild(tmp.firstChild);
+          const first = frag.firstChild;
+          const last = frag.lastChild;
+          span.replaceWith(frag);
+          focus = last || first;
+          if (root) {
+            if (first) splitOutFromUnderlineAncestors(first, root);
+            unnestUnderlinesIn(root);
+          }
+          if (first && last && first.parentNode) {
+            sel.removeAllRanges();
+            const nr = document.createRange();
+            nr.setStartBefore(first);
+            nr.setEndAfter(last);
+            sel.addRange(nr);
+            return true;
+          }
+        }
+      } catch (e2) {}
+    }
 
     // Restore selection inside the new span
     sel.removeAllRanges();
     const nr = document.createRange();
-    nr.selectNodeContents(span);
+    nr.selectNodeContents(focus);
     sel.addRange(nr);
     return true;
   } catch (e) {
@@ -484,6 +961,7 @@ function detectUnderlineFromNode(node, root) {
     while (n && n !== root) {
       if (n.getAttribute) {
         const du = n.getAttribute('data-ul');
+        if (du === 'none') return 'none';
         if (du) return parseUnderline(du);
         const st = n.getAttribute('style') || '';
         if (/text-decoration/i.test(st) || /--rt-ul/i.test(st)) {
@@ -576,9 +1054,7 @@ export function applyStrikeToSelection(on, root) {
     // Detect current underline from anchor node (climbs to selection parents)
     const commonAncestor = range.commonAncestorContainer;
     const existingUl = detectUnderlineFromNode(sel.anchorNode, commonAncestor);
-    const existingUlCs = existingUl !== 'none'
-      ? (existingUl === 'underline dash-dot' ? 'text-decoration:none;--rt-ul:dash-dot;' : `text-decoration:${existingUl};`)
-      : '';
+    const existingUlCs = underlineKindToCs(existingUl);
 
     // Extract contents first to avoid nested spans
     const contents = range.extractContents();
@@ -652,14 +1128,7 @@ export function materializeBoxFormatsToInline(editableRoot, cs) {
       wrapperDataUl = underlineDataUl(boxUl);
     }
     if (boxStrike) {
-      // strikeInlineCss needs cs describing just the underline (it combines strike on top)
-      const tempCs =
-        boxUl === 'underline dash-dot'
-          ? 'text-decoration:none;--rt-ul:dash-dot;'
-          : boxUl !== 'none'
-          ? `text-decoration:${boxUl};`
-          : '';
-      const sCss = strikeInlineCss(tempCs, true);
+      const sCss = strikeInlineCss(underlineKindToCs(boxUl), true);
       wrapperStyle = wrapperStyle ? `${wrapperStyle}${sCss}` : sCss;
     }
 

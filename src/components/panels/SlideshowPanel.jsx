@@ -3,6 +3,7 @@ import { editorApi } from '../../editor/editorApi';
 import { usePresentationStore } from '../../stores/presentationStore';
 import { useUiStore } from '../../stores/uiStore';
 import { versionAttr } from '../../editor/versions.js';
+import DisplayPicker from '../shell/DisplayPicker.jsx';
 
 export default function SlideshowPanel() {
   const lang = useUiStore((s) => s.lang);
@@ -11,6 +12,7 @@ export default function SlideshowPanel() {
   const presAutoDelay = useUiStore((s) => s.presAutoDelay);
   const presLoop = useUiStore((s) => s.presLoop);
   const presShuffle = useUiStore((s) => s.presShuffle);
+  const presShowBrush = useUiStore((s) => s.presShowBrush);
   const autoOn = slideAuto > 0;
   const delay = autoOn ? Math.max(1, Math.min(60, slideAuto)) : presAutoDelay;
 
@@ -25,6 +27,7 @@ export default function SlideshowPanel() {
           {ru ? 'С текущего (Shift+F5)' : 'From current (Shift+F5)'}
         </button>
       </div>
+      <DisplayPicker />
 
       <div className="react-props-hdr" style={{ marginTop: 14 }}>
         {ru ? 'Авто-переход' : 'Auto-advance'}
@@ -77,6 +80,18 @@ export default function SlideshowPanel() {
           onChange={() => useUiStore.getState().togglePresShuffle()}
         />
         {ru ? 'Случайный порядок' : 'Shuffle'}
+      </label>
+
+      <div className="react-props-hdr" style={{ marginTop: 14 }}>
+        {ru ? 'Отображение' : 'Display'}
+      </div>
+      <label className="react-props-check" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <input
+          type="checkbox"
+          checked={presShowBrush}
+          onChange={() => useUiStore.getState().togglePresShowBrush()}
+        />
+        {ru ? 'Кисть при показе' : 'Brush during show'}
       </label>
     </section>
   );

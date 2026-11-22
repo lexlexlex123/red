@@ -81,6 +81,7 @@ export function getTabGroups(activeTab, lang, snap = {}) {
           B('Markdown', 'Markdown', 'markdown', () => editorApi.addMarkdown()),
           B('Формула', 'Formula', 'formula', () => editorApi.addFormula()),
           B('Аплет', 'Applet', 'applet', () => editorApi.openAppletModal()),
+          B('LEGO', 'LEGO', 'lego', () => editorApi.openLegoPicker()),
           B('Таблица', 'Table', 'table', () => editorApi.openTablePicker()),
           B('Ссылка', 'Link', 'link', () => editorApi.openLinkModal()),
           B('Связи', 'Connect', 'connector', () => editorApi.startConnectorMode('line'), {
@@ -137,11 +138,19 @@ export function getTabGroups(activeTab, lang, snap = {}) {
             on: findOn,
           }),
         ]),
+        G('Печать', 'Print', [
+          B('Печать', 'Print', 'export', () => editorApi.printSlides(), {
+            title: ru ? 'Печать слайдов (Ctrl+P)' : 'Print slides (Ctrl+P)',
+          }),
+        ]),
       ];
     case 'anim': {
       const playing = !!(snap.slideAnimPlaying != null ? snap.slideAnimPlaying : ui.slideAnimPlaying);
       return [
         G('Просмотр', 'Preview', [
+          B('Удалить\nанимации', 'Clear\nanims', 'clear', () => editorApi.clearSlideAnims(), {
+            title: ru ? 'Удалить все анимации текущего слайда' : 'Remove all animations on this slide',
+          }),
           playing
             ? B('Стоп\n\u00a0', 'Stop\n\u00a0', 'stop', () => void editorApi.stopSlideAnims(), {
                 primary: true,

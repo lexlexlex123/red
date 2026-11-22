@@ -135,7 +135,8 @@ function visualDefaults(el, zw, zh) {
 }
 
 /** v7.1: keep aspect, center in the cell; use defaults if the box is tiny. */
-function fitVisual(el, zx, zy, zw, zh) {
+function fitVisual(el, zx, zy, zw, zh, allowUpscale = false) {
+  if (el.type === 'image' && el.imgFit === 'fill') el.imgFit = 'contain';
   let ow = el.w || 0;
   let oh = el.h || 0;
   if (ow < 20 || oh < 20) {
@@ -143,7 +144,7 @@ function fitVisual(el, zx, zy, zw, zh) {
     ow = d.w;
     oh = d.h;
   }
-  if (ow <= zw && oh <= zh) {
+  if (!allowUpscale && ow <= zw && oh <= zh) {
     el.w = Math.round(ow);
     el.h = Math.round(oh);
   } else {
@@ -253,10 +254,7 @@ function layoutGridWithCaptions(pairs, ax, ay, aw, ah, gap) {
     const zy = ay + row * (cH + gap);
     const capH = pair.caption ? Math.max(26, Math.round(cH * 0.22)) : 0;
     const imgH = cH - capH - (pair.caption ? Math.round(gap * 0.4) : 0);
-    pair.img.x = zx;
-    pair.img.y = zy;
-    pair.img.w = cW;
-    pair.img.h = Math.max(40, imgH);
+    fitVisual(pair.img, zx, zy, cW, Math.max(40, imgH), true);
     if (pair.caption) putCaption(pair.caption, zx, zy + imgH + Math.round(gap * 0.4), cW, capH);
   });
 }
@@ -269,9 +267,10 @@ function layoutGridWithCaptions(pairs, ax, ay, aw, ah, gap) {
 export function autoPlaceSlide(slide, opts) {
   const W = opts.canvasW || DEFAULT_CANVAS_W;
   const H = opts.canvasH || DEFAULT_CANVAS_H;
+  const variant = Math.abs(Math.trunc(opts.variant || 0)) % 3;
   const align = opts.align === 'center' || opts.align === 'right' ? opts.align : 'left';
-  const PAD = 66;
-  const GAP = 24;
+  const PAD = variant === 1 ? 82 : variant === 2 ? 50 : 66;
+  const GAP = variant === 1 ? 32 : variant === 2 ? 18 : 24;
   const els = JSON.parse(JSON.stringify(slide?.els || []));
   const decor = els.filter(isDecor);
   const content = els.filter((e) => !isDecor(e));
@@ -325,6 +324,43 @@ export function autoPlaceSlide(slide, opts) {
       el.h = Math.min(H - PAD - y, Math.max(el.h || 200, 180));
       y += el.h + GAP;
     });
+  } else if (visuals.length && bodies.length && !tables.length && variant !== 0) {
+    const areaH = Math.max(160, H - PAD - y);
+    const visualCols = Math.min(variant === 1 ? 3 : 2, visuals.length);
+    const visualRows = Math.ceil(visuals.length / visualCols);
+    const visualH = Math.max(100, Math.round(areaH * (variant === 1 ? 0.52 : 0.64)));
+    const bodyY = y + visualH + GAP;
+    const bodyH = Math.max(80, H - PAD - bodyY);
+    const cellW = Math.floor((contentW - GAP * (visualCols - 1)) / visualCols);
+    const cellH = Math.floor((visualH - GAP * (visualRows - 1)) / visualRows);
+    visuals.forEach((el, i) => {
+      const order = variant === 2 ? visuals.length - 1 - i : i;
+      const c = order % visualCols;
+      const r = Math.floor(order / visualCols);
+      fitVisual(
+        el,
+        PAD + c * (cellW + GAP),
+        y + r * (cellH + GAP),
+        cellW,
+        cellH,
+        el.type === 'image'
+      );
+    });
+    const bodyCols = variant === 2 && bodies.length > 1 ? 2 : 1;
+    const bodyRows = Math.ceil(bodies.length / bodyCols);
+    const bodyW = Math.floor((contentW - GAP * (bodyCols - 1)) / bodyCols);
+    const eachBodyH = Math.max(80, Math.floor((bodyH - GAP * (bodyRows - 1)) / bodyRows));
+    bodies.forEach((el, i) => {
+      const c = i % bodyCols;
+      const r = Math.floor(i / bodyCols);
+      el.x = PAD + c * (bodyW + GAP);
+      el.y = bodyY + r * (eachBodyH + GAP);
+      el.w = bodyW;
+      el.h = eachBodyH;
+    });
+    if (hasCaptionPairs && !otherVisuals.length) {
+      layoutGridWithCaptions(pairs, PAD, y, contentW, visualH, GAP);
+    }
   } else if (visuals.length && bodies.length) {
     const leftW = Math.round(contentW * 0.48);
     const rightW = contentW - leftW - GAP;
@@ -345,7 +381,14 @@ export function autoPlaceSlide(slide, opts) {
       visuals.forEach((el, i) => {
         const c = i % cols;
         const r = Math.floor(i / cols);
-        fitVisual(el, PAD + leftW + GAP + c * (cellW + GAP), y + r * (cellH + GAP), cellW, cellH);
+        fitVisual(
+          el,
+          PAD + leftW + GAP + c * (cellW + GAP),
+          y + r * (cellH + GAP),
+          cellW,
+          cellH,
+          el.type === 'image'
+        );
       });
       captions.forEach((cap, i) => {
         putCaption(cap, PAD, H - PAD - 36 - i * 28, contentW, 28);
@@ -365,7 +408,7 @@ export function autoPlaceSlide(slide, opts) {
         putCaption(cap, PAD, H - PAD - 40 - i * 36, contentW, 32);
       });
     } else {
-      const cols = Math.min(3, visuals.length);
+      const cols = Math.min(variant === 1 ? 2 : variant === 2 ? 1 : 3, visuals.length);
       const rows = Math.ceil(visuals.length / cols);
       const areaH = Math.max(160, H - PAD - y);
       const cellW = Math.floor((contentW - GAP * (cols - 1)) / cols);
@@ -373,7 +416,14 @@ export function autoPlaceSlide(slide, opts) {
       visuals.forEach((el, i) => {
         const c = i % cols;
         const r = Math.floor(i / cols);
-        fitVisual(el, PAD + c * (cellW + GAP), y + r * (cellH + GAP), cellW, cellH);
+        fitVisual(
+          el,
+          PAD + c * (cellW + GAP),
+          y + r * (cellH + GAP),
+          cellW,
+          cellH,
+          el.type === 'image'
+        );
       });
       captions.forEach((cap, i) => {
         putCaption(cap, PAD, H - PAD - 36 - i * 28, contentW, 28);
@@ -571,7 +621,10 @@ export function autoPlaceDeck(slides, indices, opts = {}) {
   list.forEach((s, i) => {
     s._apTarget = uniq.indexOf(i) >= 0;
   });
-  const split = splitOverflowSlides(list, canvasH, 280, 200, opts.cur != null ? opts.cur : 0);
+  const split =
+    opts.splitOverflow === false
+      ? { slides: list, cur: opts.cur != null ? opts.cur : 0 }
+      : splitOverflowSlides(list, canvasH, 280, 200, opts.cur != null ? opts.cur : 0);
   const align = opts.align || detectAlign(split.slides.filter((s) => s && s._apTarget));
   const placed = split.slides.map((s, si) => {
     if (!s._apTarget) return stripApMeta(s);
@@ -579,6 +632,7 @@ export function autoPlaceDeck(slides, indices, opts = {}) {
       canvasW,
       canvasH,
       align,
+      variant: opts.variant,
       isTitle: si === 0,
       theme: opts.theme || getTheme(opts.themeIdx),
     });

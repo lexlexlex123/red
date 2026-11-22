@@ -1,5 +1,8 @@
 import { getFlipHTML, flipCfgFromEl, FLIP_DEFAULTS, normalizeFlipApplet, isFlipAppletId } from './flipApplet.js';
 import { getPeriodicHTML, PERIODIC_DEFAULTS, PTE_CARD_W, PTE_CARD_H } from './periodicApplet.js';
+import { getClassificationHTML, CLASSIFICATION_DEFAULTS } from './classificationApplet.js';
+import { getImageSortHTML, IMAGE_SORT_DEFAULTS } from './imageSortApplet.js';
+import { resolveSchemeColor } from './themes.js';
 import { APPLET_SANDBOX, APPLET_SANDBOX_FLIP, appletSandbox } from './appletSandbox.js';
 
 export { APPLET_SANDBOX, APPLET_SANDBOX_FLIP, appletSandbox };
@@ -146,19 +149,20 @@ html,body{width:100%;height:100%;background:transparent;overflow:hidden}
 </style></head><body>
 <div class="wrap" id="wrap"><div class="wrap-bg" id="wrapbg"></div><div class="num" id="num">--:--</div></div>
 <script>
-var _total=${totalSec},_rem=${totalSec},_t=null,_started=false;
+var _total=${totalSec},_rem=${totalSec},_t=null,_started=false,_done=false,_endAt=0;
 function fmt(s){s=Math.max(0,s);return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');}
-function tick(){_rem--;document.getElementById('num').textContent=fmt(_rem);if(_rem<=0){clearInterval(_t);_t=null;document.getElementById('num').classList.add('done');_fireOnEnd();}}
+function pulse(){if(!_started||_done)return;_rem=Math.max(0,Math.ceil((_endAt-Date.now())/1000));var n=document.getElementById('num');n.textContent=fmt(_rem);if(_rem<=0){_done=true;if(_t){clearInterval(_t);_t=null;}n.classList.add('done');_fireOnEnd();}}
 var _onEnd=${JSON.stringify(tmOnEnd)},_onEndSlide=${tmOnEndSlide},_onEndAnim=${JSON.stringify(tmOnEndAnim)};
 function _postAppletMsg(msg){try{window.parent.postMessage(msg,'*');}catch(e){}try{if(window.top!==window.parent)window.top.postMessage(msg,'*');}catch(e){}}
 function _fireOnEnd(){if(_onEnd==='next')_postAppletMsg({type:'timerNav',mode:'next'});else if(_onEnd==='slide')_postAppletMsg({type:'timerNav',mode:'slide',slide:_onEndSlide});else if(_onEnd==='anim'&&_onEndAnim)_postAppletMsg({type:'appletAnim',ref:_onEndAnim,appletVal:_rem});}
-function start(){if(_t||_rem<=0)return;_started=true;document.getElementById('num').textContent=fmt(_rem);_t=setInterval(tick,1000);}
+function start(){if(_started||_rem<=0)return;_started=true;_done=false;_endAt=Date.now()+_rem*1000;document.getElementById('num').textContent=fmt(_rem);if(_t)clearInterval(_t);pulse();_t=setInterval(pulse,250);}
 document.getElementById('num').textContent=fmt(_total);
+document.addEventListener('visibilitychange',function(){if(!document.hidden&&_started)pulse();});
 window.addEventListener('message',function(e){
   var d=e.data;if(!d)return;
   if(d.type==='timerStart'){if(!_started)start();return;}
   if(d.type==='timerUpdate'){
-    if(d.total!==undefined){_total=d.total;if(!_t){_rem=_total;_started=false;var n=document.getElementById('num');n.textContent=fmt(_rem);n.classList.remove('done');}}
+    if(d.total!==undefined){_total=d.total;if(!_started){_rem=_total;_endAt=0;_done=false;var n=document.getElementById('num');n.textContent=fmt(_rem);n.classList.remove('done');}}
     if(d.onEnd!==undefined)_onEnd=d.onEnd;
     if(d.onEndSlide!==undefined)_onEndSlide=+d.onEndSlide;
     if(d.onEndAnim!==undefined)_onEndAnim=d.onEndAnim||'';
@@ -182,10 +186,10 @@ export function getGeneratorHTML(cfg = {}) {
   const linesJson = JSON.stringify(lines.length ? lines : ['?']);
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
 *{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,sans-serif;user-select:none}
-html,body{width:100%;height:100%;background:transparent;overflow:hidden;cursor:pointer}
-.wrap{position:relative;width:100%;height:100%;display:flex;flex-direction:column;align-items:${s.ai};justify-content:${s.jc};padding:clamp(8px,4%,20px);cursor:pointer}
+html,body{width:100%;height:100%;background:transparent;overflow:hidden;cursor:default}
+.wrap{position:relative;width:100%;height:100%;display:flex;flex-direction:column;align-items:${s.ai};justify-content:${s.jc};padding:clamp(8px,4%,20px)}
 .wrap-bg{position:absolute;inset:0;background:${s.bgClr};${s.bgBlur > 0 ? `backdrop-filter:blur(${s.bgBlur}px);-webkit-backdrop-filter:blur(${s.bgBlur}px);` : ''}z-index:0}
-.num{position:relative;z-index:1;font-size:${s.fs}px;font-weight:${s.bold};color:${s.numClr};font-variant-numeric:tabular-nums;text-align:${s.align};text-shadow:${s.shStyle};width:100%;white-space:pre-line;word-break:break-word;transition:transform .15s,opacity .15s;cursor:pointer}
+.num{position:relative;z-index:1;font-size:${s.fs}px;font-weight:${s.bold};color:${s.numClr};font-variant-numeric:tabular-nums;text-align:${s.align};text-shadow:${s.shStyle};width:100%;white-space:pre-line;word-break:break-word;transition:transform .15s,opacity .15s}
 .num.pop{transform:scale(1.06);opacity:.6}
 </style></head><body>
 <div class="wrap" id="wrap"><div class="wrap-bg" id="wrapbg"></div><div class="num" id="num">?</div></div>
@@ -199,7 +203,7 @@ function gen(){
   el.textContent=String(val);
 }
 gen();
-document.getElementById('wrap').addEventListener('click',function(e){e.preventDefault();gen();});
+// No click-to-regen during show — host sends genStep from the editor only.
 window.addEventListener('message',function(e){var d=e.data;if(!d)return;if(d.type==='genStep'){gen();return;}
   if(d.type==='genUpdate'){
     if(d.mode!==undefined)_mode=d.mode;if(d.lines!==undefined)_lines=d.lines;
@@ -391,6 +395,8 @@ export function appletCfgFromEl(d) {
     genLines: d.genLines,
     tmMin: d.tmMin,
     tmSec: d.tmSec,
+    tmStart: d.tmStart,
+    tmStartElId: d.tmStartElId,
     tmOnEnd: d.tmOnEnd,
     tmOnEndSlide: d.tmOnEndSlide,
     tmOnEndAnim: d.tmOnEndAnim,
@@ -484,6 +490,24 @@ export function rebuildAppletHtml(d, theme) {
       notesText: d.notesText || '',
       notesBg: d.notesBg || '#fef3c7',
     });
+  } else if (d.appletId === 'classification') {
+    const fromScheme = resolveSchemeColor(d.classBtnColorScheme, th);
+    html = getClassificationHTML({
+      palette: cfg.palette,
+      classBtnLabel: d.classBtnLabel || CLASSIFICATION_DEFAULTS.classBtnLabel,
+      classReplayLabel: d.classReplayLabel || CLASSIFICATION_DEFAULTS.classReplayLabel,
+      classBtnColor:
+        fromScheme || d.classBtnColor || (cfg.palette && cfg.palette.ac1) || CLASSIFICATION_DEFAULTS.classBtnColor,
+    });
+  } else if (d.appletId === 'imagesort') {
+    const fromScheme = resolveSchemeColor(d.sortBtnColorScheme, th);
+    html = getImageSortHTML({
+      palette: cfg.palette,
+      sortBtnLabel: d.sortBtnLabel || IMAGE_SORT_DEFAULTS.sortBtnLabel,
+      sortReplayLabel: d.sortReplayLabel || IMAGE_SORT_DEFAULTS.sortReplayLabel,
+      sortBtnColor:
+        fromScheme || d.sortBtnColor || (cfg.palette && cfg.palette.ac1) || IMAGE_SORT_DEFAULTS.sortBtnColor,
+    });
   }
   return { ...d, appletHtml: html };
 }
@@ -499,6 +523,8 @@ export function appletLabel(el, ru) {
     periodic: ru ? 'Таблица Менделеева' : 'Periodic table',
     flip: ru ? 'Перевертыш' : 'Flip',
     notes: ru ? 'Заметка' : 'Notes',
+    classification: ru ? 'Классификация' : 'Classification',
+    imagesort: ru ? 'Сортировка картинок' : 'Image sort',
   };
   return map[id] || id || (ru ? 'Аплет' : 'Applet');
 }
@@ -527,6 +553,22 @@ export const APPLET_INSERTS = [
     h: PTE_CARD_H,
   },
   { id: 'notes', labelRu: 'Заметка', labelEn: 'Notes', html: (cfg) => getNotesHTML(cfg), w: 260, h: 220 },
+  {
+    id: 'classification',
+    labelRu: 'Классификация',
+    labelEn: 'Classification',
+    html: (cfg) => getClassificationHTML(cfg),
+    w: CLASSIFICATION_DEFAULTS.w,
+    h: CLASSIFICATION_DEFAULTS.h,
+  },
+  {
+    id: 'imagesort',
+    labelRu: 'Сортировка картинок',
+    labelEn: 'Image sort',
+    html: (cfg) => getImageSortHTML(cfg),
+    w: IMAGE_SORT_DEFAULTS.w,
+    h: IMAGE_SORT_DEFAULTS.h,
+  },
 ];
 
 /** Extra gallery tiles in the applet modal (not iframe applets). */
@@ -535,6 +577,10 @@ export const APPLET_GALLERY_EXTRAS = [
   { id: 'qr', labelRu: 'QR-код', labelEn: 'QR code' },
   { id: 'lego', labelRu: 'Лего', labelEn: 'Lego' },
 ];
+
+export function appletGalleryTiles() {
+  return [...APPLET_GALLERY_EXTRAS, ...APPLET_INSERTS];
+}
 
 const KIND_DEFAULTS = {
   clock: {
@@ -550,7 +596,18 @@ const KIND_DEFAULTS = {
     clockShowTime: true,
     clockShowDate: true,
   },
-  timer: { tmMin: 5, tmSec: 0, tmOnEnd: 'none', tmOnEndSlide: 0, tmOnEndAnim: '', genFontSize: 72, genBgOp: 0.2, genShadowOn: true },
+  timer: {
+    tmMin: 5,
+    tmSec: 0,
+    tmStart: 'auto',
+    tmStartElId: '',
+    tmOnEnd: 'none',
+    tmOnEndSlide: 0,
+    tmOnEndAnim: '',
+    genFontSize: 72,
+    genBgOp: 0.2,
+    genShadowOn: true,
+  },
   generator: {
     genMode: 'number',
     genLines: '',
@@ -577,6 +634,27 @@ const KIND_DEFAULTS = {
   flip: { ...FLIP_DEFAULTS },
   periodic: { ...PERIODIC_DEFAULTS },
   notes: { notesText: '', notesBg: '#fef3c7' },
+  classification: {
+    classLayout: CLASSIFICATION_DEFAULTS.classLayout,
+    classZones: [...CLASSIFICATION_DEFAULTS.classZones],
+    classLeftIds: CLASSIFICATION_DEFAULTS.classLeftIds,
+    classRightIds: CLASSIFICATION_DEFAULTS.classRightIds,
+    classOkText: CLASSIFICATION_DEFAULTS.classOkText,
+    classFailText: CLASSIFICATION_DEFAULTS.classFailText,
+    classBtnLabel: CLASSIFICATION_DEFAULTS.classBtnLabel,
+    classReplayLabel: CLASSIFICATION_DEFAULTS.classReplayLabel,
+    classBtnColor: CLASSIFICATION_DEFAULTS.classBtnColor,
+    classBtnColorScheme: { ...CLASSIFICATION_DEFAULTS.classBtnColorScheme },
+  },
+  imagesort: {
+    sortMarkers: [],
+    sortOkText: IMAGE_SORT_DEFAULTS.sortOkText,
+    sortFailText: IMAGE_SORT_DEFAULTS.sortFailText,
+    sortBtnLabel: IMAGE_SORT_DEFAULTS.sortBtnLabel,
+    sortReplayLabel: IMAGE_SORT_DEFAULTS.sortReplayLabel,
+    sortBtnColor: IMAGE_SORT_DEFAULTS.sortBtnColor,
+    sortBtnColorScheme: { ...IMAGE_SORT_DEFAULTS.sortBtnColorScheme },
+  },
 };
 
 export function defaultAppletFields(kind) {
@@ -602,9 +680,73 @@ export function postToAppletIframe(iframe, msg) {
   } catch (e) {}
 }
 
-export function startTimersInRoot(root) {
-  if (!root) return;
+/** Timer start mode: auto with slide | click on slide | click on object. */
+export function timerStartMode(el) {
+  const m = el?.tmStart || 'auto';
+  if (m === 'click-slide' || m === 'click-el') return m;
+  return 'auto';
+}
+
+export function slideTimersForMode(els, mode) {
+  return (els || []).filter(
+    (e) => e && e.type === 'applet' && e.appletId === 'timer' && timerStartMode(e) === mode
+  );
+}
+
+export function shouldStartTimerOnElClick(timerEl, clickedId) {
+  if (!timerEl || timerEl.type !== 'applet' || timerEl.appletId !== 'timer') return false;
+  if (timerStartMode(timerEl) !== 'click-el') return false;
+  const tid = timerEl.tmStartElId != null && timerEl.tmStartElId !== '' ? String(timerEl.tmStartElId) : '';
+  if (!tid) return String(clickedId) === String(timerEl.id);
+  return tid === String(clickedId);
+}
+
+export function postTimerStart(iframe) {
+  postToAppletIframe(iframe, { type: 'timerStart' });
+}
+
+export function startTimerElInRoot(root, timerElId) {
+  if (!root || timerElId == null) return;
+  const raw = String(timerElId);
+  const safe = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(raw) : raw.replace(/"/g, '');
+  const hosts = root.querySelectorAll(`[data-id="${safe}"]`);
+  for (const host of hosts) {
+    const iframe =
+      host.matches?.('iframe[data-applet-id="timer"]')
+        ? host
+        : host.querySelector?.('iframe[data-applet-id="timer"]') ||
+          (host.getAttribute?.('data-applet-id') === 'timer' ? host.querySelector?.('iframe') : null);
+    if (iframe) {
+      postTimerStart(iframe);
+      return;
+    }
+  }
+  // Fallback: timer iframe may sit under a nested host without matching outer data-id.
   root.querySelectorAll('iframe[data-applet-id="timer"]').forEach((iframe) => {
-    postToAppletIframe(iframe, { type: 'timerStart' });
+    const wrap = iframe.closest?.('[data-id]');
+    if (wrap && String(wrap.getAttribute('data-id')) === raw) postTimerStart(iframe);
+  });
+}
+
+export function startTimersInRoot(root, opts = {}) {
+  if (!root) return;
+  const mode = opts.mode || 'auto';
+  const els = opts.els || null;
+  root.querySelectorAll('iframe[data-applet-id="timer"]').forEach((iframe) => {
+    if (els) {
+      const host = iframe.closest?.('[data-id]') || iframe.parentElement;
+      const id = host?.getAttribute?.('data-id') || iframe.getAttribute('data-el-id');
+      const el = (els || []).find((e) => e && String(e.id) === String(id));
+      if (!el || timerStartMode(el) !== mode) return;
+    } else {
+      const startAttr =
+        iframe.getAttribute('data-tm-start') ||
+        iframe.closest?.('[data-tm-start]')?.getAttribute('data-tm-start') ||
+        'auto';
+      const normalized =
+        startAttr === 'click-slide' || startAttr === 'click-el' ? startAttr : 'auto';
+      if (normalized !== mode) return;
+    }
+    postTimerStart(iframe);
   });
 }

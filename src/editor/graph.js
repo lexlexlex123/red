@@ -52,14 +52,11 @@ function braces(s, i) {
   return [s.slice(i + 1), s.length];
 }
 
-/** Convert simple LaTeX / math text to JS expression in x. */
-export function latexToExpr(raw) {
+/** Convert LaTeX / math text to a JS expression (keeps x and y). */
+export function latexMathToJs(raw) {
   let t = String(raw || '').trim();
   if (!t) return '';
   t = t.replace(/^\$+|\$+$/g, '');
-  // y = ...
-  const eq = t.match(/^[yY]\s*=\s*(.+)$/);
-  if (eq) t = eq[1];
 
   for (let i = 0; i < 10; i++) {
     const r = t.replace(/\|([^|]+)\|/g, 'abs($1)');
@@ -112,6 +109,8 @@ export function latexToExpr(raw) {
     t = r;
   }
   t = t.replace(/\^\s*([0-9a-zA-Z])/g, '**$1');
+  // x**(2) → x**2 so y² isolation can match y**2
+  t = t.replace(/\*\*\((-?\d+(?:\.\d+)?)\)/g, '**$1');
   t = t.replace(/\_\s*\{[^{}]*\}/g, '').replace(/\_[0-9a-zA-Z]/g, '');
 
   // implicit multiplication: 2x → 2*x, )( → )*( — not fn(x)
@@ -121,6 +120,97 @@ export function latexToExpr(raw) {
   t = t.replace(/\{|\}/g, '');
   t = t.replace(/\\[a-zA-Z]+/g, '');
   return t.trim();
+}
+
+/** Convert simple LaTeX / math text to JS expression in x (strips leading y=). */
+export function latexToExpr(raw) {
+  let t = String(raw || '').trim();
+  if (!t) return '';
+  t = t.replace(/^\$+|\$+$/g, '');
+  const eq = t.match(/^[yY]\s*=\s*(.+)$/);
+  if (eq) t = eq[1];
+  return latexMathToJs(t);
+}
+
+/** Split top-level LHS = RHS (ignores = inside parens). */
+function splitTopEquals(raw) {
+  const s = String(raw || '');
+  let depth = 0;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === '(' || ch === '[' || ch === '{') depth++;
+    else if (ch === ')' || ch === ']' || ch === '}') depth = Math.max(0, depth - 1);
+    else if (ch === '=' && depth === 0) {
+      const left = s.slice(0, i).trim();
+      const right = s.slice(i + 1).trim();
+      if (left && right) return [left, right];
+    }
+  }
+  return null;
+}
+
+/**
+ * Turn A = B into ±sqrt branches when the only y-dependence is y²
+ * (circle x²+y²=r², y²=f(x), etc.).
+ */
+function solveYSquaredBranches(leftJs, rightJs) {
+  const L = String(leftJs || '').replace(/\s+/g, '');
+  const R = String(rightJs || '').replace(/\s+/g, '');
+  if (!L || !R) return null;
+
+  // Clamp tiny negatives at domain edges; outside domain → NaN (no false y=0 rays).
+  const sqrtBranch = (inner) => {
+    const e = `((${inner})>=-1e-12?sqrt(max(0,${inner})):NaN)`;
+    return makeEvalFn(e) ? [e, `-((${inner})>=-1e-12?sqrt(max(0,${inner})):NaN)`] : null;
+  };
+
+  if (/^y(\*\*2|\^2)$/.test(L) && !/\by\b/.test(R)) {
+    return sqrtBranch(R);
+  }
+  if (/^y(\*\*2|\^2)$/.test(R) && !/\by\b/.test(L)) {
+    return sqrtBranch(L);
+  }
+
+  const diff = `((${L})-(${R}))`;
+  // Only y**2 allowed — no bare y / y**3 / y*
+  if (/\by\b/.test(diff.replace(/y\*\*2/g, ''))) return null;
+  if (!/y\*\*2/.test(diff)) return null;
+
+  const f0 = diff.replace(/y\*\*2/g, '0');
+  const f1 = diff.replace(/y\*\*2/g, '1');
+  // A*y² + C = 0 → y² = -C/A = -f0/(f1-f0)
+  const rhs = `((-(${f0}))/((${f1})-(${f0})))`;
+  return sqrtBranch(rhs);
+}
+
+/**
+ * Parse one equation line into one or more y=f(x) JS exprs.
+ * Supports y=f(x) and implicit forms with y² (e.g. x²+y²=25).
+ */
+export function equationToExprs(latex) {
+  let t = String(latex || '').trim().replace(/^\$+|\$+$/g, '');
+  if (!t) return [];
+
+  const parts = splitTopEquals(t);
+  if (parts) {
+    const leftJs = latexMathToJs(parts[0]);
+    const rightJs = latexMathToJs(parts[1]);
+    const l = leftJs.replace(/\s+/g, '');
+    const r = rightJs.replace(/\s+/g, '');
+
+    if (/^y$/i.test(l) && !/\by\b/.test(r)) {
+      return makeEvalFn(rightJs) ? [rightJs] : [];
+    }
+    if (/^y$/i.test(r) && !/\by\b/.test(l)) {
+      return makeEvalFn(leftJs) ? [leftJs] : [];
+    }
+
+    const branches = solveYSquaredBranches(leftJs, rightJs);
+    if (branches?.length) return branches;
+  }
+
+  const explicit = latexToExpr(t);
+  return explicit && makeEvalFn(explicit) ? [explicit] : [];
 }
 
 export function makeEvalFn(expr) {
@@ -148,67 +238,260 @@ export function makeEvalFn(expr) {
   }
 }
 
-export function latexToText(raw) {
-  return String(raw || '')
-    .replace(/\\frac\{([^}]*)\}\{([^}]*)\}/g, '($1)/($2)')
-    .replace(/\\sqrt\{([^}]*)\}/g, '√($1)')
-    .replace(/\\pi/g, 'π')
-    .replace(/\\sin/g, 'sin')
-    .replace(/\\cos/g, 'cos')
-    .replace(/\\tan/g, 'tan')
-    .replace(/\\[a-zA-Z]+/g, '')
-    .replace(/[{}]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+const SUPER_MAP = {
+  '0': '⁰',
+  '1': '¹',
+  '2': '²',
+  '3': '³',
+  '4': '⁴',
+  '5': '⁵',
+  '6': '⁶',
+  '7': '⁷',
+  '8': '⁸',
+  '9': '⁹',
+  '+': '⁺',
+  '-': '⁻',
+  'n': 'ⁿ',
+  'i': 'ⁱ',
+  'x': 'ˣ',
+  'y': 'ʸ',
+};
+
+function toSuperscript(s) {
+  return String(s || '')
+    .split('')
+    .map((c) => SUPER_MAP[c] || c)
+    .join('');
 }
 
-/** Parse domain restriction like "x > 0", "x \\leq 2", "0 < x < 1". */
-export function parseCondition(raw) {
-  let s = String(raw || '')
+/** Pretty unicode label for graph curves (y² + x² = 1, not y^2+x^2=1). */
+export function latexToText(raw) {
+  let t = String(raw || '').trim().replace(/^\$+|\$+$/g, '');
+  if (!t) return '';
+  t = t.replace(/\\frac\{([^}]*)\}\{([^}]*)\}/g, '($1)/($2)');
+  t = t.replace(/\\sqrt\{([^}]*)\}/g, '√($1)');
+  t = t.replace(/\\sqrt\s+([^\s{(]+)/g, '√$1');
+  t = t.replace(/\\pi\b/g, 'π');
+  t = t.replace(/\\cdot/g, '·').replace(/\\times/g, '×').replace(/\\div/g, '÷');
+  t = t.replace(/\\leq/g, '≤').replace(/\\geq/g, '≥').replace(/\\neq/g, '≠');
+  t = t.replace(/\\pm/g, '±').replace(/\\mp/g, '∓');
+  t = t.replace(/\\infty/g, '∞');
+  t = t.replace(/\\sin\b/g, 'sin').replace(/\\cos\b/g, 'cos').replace(/\\tan\b/g, 'tan');
+  t = t.replace(/\\ln\b/g, 'ln').replace(/\\log\b/g, 'log');
+  t = t.replace(/\\left\s*/g, '').replace(/\\right\s*/g, '');
+  t = t.replace(/\\[a-zA-Z]+/g, '');
+  t = t.replace(/\^\s*\{([^{}]*)\}/g, (_, e) => toSuperscript(e));
+  t = t.replace(/\^\s*([0-9a-zA-Z+\-])/g, (_, e) => toSuperscript(e));
+  t = t.replace(/\{|\}/g, '');
+  t = t.replace(/\s*\*\s*/g, '·');
+  t = t.replace(/\s*=\s*/g, ' = ');
+  t = t.replace(/\s*\+\s*/g, ' + ');
+  t = t.replace(/\s*-\s*/g, ' − ');
+  t = t.replace(/\s+/g, ' ').trim();
+  // undo space damage around unary minus after = or (
+  t = t.replace(/(=|\()\s*−\s*/g, '$1−');
+  return t;
+}
+
+function normalizeIneqLatex(raw) {
+  return String(raw || '')
     .replace(/\\geq/g, '>=')
     .replace(/\\leq/g, '<=')
     .replace(/\\gt/g, '>')
     .replace(/\\lt/g, '<')
     .replace(/\\ge/g, '>=')
     .replace(/\\le/g, '<=')
+    .replace(/≤/g, '<=')
+    .replace(/≥/g, '>=')
+    .replace(/\s+/g, ' ')
     .trim();
+}
+
+function emptyCond() {
+  return {
+    xMin: -Infinity,
+    xMax: Infinity,
+    yMin: -Infinity,
+    yMax: Infinity,
+    xMinOpen: false,
+    xMaxOpen: false,
+    yMinOpen: false,
+    yMaxOpen: false,
+  };
+}
+
+function applyVarOp(cond, variable, op, val) {
+  const v = parseFloat(val);
+  if (!isFinite(v)) return false;
+  const open = op === '>' || op === '<';
+  if (variable === 'x') {
+    if (op === '>' || op === '>=') {
+      if (v > cond.xMin || (v === cond.xMin && open)) {
+        cond.xMin = v;
+        cond.xMinOpen = open;
+      }
+    } else if (op === '<' || op === '<=') {
+      if (v < cond.xMax || (v === cond.xMax && open)) {
+        cond.xMax = v;
+        cond.xMaxOpen = open;
+      }
+    }
+    return true;
+  }
+  if (variable === 'y') {
+    if (op === '>' || op === '>=') {
+      if (v > cond.yMin || (v === cond.yMin && open)) {
+        cond.yMin = v;
+        cond.yMinOpen = open;
+      }
+    } else if (op === '<' || op === '<=') {
+      if (v < cond.yMax || (v === cond.yMax && open)) {
+        cond.yMax = v;
+        cond.yMaxOpen = open;
+      }
+    }
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Parse domain restriction: "x > 0", "y \\leq 2", "0 < x < 1", "y > 0".
+ * Returns bounds for x and/or y (open flags for strict inequalities).
+ */
+export function parseCondition(raw) {
+  let s = normalizeIneqLatex(raw);
+  if (!s) return null;
   s = s.replace(/\s*([<>]=?)\s*/g, '$1');
 
-  let xMin = -Infinity;
-  let xMax = Infinity;
-  let m = s.match(/^x(>=?|<=?)(-?[\d.]+)$/);
+  const cond = emptyCond();
+  let matched = false;
+
+  let m = s.match(/^([xy])(>=?|<=?)(-?[\d.]+)$/i);
   if (m) {
-    const [, op, val] = m;
-    const v = parseFloat(val);
-    if (op === '>' || op === '>=') xMin = v;
-    if (op === '<' || op === '<=') xMax = v;
-    return { xMin, xMax };
+    matched = applyVarOp(cond, m[1].toLowerCase(), m[2], m[3]) || matched;
+    return matched ? cond : null;
   }
-  m = s.match(/^(-?[\d.]+)(>=?|<=?)x$/);
+  m = s.match(/^(-?[\d.]+)(>=?|<=?)([xy])$/i);
   if (m) {
-    const [, val, op] = m;
-    const v = parseFloat(val);
-    if (op === '<' || op === '<=') xMin = v;
-    if (op === '>' || op === '>=') xMax = v;
-    return { xMin, xMax };
+    // 2 >= y → y <= 2; 0 < x → x > 0
+    const op = m[2];
+    const flipped = op === '>' ? '<' : op === '<' ? '>' : op === '>=' ? '<=' : '>=';
+    matched = applyVarOp(cond, m[3].toLowerCase(), flipped, m[1]) || matched;
+    return matched ? cond : null;
   }
-  m = s.match(/^(-?[\d.]+)(>=?|<=?)x(>=?|<=?)(-?[\d.]+)$/);
+  m = s.match(/^(-?[\d.]+)(>=?|<=?)([xy])(>=?|<=?)(-?[\d.]+)$/i);
   if (m) {
-    return { xMin: parseFloat(m[1]), xMax: parseFloat(m[4]) };
+    const [, a, op1, vr, op2, b] = m;
+    const flipped1 = op1 === '>' ? '<' : op1 === '<' ? '>' : op1 === '>=' ? '<=' : '>=';
+    matched = applyVarOp(cond, vr.toLowerCase(), flipped1, a) || matched;
+    matched = applyVarOp(cond, vr.toLowerCase(), op2, b) || matched;
+    return matched ? cond : null;
   }
   return null;
 }
 
-/** Split "y = x^2, x > 0" → { expr, cond }. */
+export function mergeConditions(list) {
+  const out = emptyCond();
+  let any = false;
+  (list || []).forEach((c) => {
+    if (!c) return;
+    any = true;
+    if (c.xMin > out.xMin || (c.xMin === out.xMin && c.xMinOpen)) {
+      out.xMin = c.xMin;
+      out.xMinOpen = !!c.xMinOpen;
+    }
+    if (c.xMax < out.xMax || (c.xMax === out.xMax && c.xMaxOpen)) {
+      out.xMax = c.xMax;
+      out.xMaxOpen = !!c.xMaxOpen;
+    }
+    if (c.yMin > out.yMin || (c.yMin === out.yMin && c.yMinOpen)) {
+      out.yMin = c.yMin;
+      out.yMinOpen = !!c.yMinOpen;
+    }
+    if (c.yMax < out.yMax || (c.yMax === out.yMax && c.yMaxOpen)) {
+      out.yMax = c.yMax;
+      out.yMaxOpen = !!c.yMaxOpen;
+    }
+  });
+  return any ? out : null;
+}
+
+function isInequalityAtom(s) {
+  const t = normalizeIneqLatex(s).replace(/\s/g, '');
+  return /^(?:-?[\d.]+|[xy])(?:<=|>=|<|>)(?:-?[\d.]+|[xy])(?:(?:<=|>=|<|>)(?:-?[\d.]+|[xy]))?$/i.test(
+    t
+  );
+}
+
+/**
+ * Split "x = 2, y > 0, y ≤ 2" / "… и …" / "… and …" / space-separated conditions.
+ * → { expr, cond }.
+ */
 export function splitCondition(raw) {
-  const s = String(raw || '');
-  const commaIdx = s.lastIndexOf(',');
-  if (commaIdx < 0) return { expr: s, cond: null };
-  const main = s.slice(0, commaIdx).trim();
-  const condStr = s.slice(commaIdx + 1).trim();
-  const cond = parseCondition(condStr);
-  if (!cond) return { expr: s, cond: null };
-  return { expr: main, cond };
+  let s = normalizeIneqLatex(raw);
+  if (!s) return { expr: '', cond: null };
+
+  s = s.replace(/\s+(и|and)\s+/gi, ', ');
+
+  const condRe =
+    /(?:^|[\s,]+)((?:-?[\d.]+|[xy])\s*(?:<=|>=|<|>)\s*(?:-?[\d.]+|[xy])(?:\s*(?:<=|>=|<|>)\s*(?:-?[\d.]+|[xy]))?)/gi;
+  const condStrs = [];
+  let rest = s.replace(condRe, (full, atom) => {
+    const a = String(atom || '').trim();
+    if (a && isInequalityAtom(a)) {
+      condStrs.push(a);
+      return ' , ';
+    }
+    return full;
+  });
+
+  const chunks = rest
+    .split(',')
+    .map((c) => c.trim())
+    .filter(Boolean)
+    .filter((c) => !isInequalityAtom(c));
+
+  let expr = chunks.find((c) => /=/.test(c)) || chunks[0] || '';
+  if (!expr) {
+    // Fallback: legacy "eq, one cond" via last comma
+    const commaIdx = String(raw || '').lastIndexOf(',');
+    if (commaIdx >= 0) {
+      expr = String(raw).slice(0, commaIdx).trim();
+      const one = parseCondition(String(raw).slice(commaIdx + 1));
+      return { expr, cond: one };
+    }
+    expr = s;
+  }
+
+  const cond = mergeConditions(condStrs.map(parseCondition).filter(Boolean));
+  return { expr, cond };
+}
+
+/** Evaluate a constant latex/math snippet (for x = 2, x = \\pi, …). */
+export function evalConstExpr(raw) {
+  const js = latexMathToJs(String(raw || '').trim());
+  if (!js || /\b[xy]\b/i.test(js)) return null;
+  try {
+    const fn = new Function(
+      `var PI=Math.PI,E=Math.E,sqrt=Math.sqrt,abs=Math.abs,pow=Math.pow;return (${js});`
+    );
+    const v = fn();
+    return isFinite(v) ? v : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/** x = 2 → vertical line; y = 3 already handled as f(x). */
+export function parseVerticalLine(exprLatex) {
+  let t = String(exprLatex || '').trim().replace(/^\$+|\$+$/g, '');
+  const m = t.match(/^[xX]\s*=\s*(.+)$/) || t.match(/^(.+)\s*=\s*[xX]$/);
+  if (!m) return null;
+  const rhs = m[1];
+  if (/\by\b/i.test(rhs)) return null;
+  const x0 = evalConstExpr(rhs);
+  return x0 == null ? null : x0;
 }
 
 /** Build system brace LaTeX from several equation lines (v7.1). */
@@ -267,26 +550,216 @@ export function extractFormulaLines(formulaLike) {
 
 /**
  * Parse formula into graphable expressions + per-curve domain conditions.
- * Supports systems and ", x > 0" restrictions like v7.1.
+ * Supports systems, conditions via ", " / " и " / " and " / spaces,
+ * vertical segments (x = 2), and implicit y² equations (circles).
  */
 export function parseFnFormula(formulaLike) {
   const lines = extractFormulaLines(formulaLike);
   const keptLines = [];
   const exprs = [];
   const conditions = [];
+  const labels = [];
+  const segments = [];
+  const seenLine = new Set();
   for (const line of lines) {
     const { expr: exprLatex, cond } = splitCondition(line);
-    const expr = latexToExpr(exprLatex);
-    if (!expr || !makeEvalFn(expr)) continue;
-    keptLines.push(line);
-    exprs.push(expr);
-    conditions.push(cond);
+    if (!exprLatex) continue;
+
+    const x0 = parseVerticalLine(exprLatex);
+    if (x0 != null) {
+      if (!seenLine.has(line)) {
+        keptLines.push(line);
+        seenLine.add(line);
+      }
+      segments.push({ kind: 'v', x: x0, cond, label: line });
+      continue;
+    }
+
+    const branchExprs = equationToExprs(exprLatex);
+    if (!branchExprs.length) continue;
+    if (!seenLine.has(line)) {
+      keptLines.push(line);
+      seenLine.add(line);
+    }
+    for (const expr of branchExprs) {
+      exprs.push(expr);
+      conditions.push(cond);
+      labels.push(line);
+    }
   }
-  return { lines: keptLines.length ? keptLines : lines, exprs, conditions };
+  return {
+    lines: keptLines.length ? keptLines : lines,
+    exprs,
+    conditions,
+    labels: labels.length ? labels : keptLines,
+    segments,
+  };
+}
+
+/** Bump when dark/light axis/grid colors change — triggers one-time rebuild of baked graphs. */
+export const GRAPH_CHROME_VER = 2;
+
+/** Resolve graph chrome: system | light | dark | transparent | blur. */
+export function resolveGraphVisual(el, systemDark = true) {
+  const theme = el?.graphTheme || null;
+  const darkSys = systemDark !== false;
+  if (theme === 'light') {
+    return { theme: 'light', isDark: false, bg: '#ffffff', transparent: false, blur: false };
+  }
+  if (theme === 'dark') {
+    return { theme: 'dark', isDark: true, bg: '#16161e', transparent: false, blur: false };
+  }
+  if (theme === 'transparent') {
+    return { theme: 'transparent', isDark: darkSys, bg: 'transparent', transparent: true, blur: false };
+  }
+  if (theme === 'blur') {
+    return { theme: 'blur', isDark: darkSys, bg: 'transparent', transparent: true, blur: true };
+  }
+  if (theme === 'system') {
+    return {
+      theme: 'system',
+      isDark: darkSys,
+      bg: darkSys ? '#16161e' : '#ffffff',
+      transparent: false,
+      blur: false,
+    };
+  }
+  // Legacy decks without graphTheme
+  const isDark = el?.graphDark !== false;
+  const customBg = typeof el?.graphBg === 'string' ? el.graphBg.trim() : '';
+  return {
+    theme: isDark ? 'dark' : 'light',
+    isDark,
+    bg: customBg || (isDark ? '#16161e' : '#ffffff'),
+    transparent: customBg === 'transparent',
+    blur: false,
+  };
+}
+
+/** CSS chrome for the graph element wrapper. */
+export function graphChromeStyle(el, systemDark = true) {
+  const v = resolveGraphVisual(el, systemDark);
+  const bg =
+    v.transparent || v.blur
+      ? 'transparent'
+      : typeof el?.graphBg === 'string' && el.graphBg.trim() && el.graphBg !== 'transparent'
+        ? el.graphBg
+        : v.bg;
+  const style = { background: bg };
+  if (v.blur) {
+    style.backdropFilter = 'blur(14px)';
+    style.WebkitBackdropFilter = 'blur(14px)';
+  }
+  return style;
+}
+
+/** Proportional graph window: equal scale on X/Y from element aspect. */
+export function graphViewBounds(el) {
+  const w = Math.max(120, +(el?.w || 480));
+  const h = Math.max(90, +(el?.h || 340));
+  let xMin = el?.graphXMin != null && isFinite(+el.graphXMin) ? +el.graphXMin : -10;
+  let xMax = el?.graphXMax != null && isFinite(+el.graphXMax) ? +el.graphXMax : 10;
+  if (!(xMax > xMin)) {
+    xMin = -10;
+    xMax = 10;
+  }
+  const xRange = xMax - xMin;
+  const yRange = xRange * (h / w);
+  const yCenter =
+    el?.graphYCenter != null && isFinite(+el.graphYCenter)
+      ? +el.graphYCenter
+      : el?.graphYMin != null && el?.graphYMax != null
+        ? (+el.graphYMin + +el.graphYMax) / 2
+        : 0;
+  return {
+    xMin,
+    xMax,
+    yMin: yCenter - yRange / 2,
+    yMax: yCenter + yRange / 2,
+    yCenter,
+    xRange,
+    yRange,
+  };
+}
+
+/** Units-per-pixel scale (element box coords). Kept stable on resize; changed by ± zoom. */
+export function graphScaleOf(el) {
+  const w = Math.max(120, +(el?.w || 480));
+  if (el?.graphScale != null && isFinite(+el.graphScale) && +el.graphScale > 0) {
+    return +el.graphScale;
+  }
+  const b = graphViewBounds(el);
+  return b.xRange / w;
+}
+
+/** After box resize: keep scale, expand/shrink the coordinate window. */
+export function syncGraphRangeForSize(el) {
+  if (!el) return el;
+  const w = Math.max(120, +(el.w || 480));
+  const b = graphViewBounds(el);
+  const scale = graphScaleOf(el);
+  const cx = (b.xMin + b.xMax) / 2;
+  const half = Math.max(0.5, (scale * w) / 2);
+  el.graphScale = scale;
+  el.graphXMin = cx - half;
+  el.graphXMax = cx + half;
+  el.graphYCenter = b.yCenter;
+  delete el.graphYMin;
+  delete el.graphYMax;
+  return el;
+}
+
+/** Pan view by integer units (keeps proportions). */
+export function nudgeGraphView(el, dx = 0, dy = 0) {
+  if (!el) return el;
+  const b = graphViewBounds(el);
+  el.graphXMin = b.xMin + dx;
+  el.graphXMax = b.xMax + dx;
+  el.graphYCenter = b.yCenter + dy;
+  el.graphScale = (el.graphXMax - el.graphXMin) / Math.max(120, +(el.w || 480));
+  delete el.graphYMin;
+  delete el.graphYMax;
+  return el;
+}
+
+/** Zoom about center. factor<1 zooms in; line thickness unchanged (screen px). */
+export function zoomGraphView(el, factor = 1) {
+  if (!el) return el;
+  const f = Math.max(0.25, Math.min(4, +factor || 1));
+  const b = graphViewBounds(el);
+  const cx = (b.xMin + b.xMax) / 2;
+  let half = (b.xRange / 2) * f;
+  half = Math.max(0.5, Math.min(80, half));
+  el.graphXMin = cx - half;
+  el.graphXMax = cx + half;
+  el.graphYCenter = b.yCenter;
+  el.graphScale = (el.graphXMax - el.graphXMin) / Math.max(120, +(el.w || 480));
+  delete el.graphYMin;
+  delete el.graphYMax;
+  return el;
+}
+
+function ptsToPathD(pts) {
+  let d = '';
+  let pen = false;
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    if (!p) {
+      pen = false;
+      continue;
+    }
+    const x = +p.cx.toFixed(2);
+    const y = +p.cy.toFixed(2);
+    d += pen ? `L${x} ${y}` : `M${x} ${y}`;
+    pen = true;
+  }
+  return d;
 }
 
 /**
  * Render y=f(x) curves to PNG data URL.
+ * opts.drawAxes / opts.drawCurves (default true) — for animate: axes static, SVG stroke along path.
+ * Returns { dataUrl, error, paths, pathW, pathH }.
  */
 export function renderGraphToDataURL(exprsOrExpr, labels, opts = {}) {
   const exprList = Array.isArray(exprsOrExpr) ? exprsOrExpr : [exprsOrExpr];
@@ -296,18 +769,37 @@ export function renderGraphToDataURL(exprsOrExpr, labels, opts = {}) {
   const xMin = opts.xMin != null ? opts.xMin : -10;
   const xMax = opts.xMax != null ? opts.xMax : 10;
   const color = opts.color || '#6366f1';
-  const bg = opts.bg || '#16161e';
   const isDark = opts.isDark !== false;
-  const gridColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.08)';
-  const axisColor = isDark ? 'rgba(255,255,255,0.30)' : 'rgba(0,0,0,0.38)';
-  const tickColor = isDark ? 'rgba(255,255,255,0.42)' : 'rgba(0,0,0,0.50)';
+  const drawAxes = opts.drawAxes !== false;
+  const drawCurves = opts.drawCurves !== false;
+  const requestedBg = typeof opts.bg === 'string' ? opts.bg.trim() : '';
+  const transparentBg =
+    opts.transparent === true ||
+    requestedBg === 'transparent' ||
+    /^rgba?\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\)$/i.test(requestedBg);
+  const bg = transparentBg
+    ? null
+    : requestedBg && !/gradient\s*\(/i.test(requestedBg)
+      ? requestedBg
+      : isDark
+        ? '#16161e'
+        : '#ffffff';
+  // Dark theme: light grid/axes/labels so the plane stays readable on dark slides
+  // (esp. transparent graphs over a dark deck background).
+  const gridColor = isDark ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.08)';
+  const axisColor = isDark ? 'rgba(255,255,255,0.72)' : 'rgba(0,0,0,0.38)';
+  const tickColor = isDark ? 'rgba(255,255,255,0.82)' : 'rgba(0,0,0,0.50)';
 
   const cv = document.createElement('canvas');
   cv.width = W;
   cv.height = H;
   const ctx = cv.getContext('2d');
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, W, H);
+  if (bg) {
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+  } else {
+    ctx.clearRect(0, 0, W, H);
+  }
 
   const xRange = xMax - xMin;
   const pxPerUnit = W / xRange;
@@ -336,50 +828,111 @@ export function renderGraphToDataURL(exprsOrExpr, labels, opts = {}) {
   const toY = (y) => H - ((y - yMin) / yRange2) * H;
   const tickFs = Math.round(W * 0.017);
 
-  const xS = Math.ceil(xMin / step - 1e-9) * step;
-  for (let gx = xS; gx <= xMax + step * 0.01; gx += step) {
-    const px = toX(gx);
-    const isAxis = Math.abs(gx) < step * 0.01;
-    ctx.strokeStyle = isAxis ? axisColor : gridColor;
-    ctx.lineWidth = isAxis ? 1.5 : 1;
-    ctx.beginPath();
-    ctx.moveTo(px, 0);
-    ctx.lineTo(px, H);
-    ctx.stroke();
-    if (!isAxis) {
-      ctx.fillStyle = tickColor;
-      ctx.font = tickFs + 'px system-ui,sans-serif';
-      ctx.textAlign = 'center';
-      const ly = Math.min(H - 6, Math.max(tickFs + 2, toY(0) + tickFs + 4));
-      ctx.fillText(+gx.toPrecision(4), px, ly);
+  if (drawAxes) {
+    const xS = Math.ceil(xMin / step - 1e-9) * step;
+    for (let gx = xS; gx <= xMax + step * 0.01; gx += step) {
+      const px = toX(gx);
+      const isAxis = Math.abs(gx) < step * 0.01;
+      ctx.strokeStyle = isAxis ? axisColor : gridColor;
+      ctx.lineWidth = isAxis ? 1.5 : 1;
+      ctx.beginPath();
+      ctx.moveTo(px, 0);
+      ctx.lineTo(px, H);
+      ctx.stroke();
+      if (!isAxis) {
+        ctx.fillStyle = tickColor;
+        ctx.font = tickFs + 'px system-ui,sans-serif';
+        ctx.textAlign = 'center';
+        const ly = Math.min(H - 6, Math.max(tickFs + 2, toY(0) + tickFs + 4));
+        ctx.fillText(+gx.toPrecision(4), px, ly);
+      }
     }
-  }
-  const yS = Math.ceil(yMin / step - 1e-9) * step;
-  for (let gy = yS; gy <= yMax + step * 0.01; gy += step) {
-    const py = toY(gy);
-    const isAxis = Math.abs(gy) < step * 0.01;
-    ctx.strokeStyle = isAxis ? axisColor : gridColor;
-    ctx.lineWidth = isAxis ? 1.5 : 1;
-    ctx.beginPath();
-    ctx.moveTo(0, py);
-    ctx.lineTo(W, py);
-    ctx.stroke();
-    if (!isAxis) {
-      ctx.fillStyle = tickColor;
-      ctx.font = tickFs + 'px system-ui,sans-serif';
-      ctx.textAlign = 'right';
-      const lx = Math.min(W - 6, Math.max(30, toX(0) - 6));
-      ctx.fillText(+gy.toPrecision(4), lx, py + 4);
+    const yS = Math.ceil(yMin / step - 1e-9) * step;
+    for (let gy = yS; gy <= yMax + step * 0.01; gy += step) {
+      const py = toY(gy);
+      const isAxis = Math.abs(gy) < step * 0.01;
+      ctx.strokeStyle = isAxis ? axisColor : gridColor;
+      ctx.lineWidth = isAxis ? 1.5 : 1;
+      ctx.beginPath();
+      ctx.moveTo(0, py);
+      ctx.lineTo(W, py);
+      ctx.stroke();
+      if (!isAxis) {
+        ctx.fillStyle = tickColor;
+        ctx.font = tickFs + 'px system-ui,sans-serif';
+        ctx.textAlign = 'right';
+        const lx = Math.min(W - 6, Math.max(30, toX(0) - 6));
+        ctx.fillText(+gy.toPrecision(4), lx, py + 4);
+      }
     }
   }
 
-  const fns = exprList.map((e) => makeEvalFn(e));
-  if (fns.every((f) => !f)) {
-    ctx.fillStyle = '#f87171';
-    ctx.font = '16px system-ui,sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('parse error', W / 2, H / 2);
-    return { dataUrl: cv.toDataURL('image/png'), error: 'parse error' };
+  const showLabels = opts.showLabels === true;
+  const lineWidth = Math.max(0.5, Math.min(24, +(opts.lineWidth ?? 2.5) || 2.5));
+  const paths = [];
+  const segmentList = Array.isArray(opts.segments) ? opts.segments : [];
+
+  if (!drawCurves && !showLabels) {
+    return { dataUrl: cv.toDataURL('image/png'), error: null, paths, pathW: W, pathH: H };
+  }
+
+  function yAllowed(y, cond) {
+    if (!cond) return true;
+    if (cond.yMin != null && isFinite(cond.yMin)) {
+      if (cond.yMinOpen ? !(y > cond.yMin) : y < cond.yMin - 1e-12) return false;
+    }
+    if (cond.yMax != null && isFinite(cond.yMax)) {
+      if (cond.yMaxOpen ? !(y < cond.yMax) : y > cond.yMax + 1e-12) return false;
+    }
+    return true;
+  }
+
+  function xAllowed(x, cond) {
+    if (!cond) return true;
+    if (cond.xMin != null && isFinite(cond.xMin)) {
+      if (cond.xMinOpen ? !(x > cond.xMin) : x < cond.xMin - 1e-12) return false;
+    }
+    if (cond.xMax != null && isFinite(cond.xMax)) {
+      if (cond.xMaxOpen ? !(x < cond.xMax) : x > cond.xMax + 1e-12) return false;
+    }
+    return true;
+  }
+
+  function strokePts(pts, curveColor) {
+    const d = ptsToPathD(pts);
+    if (d) paths.push({ d, color: curveColor, width: lineWidth });
+    if (drawCurves && d) {
+      ctx.strokeStyle = curveColor;
+      ctx.lineWidth = lineWidth;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      let pen = false;
+      pts.forEach((p) => {
+        if (!p) {
+          pen = false;
+          return;
+        }
+        if (!pen) {
+          ctx.moveTo(p.cx, p.cy);
+          pen = true;
+        } else ctx.lineTo(p.cx, p.cy);
+      });
+      ctx.stroke();
+    }
+    return d;
+  }
+
+  const fns = exprList.map((e) => (e ? makeEvalFn(e) : null));
+  const hasCurves = fns.some((f) => f) || segmentList.length > 0;
+  if (!hasCurves) {
+    if (drawAxes) {
+      ctx.fillStyle = '#f87171';
+      ctx.font = '16px system-ui,sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('parse error', W / 2, H / 2);
+    }
+    return { dataUrl: cv.toDataURL('image/png'), error: 'parse error', paths, pathW: W, pathH: H };
   }
 
   const lineColors = opts.lineColors || [color, '#34d399', '#f472b6', '#fbbf24', '#67e8f9'];
@@ -387,20 +940,18 @@ export function renderGraphToDataURL(exprsOrExpr, labels, opts = {}) {
   const dxStep = xRange / steps;
 
   const condList = opts.conditions || [];
+  const labeledKeys = new Set();
+  let colorIdx = 0;
 
   fns.forEach((fn, fi) => {
     if (!fn) return;
-    const curveColor = lineColors[fi % lineColors.length];
+    const curveColor = lineColors[colorIdx++ % lineColors.length];
     const cond = condList[fi] || null;
-    const cxMin =
-      cond && cond.xMin != null && isFinite(cond.xMin) ? Math.max(xMin, cond.xMin) : xMin;
-    const cxMax =
-      cond && cond.xMax != null && isFinite(cond.xMax) ? Math.min(xMax, cond.xMax) : xMax;
     const pts = [];
     let prevY2 = null;
     for (let i = 0; i <= steps; i++) {
       const x = xMin + i * dxStep;
-      if (x < cxMin - 1e-10 || x > cxMax + 1e-10) {
+      if (!xAllowed(x, cond)) {
         pts.push(null);
         prevY2 = null;
         continue;
@@ -413,12 +964,19 @@ export function renderGraphToDataURL(exprsOrExpr, labels, opts = {}) {
         prevY2 = null;
         continue;
       }
-      if (!isFinite(y) || isNaN(y)) {
+      if (!isFinite(y) || isNaN(y) || !yAllowed(y, cond)) {
         pts.push(null);
         prevY2 = null;
         continue;
       }
-      if (prevY2 !== null && Math.abs(y - prevY2) > yRange2 * 3) {
+      // Break only on asymptote-like flips (tan); keep steep arcs (circles) connected.
+      if (
+        prevY2 !== null &&
+        Math.abs(y - prevY2) > yRange2 * 0.45 &&
+        Math.sign(y) !== 0 &&
+        Math.sign(prevY2) !== 0 &&
+        Math.sign(y) !== Math.sign(prevY2)
+      ) {
         pts.push(null);
         prevY2 = null;
         continue;
@@ -426,46 +984,81 @@ export function renderGraphToDataURL(exprsOrExpr, labels, opts = {}) {
       pts.push({ cx: toX(x), cy: toY(y) });
       prevY2 = y;
     }
-    ctx.strokeStyle = curveColor;
-    ctx.lineWidth = 2.5;
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    let pen = false;
-    pts.forEach((p) => {
-      if (!p) {
-        pen = false;
-        return;
-      }
-      if (!pen) {
-        ctx.moveTo(p.cx, p.cy);
-        pen = true;
-      } else ctx.lineTo(p.cx, p.cy);
-    });
-    ctx.stroke();
 
-    const label = latexToText(labelList[fi] || exprList[fi] || '');
-    if (label && opts.showLabels !== false) {
-      const mid = pts.filter(Boolean)[Math.floor(pts.filter(Boolean).length * 0.65)];
-      if (mid) {
+    strokePts(pts, curveColor);
+
+    const rawLabel = String(labelList[fi] || '').trim();
+    const labelKey = rawLabel.toLowerCase().replace(/\s+/g, '');
+    if (showLabels && rawLabel && labelKey && !labeledKeys.has(labelKey)) {
+      labeledKeys.add(labelKey);
+      const label = latexToText(rawLabel);
+      const mid = pts.filter(Boolean)[Math.floor(pts.filter(Boolean).length * 0.72)];
+      if (label && mid) {
         ctx.fillStyle = curveColor;
-        ctx.font = Math.round(W * 0.022) + 'px system-ui,sans-serif';
+        ctx.font =
+          '600 ' + Math.round(W * 0.028) + 'px "Times New Roman", Georgia, "Cambria Math", serif';
         ctx.textAlign = 'left';
-        ctx.fillText(label.slice(0, 36), mid.cx + 6, mid.cy - 6);
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(label.slice(0, 48), mid.cx + 8, mid.cy - 4);
       }
     }
   });
 
-  return { dataUrl: cv.toDataURL('image/png'), error: null };
+  segmentList.forEach((seg) => {
+    if (!seg || seg.kind !== 'v' || !isFinite(seg.x)) return;
+    if (seg.x < xMin - 1e-9 || seg.x > xMax + 1e-9) return;
+    const cond = seg.cond || null;
+    let yLo = yMin;
+    let yHi = yMax;
+    if (cond && cond.yMin != null && isFinite(cond.yMin)) {
+      yLo = Math.max(yLo, cond.yMinOpen ? cond.yMin + yRange2 * 1e-4 : cond.yMin);
+    }
+    if (cond && cond.yMax != null && isFinite(cond.yMax)) {
+      yHi = Math.min(yHi, cond.yMaxOpen ? cond.yMax - yRange2 * 1e-4 : cond.yMax);
+    }
+    if (!(yHi > yLo)) return;
+    const curveColor = lineColors[colorIdx++ % lineColors.length];
+    const pts = [
+      { cx: toX(seg.x), cy: toY(yLo) },
+      { cx: toX(seg.x), cy: toY(yHi) },
+    ];
+    strokePts(pts, curveColor);
+
+    const rawLabel = String(seg.label || '').trim();
+    const labelKey = rawLabel.toLowerCase().replace(/\s+/g, '');
+    if (showLabels && rawLabel && labelKey && !labeledKeys.has(labelKey)) {
+      labeledKeys.add(labelKey);
+      const label = latexToText(rawLabel);
+      if (label) {
+        ctx.fillStyle = curveColor;
+        ctx.font =
+          '600 ' + Math.round(W * 0.028) + 'px "Times New Roman", Georgia, "Cambria Math", serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(label.slice(0, 48), toX(seg.x) + 8, toY((yLo + yHi) / 2));
+      }
+    }
+  });
+
+  return { dataUrl: cv.toDataURL('image/png'), error: null, paths, pathW: W, pathH: H };
 }
 
-export function rebuildGraphEl(el) {
+export function rebuildGraphEl(el, opts = {}) {
   if (!el || el.type !== 'graph') return el;
   const w = Math.max(120, +(el.w || 480));
   const h = Math.max(90, +(el.h || 340));
   const color = el.graphColor || '#6366f1';
-  const bg = el.graphBg || '#16161e';
-  const isDark = el.graphDark !== false;
+  const systemDark = opts.systemDark !== false;
+  const visual = resolveGraphVisual(el, systemDark);
+  const isDark = visual.isDark;
+  const bg = visual.transparent || visual.blur ? 'transparent' : visual.bg;
+  el.graphDark = isDark;
+  el.graphChromeVer = GRAPH_CHROME_VER;
+  if (el.graphTheme === 'system' || el.graphTheme === 'transparent' || el.graphTheme === 'blur') {
+    el.graphBg = bg;
+  } else if (el.graphTheme === 'light' || el.graphTheme === 'dark') {
+    el.graphBg = visual.bg;
+  }
 
   if (el.graphKind === 'chem') {
     const render = chemMod?.chemRender;
@@ -487,6 +1080,9 @@ export function rebuildGraphEl(el) {
         console.warn('[chem]', e);
       }
     }
+    delete el.graphAxesImg;
+    delete el.graphCurveImg;
+    delete el.graphPaths;
     return el;
   }
 
@@ -507,6 +1103,9 @@ export function rebuildGraphEl(el) {
         console.warn('[logic]', e);
       }
     }
+    delete el.graphAxesImg;
+    delete el.graphCurveImg;
+    delete el.graphPaths;
     return el;
   }
 
@@ -516,36 +1115,87 @@ export function rebuildGraphEl(el) {
   });
   let exprs = parsed.exprs;
   let lines = parsed.lines;
-  if (!exprs.length) {
+  let labels = parsed.labels || lines;
+  const segments = parsed.segments || [];
+  if (!exprs.length && !segments.length) {
     const latex = el.graphLatex || el.graphExpr || 'x';
-    const expr = latexToExpr(splitCondition(latex).expr) || 'x';
-    exprs = [expr];
+    const fallback = equationToExprs(splitCondition(latex).expr);
+    exprs = fallback.length ? fallback : [latexToExpr(splitCondition(latex).expr) || 'x'];
     lines = [latex];
+    labels = exprs.map(() => latex);
   }
   el.graphExprs = exprs;
   el.graphLines = lines;
-  el.graphExpr = exprs[0];
-  el.graphLatex = lines[0] || el.graphLatex || exprs[0];
-  const result = renderGraphToDataURL(exprs, lines, {
+  el.graphExpr = exprs[0] || '';
+  el.graphLatex = lines[0] || el.graphLatex || exprs[0] || '';
+  el.graphSegments = segments;
+
+  syncGraphRangeForSize(el);
+  const bounds = graphViewBounds(el);
+  el.graphXMin = bounds.xMin;
+  el.graphXMax = bounds.xMax;
+  el.graphYCenter = bounds.yCenter;
+  el.graphYMin = bounds.yMin;
+  el.graphYMax = bounds.yMax;
+  el.graphScale = graphScaleOf(el);
+
+  const lineWidth = Math.max(0.5, Math.min(24, +(el.graphLineWidth ?? 2.5) || 2.5));
+  el.graphLineWidth = lineWidth;
+  if (el.graphAnimDur == null || !(+el.graphAnimDur > 0)) el.graphAnimDur = 1.8;
+
+  const renderOpts = {
     w: Math.round(w * 1.6),
     h: Math.round(h * 1.6),
     color,
     bg,
+    transparent: visual.transparent || visual.blur,
     isDark,
-    xMin: el.graphXMin,
-    xMax: el.graphXMax,
-    yMin: el.graphYMin,
-    yMax: el.graphYMax,
+    xMin: bounds.xMin,
+    xMax: bounds.xMax,
+    yMin: bounds.yMin,
+    yMax: bounds.yMax,
     step: el.graphStep,
     lineColors: el.graphLineColors,
-    conditions: parseFnFormula(lines).conditions,
-    showLabels: el.graphShowLabel !== false,
-  });
-  if (result.dataUrl) el.graphImg = result.dataUrl;
+    lineWidth,
+    conditions: parsed.conditions || [],
+    segments,
+    showLabels: !!el.graphShowLabel,
+  };
+
+  const full = renderGraphToDataURL(exprs, labels, renderOpts);
+  if (full.dataUrl) el.graphImg = full.dataUrl;
+
+  if (el.graphAnimate) {
+    const axes = renderGraphToDataURL(exprs, labels, {
+      ...renderOpts,
+      drawAxes: true,
+      drawCurves: false,
+      showLabels: !!el.graphShowLabel,
+    });
+    const curvePass = renderGraphToDataURL(exprs, labels, {
+      ...renderOpts,
+      bg: 'transparent',
+      transparent: true,
+      drawAxes: false,
+      drawCurves: true,
+      showLabels: false,
+    });
+    if (axes.dataUrl) el.graphAxesImg = axes.dataUrl;
+    el.graphPaths = curvePass.paths || full.paths || [];
+    el.graphPathW = curvePass.pathW || full.pathW || renderOpts.w;
+    el.graphPathH = curvePass.pathH || full.pathH || renderOpts.h;
+    delete el.graphCurveImg;
+  } else {
+    delete el.graphAxesImg;
+    delete el.graphCurveImg;
+    delete el.graphPaths;
+    delete el.graphPathW;
+    delete el.graphPathH;
+  }
   return el;
 }
 
-export async function rebuildGraphElAsync(el) {
+export async function rebuildGraphElAsync(el, opts = {}) {
   if (el?.graphKind === 'chem') {
     try {
       await ensureChemLoaded();
@@ -556,7 +1206,7 @@ export async function rebuildGraphElAsync(el) {
       await ensureLogicLoaded();
     } catch (e) {}
   }
-  return rebuildGraphEl(el);
+  return rebuildGraphEl(el, opts);
 }
 
 export function defaultGraphFields(opts = {}) {
@@ -574,6 +1224,8 @@ export function defaultGraphFields(opts = {}) {
     : parsed.lines.length
       ? parsed.lines
       : [latex];
+  const theme = opts.theme || 'system';
+  const dark = opts.dark !== false;
   const el = {
     type: 'graph',
     graphKind: opts.kind || 'fn',
@@ -582,11 +1234,16 @@ export function defaultGraphFields(opts = {}) {
     graphExprs: exprs,
     graphLines: lines,
     graphColor: opts.color || '#6366f1',
-    graphBg: opts.bg || '#16161e',
-    graphDark: true,
+    graphColorScheme: opts.graphColorScheme ?? null,
+    graphTheme: theme,
+    graphBg: opts.bg ?? (dark ? '#16161e' : '#ffffff'),
+    graphDark: dark,
     graphXMin: -10,
     graphXMax: 10,
-    graphShowLabel: true,
+    graphYCenter: 0,
+    graphLineWidth: 2.5,
+    graphAnimDur: 1.8,
+    graphShowLabel: false,
     w: 480,
     h: 340,
     x: 80,
@@ -594,7 +1251,7 @@ export function defaultGraphFields(opts = {}) {
     rot: 0,
     anims: [],
   };
-  rebuildGraphEl(el);
+  rebuildGraphEl(el, { systemDark: dark });
   return el;
 }
 

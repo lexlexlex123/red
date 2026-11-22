@@ -54,7 +54,8 @@ const THEME_FILES = [
   '37-tile.js',
 ];
 
-const GL_RENDERER_VER = '20260906n';
+const GL_RENDERER_VER = '20261108a';
+const THEME_SCRIPT_VER = '20261108a';
 
 const GL_RENDERER_FILES = [
   'renderers/gl-quality.js',
@@ -253,19 +254,34 @@ export function ensureLayoutsLoaded() {
   if (loadPromise) return loadPromise;
   loadPromise = (async () => {
     syncWindowThemeBridge();
-    await loadScript('/themes/00-variants.js');
-    await loadScript('/themes/forest/paths.js');
-    await loadScript('/themes/forest/paths-content.js');
-    await loadScript('/themes/forest/layout.js');
+    await loadScript('/themes/00-variants.js?v=' + THEME_SCRIPT_VER);
+    await loadScript('/themes/forest/paths.js?v=' + THEME_SCRIPT_VER);
+    await loadScript('/themes/forest/paths-content.js?v=' + THEME_SCRIPT_VER);
+    await loadScript('/themes/forest/layout.js?v=' + THEME_SCRIPT_VER);
     for (const file of THEME_FILES) {
-      await loadScript('/themes/' + file);
+      await loadScript('/themes/' + file + '?v=' + THEME_SCRIPT_VER);
     }
     try {
       await ensureGlRenderersLoaded();
     } catch (e) {
       console.warn('GL decor renderers', e);
     }
-    return assembleLayouts();
+    const list = assembleLayouts();
+    // Rebake decor SVG after theme script updates (perf tweaks for swamp/circuit/cosmos).
+    try {
+      const st = usePresentationStore.getState();
+      const hasDecor = (st.slides || []).some((s) => (s.els || []).some((e) => e && e._isDecor));
+      if (hasDecor) {
+        const next = rebuildDecorEls(st.slides);
+        if (next !== st.slides) {
+          usePresentationStore.setState({ slides: next });
+          if (typeof st.persist === 'function') st.persist();
+        }
+      }
+    } catch (e) {
+      console.warn('[layouts] decor rebake', e);
+    }
+    return list;
   })().catch((e) => {
     loadPromise = null;
     console.error(e);

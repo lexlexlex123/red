@@ -260,6 +260,24 @@ export function computeSlideAnimTimeline(slide, lang = 'ru') {
     const eff = compactI >= 0 ? gEffTrig[compactI] : 'auto';
     const trigger = a.trigger || 'auto';
     if (trigger === 'element' || trigger === 'nav' || trigger === 'counter' || trigger === 'timer' || eff === 'nav') {
+      const durExt = animChainDuration(a);
+      segments.push({
+        elId: d.id,
+        ai,
+        anim: a,
+        absDelay: autoEnd + (a.delay || 0),
+        dur: durExt,
+        cat: catOfName(a.name, a.cat),
+        label: animLabelOf(a, isCamera, camNum, lang),
+        trigger,
+        isClick: false,
+        isExtTrigger: true,
+        lane: 0,
+        isCamera: !!isCamera,
+        camId: isCamera ? a.camId || d.camId : null,
+        isPause: !!d._isPause,
+        gIdx,
+      });
       return;
     }
     const dur = animChainDuration(a);

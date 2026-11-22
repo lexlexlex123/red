@@ -19,19 +19,25 @@ function paintAttrs(color, sw, fillOp) {
 function mixedPathEl(part, color, sw, fillOp) {
   let d = part.trim();
   if (!d) return '';
+  const swN = sw != null && Number.isFinite(+sw) ? Math.max(0, +sw) : 1.8;
+  const strokeCap = 'stroke-linecap="round" stroke-linejoin="round"';
   if (d.startsWith('f:')) {
     d = d.slice(2);
     if (fillOp != null && fillOp <= 0) {
-      return `<path d="${d}" fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"/>`;
+      return `<path d="${d}" fill="none" stroke="${color}" stroke-width="${swN}" ${strokeCap}/>`;
     }
     const op = fillOp != null && fillOp < 1 ? ` fill-opacity="${fillOp}"` : '';
+    // Duo: fill + stroke so thickness is visible (same as raw icons).
+    if (fillOp != null && fillOp < 1 && swN > 0) {
+      return `<path d="${d}" fill="${color}"${op} stroke="${color}" stroke-width="${swN}" ${strokeCap}/>`;
+    }
     return `<path d="${d}" fill="${color}" stroke="none"${op}/>`;
   }
   if (d.startsWith('s:')) {
     d = d.slice(2);
-    return `<path d="${d}" fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"/>`;
+    return `<path d="${d}" fill="none" stroke="${color}" stroke-width="${swN}" ${strokeCap}/>`;
   }
-  return `<path d="${d}" fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"/>`;
+  return `<path d="${d}" fill="none" stroke="${color}" stroke-width="${swN}" ${strokeCap}/>`;
 }
 
 function usesMixed(paths) {
@@ -99,7 +105,10 @@ export function paintRawIconInner(inner, color, sw, fillOp, strokeScale) {
       const hasStroke = !!(stroke && stroke !== 'none') || hasOrigSw;
       const hasFill = !!(fill && fill !== 'none');
       const subpaths = (dAttr.match(/[Mm]/g) || []).length;
-      const complexFill = hasFill && !hasOrigSw && subpaths > 2;
+      const fillRule = (get('fill-rule') || get('fillRule') || '').toLowerCase();
+      // evenodd logos (holes for eyes etc.) must stay filled — not converted to stroke.
+      const complexFill =
+        hasFill && !hasOrigSw && subpaths > 2 && fillRule !== 'evenodd';
       const a = attrs
         .replace(/\sfill="[^"]*"/gi, '')
         .replace(/\sfill-opacity="[^"]*"/gi, '')
@@ -128,6 +137,8 @@ function buildRawIconSVG(ic, color, sw, fillOp) {
   const vb = ic.vb || '0 0 191.69 190.34';
   const duoOp = resolveIconFillOp(fillOp);
   const col = color || '#100f0d';
+  const scale = rawStrokeScale(ic);
+  const swN = sw != null && Number.isFinite(+sw) ? Math.max(0, +sw) : 1.8;
   const m = raw.match(/^<svg\b([^>]*)>([\s\S]*)<\/svg>\s*$/i);
   let attrs;
   let inner;
@@ -143,62 +154,99 @@ function buildRawIconSVG(ic, color, sw, fillOp) {
     attrs = ` viewBox="${vb}"`;
     inner = raw;
   }
-  inner = paintRawIconInner(inner, col, sw, duoOp, rawStrokeScale(ic));
-  return `<svg xmlns="http://www.w3.org/2000/svg"${attrs} style="width:100%;height:100%;overflow:visible">${inner}</svg>`;
+  inner = paintRawIconInner(inner, col, sw, duoOp, scale);
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg"${attrs} overflow="visible" style="width:100%;height:100%;overflow:visible">${inner}</svg>`;
+  // Expand viewBox so thickness (stroke) is not clipped at the edges.
+  // Solid fill: tiny pad for antialias. Outline / duo: pad by painted stroke width.
+  let fitSw = 2;
+  if (swN > 0 && duoOp < 1) {
+    const srcHasSw = /stroke-width="/i.test(String(ic.svg || ''));
+    fitSw = srcHasSw ? Math.max(2, 0.12 * swN * scale) : swN * scale;
+  }
+  const fit = fitIconSvgViewBox(svg, fitSw);
+  if (fit) svg = fit.svg;
+  return svg;
+}
+
+const _fitVbCache = new Map();
+
+/** Expand declared viewBox by pad (no DOM). Always prevents stroke clipping. */
+function expandSvgViewBox(svgStr, pad) {
+  if (!svgStr) return null;
+  const p = Math.max(0, +pad || 0);
+  const m = String(svgStr).match(/\bviewBox="([^"]+)"/i);
+  if (!m) return null;
+  const parts = m[1].trim().split(/[\s,]+/).map(Number);
+  if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return null;
+  let [vx, vy, vw, vh] = parts;
+  if (!(vw > 0) || !(vh > 0)) return null;
+  vx -= p;
+  vy -= p;
+  vw += 2 * p;
+  vh += 2 * p;
+  const next = String(svgStr).replace(/\bviewBox="[^"]+"/i, `viewBox="${vx} ${vy} ${vw} ${vh}"`);
+  return { svg: next, aspect: vw / vh };
 }
 
 /**
- * @param {{id?:string,p?:string,vb?:string,raw?:boolean,svg?:string,strokeScale?:number}} ic
- * @param {string} [color]
- * @param {number} [sw]
- * @param {number} [fillOp]
- * @param {string} [pathOverride]
- */
-const _fitVbCache = new Map();
-
-/**
- * Tighten SVG viewBox to path geometry (+ stroke half-width), like v7.1 `_fitIconSvgViewBox`.
+ * Pad SVG viewBox so stroke is not clipped. Prefers geometry fit when DOM is
+ * available; always falls back to expanding the declared viewBox.
  * @returns {{svg:string,aspect:number}|null}
  */
 export function fitIconSvgViewBox(svgStr, swVal) {
-  if (typeof document === 'undefined' || !svgStr) return null;
+  if (!svgStr) return null;
   const swN =
     swVal != null && swVal !== '' && Number.isFinite(+swVal) ? Math.max(0, +swVal) : 1.8;
   const cacheKey = `${swN}::${svgStr}`;
   if (_fitVbCache.has(cacheKey)) return _fitVbCache.get(cacheKey);
-  try {
-    const doc = new DOMParser().parseFromString(svgStr, 'image/svg+xml');
-    const src = doc.documentElement;
-    if (!src || src.tagName === 'parsererror') return null;
-    const wrap = document.createElement('div');
-    wrap.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:200px;height:200px;';
-    const tmpSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    tmpSvg.setAttribute('viewBox', '0 0 24 24');
-    tmpSvg.style.cssText = 'width:200px;height:200px;overflow:visible';
-    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    src.querySelectorAll('path,circle,ellipse,line,polyline,polygon,rect').forEach((n) => {
-      g.appendChild(document.importNode(n, true));
-    });
-    if (!g.childNodes.length) return null;
-    tmpSvg.appendChild(g);
-    wrap.appendChild(tmpSvg);
-    document.body.appendChild(wrap);
-    const bbox = g.getBBox();
-    document.body.removeChild(wrap);
-    if (bbox && bbox.width > 0 && bbox.height > 0) {
-      const sw2 = swN / 2;
-      const vx = bbox.x - sw2;
-      const vy = bbox.y - sw2;
-      const vw = bbox.width + sw2 * 2;
-      const vh = bbox.height + sw2 * 2;
-      const next = svgStr.replace(/viewBox="[^"]*"/, `viewBox="${vx} ${vy} ${vw} ${vh}"`);
-      const result = { svg: next, aspect: vw / vh };
-      if (_fitVbCache.size > 400) _fitVbCache.clear();
-      _fitVbCache.set(cacheKey, result);
-      return result;
+
+  const store = (result) => {
+    if (!result) return null;
+    if (_fitVbCache.size > 400) _fitVbCache.clear();
+    _fitVbCache.set(cacheKey, result);
+    return result;
+  };
+
+  if (typeof document !== 'undefined') {
+    try {
+      const doc = new DOMParser().parseFromString(svgStr, 'image/svg+xml');
+      const src = doc.documentElement;
+      if (src && src.tagName !== 'parsererror') {
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:200px;height:200px;';
+        const tmpSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        const vbAttr = src.getAttribute('viewBox') || '0 0 24 24';
+        tmpSvg.setAttribute('viewBox', vbAttr);
+        tmpSvg.style.cssText = 'width:200px;height:200px;overflow:visible';
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        src.querySelectorAll('path,circle,ellipse,line,polyline,polygon,rect').forEach((n) => {
+          g.appendChild(document.importNode(n, true));
+        });
+        if (g.childNodes.length) {
+          tmpSvg.appendChild(g);
+          wrap.appendChild(tmpSvg);
+          document.body.appendChild(wrap);
+          const bbox = g.getBBox();
+          document.body.removeChild(wrap);
+          if (bbox && bbox.width > 0 && bbox.height > 0) {
+            // Full stroke width pad (not half): round caps/joins stick out past the
+            // geometric half-width, and getBBox() ignores stroke.
+            const pad = Math.max(0, swN);
+            const vx = bbox.x - pad;
+            const vy = bbox.y - pad;
+            const vw = bbox.width + pad * 2;
+            const vh = bbox.height + pad * 2;
+            const next = svgStr.replace(/\bviewBox="[^"]+"/i, `viewBox="${vx} ${vy} ${vw} ${vh}"`);
+            return store({ svg: next, aspect: vw / vh });
+          }
+        }
+      }
+    } catch (e) {
+      /* fall through */
     }
-  } catch (e) {}
-  return null;
+  }
+
+  return store(expandSvgViewBox(svgStr, swN));
 }
 
 export function buildIconSVG(ic, color = '#6366f1', sw = 1.8, fillOp = 1, pathOverride = null) {
@@ -208,17 +256,23 @@ export function buildIconSVG(ic, color = '#6366f1', sw = 1.8, fillOp = 1, pathOv
   const paths = pathSrc.split('||').map((p) => p.trim()).filter(Boolean);
   const vb = ic.vb || '0 0 24 24';
   const duoOp = resolveIconFillOp(fillOp);
+  const swN = sw != null && Number.isFinite(+sw) ? Math.max(0, +sw) : 1.8;
   let pathEls;
   let attrs;
+  let fitSw = 2;
   if (usesMixed(paths)) {
-    pathEls = paths.map((p) => mixedPathEl(p, color, sw, duoOp)).join('');
+    pathEls = paths.map((p) => mixedPathEl(p, color, swN, duoOp)).join('');
     attrs = 'fill="none"';
+    // Outline / duo paint stroke; solid f: does not.
+    if (swN > 0 && duoOp < 1) fitSw = swN;
   } else {
     pathEls = paths.map((p) => `<path d="${p}"/>`).join('');
-    attrs = paintAttrs(color, sw, duoOp);
+    attrs = paintAttrs(color, swN, duoOp);
+    // paintAttrs always strokes when sw > 0 (solid and outline).
+    if (swN > 0) fitSw = swN;
   }
-  let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb}" ${attrs} style="width:100%;height:100%;overflow:visible"><g>${pathEls}</g></svg>`;
-  const fit = fitIconSvgViewBox(svg, sw);
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb}" ${attrs} overflow="visible" style="width:100%;height:100%;overflow:visible"><g>${pathEls}</g></svg>`;
+  const fit = fitIconSvgViewBox(svg, fitSw);
   if (fit) svg = fit.svg;
   return svg;
 }

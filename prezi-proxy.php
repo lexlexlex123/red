@@ -1,12 +1,12 @@
 <?php
 /**
  * HTTPS-прокси к HTTP-каталогу презентаций.
- * Браузер (slides.pyabc.ru) не может качать http://pyabc.ru/prezi/ напрямую.
+ * Браузер на HTTPS не может качать http://…/prezi/ напрямую (mixed content).
  * Залейте этот файл в корень HTTPS-сайта (рядом с index.html).
  *
  * ?src=http://pyabc.ru/prezi/&file=list.php&path=
  * ?src=http://pyabc.ru/prezi/&file=get.php&path=demo.html
- * ?src=http://pyabc.ru/prezi/&path=demo.png
+ * ?src=https://nas.local/prezi/&file=list.php&path=
  */
 header('Cache-Control: no-store');
 header('Access-Control-Allow-Origin: *');
@@ -34,8 +34,28 @@ $host = isset($parts['host']) ? strtolower($parts['host']) : '';
 $scheme = isset($parts['scheme']) ? strtolower($parts['scheme']) : '';
 $srcPath = isset($parts['path']) ? $parts['path'] : '/';
 
-$allowHosts = ['pyabc.ru' => 1, 'www.pyabc.ru' => 1];
-if ($scheme !== 'http' || !isset($allowHosts[$host])) {
+$allowHosts = [
+  'pyabc.ru' => 1,
+  'www.pyabc.ru' => 1,
+  'slides.pyabc.ru' => 1,
+];
+
+// Same host as this PHP (typical Synology: editor + proxy + prezi together).
+$reqHost = isset($_SERVER['HTTP_HOST']) ? strtolower(preg_replace('/:\d+$/', '', (string)$_SERVER['HTTP_HOST'])) : '';
+if ($reqHost !== '') $allowHosts[$reqHost] = 1;
+
+// Private / local NAS addresses (LAN import from HTTPS UI).
+function _is_local_host($h) {
+  if ($h === 'localhost' || $h === '127.0.0.1' || $h === '::1') return true;
+  if (substr($h, -6) === '.local') return true;
+  if (preg_match('/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/', $h)) return true;
+  if (preg_match('/^192\.168\.\d{1,3}\.\d{1,3}$/', $h)) return true;
+  if (preg_match('/^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/', $h)) return true;
+  return false;
+}
+if (_is_local_host($host)) $allowHosts[$host] = 1;
+
+if (($scheme !== 'http' && $scheme !== 'https') || !isset($allowHosts[$host])) {
   http_response_code(403);
   header('Content-Type: text/plain; charset=utf-8');
   echo 'host not allowed';
@@ -64,9 +84,14 @@ if ($file === 'list.php' || $file === 'get.php') {
   }
 }
 
+function _host_allowed($h, $allowHosts) {
+  $h = strtolower((string)$h);
+  return isset($allowHosts[$h]) || _is_local_host($h);
+}
+
 $target = parse_url($url);
 $tHost = isset($target['host']) ? strtolower($target['host']) : '';
-if (!isset($allowHosts[$tHost])) {
+if (!_host_allowed($tHost, $allowHosts)) {
   http_response_code(403);
   header('Content-Type: text/plain; charset=utf-8');
   echo 'host not allowed';
@@ -81,16 +106,31 @@ if (function_exists('curl_init')) {
   $ch = curl_init($url);
   curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_FOLLOWLOCATION => false,
+    CURLOPT_FOLLOWLOCATION => true,
+    CURLOPT_MAXREDIRS => 5,
     CURLOPT_CONNECTTIMEOUT => 8,
     CURLOPT_TIMEOUT => 25,
     CURLOPT_HTTPHEADER => ['Accept: */*'],
+    // Synology / self-signed certs on LAN
+    CURLOPT_SSL_VERIFYPEER => false,
+    CURLOPT_SSL_VERIFYHOST => 0,
   ]);
   $body = curl_exec($ch);
   if ($body !== false) {
     $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $ct = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
     if ($ct) $ctype = $ct;
+    $final = curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
+    if ($final) {
+      $fh = parse_url($final, PHP_URL_HOST);
+      if ($fh && !_host_allowed(strtolower($fh), $allowHosts)) {
+        curl_close($ch);
+        http_response_code(403);
+        header('Content-Type: text/plain; charset=utf-8');
+        echo 'redirect host not allowed';
+        exit;
+      }
+    }
   }
   curl_close($ch);
 } else {
@@ -98,8 +138,13 @@ if (function_exists('curl_init')) {
     'http' => [
       'timeout' => 25,
       'ignore_errors' => true,
-      'follow_location' => 0,
+      'follow_location' => 1,
+      'max_redirects' => 5,
       'header' => "Accept: */*\r\n",
+    ],
+    'ssl' => [
+      'verify_peer' => false,
+      'verify_peer_name' => false,
     ],
   ]);
   $body = @file_get_contents($url, false, $ctx);

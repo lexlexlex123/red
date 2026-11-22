@@ -10,11 +10,13 @@ import { deckTransData, enterClass, PLAYBACK_TRANS_CSS } from '../editor/transit
 import { collectSlideRideSpecs, startRideAnim } from '../editor/connectors.js';
 import { fireMotionAnim, isMotionAnim } from '../editor/motionPlay.js';
 import { fireRecolorAnim, isRecolorAnim, prepareRecolorEl, clearRecolorTransforms } from '../editor/recolorPlay.js';
+import { fireUncropDom, isUncropAnim } from '../editor/imgUncrop.js';
 import { fireTypewriterAnim, isTypewriterAnim } from '../editor/typewriterPlay.js';
+import { fireTransformAnim, isTransformAnim } from '../editor/transformPlay.js';
 import { fireLangFadeAnim, isLangFadeAnim } from '../editor/langFadePlay.js';
 import { fireSplitHalfAnim, isSplitHalfAnim } from '../editor/splitHalfPlay.js';
 import { fireCaptionSlideAnim, isCaptionSlideAnim } from '../editor/captionSlidePlay.js';
-import { fireCosmosTitleAnim, isCosmosTitleAnim } from '../editor/cosmosTitlePlay.js';
+import { fireCosmosTitleForEl, isCosmosTitleAnim } from '../editor/cosmosTitlePlay.js';
 import { fireParticlesAnim, isParticlesAnim } from '../editor/particlesPlay.js';
 import { fireInkDrawAnim, isInkDrawAnim } from '../editor/inkDrawPlay.js';
 import { fireFloatAnim, isFloatAnim } from '../editor/floatPlay.js';
@@ -23,6 +25,9 @@ import { fireDanceAnim, isDanceAnim } from '../editor/dancePlay.js';
 import { fireSwingAnim, isSwingAnim } from '../editor/swingPlay.js';
 import { ensureIcons, onIconsReady, iconsReady } from '../editor/iconsLazy.js';
 import { getTheme } from '../editor/themes.js';
+import { firstVisibleSlideIndex, nextVisibleSlideIndex } from '../editor/slideVisibility.js';
+import { mountModel3dViewer } from '../editor/model3d.js';
+import { model3dExportConfig } from './model3dExport.js';
 
 function ensureStylesheet(href) {
   if (typeof document === 'undefined') return;
@@ -99,12 +104,17 @@ function PlaybackApp() {
   const slides = data.slides || [];
   const W = data.canvasW || DEFAULT_CANVAS_W;
   const H = data.canvasH || DEFAULT_CANVAS_H;
-  const animAll = useMemo(() => deckPlaybackSteps(slides).map(serializePlaybackSteps), [slides]);
+  const animAll = useMemo(() => {
+    const theme = getTheme(data.appliedThemeIdx);
+    return deckPlaybackSteps(slides).map((s) => serializePlaybackSteps(s, theme));
+  }, [slides, data.appliedThemeIdx]);
   const transAll = useMemo(
     () => deckTransData(slides, data.globalTrans, data.globalTransDur),
     [slides, data.globalTrans, data.globalTransDur]
   );
-  const [cur, setCur] = useState(Math.min(data.cur | 0, Math.max(0, slides.length - 1)));
+  const [cur, setCur] = useState(
+    firstVisibleSlideIndex(slides, Math.min(data.cur | 0, Math.max(0, slides.length - 1)), 1)
+  );
   const [iconsOk, setIconsOk] = useState(iconsReady());
   const [scale, setScale] = useState(1);
   const [tick, setTick] = useState(0);
@@ -237,12 +247,37 @@ function PlaybackApp() {
     const items = bundle.items || [];
     let maxWait = 0;
     items.forEach((step) => {
+      if (step.kind === 'camera') {
+        if (camAbortRef.current) camAbortRef.current.abort();
+        let watching = true;
+        camAbortRef.current = fireCameraAnim(root, step.cam, {
+          W,
+          H,
+          fitScale: scaleRef.current,
+          delay: step.delay || 0,
+          duration: step.dur,
+          onDone: () => {
+            watching = false;
+            camAbortRef.current = null;
+            setCamTf(root.style.transform);
+          },
+        });
+        const watch = () => {
+          if (!watching || !root) return;
+          setCamTf(root.style.transform);
+          requestAnimationFrame(watch);
+        };
+        requestAnimationFrame(watch);
+        const wait = (step.delay || 0) + (step.dur || 1200);
+        if (wait > maxWait) maxWait = wait;
+        return;
+      }
       if (step.pause || step.name === 'pause') {
         const wait = Math.max(0, (step.delay || 0) + (step.dur || 0));
         if (wait > maxWait) maxWait = wait;
         return;
       }
-      if (step.motion || isMotionAnim(step.name) || isRecolorAnim(step.name) || isTypewriterAnim(step.name) || isLangFadeAnim(step.name) || isSplitHalfAnim(step.name) || isCaptionSlideAnim(step.name) || isCosmosTitleAnim(step.name) || isParticlesAnim(step.name) || isInkDrawAnim(step.name) || isFloatAnim(step.name) || isDanceAnim(step.name) || isSwingAnim(step.name) || step.name === 'recolor' || step.name === 'typewriter' || step.name === 'langFade' || step.name === 'splitHalf' || step.name === 'captionSlide' || step.name === 'cosmosTitle' || step.name === 'particles' || step.name === 'inkDraw' || step.name === 'float' || step.name === 'dance' || step.name === 'swing') {
+      if (step.motion || isMotionAnim(step.name) || isRecolorAnim(step.name) || isTypewriterAnim(step.name) || isTransformAnim(step.name) || isLangFadeAnim(step.name) || isSplitHalfAnim(step.name) || isCaptionSlideAnim(step.name) || isCosmosTitleAnim(step.name) || isParticlesAnim(step.name) || isInkDrawAnim(step.name) || isFloatAnim(step.name) || isDanceAnim(step.name) || isSwingAnim(step.name) || isUncropAnim(step.name) || step.name === 'recolor' || step.name === 'typewriter' || step.name === 'transform' || step.name === 'langFade' || step.name === 'splitHalf' || step.name === 'captionSlide' || step.name === 'cosmosTitle' || step.name === 'particles' || step.name === 'inkDraw' || step.name === 'float' || step.name === 'dance' || step.name === 'swing' || step.name === 'uncrop') {
         const el = root.querySelector(`[data-id="${String(step.elId).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]`);
         if (!el) return;
         const keepHidden =
@@ -256,6 +291,13 @@ function PlaybackApp() {
         if (keepHidden) {
           el.style.visibility = 'hidden';
           el.style.pointerEvents = 'none';
+          if ((isCosmosTitleAnim(step.name) || step.name === 'cosmosTitle') && el.getAttribute('data-gid')) {
+            const gid = el.getAttribute('data-gid');
+            root.querySelectorAll(`[data-gid="${String(gid).replace(/"/g, '')}"]`).forEach((n) => {
+              n.style.visibility = 'hidden';
+              n.style.pointerEvents = 'none';
+            });
+          }
         } else {
           el.style.visibility = 'visible';
           el.style.opacity = '';
@@ -359,16 +401,20 @@ function PlaybackApp() {
           return;
         }
         if (isCosmosTitleAnim(step.name) || step.name === 'cosmosTitle') {
-          const result = fireCosmosTitleAnim(
-            el,
-            {
+          const slide = slides[curRef.current];
+          const elData = (slide?.els || []).find((e) => e && String(e.id) === String(step.elId));
+          const result = fireCosmosTitleForEl(
+            elData || {
+              id: step.elId,
               x: parseFloat(el.style.left) || 0,
               y: parseFloat(el.style.top) || 0,
               w: parseFloat(el.style.width) || el.offsetWidth,
               h: parseFloat(el.style.height) || el.offsetHeight,
             },
+            slide,
             { name: 'cosmosTitle', dur: step.dur, delay: step.delay },
-            { hideAfter: true }
+            { hideAfter: true },
+            (id) => root.querySelector(`[data-id="${String(id).replace(/"/g, '')}"]`)
           );
           if (result.waitMs > maxWait) maxWait = result.waitMs;
           return;
@@ -428,8 +474,39 @@ function PlaybackApp() {
           if (result.waitMs > maxWait) maxWait = result.waitMs;
           return;
         }
+        if (isTransformAnim(step.name) || step.name === 'transform') {
+          const from = step.from || {
+            x: parseFloat(el.style.left) || 0,
+            y: parseFloat(el.style.top) || 0,
+            w: parseFloat(el.style.width) || el.offsetWidth,
+            h: parseFloat(el.style.height) || el.offsetHeight,
+            rot: 0,
+            type: el.dataset?.type,
+          };
+          const to = step.to || from;
+          const result = fireTransformAnim(
+            el,
+            from,
+            to,
+            {
+              name: 'transform',
+              dur: step.dur,
+              delay: step.delay,
+              easing: step.easing,
+            },
+            { theme: getTheme(data.appliedThemeIdx) }
+          );
+          if (result.waitMs > maxWait) maxWait = result.waitMs;
+          return;
+        }
         if (isRecolorAnim(step.name) || step.name === 'recolor') {
-          const wait = fireRecolorAnim(el, { type: el.dataset?.type }, {
+          const slide = slides[curRef.current];
+          const elData =
+            (slide?.els || []).find((e) => e && String(e.id) === String(step.elId)) || {
+              id: step.elId,
+              type: el.dataset?.type,
+            };
+          const wait = fireRecolorAnim(el, elData, {
             name: 'recolor',
             dur: step.dur,
             delay: step.delay,
@@ -437,6 +514,11 @@ function PlaybackApp() {
             recolorInvert: step.recolorInvert,
           });
           if (wait > maxWait) maxWait = wait;
+          return;
+        }
+        if (isUncropAnim(step.name) || step.name === 'uncrop') {
+          const waitU = fireUncropDom(el, { dur: step.dur, delay: step.delay });
+          if (waitU > maxWait) maxWait = waitU;
           return;
         }
         const prev = cumMotionRef.current[step.elId] || { tx: 0, ty: 0 };
@@ -473,17 +555,23 @@ function PlaybackApp() {
       const apply = () => {
         const el = root.querySelector(`[data-id="${String(step.elId).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]`);
         if (!el) return;
-        el.classList.remove('el-wait');
-        el.style.visibility = 'visible';
-        el.style.opacity = '';
-        el.className = `${(el.className || '').replace(/\bel-anim-\S+/g, '').trim()} ${step.cls || 'el-anim-fadein'}`;
-        if (step.dur) el.style.animationDuration = `${step.dur}ms`;
-        if (step.name === 'pulse' || step.name === 'shake' || step.name === 'flash') {
-          const pc = step.swingCount != null ? +step.swingCount : 1;
-          el.style.animationIterationCount =
-            !Number.isFinite(pc) || pc >= 10 ? 'infinite' : String(Math.max(1, pc || 1));
-        }
-        if (step.live || isLiveAnim(step.name)) el.style.overflow = 'visible';
+        const gid = el.getAttribute('data-gid');
+        const nodes = gid
+          ? Array.from(root.querySelectorAll(`[data-gid="${String(gid).replace(/"/g, '')}"]`))
+          : [el];
+        (nodes.length ? nodes : [el]).forEach((node) => {
+          node.classList.remove('el-wait');
+          node.style.visibility = 'visible';
+          node.style.opacity = '';
+          node.className = `${(node.className || '').replace(/\bel-anim-\S+/g, '').trim()} ${step.cls || 'el-anim-fadein'}`;
+          if (step.dur) node.style.animationDuration = `${step.dur}ms`;
+          if (step.name === 'pulse' || step.name === 'shake' || step.name === 'flash') {
+            const pc = step.swingCount != null ? +step.swingCount : 1;
+            node.style.animationIterationCount =
+              !Number.isFinite(pc) || pc >= 10 ? 'infinite' : String(Math.max(1, pc || 1));
+          }
+          if (step.live || isLiveAnim(step.name)) node.style.overflow = 'visible';
+        });
       };
       if (step.delay > 0) setTimeout(apply, step.delay);
       else apply();
@@ -583,8 +671,8 @@ function PlaybackApp() {
       return;
     }
     if (dir > 0 && playNext()) return;
-    const to = cur + dir;
-    if (to < 0 || to >= slides.length) return;
+    const to = nextVisibleSlideIndex(slides, cur, dir);
+    if (to < 0) return;
     goSlide(to, true);
   }
 
@@ -653,6 +741,44 @@ function PlaybackApp() {
     return wireHoverInRoot(slideRef.current);
   }, [inner, cur]);
 
+  // Live WebGL OBJ — same interactive viewer as F5 preview / HTML export.
+  useEffect(() => {
+    const root = slideRef.current;
+    if (!root) return undefined;
+    const cleanups = [];
+    root.querySelectorAll('.model3d-host').forEach((host) => {
+      let cfg = null;
+      const cfgEl = host.querySelector('script.model3d-cfg');
+      if (cfgEl) {
+        try {
+          cfg = JSON.parse(cfgEl.textContent || '{}');
+        } catch (_) {
+          cfg = null;
+        }
+      }
+      if (!cfg || !cfg.objText) {
+        const live = (slide.els || []).find((e) => e && String(e.id) === String(host.getAttribute('data-id')));
+        cfg = model3dExportConfig(live);
+      }
+      if (!cfg?.objText) return;
+      cleanups.push(
+        mountModel3dViewer(host, cfg, {
+          interactive: true,
+          getEl: () => cfg,
+        })
+      );
+    });
+    return () => {
+      cleanups.forEach((fn) => {
+        try {
+          fn();
+        } catch (_) {
+          /* ignore */
+        }
+      });
+    };
+  }, [inner, cur, slide]);
+
   return (
     <div id="playback-root">
       <div className="pb-bar">
@@ -670,6 +796,15 @@ function PlaybackApp() {
       <div
         className="pb-stage"
         onClick={(e) => {
+          if (e.target.closest?.('.react-el-audio,[data-audio-player]')) return;
+          if (e.target.closest?.('.model3d-host,[data-model3d-viewer]')) return;
+          const inlineA = e.target.closest?.('a[href]');
+          if (inlineA && inlineA.closest?.('.pb-slide,.slide')) {
+            e.preventDefault();
+            e.stopPropagation();
+            followLink(inlineA.getAttribute('href'), inlineA.getAttribute('target') || '_blank');
+            return;
+          }
           const hit = e.target.closest?.('[data-link]');
           if (hit) {
             e.stopPropagation();
@@ -716,4 +851,5 @@ function PlaybackApp() {
 ensureAnimStyle();
 ensureIcons().finally(() => {
   createRoot(document.getElementById('playback-root')).render(<PlaybackApp />);
+  window.__sfAppReady = 1;
 });

@@ -4,6 +4,7 @@ import { getTheme, schemeSwatchColor } from './themes.js';
 import { usePresentationStore } from '../stores/presentationStore';
 import { useUiStore } from '../stores/uiStore';
 import { DEFAULT_CANVAS_W, DEFAULT_CANVAS_H } from './canvasDims.js';
+import { defaultCurvePoints } from './curveEditor.js';
 
 const FILL_SCHEME = { col: 0, row: 4 };
 const STROKE_SCHEME = { col: 0, row: 3 };
@@ -32,14 +33,6 @@ export function defaultShapeStroke(themeIdx) {
 
 export function defaultLineColor(themeIdx) {
   return schemeColor(themeIdx, LINE_SCHEME, '#64748b');
-}
-
-function defaultCurvePoints() {
-  return [
-    { x: 0.1, y: 0.7, type: 'smooth', cp2x: 0.2, cp2y: 0.3 },
-    { x: 0.5, y: 0.3, type: 'smooth', cp1x: 0.3, cp1y: 0.3, cp2x: 0.7, cp2y: 0.3 },
-    { x: 0.9, y: 0.7, type: 'smooth', cp1x: 0.8, cp1y: 0.3 },
-  ];
 }
 
 /**
@@ -84,8 +77,8 @@ export function buildInsertedShape(shapeId, opts = {}) {
   }
 
   const size = isCloud ? CLOUD_INSERT_SIZE : 200;
-  const w = size;
-  const h = isLine ? Math.max(24, (sw || 2) + 16) : size;
+  const w = isCurve ? 280 : size;
+  const h = isLine || isCurve ? Math.max(24, (sw || 2) + 16) : size;
   const st = usePresentationStore.getState();
   const cw = Math.max(1, +st.canvasW || DEFAULT_CANVAS_W);
   const ch = Math.max(1, +st.canvasH || DEFAULT_CANVAS_H);
@@ -124,6 +117,8 @@ export function buildInsertedShape(shapeId, opts = {}) {
     curvePoints: isCurve ? defaultCurvePoints() : undefined,
     curveClosed: isCurve ? false : undefined,
     _lineCapV: isLine ? 2 : undefined,
+    trapTop: meta?.special === 'trapezoid' ? 0.15 : undefined,
+    trapBot: meta?.special === 'trapezoid' ? 0 : undefined,
   };
   // Bake framed circles so first paint matches «Пересоздать» (no size jump)
   if (isCloud) cloudRegenerate(el, null);

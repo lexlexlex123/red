@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { buildIconSVG } from '../../editor/iconSvg.js';
 import { iconHasAnim, iconFramePath, iconStaticPath } from '../../editor/iconAnim.js';
 
@@ -38,11 +38,26 @@ export default function AnimatedIcon({
     pathOv = looping ? iconFramePath(ic, idx) : iconStaticPath(ic, false);
   }
   const html = buildIconSVG(ic, color, sw, fillOp, pathOv);
+  const stableViewBox = useMemo(() => {
+    if (!has || ic?.raw) return null;
+    const allFrames = ic.anim.frames.join('||');
+    const svg = buildIconSVG(ic, color, sw, fillOp, allFrames);
+    return svg.match(/\bviewBox="([^"]+)"/i)?.[1] || null;
+  }, [has, ic, color, sw, fillOp]);
+  const stableHtml = stableViewBox
+    ? html.replace(/\bviewBox="[^"]+"/i, `viewBox="${stableViewBox}"`)
+    : html;
   return (
     <div
       className={className}
-      style={{ width: '100%', height: '100%', pointerEvents: 'none', ...style }}
-      dangerouslySetInnerHTML={{ __html: html }}
+      style={{
+        width: '100%',
+        height: '100%',
+        pointerEvents: 'none',
+        overflow: 'visible',
+        ...style,
+      }}
+      dangerouslySetInnerHTML={{ __html: stableHtml }}
     />
   );
 }

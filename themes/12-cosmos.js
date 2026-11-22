@@ -35,10 +35,11 @@ name:'Космос', nameEn:'Cosmos',
 
       const uid = 'csm' + Math.random().toString(36).slice(2,7);
 
-      // Stars (deterministic)
+      // Stars (deterministic) — keep density moderate for paint cost
       const rng=(s)=>{let x=Math.sin(s+1.7)*93741;return x-Math.floor(x);};
       let stars='';
-      for(let i=0;i<65;i++){
+      const nStars=isTitleSlide?36:28;
+      for(let i=0;i<nStars;i++){
         stars+=`<circle cx="${(rng(i*3)*w).toFixed(1)}" cy="${(rng(i*3+1)*h).toFixed(1)}" r="${(rng(i*3+2)*1.4+0.3).toFixed(2)}" fill="${a1}" opacity="${(rng(i*3+0.5)*0.55+0.12).toFixed(2)}"/>`;
       }
 
@@ -49,9 +50,9 @@ name:'Космос', nameEn:'Cosmos',
       });
 
       // Planet: solid fill so satellites don't show through.
-      // Glow is drawn BEFORE satellites (behind them); body drawn AFTER (on top).
+      // Glow via radialGradient (no feGaussianBlur — filter was the FPS killer).
       const planetGlow=`
-        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${(pr*2.4).toFixed(1)}" fill="${a1}" opacity="0.15" filter="url(#${uid}bf)"/>`;
+        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${(pr*2.4).toFixed(1)}" fill="url(#${uid}glow)" opacity="1"/>`;
       const planetBody=`
         <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${pr.toFixed(1)}" fill="${a1}" opacity="1"/>
         <circle cx="${(cx-pr*0.3).toFixed(1)}" cy="${(cy-pr*0.3).toFixed(1)}" r="${(pr*0.28).toFixed(1)}" fill="${a2}" opacity="0.22"/>`;
@@ -62,7 +63,7 @@ name:'Космос', nameEn:'Cosmos',
       orbits.forEach((o,i)=>{
         const satR=o.sat.toFixed(2);
         if(doAnimate){
-          const vals=orbitVals(o.rx,o.ry,o.rot,o.phase,48);
+          const vals=orbitVals(o.rx,o.ry,o.rot,o.phase,20);
           const firstPt=vals.split(';')[0];
           sats+=`<g transform="translate(${firstPt})">
             <animateTransform attributeName="transform" type="translate"
@@ -80,7 +81,11 @@ name:'Космос', nameEn:'Cosmos',
       });
 
       const defs=`<defs>
-        <filter id="${uid}bf" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="18"/></filter>
+        <radialGradient id="${uid}glow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="${a1}" stop-opacity="0.28"/>
+          <stop offset="55%" stop-color="${a1}" stop-opacity="0.10"/>
+          <stop offset="100%" stop-color="${a1}" stop-opacity="0"/>
+        </radialGradient>
       </defs>`;
 
       return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
@@ -126,7 +131,7 @@ name:'Космос', nameEn:'Cosmos',
       </defs>`;
       svg+=`<circle cx="${f(cx)}" cy="${f(cy)}" r="${f(Math.min(w,h)*0.38)}" fill="url(#${uid}glow)"/>`;
 
-      const nDust=isTitle?28:16;
+      const nDust=isTitle?16:10;
       for(let i=0;i<nDust;i++){
         const ang=rng(i*11+2)*Math.PI*2;
         const rho=0.08+rng(i*11+3)*0.55;
@@ -147,19 +152,22 @@ name:'Космос', nameEn:'Cosmos',
         }
       }
 
-      const n=isTitle?56:32;
+      const n=isTitle?32:20;
       for(let i=0;i<n;i++){
         const seed=i*23+401;
         const ang=rng(seed)*Math.PI*2;
         const rho=0.18+rng(seed+1)*0.92;
         const ux=Math.cos(ang)*rho, uy=Math.sin(ang)*rho;
         const col=rng(seed+2)>0.62?a1:(rng(seed+3)>0.45?a2:(isLight?a1:'#fff'));
-        const swFar=(0.35+rng(seed+4)*0.35).toFixed(2);
-        const swNear=(1.35+rng(seed+5)*(isTitle?1.8:1.35)).toFixed(2);
+        const swFar=(0.7+rng(seed+4)*0.55).toFixed(2);
+        const swNear=(1.6+rng(seed+5)*(isTitle?2.0:1.5)).toFixed(2);
         const peak=(isLight?0.55:0.72)+rng(seed+6)*0.28;
-        const samples=zs.map(z=>{
+        // Tail always toward center (deeper z); head toward edge — one-way ray.
+        const samples=zs.map((z,ki)=>{
           const head=pos(ux,uy,z);
-          const tail=pos(ux,uy,Math.min(zFar,z+dz));
+          const pull=0.2+0.75*(ki/Math.max(1,nZ-1));
+          const tailZ=Math.min(zFar, Math.max(z+1e-3, z+(zFar-z)*pull));
+          const tail=pos(ux,uy,tailZ);
           return {hx:head.x,hy:head.y,tx:tail.x,ty:tail.y};
         });
         const xs1=samples.map(s=>f(s.tx)).join(';');
@@ -170,7 +178,7 @@ name:'Космос', nameEn:'Cosmos',
         const dur=durNum.toFixed(2);
         const beg=midBegin(seed+9,durNum,0.02,0.96);
         if(doAnimate){
-          svg+=`<line x1="${xs1.split(';')[0]}" y1="${ys1.split(';')[0]}" x2="${xs2.split(';')[0]}" y2="${ys2.split(';')[0]}" stroke="${col}" stroke-width="${swFar}" stroke-linecap="round" opacity="0">
+          svg+=`<line x1="${xs1.split(';')[0]}" y1="${ys1.split(';')[0]}" x2="${xs2.split(';')[0]}" y2="${ys2.split(';')[0]}" stroke="${col}" stroke-width="${swFar}" stroke-linecap="butt" opacity="0">
             <animate attributeName="x1" values="${xs1}" dur="${dur}s" begin="${beg}s" repeatCount="indefinite"/>
             <animate attributeName="y1" values="${ys1}" dur="${dur}s" begin="${beg}s" repeatCount="indefinite"/>
             <animate attributeName="x2" values="${xs2}" dur="${dur}s" begin="${beg}s" repeatCount="indefinite"/>
@@ -188,9 +196,10 @@ name:'Космос', nameEn:'Cosmos',
           const t=0.18+rng(seed+10)*0.62;
           const z=zFar+(zNear-zFar)*t*t;
           const head=pos(ux,uy,z);
-          const tail=pos(ux,uy,Math.min(zFar,z+dz));
+          const pull=0.22+0.72*t;
+          const tail=pos(ux,uy,Math.min(zFar, Math.max(z+1e-3, z+(zFar-z)*pull)));
           const sw=(+swFar+(+swNear-+swFar)*t).toFixed(2);
-          svg+=`<line x1="${f(tail.x)}" y1="${f(tail.y)}" x2="${f(head.x)}" y2="${f(head.y)}" stroke="${col}" stroke-width="${sw}" stroke-linecap="round" opacity="${peak.toFixed(2)}"/>
+          svg+=`<line x1="${f(tail.x)}" y1="${f(tail.y)}" x2="${f(head.x)}" y2="${f(head.y)}" stroke="${col}" stroke-width="${sw}" stroke-linecap="butt" opacity="${peak.toFixed(2)}"/>
             <circle cx="${f(head.x)}" cy="${f(head.y)}" r="${(+sw*0.55).toFixed(2)}" fill="${col}" opacity="${Math.min(1,peak+0.1).toFixed(2)}"/>`;
         }
       }

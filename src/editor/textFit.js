@@ -6,6 +6,9 @@ export function measureTextHeight(el) {
   if (typeof document === 'undefined' || !el) return el?.h || 60;
   const pad = el.type === 'text' ? textPadCss(el) : '8px';
   const box = document.createElement('div');
+  // Match SlideCanvas text body: pre-wrap + 1.2 line-height; keep a small
+  // cross-OS slack so Linux-authored boxes still cover Windows font metrics.
+  const letterSp = el.letterSpacing != null && el.letterSpacing !== '' ? `${el.letterSpacing}px` : '';
   box.style.cssText = [
     'position:absolute',
     'left:-99999px',
@@ -18,8 +21,11 @@ export function measureTextHeight(el) {
     'word-wrap:break-word',
     'overflow-wrap:break-word',
     'line-height:1.2',
+    letterSp ? `letter-spacing:${letterSp}` : '',
     el.cs || 'font-size:36px;color:#fff;',
-  ].join(';');
+  ]
+    .filter(Boolean)
+    .join(';');
   if (el.type === 'markdown') {
     box.style.fontSize = (el.mdFs || 16) + 'px';
     box.innerHTML = el.mdHtml || '';
@@ -29,8 +35,10 @@ export function measureTextHeight(el) {
     box.textContent = el.text || '';
   }
   document.body.appendChild(box);
-  const h = Math.ceil(box.scrollHeight) + 4;
+  const raw = box.scrollHeight;
   box.remove();
+  // +8px base slack; ~3% extra for platform glyph/metric drift (Linux ↔ Windows).
+  const h = Math.ceil(raw * 1.03) + 8;
   return Math.max(32, h);
 }
 

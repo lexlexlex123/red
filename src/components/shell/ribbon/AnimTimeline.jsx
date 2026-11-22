@@ -348,6 +348,16 @@ export default function AnimTimeline({ docked = false }) {
         >
           {docked ? '▴' : '▾'}
         </ZoomBtn>
+        <ZoomBtn
+          title={ru ? 'Играть с текущего' : 'Play from selection'}
+          onClick={() => {
+            if (selCamId) editorApi.playSlideAnims({ fromCamId: selCamId });
+            else if (selId) editorApi.playSlideAnims({ fromElId: selId });
+            else editorApi.playSlideAnims();
+          }}
+        >
+          ▶
+        </ZoomBtn>
       </div>
       <div className="react-anim-tl-scroll" ref={scrollRef}>
         <div className="react-anim-tl-inner" style={{ width: widthPx }}>
@@ -403,9 +413,33 @@ export default function AnimTimeline({ docked = false }) {
               segs.map((seg) => {
                 const key = timelineSegKey(seg.elId, seg.ai);
                 const sel = selPrefix && String(seg.elId) === selPrefix;
-                const title = `${seg.label} · ${Math.round(seg.absDelay)}–${Math.round(seg.absDelay + seg.dur)} ms${
-                  seg.isClick ? (ru ? ' · по клику' : ' · on click') : seg.trigger === 'withPrev' ? (ru ? ' · с предыдущей' : ' · with previous') : ''
-                }`;
+                const trigHint =
+                  seg.trigger === 'element'
+                    ? ru
+                      ? ' · объект'
+                      : ' · element'
+                    : seg.trigger === 'counter'
+                      ? ru
+                        ? ' · счётчик'
+                        : ' · counter'
+                      : seg.trigger === 'timer'
+                        ? ru
+                          ? ' · таймер'
+                          : ' · timer'
+                        : seg.trigger === 'nav'
+                          ? ru
+                            ? ' · переход'
+                            : ' · nav'
+                          : seg.isClick
+                            ? ru
+                              ? ' · по клику'
+                              : ' · on click'
+                            : seg.trigger === 'withPrev'
+                              ? ru
+                                ? ' · с предыдущей'
+                                : ' · with previous'
+                              : '';
+                const title = `${seg.label} · ${Math.round(seg.absDelay)}–${Math.round(seg.absDelay + seg.dur)} ms${trigHint}`;
                 return (
                   <div
                     key={key}
@@ -420,10 +454,56 @@ export default function AnimTimeline({ docked = false }) {
                     }}
                     title={title}
                     onPointerDown={(e) => onSegPointerDown(e, seg, 'move')}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      if (seg.isCamera) editorApi.playSlideAnims({ fromCamId: seg.camId });
+                      else editorApi.playSlideAnims({ fromElId: seg.elId, fromAi: seg.ai });
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (seg.isCamera || seg.isPause) return;
+                      const cycle = ['auto', 'click', 'withPrev', 'element', 'counter', 'timer', 'nav'];
+                      const curT = seg.trigger || 'auto';
+                      const next = cycle[(cycle.indexOf(curT) + 1) % cycle.length];
+                      editorApi.patchAnimAt(seg.elId, seg.ai, { trigger: next });
+                      if (next === 'element' || next === 'counter' || next === 'timer') {
+                        editorApi.startAnimTriggerPick(seg.elId, seg.ai);
+                      }
+                    }}
                   >
-                    {seg.isClick ? (
-                      <span className="react-anim-tl-seg-icon" title={ru ? 'По клику' : 'On click'}>
-                        👆
+                    {seg.isClick || seg.isExtTrigger || (seg.trigger && seg.trigger !== 'auto' && seg.trigger !== 'withPrev') ? (
+                      <span
+                        className="react-anim-tl-seg-icon"
+                        title={
+                          seg.trigger === 'element'
+                            ? ru
+                              ? 'Объект'
+                              : 'Element'
+                            : seg.trigger === 'counter'
+                              ? ru
+                                ? 'Счётчик'
+                                : 'Counter'
+                              : seg.trigger === 'timer'
+                                ? ru
+                                  ? 'Таймер'
+                                  : 'Timer'
+                                : seg.trigger === 'nav'
+                                  ? ru
+                                    ? 'Переход'
+                                    : 'Nav'
+                                  : ru
+                                    ? 'По клику'
+                                    : 'On click'
+                        }
+                      >
+                        {seg.trigger === 'counter'
+                          ? '🔢'
+                          : seg.trigger === 'timer'
+                            ? '⏱'
+                            : seg.trigger === 'nav'
+                              ? '→'
+                              : '👆'}
                       </span>
                     ) : null}
                     <span className="react-anim-tl-seg-label" style={{ lineHeight: `${segH}px` }}>

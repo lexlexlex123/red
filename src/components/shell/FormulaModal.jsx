@@ -3,6 +3,7 @@ import { useUiStore } from '../../stores/uiStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { usePresentationStore } from '../../stores/presentationStore';
 import { editorApi } from '../../editor/editorApi';
+import { formulaAlignOf } from '../../editor/formulaLayout.js';
 import { renderFormulaSvg } from '../../editor/mathjax.js';
 import {
   FORMULA_STRUCTS,
@@ -79,6 +80,8 @@ export default function FormulaModal() {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [editId, setEditId] = useState(null);
+  const [previewAlign, setPreviewAlign] = useState('left');
+  const [previewWidth, setPreviewWidth] = useState(480);
   const [mfReady, setMfReady] = useState(false);
   const [mfFailed, setMfFailed] = useState(false);
   const [structOpen, setStructOpen] = useState(null);
@@ -111,10 +114,14 @@ export default function FormulaModal() {
       setEditId(el.id);
       setLatex(el.formulaRaw || el.html || DEFAULT_LATEX);
       setPreviewSvg(el.formulaSvg || '');
+      setPreviewAlign(formulaAlignOf(el));
+      setPreviewWidth(Math.max(120, +(el.w || 480)));
     } else {
       setEditId(null);
       setLatex(DEFAULT_LATEX);
       setPreviewSvg('');
+      setPreviewAlign('left');
+      setPreviewWidth(480);
     }
     setErr('');
     setStructOpen(null);
@@ -217,7 +224,10 @@ export default function FormulaModal() {
       }
       setBusy(true);
       try {
-        const svg = await renderFormulaSvg(latex.trim());
+        const svg = await renderFormulaSvg(latex.trim(), {
+          displayAlign: previewAlign,
+          containerWidth: previewWidth,
+        });
         if (!cancelled) {
           setPreviewSvg(svg);
           setErr('');
@@ -235,7 +245,7 @@ export default function FormulaModal() {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [latex, open]);
+  }, [latex, open, previewAlign, previewWidth]);
 
   useEffect(() => {
     if (structOpen == null) return undefined;

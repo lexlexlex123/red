@@ -65,19 +65,50 @@ function scaleEl(d, sx, sy, sf, W, H) {
     return next;
   }
 
-  next.x = rnd((next.x || 0) * sx);
-  next.y = rnd((next.y || 0) * sy);
-  next.w = Math.max(1, rnd((next.w || 100) * sx));
-  next.h = Math.max(1, rnd((next.h || 60) * sy));
+  // Keep aspect for media AND shapes — independent sx/sy squashes circles/moons
+  // into ellipses when flipping 16:9 ↔ 9:16. Lines handled above.
+  const keepAspect =
+    next.type === 'image' ||
+    next.type === 'icon' ||
+    next.type === 'svg' ||
+    next.type === 'formula' ||
+    next.type === 'graph' ||
+    next.type === 'mediavideo' ||
+    next.type === 'mediaaudio' ||
+    next.type === 'model3d' ||
+    next.type === 'shape' ||
+    next._isQR;
+  if (keepAspect) {
+    const uni = Math.min(sx, sy);
+    const ow = Math.max(1, next.w || 100);
+    const oh = Math.max(1, next.h || 60);
+    const cx = (next.x || 0) + ow / 2;
+    const cy = (next.y || 0) + oh / 2;
+    next.w = Math.max(1, rnd(ow * uni));
+    next.h = Math.max(1, rnd(oh * uni));
+    next.x = rnd(cx * sx - next.w / 2);
+    next.y = rnd(cy * sy - next.h / 2);
+  } else {
+    next.x = rnd((next.x || 0) * sx);
+    next.y = rnd((next.y || 0) * sy);
+    next.w = Math.max(1, rnd((next.w || 100) * sx));
+    next.h = Math.max(1, rnd((next.h || 60) * sy));
+  }
+  const adjS = keepAspect ? Math.min(sx, sy) : (sx + sy) / 2;
+  if (next.tailX != null) next.tailX = rnd((+next.tailX) * adjS);
+  if (next.tailY != null) next.tailY = rnd((+next.tailY) * adjS);
+  if (next.tailRoundX != null) next.tailRoundX = rnd((+next.tailRoundX) * adjS);
+  if (next.tailRoundY != null) next.tailRoundY = rnd((+next.tailRoundY) * adjS);
   if (next.cs) next.cs = scaleCssLens(next.cs, sf);
   if (next.shapeTextCss) next.shapeTextCss = scaleCssLens(next.shapeTextCss, sf);
   if (next.html) next.html = scaleHtml(next.html, sf);
   if (next.shapeHtml) next.shapeHtml = scaleHtml(next.shapeHtml, sf);
   if (next.mdHtml) next.mdHtml = scaleHtml(next.mdHtml, sf);
   if (next.sw != null) next.sw = Math.max(0, Math.round((+next.sw || 0) * sf * 10) / 10);
-  if (next.rx != null) next.rx = rnd((+next.rx || 0) * sf);
+  // Shape rx is 0–100% of min(w,h)/2 — do not scale with sf. Text rx is px.
+  if (next.rx != null && next.type !== 'shape') next.rx = rnd((+next.rx || 0) * sf);
   if (next.bulletGap != null) next.bulletGap = rnd((+next.bulletGap || 0) * sf);
-  if (next.codeFs != null) next.codeFs = Math.max(8, rnd((+next.codeFs || 14) * sf));
+  if (next.codeFs != null) next.codeFs = Math.max(8, rnd((+next.codeFs || 18) * sf));
   if (next._origFs != null) next._origFs = Math.max(1, rnd((+next._origFs || 0) * sf));
   if (next.iconSize != null) next.iconSize = rnd((+next.iconSize || 0) * sf);
   if (next.cp1) next.cp1 = scalePt(next.cp1, sx, sy);

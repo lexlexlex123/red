@@ -266,12 +266,27 @@ export function fireParticlesAnim(domEl, elData, anim, opts = {}) {
   const cancel = () => resetParticles(domEl);
 
   function elPos() {
-    return {
-      x: elData?.x != null ? elData.x : parseFloat(domEl.style.left) || 0,
-      y: elData?.y != null ? elData.y : parseFloat(domEl.style.top) || 0,
-      w: ew,
-      h: eh,
-    };
+    // Prefer the live box (left/top baked after moveTo) over authored elData.x/y.
+    // If a motion translate is still on the host, fold it in too.
+    const styleX = parseFloat(domEl.style.left);
+    const styleY = parseFloat(domEl.style.top);
+    let x = Number.isFinite(styleX)
+      ? styleX
+      : elData?.x != null
+        ? +elData.x
+        : domEl.offsetLeft || 0;
+    let y = Number.isFinite(styleY)
+      ? styleY
+      : elData?.y != null
+        ? +elData.y
+        : domEl.offsetTop || 0;
+    const tr = String(domEl.style.transform || '');
+    const m = tr.match(/translate\(\s*([-\d.]+)px(?:\s*,\s*([-\d.]+)px)?\s*\)/);
+    if (m) {
+      x += +m[1] || 0;
+      y += m[2] != null ? +m[2] || 0 : 0;
+    }
+    return { x, y, w: ew, h: eh };
   }
 
   function particleScale() {

@@ -38,13 +38,27 @@ name:'Схема',nameEn:'Circuit',
       return {nodes, edges};
     },
 
+    // Square corner patch from min(w,h) — on 9:16 old w%×h% boxes looked stretched.
     _cornerBox(w,h,corner){
-      const bw=w*0.20, bh=h*0.20;
-      const padX=w*0.035, padY=h*0.045;
+      const m=Math.min(w,h);
+      const bw=m*0.22, bh=m*0.22;
+      const padX=m*0.04, padY=m*0.04;
       let ox=padX, oy=padY, flipX=false, flipY=false;
       if(corner==='tr' || corner==='br'){ ox=w-padX-bw; flipX=true; }
       if(corner==='bl' || corner==='br'){ oy=h-padY-bh; flipY=true; }
       return {ox, oy, bw, bh, flipX, flipY};
+    },
+
+    /** Map title graph as if designed for 16:9, then uniform-fit into current canvas. */
+    _titleFit(w,h){
+      const refW=16, refH=9;
+      const uni=Math.min(w/refW, h/refH);
+      return {
+        uni,
+        ox: w - refW*uni, // flush right (circuit lives on the right half)
+        oy: (h - refH*uni)*0.5,
+        refW, refH,
+      };
     },
 
     _mapNode(nx,ny,box){
@@ -116,7 +130,9 @@ name:'Схема',nameEn:'Circuit',
         const col=i%3===0?a2:a1;
         const op=(0.28+((i+seed)%5)*0.06).toFixed(2);
         const phase=seed*1.9+i*0.72;
-        if(doAnim){
+        // Animate every other trace — full SMIL on all edges tanks FPS on Circuit.
+        const animEdge=doAnim && (i%2===0);
+        if(animEdge){
           const a=this._traceAnim(len, op, dur, phase);
           lines+=`<path d="${d}" fill="none" stroke="${col}" stroke-width="${strokeW}" opacity="${a.op}" stroke-dasharray="${a.L}" stroke-dashoffset="${a.initOff}" stroke-linecap="square" stroke-linejoin="miter">
             <animate attributeName="stroke-dashoffset" values="${a.vOff}" keyTimes="${a.kt}" dur="${dur}s" begin="${a.begin}" repeatCount="indefinite" calcMode="linear"/>
@@ -131,17 +147,14 @@ name:'Схема',nameEn:'Circuit',
         const col=i%3===0?a1:a2;
         const baseOp=i%4===0?0.55:0.38;
         const phase=seed*1.3+i*0.55;
-        if(doAnim){
+        const animDot=doAnim && (i%2===0);
+        if(animDot){
           const a=this._dotAnim(baseOp, dur, phase);
           dots+=`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}" fill="${col}" opacity="${a.initOp}">
             <animate attributeName="opacity" values="${a.vOp}" keyTimes="${a.kt}" dur="${dur}s" begin="${a.begin}" repeatCount="indefinite" calcMode="linear"/>
           </circle>`;
-          if(i%4===0){
-            const glow=this._dotAnim(0.10, dur, phase);
-            dots+=`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${(r*2.4).toFixed(1)}" fill="${a1}" opacity="${glow.initOp}">
-              <animate attributeName="opacity" values="${glow.vOp}" keyTimes="${glow.kt}" dur="${dur}s" begin="${glow.begin}" repeatCount="indefinite"/>
-            </circle>`;
-          }
+          // Static glow halo (animated glow doubled SMIL cost for little gain).
+          if(i%4===0) dots+=`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${(r*2.4).toFixed(1)}" fill="${a1}" opacity="0.08"/>`;
         } else {
           dots+=`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}" fill="${col}" opacity="${baseOp}"/>`;
           if(i%4===0) dots+=`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${(r*2.4).toFixed(1)}" fill="${a1}" opacity="0.08"/>`;
@@ -160,13 +173,15 @@ name:'Схема',nameEn:'Circuit',
 
     _renderTitle(w,h,a1,a2,doAnim){
       const {nodes, edges}=this._titleGraph();
-      const pts=nodes.map(([nx,ny])=>[w*nx, h*ny]);
-      const sw=Math.max(1, Math.min(w,h)*0.0015);
+      const {uni, ox, oy, refW, refH}=this._titleFit(w,h);
+      const pts=nodes.map(([nx,ny])=>[ox+nx*refW*uni, oy+ny*refH*uni]);
+      const m=Math.min(w,h);
+      const sw=Math.max(1, m*0.0015);
       const traces=this._renderTraces(pts, edges, a1, a2, sw, doAnim, 2, 16);
-      // Полоски главного слайда
+      const stripeX=ox+0.48*refW*uni;
       const stripes=
-        `<rect x="${(w*0.48).toFixed(1)}" y="0" width="${(w*0.52).toFixed(1)}" height="${h}" fill="${a1}" opacity="0.025"/>`+
-        `<rect x="0" y="0" width="${(w*0.06).toFixed(1)}" height="${h}" fill="${a1}" opacity="0.04"/>`;
+        `<rect x="${stripeX.toFixed(1)}" y="0" width="${Math.max(1,w-stripeX).toFixed(1)}" height="${h}" fill="${a1}" opacity="0.025"/>`+
+        `<rect x="0" y="0" width="${Math.max(4, m*0.012).toFixed(1)}" height="${h}" fill="${a1}" opacity="0.04"/>`;
       return stripes+traces;
     },
 

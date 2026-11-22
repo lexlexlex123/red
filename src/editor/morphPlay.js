@@ -1,5 +1,7 @@
 /** Morph transition engine for React preview. Ported from js/24-preview.js. */
 
+import { getShapeNodes } from './shapeNodes.js';
+
 /** Ease out cubic, matching legacy cubic-bezier(0.4, 0, 0.2, 1). */
 export function morphEase(t) {
   return 1 - Math.pow(1 - t, 3);
@@ -77,6 +79,178 @@ export function morphFindFrom(fromEls, toEl, used, toEls) {
     if (fd) { used.add(fd.id); return fd; }
   }
   return null;
+}
+
+/** Scalar fields driven by yellow adj handles. */
+const MORPH_ADJ_KEYS = [
+  'rx',
+  'starInner',
+  'paraSkew',
+  'trapTop',
+  'trapBot',
+  'moonPhase',
+  'chevSkew',
+  'chevInner',
+  'arrowHead',
+  'ringInner',
+  'gearDepth',
+  'tailX',
+  'tailY',
+  'tailRoundX',
+  'tailRoundY',
+  'tailWFrac',
+  'arcStart',
+  'arcEnd',
+  'sw',
+  'fillOp',
+];
+
+const ADJ_DEFAULTS = {
+  rx: 0,
+  starInner: 0.45,
+  paraSkew: 20,
+  trapTop: 0.15,
+  trapBot: 0,
+  moonPhase: -0.5,
+  chevSkew: 25,
+  chevInner: 25,
+  arrowHead: 35,
+  ringInner: 0.5,
+  gearDepth: 0.25,
+  tailX: 0,
+  tailWFrac: 0.22,
+  arcStart: 0,
+  arcEnd: 270,
+  sw: 2,
+  fillOp: 1,
+};
+
+function adjDefault(el, key) {
+  if (key === 'tailY') return Math.max(1, +(el?.h || 60)) / 2 + 30;
+  if (key === 'chevInner') {
+    const sk = el?.chevSkew != null ? +el.chevSkew : ADJ_DEFAULTS.chevSkew;
+    return Number.isFinite(sk) ? sk : ADJ_DEFAULTS.chevInner;
+  }
+  return ADJ_DEFAULTS[key];
+}
+
+function numField(el, key) {
+  const v = el?.[key];
+  if (v == null || v === '') return adjDefault(el, key);
+  const n = +v;
+  return Number.isFinite(n) ? n : adjDefault(el, key);
+}
+
+function resampleClosed(pts, n) {
+  if (!Array.isArray(pts) || pts.length < 1 || n < 1) return [];
+  if (pts.length === n) return pts.map((p) => ({ x: +p.x || 0, y: +p.y || 0 }));
+  const closed = pts.concat([pts[0]]);
+  const seg = [];
+  let total = 0;
+  for (let i = 0; i < closed.length - 1; i++) {
+    const ax = +closed[i].x || 0;
+    const ay = +closed[i].y || 0;
+    const bx = +closed[i + 1].x || 0;
+    const by = +closed[i + 1].y || 0;
+    const len = Math.hypot(bx - ax, by - ay);
+    seg.push({ ax, ay, bx, by, len, acc: total });
+    total += len;
+  }
+  if (total < 1e-8) {
+    const p = { x: +pts[0].x || 0, y: +pts[0].y || 0 };
+    return Array.from({ length: n }, () => ({ ...p }));
+  }
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const d = (i / n) * total;
+    let s = seg[seg.length - 1];
+    for (let k = 0; k < seg.length; k++) {
+      if (d <= seg[k].acc + seg[k].len + 1e-9) {
+        s = seg[k];
+        break;
+      }
+    }
+    const u = s.len > 0 ? (d - s.acc) / s.len : 0;
+    out.push({ x: s.ax + (s.bx - s.ax) * u, y: s.ay + (s.by - s.ay) * u });
+  }
+  return out;
+}
+
+function lerpPts(a, b, t) {
+  const n = Math.max(3, a.length, b.length);
+  const aa = resampleClosed(a, n);
+  const bb = resampleClosed(b, n);
+  return aa.map((p, i) => ({
+    x: p.x + ((bb[i]?.x || 0) - p.x) * t,
+    y: p.y + ((bb[i]?.y || 0) - p.y) * t,
+  }));
+}
+
+function lerpCurvePts(a, b, t) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length < 2 || b.length < 2) return null;
+  const n = Math.min(a.length, b.length);
+  const keys = ['x', 'y', 'cp1x', 'cp1y', 'cp2x', 'cp2y'];
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const pa = a[i] || {};
+    const pb = b[i] || {};
+    const next = { ...pb, ...pa };
+    keys.forEach((k) => {
+      const va = pa[k];
+      const vb = pb[k];
+      if (va == null && vb == null) return;
+      const na = va != null ? +va : +vb;
+      const nb = vb != null ? +vb : +va;
+      next[k] = na + (nb - na) * t;
+    });
+    out.push(next);
+  }
+  return out;
+}
+
+function ptsFinger(pts) {
+  if (!Array.isArray(pts) || !pts.length) return '';
+  return pts.map((p) => `${(+p.x || 0).toFixed(4)},${(+p.y || 0).toFixed(4)}`).join(';');
+}
+
+/** True when yellow-marker / node geometry differs and should interpolate. */
+export function morphGeomDirty(from, to) {
+  if (!from || !to) return false;
+  if (from.type !== to.type) return false;
+  if (from.type !== 'shape' && from.type !== 'text') return false;
+  if ((from.shape || '') !== (to.shape || '')) return true;
+  for (let i = 0; i < MORPH_ADJ_KEYS.length; i++) {
+    const k = MORPH_ADJ_KEYS[i];
+    if (from[k] == null && to[k] == null) continue;
+    if (Math.abs(numField(from, k) - numField(to, k)) > 1e-6) return true;
+  }
+  const fromPts = getShapeNodes(from);
+  const toPts = getShapeNodes(to);
+  if (ptsFinger(fromPts) !== ptsFinger(toPts)) return true;
+  if (ptsFinger(from.curvePoints) !== ptsFinger(to.curvePoints)) return true;
+  return false;
+}
+
+/**
+ * Element snapshot with adj handles / nodes / curve points interpolated.
+ * Box x/y/w/h stay at `to` so the wrapper transform can keep driving position/size.
+ */
+export function lerpMorphEl(from, to, t) {
+  const u = Math.max(0, Math.min(1, +t || 0));
+  const out = { ...to };
+  if (!from || from.type !== to?.type) return out;
+  MORPH_ADJ_KEYS.forEach((k) => {
+    if (from[k] == null && to[k] == null) return;
+    out[k] = numField(from, k) + (numField(to, k) - numField(from, k)) * u;
+  });
+  const fromPts = getShapeNodes(from);
+  const toPts = getShapeNodes(to);
+  if (fromPts.length >= 3 && toPts.length >= 3 && ptsFinger(fromPts) !== ptsFinger(toPts)) {
+    out.shapePts = lerpPts(fromPts, toPts, u);
+  }
+  const curve = lerpCurvePts(from.curvePoints, to.curvePoints, u);
+  if (curve) out.curvePoints = curve;
+  return out;
 }
 
 /** Hex color interpolation. */

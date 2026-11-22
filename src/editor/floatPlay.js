@@ -95,6 +95,25 @@ export function floatWaitMs(anim) {
   return delay + dur * loops;
 }
 
+/**
+ * Wait used by playback bundles. Inside a repeat block even “infinite” float must
+ * occupy one authored duration so the cycle can finish and restart from the top.
+ */
+export function floatWaitMsForPlayback(anim, opts = {}) {
+  if (!opts.inRepeat) return floatWaitMs(anim);
+  const delay = Math.max(0, +(anim?.delay || 0));
+  const dur = Math.max(400, +(anim?.dur ?? anim?.duration ?? 3000) || 3000);
+  if (floatIsInfinite(anim)) return delay + dur;
+  return floatWaitMs(anim);
+}
+
+/** Anim payload for one repeat cycle (finite so WAAPI can finish before restart). */
+export function floatAnimForRepeatCycle(anim) {
+  if (!anim) return { name: 'float', dur: 5000, swingCount: 1 };
+  if (!floatIsInfinite(anim)) return anim;
+  return { ...anim, swingCount: 1 };
+}
+
 function ensureFloatWrap(el, fw, fh) {
   const mx = Math.round((fw || 100) * 0.06);
   const my = Math.round((fh || 60) * 0.06);

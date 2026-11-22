@@ -1,4 +1,7 @@
 /** Text block background: solid / gradient + opacity + backdrop blur (legacy parity). */
+import { textBorderBoxStyle } from './textBorder.js';
+import { textBorderRadiusCss } from './textRadius.js';
+
 
 function hexToRgb(hex) {
   if (!hex || typeof hex !== 'string') return null;
@@ -31,27 +34,42 @@ export function hasTextBg(el) {
 }
 
 /** CSS for the absolute bg layer behind text content. */
-export function textBgLayerStyle(el) {
+function innerBorderRadius(el, borderWidth) {
+  const radius = textBorderRadiusCss(el);
+  if (!radius) return undefined;
+  const values = radius.trim().split(/\s+/);
+  const corners =
+    values.length === 1
+      ? [values[0], values[0], values[0], values[0]]
+      : values.length === 2
+        ? [values[0], values[1], values[0], values[1]]
+        : values.length === 3
+          ? [values[0], values[1], values[2], values[1]]
+          : values.slice(0, 4);
+  return corners.map((value) => `max(0px, calc(${value} - ${borderWidth}px))`).join(' ');
+}
+
+export function textBgLayerStyle(el, { matchBorder = false } = {}) {
   if (!hasTextBg(el)) return null;
   const col = el.textBg;
   const op = el.textBgOp != null ? +el.textBgOp : 1;
   const blur = el.textBgBlur != null ? +el.textBgBlur : 0;
   const isGrad = !!el.textBgGrad;
+  const borderWidth = matchBorder && textBorderBoxStyle(el) ? Math.max(0, +el.textBorderW || 0) : 0;
   const style = {
     position: 'absolute',
     inset: 0,
     pointerEvents: 'none',
     zIndex: 0,
-    borderRadius: 'inherit',
+    borderRadius: borderWidth ? innerBorderRadius(el, borderWidth) || 'inherit' : 'inherit',
   };
-  if (col || isGrad) {
+  if (isGrad) {
     const dir = el.textBgDir != null ? +el.textBgDir : 90;
-    if (isGrad && col) {
-      const c2 = el.textBgCol2 ? toRgba(el.textBgCol2, op) : 'rgba(0,0,0,0)';
-      style.background = `linear-gradient(${dir}deg, ${toRgba(col, op)}, ${c2})`;
-    } else if (col) {
-      style.background = toRgba(col, op);
-    }
+    const c1 = col ? toRgba(col, op) : 'rgba(0,0,0,0)';
+    const c2 = el.textBgCol2 ? toRgba(el.textBgCol2, op) : 'rgba(0,0,0,0)';
+    style.background = `linear-gradient(${dir}deg, ${c1}, ${c2})`;
+  } else if (col) {
+    style.background = toRgba(col, op);
   }
   if (blur > 0) {
     style.backdropFilter = `blur(${blur}px)`;
@@ -80,7 +98,10 @@ export function textColorGradStyle(el) {
   const c2 = el.textColorGrad2 || 'transparent';
   const dir = el.textColorGradDir != null ? +el.textColorGradDir : 90;
   return {
-    background: `linear-gradient(${dir}deg, ${c1}, ${c2})`,
+    display: 'inline-block',
+    width: 'fit-content',
+    maxWidth: '100%',
+    backgroundImage: `linear-gradient(${dir}deg, ${c1}, ${c2})`,
     WebkitBackgroundClip: 'text',
     backgroundClip: 'text',
     WebkitTextFillColor: 'transparent',

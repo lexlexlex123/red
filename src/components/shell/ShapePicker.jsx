@@ -35,6 +35,9 @@ function galleryPreviewOpts(sh, fill, stroke, sw) {
   if (sh.special === 'polygon') {
     return { ...base, sides: 6 };
   }
+  if (sh.special === 'trapezoid') {
+    return { ...base, trapTop: 0.15, trapBot: 0 };
+  }
   return base;
 }
 

@@ -40,12 +40,25 @@ function svgRoot() {
   return svg;
 }
 
+/** Last settled t (0=silhouette, 1=color) per element id — survives filter teardown. */
+const recolorPhase = new Map();
+
+function phaseKey(domEl, elData) {
+  const raw = elData?.id != null ? elData.id : domEl?.dataset?.id != null ? domEl.dataset.id : domEl?._recolorUid;
+  return String(raw == null ? '' : raw);
+}
+
+function setRecolorPhase(key, t) {
+  if (!key) return;
+  recolorPhase.set(key, t);
+}
+
 function filterId(el) {
   if (!el._recolorUid) {
     el._recolorUid =
       el.dataset?.id != null ? String(el.dataset.id) : `r${Math.random().toString(36).slice(2, 9)}`;
   }
-  return `_recolor_live_${el._recolorUid}`;
+  return `_recolor_live_${String(el._recolorUid).replace(/[^a-zA-Z0-9_-]/g, '') || 'x'}`;
 }
 
 function getMat(el) {
@@ -78,11 +91,58 @@ export function recolorVisualTargets(domEl, elData) {
       [...domEl.children].find((c) => c.tagName !== 'IFRAME');
     return tel ? [tel] : [domEl];
   }
-  const img = domEl.querySelector('img');
-  if (img) return [img];
-  const svgEl = domEl.querySelector('svg');
-  if (svgEl) return [svgEl];
+  // Images/shapes: filter lives on the React wrapper so a re-render cannot wipe the silhouette.
   return [domEl];
+}
+
+/** Recolor that should start as a silhouette (not invert). */
+export function pendingRecolorAnim(elData) {
+  return (elData?.anims || []).find((x) => x && x.name === 'recolor' && !x.recolorInvert) || null;
+}
+
+/**
+ * Ensure the t=0 silhouette filter exists (does not reset a running animation).
+ * @returns {string} CSS url(#id)
+ */
+export function recolorSilhouetteFilter(uid, hex) {
+  const id = `_recolor_live_${String(uid == null ? '' : uid).replace(/[^a-zA-Z0-9_-]/g, '') || 'x'}`;
+  const svg = svgRoot();
+  let filter = document.getElementById(id);
+  if (!filter) {
+    filter = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
+    filter.setAttribute('id', id);
+    filter.setAttribute('color-interpolation-filters', 'sRGB');
+    const mat = document.createElementNS('http://www.w3.org/2000/svg', 'feColorMatrix');
+    mat.setAttribute('type', 'matrix');
+    const rgb = rgbOf(hex || '#000000');
+    mat.setAttribute('values', matrixValues(rgb.r, rgb.g, rgb.b, 0));
+    filter.appendChild(mat);
+    svg.appendChild(filter);
+  }
+  return `url(#${id})`;
+}
+
+export function withRecolorSilhouette(existingFilter, uid, hex) {
+  const url = recolorSilhouetteFilter(uid, hex);
+  const cur = String(existingFilter || '');
+  if (!cur) return url;
+  if (cur.includes(url) || cur.includes(`#${url.slice(5, -1)}`)) return cur;
+  return `${url} ${cur}`;
+}
+
+/** React play filter: silhouette until the first reveal, keep url while playing, none after color. */
+export function recolorReactFilter(existingFilter, uid, hex, playSt, elData) {
+  if (playSt?.recolorDone) return existingFilter || undefined;
+  if (playSt?.recolorPlaying) {
+    const id = `_recolor_live_${String(uid == null ? '' : uid).replace(/[^a-zA-Z0-9_-]/g, '') || 'x'}`;
+    if (!document.getElementById(id)) return existingFilter || undefined;
+    return withRecolorSilhouette(existingFilter, uid, hex);
+  }
+  const key = String(uid == null ? '' : uid);
+  if (key && recolorPhase.get(key) >= 0.5) return existingFilter || undefined;
+  const rec = pendingRecolorAnim(elData);
+  if (!rec) return existingFilter || undefined;
+  return withRecolorSilhouette(existingFilter, uid, rec.recolorColor || hex || '#000000');
 }
 
 function applyT(el, nodes, hex, t) {
@@ -102,7 +162,7 @@ function clearNodes(el, nodes) {
     node.style.filter = node._recolorSavedFilter != null ? node._recolorSavedFilter : '';
     node._recolorSavedFilter = null;
   });
-  const id = el?._recolorUid ? `_recolor_live_${el._recolorUid}` : null;
+  const id = el ? filterId(el) : null;
   const filter = id ? document.getElementById(id) : null;
   if (filter?.parentNode) filter.parentNode.removeChild(filter);
   if (el) {
@@ -141,9 +201,14 @@ function animate(el, nodes, hex, fromT, toT, dur, onDone) {
       el._recolorRaf = requestAnimationFrame(frame);
     } else {
       el._recolorRaf = null;
-      if (toT >= 0.999) clearNodes(el, nodes);
-      else applyT(el, nodes, hex, toT);
-      if (onDone) onDone();
+      if (toT >= 0.999) {
+        applyT(el, nodes, hex, 1);
+        if (onDone) onDone({ toColor: true });
+        clearNodes(el, nodes);
+      } else {
+        applyT(el, nodes, hex, toT);
+        if (onDone) onDone({ toColor: false });
+      }
     }
   }
   el._recolorRaf = requestAnimationFrame(frame);
@@ -166,12 +231,14 @@ export function prepareRecolorEl(domEl, elData) {
   applyT(domEl, nodes, hex, 0);
   domEl._recolorTargets = nodes;
   domEl._recolorPrepared = true;
+  setRecolorPhase(phaseKey(domEl, elData), 0);
 }
 
 /**
- * Fire recolor. Returns waitMs.
+ * Fire recolor. Ping-pongs from the current silhouette/color unless invert forces black.
+ * opts.onStart / opts.onDone({ toColor }) for React play flags.
  */
-export function fireRecolorAnim(domEl, elData, anim) {
+export function fireRecolorAnim(domEl, elData, anim, opts = {}) {
   if (!domEl || !anim) return 0;
   const delay = Math.max(0, +(anim.delay || 0));
   const dur = Math.max(50, +(anim.dur != null ? anim.dur : anim.duration) || 600);
@@ -181,36 +248,57 @@ export function fireRecolorAnim(domEl, elData, anim) {
   domEl._recolorTimers = [];
 
   let nodes = domEl._recolorTargets;
-  const already = !!domEl._recolorPrepared && !!nodes && !invert;
-  if (!already) {
-    if (domEl._recolorTargets) clearNodes(domEl, domEl._recolorTargets);
+  const hasFilter = /_recolor_live_/.test(String(domEl.style?.filter || ''));
+  if (!nodes || !nodes.length) {
     nodes = recolorVisualTargets(domEl, elData);
     if (!nodes.length) return 0;
     domEl._recolorTargets = nodes;
   }
 
-  if (!invert) {
-    if (!already) applyT(domEl, nodes, hex, 0);
-    domEl._recolorPrepared = true;
-    domEl._recolorTimers.push(
-      setTimeout(() => {
-        animate(domEl, nodes, hex, 0, 1, dur, null);
-      }, delay)
-    );
-  } else {
-    domEl._recolorPrepared = false;
-    domEl._recolorTimers.push(
-      setTimeout(() => {
-        animate(domEl, nodes, hex, 1, 0, dur, null);
-      }, delay)
-    );
+  const key = phaseKey(domEl, elData);
+  const curT = domEl._recolorT;
+  const atSil = curT != null ? curT < 0.5 : !!(domEl._recolorPrepared || hasFilter);
+  // Live pixels beat a leftover phase (hover preview / previous play). Stale
+  // phase=1 + silhouette t=0 used to fire 0→0, so the first click did nothing.
+  const visual =
+    curT != null
+      ? curT
+      : atSil
+        ? 0
+        : recolorPhase.has(key)
+          ? recolorPhase.get(key)
+          : pendingRecolorAnim(elData)
+            ? 0
+            : 1;
+  let fromT = visual;
+  let toT = invert ? 0 : visual < 0.5 ? 1 : 0;
+  // Invert-first in a Repeat (already black at show start) used to fire 0→0
+  // and eat the first click. Never spend a click on a no-op — toggle instead.
+  if (Math.abs(fromT - toT) < 0.05) {
+    toT = fromT < 0.5 ? 1 : 0;
+    fromT = fromT < 0.5 ? 0 : 1;
   }
+
+  domEl._recolorPrepared = toT < 0.5;
+  const onDone = typeof opts.onDone === 'function' ? opts.onDone : null;
+  const onStart = typeof opts.onStart === 'function' ? opts.onStart : null;
+
+  const run = () => {
+    if (onStart) onStart({ fromT, toT });
+    animate(domEl, nodes, hex, fromT, toT, dur, (info) => {
+      setRecolorPhase(key, toT);
+      if (onDone) onDone(info);
+    });
+  };
+  if (delay > 0) domEl._recolorTimers.push(setTimeout(run, delay));
+  else run();
   return delay + dur;
 }
 
 export function clearRecolorTransforms(root) {
+  recolorPhase.clear();
   if (!root) return;
-  root.querySelectorAll('.react-el[data-id], .el[data-id]').forEach((node) => {
+  root.querySelectorAll('.react-el[data-id], .el[data-id], [data-id]').forEach((node) => {
     cancelAnim(node);
     clearNodes(node, node._recolorTargets || recolorVisualTargets(node, null));
   });

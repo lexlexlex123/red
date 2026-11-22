@@ -32,14 +32,29 @@ const SECTIONS = [
 const HOTKEYS = [
   ['Ctrl+Z', 'Отменить', 'Undo'],
   ['Ctrl+Y / Ctrl+Shift+Z', 'Повторить', 'Redo'],
+  ['Ctrl+S', 'Скачать JSON', 'Download JSON'],
   ['Ctrl+C', 'Копировать', 'Copy'],
   ['Ctrl+V', 'Вставить', 'Paste'],
-  ['Ctrl+D', 'Дублировать', 'Duplicate'],
+  ['Ctrl+X', 'Вырезать', 'Cut'],
+  ['Ctrl+D', 'Дублировать выделение', 'Duplicate selection'],
   ['Ctrl+A', 'Выделить всё', 'Select all'],
+  ['Ctrl+G', 'Сгруппировать', 'Group'],
+  ['Ctrl+Shift+G', 'Разгруппировать', 'Ungroup'],
+  ['Ctrl+F', 'Найти', 'Find'],
+  ['Ctrl+H', 'Заменить', 'Replace'],
+  ['F3 / Shift+F3', 'Следующее / предыдущее', 'Find next / previous'],
+  ['Ctrl+Shift+C', 'Копировать стиль', 'Copy style'],
+  ['Ctrl+Shift+V', 'Кисть стиля', 'Paste style / style brush'],
+  ['Ctrl+[ / Ctrl+]', 'Слой вниз / вверх', 'Layer down / up'],
+  ['Shift+[ / Shift+]', 'На задний / передний план', 'Send back / bring front'],
+  ['Ctrl+B / I / U', 'Жирный / курсив / подчёркивание', 'Bold / italic / underline'],
+  ['Ctrl+Shift+L', 'Заблокировать объект', 'Lock object'],
+  ['Ctrl+P', 'Печать слайдов', 'Print slides'],
   ['Delete', 'Удалить элемент', 'Delete element'],
   ['F5', 'Показ с начала', 'Slideshow from start'],
   ['Shift+F5', 'Показ с текущего', 'Slideshow from current'],
-  ['Esc', 'Выйти из показа', 'Exit slideshow'],
+  ['P', 'Окно докладчика (второй монитор, во время показа)', 'Presenter window (second display, during show)'],
+  ['Esc', 'Выйти из показа / снять выделение', 'Exit slideshow / clear selection'],
   ['← →', 'Слайды (показ)', 'Slides (show)'],
   ['↑ ↓ ← →', 'Сдвиг на 1px', 'Nudge 1px'],
   ['Shift + ↑↓←→', 'Сдвиг на 10px', 'Nudge 10px'],
@@ -206,6 +221,8 @@ function SectionCanvas({ ru }) {
   const setSnapEnabled = useUiStore((s) => s.setSnapEnabled);
   const snapStep = useUiStore((s) => s.snapStep);
   const setSnapStep = useUiStore((s) => s.setSnapStep);
+  const textQuickSizes = useUiStore((s) => s.textQuickSizes);
+  const setTextQuickSize = useUiStore((s) => s.setTextQuickSize);
 
   function applySize(w, h) {
     const W = Math.max(400, Math.min(4000, Math.round(+w || canvasW)));
@@ -229,6 +246,29 @@ function SectionCanvas({ ru }) {
       <CfgRow label={ru ? 'Привязка к сетке' : 'Snap to grid'}>
         <CfgChk checked={snapEnabled} onChange={setSnapEnabled} />
       </CfgRow>
+      <hr className="cfg-hr" />
+      <CfgInfo>
+        {ru
+          ? 'Размеры кнопок над текстовой надписью, в пунктах.'
+          : 'Sizes for the buttons above a text box, in points.'}
+      </CfgInfo>
+      {[
+        ['h1', 'H1'],
+        ['h2', 'H2'],
+        ['h3', 'H3'],
+        ['h4', 'H4'],
+        ['p', 'P'],
+      ].map(([id, label]) => (
+        <CfgRow key={id} label={label}>
+          <CfgNum
+            value={textQuickSizes?.[id]}
+            min={8}
+            max={200}
+            step={1}
+            onCommit={(v) => setTextQuickSize(id, v)}
+          />
+        </CfgRow>
+      ))}
     </>
   );
 }
@@ -271,8 +311,13 @@ function SectionAnim({ ru }) {
 
 function SectionPersist({ ru }) {
   const slides = usePresentationStore((s) => s.slides);
+  const title = usePresentationStore((s) => s.title);
   const undoLen = useHistoryStore((s) => s.undoLen);
   const showToast = useUiStore((s) => s.showToast);
+  const [lib, setLib] = useState([]);
+  useEffect(() => {
+    editorApi.listLibrary().then((rows) => setLib(rows || []));
+  }, []);
   let lsSize = '—';
   try {
     const raw = localStorage.getItem(LS_KEY) || '';
@@ -281,6 +326,11 @@ function SectionPersist({ ru }) {
 
   return (
     <>
+      <CfgInfo>
+        {ru
+          ? 'Основная копия — IndexedDB. localStorage — запасной слот.'
+          : 'Primary copy is IndexedDB. localStorage is a fallback slot.'}
+      </CfgInfo>
       <CfgInfo>
         {ru ? '📦 Данные в localStorage: ' : '📦 localStorage: '}
         {lsSize}
@@ -307,6 +357,58 @@ function SectionPersist({ ru }) {
       <button
         type="button"
         className="cfg-btn"
+        onClick={() => editorApi.exportJSON()}
+      >
+        {ru ? '⬇ Файл JSON (Ctrl+S)' : '⬇ JSON file (Ctrl+S)'}
+      </button>
+      <button
+        type="button"
+        className="cfg-btn"
+        onClick={async () => {
+          const name = window.prompt(ru ? 'Название в библиотеке' : 'Library name', title || '');
+          if (name == null) return;
+          await editorApi.saveToLibrary(name.trim() || title);
+          setLib((await editorApi.listLibrary()) || []);
+        }}
+      >
+        {ru ? '📚 В библиотеку' : '📚 Add to library'}
+      </button>
+      {lib.length ? (
+        <div className="cfg-lib-list">
+          {lib.map((item) => (
+            <div key={item.id} className="cfg-lib-row">
+              <span>
+                {item.title}{' '}
+                <small>
+                  · {item.slides || 0} {ru ? 'сл.' : 'sl.'}
+                </small>
+              </span>
+              <span>
+                <button
+                  type="button"
+                  className="cfg-btn"
+                  onClick={() => editorApi.openLibraryItem(item.id)}
+                >
+                  {ru ? 'Открыть' : 'Open'}
+                </button>
+                <button
+                  type="button"
+                  className="cfg-btn cfg-btn-danger"
+                  onClick={async () => {
+                    await editorApi.deleteLibraryItem(item.id);
+                    setLib((await editorApi.listLibrary()) || []);
+                  }}
+                >
+                  {ru ? 'Удалить' : 'Delete'}
+                </button>
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <button
+        type="button"
+        className="cfg-btn"
         onClick={() => {
           useHistoryStore.getState().clear();
           showToast(ru ? 'История очищена' : 'History cleared', 'ok');
@@ -317,18 +419,18 @@ function SectionPersist({ ru }) {
       <button
         type="button"
         className="cfg-btn cfg-btn-danger"
-        onClick={() => {
+        onClick={async () => {
           const ok = window.confirm(
             ru ? 'Удалить сохранённую сессию? Страница перезагрузится.' : 'Delete saved session? The page will reload.'
           );
           if (!ok) return;
           try {
-            localStorage.removeItem(LS_KEY);
+            await usePresentationStore.getState().clearPersistedSession();
           } catch (e) {}
           location.reload();
         }}
       >
-        {ru ? '♻️ Сбросить сессию (удалить localStorage)' : '♻️ Reset session (clear localStorage)'}
+        {ru ? '♻️ Сбросить сессию' : '♻️ Reset session'}
       </button>
     </>
   );

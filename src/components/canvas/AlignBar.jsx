@@ -10,6 +10,19 @@ import { APP_CHROME } from '../../editor/app-icons-data.js';
 import Toggle from '../ui/Toggle.jsx';
 
 const ico = (id, sw = 2) => <AppIcon id={id} size={12} sw={sw} fillOp={0} />;
+/** Bring-to-front: white square on grey. Send-to-back: grey on white. */
+const layerFrontIcon = (
+  <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
+    <rect x="1.5" y="1.5" width="8.5" height="8.5" rx="1.2" fill="#94a3b8" />
+    <rect x="5.5" y="5.5" width="8.5" height="8.5" rx="1.2" fill="#ffffff" stroke="#64748b" strokeWidth="0.9" />
+  </svg>
+);
+const layerBackIcon = (
+  <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
+    <rect x="1.5" y="1.5" width="8.5" height="8.5" rx="1.2" fill="#ffffff" stroke="#64748b" strokeWidth="0.9" />
+    <rect x="5.5" y="5.5" width="8.5" height="8.5" rx="1.2" fill="#94a3b8" />
+  </svg>
+);
 const I = {
   left: ico(APP_CHROME.alignLeft),
   centerH: ico(APP_CHROME.alignCenterH),
@@ -22,10 +35,10 @@ const I = {
   distHSlide: ico(APP_CHROME.distHSlide),
   distVSel: ico(APP_CHROME.distVSel),
   distVSlide: ico(APP_CHROME.distVSlide),
-  front: ico(APP_CHROME.layerFront),
+  front: layerFrontIcon,
   up: ico(APP_CHROME.layerUp),
   down: ico(APP_CHROME.layerDown),
-  back: ico(APP_CHROME.layerBack),
+  back: layerBackIcon,
   zoomOut: ico(APP_CHROME.zoomOut, 2.2),
   zoomIn: ico(APP_CHROME.zoomIn, 2.2),
 };
@@ -51,6 +64,7 @@ export default function AlignBar() {
   const zoom = useUiStore((s) => s.canvasZoom);
   const setZoom = useUiStore((s) => s.setCanvasZoom);
   const resetZoom = useUiStore((s) => s.resetCanvasZoom);
+  const thumbsCollapsed = useUiStore((s) => s.thumbsCollapsed);
   const ar = usePresentationStore((s) => s.ar);
   const canvasW = usePresentationStore((s) => s.canvasW);
   const canvasH = usePresentationStore((s) => s.canvasH);
@@ -70,6 +84,8 @@ export default function AlignBar() {
 
   return (
     <div className="react-ctoolbar" {...versionAttr('AlignBar')} role="toolbar" aria-label="Выравнивание">
+      {/* Empty spacer: title stays in ThumbStrip so it does not jump right on collapse. */}
+      {thumbsCollapsed ? <div className="thumb-strip-reopen-slot" aria-hidden="true" /> : null}
       <div className="react-align-scope">
         <span className="react-align-scope-lbl">{ru ? 'Выровн.:' : 'Align:'}</span>
         <AlBtn title={ru ? 'По выделению' : 'To selection'} active={scope === 'sel'} onClick={() => setScope('sel')}>

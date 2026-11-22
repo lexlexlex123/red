@@ -3,9 +3,12 @@ import { useUiStore } from '../../stores/uiStore';
 import { usePresentationStore } from '../../stores/presentationStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { editorApi } from '../../editor/editorApi';
+import ColorField from '../ui/ColorField.jsx';
 import {
+  DEFAULT_LINK_HOVER,
   LINK_TYPE_OPTIONS,
   linkTypeFromHref,
+  peekInlineLinkSelection,
   readGroupLink,
   resolveSlideLinkIndex,
   slideDisplayTitle,
@@ -27,15 +30,24 @@ export default function LinkModal() {
   const [url, setUrl] = useState('');
   const [target, setTarget] = useState('_blank');
   const [slideIdx, setSlideIdx] = useState(0);
+  const [hover, setHover] = useState(DEFAULT_LINK_HOVER);
+  const [hoverScheme, setHoverScheme] = useState(null);
 
   useEffect(() => {
     if (!open || !el) return;
     const els = slides[cur]?.els || [];
-    const link = readGroupLink(el, els, 'link');
+    const inline = peekInlineLinkSelection();
+    const link = inline?.existingHref || readGroupLink(el, els, 'link');
     const lt = linkTypeFromHref(link);
     setType(lt);
     setUrl(lt === 'url' ? link || '' : '');
-    setTarget(readGroupLink(el, els, 'linkt') || '_blank');
+    setTarget(
+      inline?.existingHref
+        ? inline.existingTarget || '_blank'
+        : readGroupLink(el, els, 'linkt') || '_blank'
+    );
+    setHover(inline?.existingHover || el.linkHover || DEFAULT_LINK_HOVER);
+    setHoverScheme(inline?.existingHoverScheme || el.linkHoverScheme || null);
     if (lt === 'slide') {
       const si = resolveSlideLinkIndex(link, cur, slides);
       setSlideIdx(si != null ? si : cur);
@@ -46,6 +58,7 @@ export default function LinkModal() {
 
   if (!open) return null;
   const ru = lang !== 'en';
+  const inlineSel = peekInlineLinkSelection();
 
   return (
     <div className="settings-backdrop" onClick={close} role="presentation">
@@ -53,6 +66,7 @@ export default function LinkModal() {
         className="settings-modal link-modal"
         role="dialog"
         aria-modal="true"
+        data-keep-text-edit="1"
         onClick={(e) => e.stopPropagation()}
       >
         <h2>{ru ? 'Ссылка' : 'Link'}</h2>
@@ -60,6 +74,13 @@ export default function LinkModal() {
           <p className="react-props-muted">{ru ? 'Выберите объект' : 'Select an element'}</p>
         ) : (
           <>
+            {inlineSel ? (
+              <p className="react-props-muted">
+                {ru
+                  ? 'На выделенный фрагмент текста (в т.ч. в ячейке таблицы)'
+                  : 'Applies to the selected text (including table cells)'}
+              </p>
+            ) : null}
             <label className="react-props-field">
               <span>{ru ? 'Тип' : 'Type'}</span>
               <select value={type} onChange={(e) => setType(e.target.value)}>
@@ -107,6 +128,23 @@ export default function LinkModal() {
               </div>
             ) : null}
 
+            <div className="react-props-field">
+              <span>{ru ? 'Цвет при наведении' : 'Hover color'}</span>
+              <ColorField
+                value={hover}
+                schemeRef={hoverScheme}
+                onChange={(c, sr) => {
+                  setHover(c);
+                  setHoverScheme(sr ?? null);
+                }}
+              />
+              <p className="react-props-muted" style={{ marginTop: 4 }}>
+                {ru
+                  ? 'Обычный цвет = цвет текста. Посещённые без синего. Палитра — код из двух цифр.'
+                  : 'Normal color matches text. No visited blue. Palette uses a two-digit code.'}
+              </p>
+            </div>
+
             <div className="theme-modal-footer">
               <button type="button" onClick={close}>
                 {ru ? 'Отмена' : 'Cancel'}
@@ -123,6 +161,8 @@ export default function LinkModal() {
                     url,
                     target,
                     slideIdx,
+                    hover,
+                    hoverScheme,
                   })
                 }
               >

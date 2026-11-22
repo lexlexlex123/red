@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { editorApi } from '../../editor/editorApi';
-import { FONT_FAMILIES, parseFontFamily } from '../../editor/fonts.js';
+import { editingTextRoot, uniformSelectionFontSize } from '../../editor/textInline.js';
+import { DEFAULT_TEXT_FONT_FAMILY, TEXT_FONT_FAMILIES, parseFontFamily } from '../../editor/fonts.js';
 import { htmlHasList, htmlNumListStyle } from '../../editor/textLists.js';
 import { htmlHasStress } from '../../editor/textStress.js';
 import { htmlHasScript } from '../../editor/textScript.js';
@@ -51,19 +52,42 @@ function FtBtn({ id, title, on, onClick, children, style }) {
 }
 
 /** v7.1 #tprops format toolbar: actions, role, B/I/U, font, pt, align/valign/lists. */
-export default function TextPropsFmt({ el, ru, applyTextStyle }) {
+export default function TextPropsFmt({ el, ru, applyTextStyle, variant }) {
+  const cell = variant === 'cell';
+  const compact = variant === 'cell' || variant === 'shape';
   const [quoteCat, setQuoteCatLocal] = useState(getQuoteCat);
   const dictationOn = useUiStore((s) => s.dictationOn);
   const dictationMode = useUiStore((s) => s.dictationMode);
   const cats = quoteCategories(ru);
   const catLabel = (cats.find((c) => c.id === quoteCat) || cats[0] || {}).label || (ru ? 'Все' : 'All');
   const trLabel = selectionTranslateLabel();
-  const align = parseAlign(el.cs) || 'left';
-  const valign = el.valign || 'top';
+  const align = parseAlign(el.cs) || (variant === 'shape' ? 'center' : 'left');
+  const valign = el.valign || (compact ? 'middle' : 'top');
   const role = el.textRole === 'heading' || el.textRole === 'title' ? 'heading' : 'body';
+  const boxFs = Number(parseFontSize(variant === 'shape' ? el.shapeTextCss || el.cs : el.cs) || (compact ? 24 : 36));
+  const [liveFs, setLiveFs] = useState(null);
+  useEffect(() => {
+    if (el?.type !== 'text' || !el.id) {
+      setLiveFs(null);
+      return undefined;
+    }
+    const read = () => {
+      const root = editingTextRoot(el.id);
+      if (!root) {
+        setLiveFs(null);
+        return;
+      }
+      setLiveFs(uniformSelectionFontSize(root));
+    };
+    read();
+    document.addEventListener('selectionchange', read);
+    return () => document.removeEventListener('selectionchange', read);
+  }, [el?.id, el?.type, el?.html, el?.cs]);
+  const shownFs = liveFs != null ? liveFs : boxFs;
 
   return (
     <>
+      {compact ? null : (
       <div className="react-tprops-actions">
         <div className="react-tprops-actions-row">
           <button
@@ -164,7 +188,9 @@ export default function TextPropsFmt({ el, ru, applyTextStyle }) {
           </span>
         </button>
       </div>
+      )}
 
+      {compact ? null : (
       <div className="react-props-field" style={{ marginBottom: 6 }}>
         <span>{ru ? 'Роль' : 'Role'}</span>
         <div className="react-tprops-actions-row">
@@ -184,6 +210,7 @@ export default function TextPropsFmt({ el, ru, applyTextStyle }) {
           </button>
         </div>
       </div>
+      )}
 
       <div className="react-fmt-block">
         <div className="react-fmt-row react-fmt-row-spread">
@@ -258,11 +285,16 @@ export default function TextPropsFmt({ el, ru, applyTextStyle }) {
         <div className="react-fmt-inline">
           <span>{ru ? 'Шрифт' : 'Font'}</span>
           <select
-            value={parseFontFamily(el.cs) || ''}
+            value={parseFontFamily(el.cs) || DEFAULT_TEXT_FONT_FAMILY}
             onChange={(e) => editorApi.setTextFont(e.target.value)}
           >
-            {FONT_FAMILIES.map((f) => (
-              <option key={f.id || '__default'} value={f.id} style={f.id ? { fontFamily: f.id } : undefined}>
+            {TEXT_FONT_FAMILIES.map((f) => (
+              <option
+                key={f.id || '__default'}
+                value={f.divider ? '__system_fonts_divider' : f.id}
+                disabled={!!f.divider}
+                style={f.id && !f.divider ? { fontFamily: f.id } : undefined}
+              >
                 {ru ? f.label : f.labelEn || f.label}
               </option>
             ))}
@@ -274,7 +306,7 @@ export default function TextPropsFmt({ el, ru, applyTextStyle }) {
             min={8}
             max={200}
             step={1}
-            value={Number(parseFontSize(el.cs) || 36)}
+            value={shownFs}
             onChange={(v) => applyTextStyle({ fontSize: Math.round(v) })}
           />
         </div>
@@ -370,6 +402,7 @@ export default function TextPropsFmt({ el, ru, applyTextStyle }) {
                 <line x1="5" y1="11" x2="15" y2="11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
               </svg>
             </FtBtn>
+            {compact ? null : (
             <FtBtn
               title={ru ? 'Пункт оглавления' : 'TOC entry'}
               on={el.textRole === 'tocEntry'}
@@ -381,13 +414,16 @@ export default function TextPropsFmt({ el, ru, applyTextStyle }) {
                 <path d="M1 11h5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
               </svg>
             </FtBtn>
+            )}
           </div>
         </div>
-        {htmlHasList(el.html, 'bullet') ? (
+        {!cell && htmlHasList(el.html, 'bullet') ? (
           <div
             className="react-fmt-list-tools"
             onMouseDown={(e) => {
               if (!e.target.closest?.('input, textarea, [contenteditable]')) e.preventDefault();
+              // Snapshot caret/selection lines before the color UI steals focus.
+              editorApi.snapshotBulletTargetLines(el.id);
             }}
           >
             <ColorField

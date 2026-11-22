@@ -108,6 +108,12 @@ body {
 .react-shape-text {
   word-break: break-word;
 }
+.react-shape-text.is-editing {
+  outline: 1px dashed rgba(248, 250, 252, 0.85);
+  outline-offset: -1px;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.28);
+  background: rgba(15, 23, 42, 0.14);
+}
 
 /* v7.1 table parity: cell hover, col/row resize handles, drag strips */
 .react-tbl-wrap {
@@ -203,6 +209,10 @@ body {
   overflow: hidden;
 }
 
+.app-shell-main.color-bar-hidden {
+  grid-template-rows: minmax(0, 1fr);
+}
+
 .app-shell-main > .thumb-strip {
   grid-column: 1;
   grid-row: 1 / -1;
@@ -211,6 +221,32 @@ body {
   width: 182px;
   min-width: 182px;
   max-width: 182px;
+}
+
+.app-shell-main.thumbs-collapsed {
+  grid-template-columns: 44px minmax(0, 1fr) 360px;
+}
+
+.app-shell-main.thumbs-collapsed > .thumb-strip {
+  width: 44px;
+  min-width: 44px;
+  max-width: 44px;
+}
+
+.app-shell-main.thumbs-collapsed > .slide-canvas-host {
+  grid-column: 2;
+}
+
+.app-shell-main.thumbs-collapsed > .find-bar {
+  grid-column: 2;
+}
+
+.app-shell-main.thumbs-collapsed > .react-color-bar {
+  grid-column: 2;
+}
+
+.app-shell-main.thumbs-collapsed > .react-right-panel {
+  grid-column: 3;
 }
 
 .app-shell-main > .slide-canvas-host {
@@ -389,17 +425,13 @@ html:not(.light) .react-ribbon-body[data-tab='slideshow'] { --ribbon-ink: #bbf7d
   border-left: 1px solid #3a3d44;
   overflow-x: hidden;
   overflow-y: auto;
-  scrollbar-width: thin;
-  -ms-overflow-style: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 .react-right-panel::-webkit-scrollbar {
-  display: block;
-  width: 8px;
-  height: 8px;
-}
-.react-right-panel::-webkit-scrollbar-thumb {
-  background: var(--border2, #404046);
-  border-radius: 4px;
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .react-props-section {
@@ -632,6 +664,10 @@ html:not(.light) .react-ribbon-body[data-tab='slideshow'] { --ribbon-ink: #bbf7d
   box-sizing: border-box;
 }
 
+.react-props-field .react-color-field-row input {
+  width: auto;
+}
+
 .react-props-field-compact input {
   padding: 4px 6px;
 }
@@ -641,6 +677,294 @@ html:not(.light) .react-ribbon-body[data-tab='slideshow'] { --ribbon-ink: #bbf7d
   grid-template-columns: 1fr 1fr;
   gap: var(--props-gap, 8px);
   margin-bottom: var(--props-gap, 8px);
+}
+
+.react-class-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  margin-bottom: var(--props-gap, 8px);
+  box-sizing: border-box;
+}
+.react-class-cols > .react-props-field {
+  min-width: 0;
+  margin-bottom: 0;
+}
+.react-class-cols textarea,
+.react-class-zones textarea {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  color: var(--text);
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.react-class-layouts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  margin-bottom: var(--props-gap, 8px);
+  box-sizing: border-box;
+}
+.react-class-layout {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 6px 7px;
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 10px;
+  line-height: 1.25;
+  text-align: center;
+}
+.react-class-layout:hover {
+  border-color: var(--border);
+}
+.react-class-layout.on {
+  border-color: var(--accent, #3b82f6);
+  box-shadow: inset 0 0 0 1px var(--accent, #3b82f6);
+}
+.react-class-layout-grid {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  height: 28px;
+  pointer-events: none;
+}
+.react-class-layout-grid i {
+  display: block;
+  background: var(--text);
+  opacity: 0.22;
+  border-radius: 2px;
+}
+.react-class-layout.on .react-class-layout-grid i {
+  opacity: 0.55;
+  background: var(--accent, #3b82f6);
+}
+
+.react-class-zones {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  margin-bottom: var(--props-gap, 8px);
+  box-sizing: border-box;
+}
+.react-class-zones.cols-2 {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+.react-class-zones.cols-3 {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+}
+.react-imagesort-props-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: var(--props-gap, 8px);
+  max-height: 240px;
+  overflow: auto;
+}
+.react-imagesort-props-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  background: var(--surface2, rgba(0, 0, 0, 0.04));
+}
+.react-imagesort-props-row.is-sel {
+  border-color: var(--accent, #3b82f6);
+  background: color-mix(in srgb, var(--accent, #3b82f6) 12%, transparent);
+}
+.react-imagesort-props-idx {
+  flex: 0 0 18px;
+  font-size: 11px;
+  color: #8b93a3;
+  text-align: center;
+}
+.react-imagesort-props-input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border2, #d1d5db);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  color: var(--text, #111);
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
+.react-imagesort-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 500;
+}
+.react-imagesort-pin {
+  position: absolute;
+  /* Pin tip (bottom of 36px icon) sits on (x,y); label hangs just below. */
+  transform: translate(-50%, -36px);
+  pointer-events: auto;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.28));
+}
+.react-imagesort-pin-svg {
+  width: 36px;
+  height: 36px;
+  display: block;
+  flex: 0 0 36px;
+}
+.react-imagesort-label {
+  max-width: 160px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: #111;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+  white-space: pre-line;
+  text-align: center;
+  overflow: hidden;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.14);
+}
+.react-imagesort-pin.is-selected .react-imagesort-pin-svg {
+  outline: 2px solid var(--imagesort-accent, var(--accent, #3b82f6));
+  outline-offset: 2px;
+  border-radius: 50%;
+}
+.react-imagesort-pin.is-ok .react-imagesort-label {
+  background: rgba(220, 252, 231, 0.82);
+  color: #166534;
+}
+.react-imagesort-pin.is-bad .react-imagesort-label {
+  background: rgba(254, 226, 226, 0.82);
+  color: #991b1b;
+}
+
+.preview-imagesort-pick {
+  position: fixed;
+  inset: 0;
+  z-index: 920;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(12px, 3vw, 28px);
+  background: rgba(15, 23, 42, 0.45);
+  box-sizing: border-box;
+}
+.preview-imagesort-pick.is-scheme-light {
+  background: rgba(15, 23, 42, 0.28);
+}
+.preview-imagesort-pick-card {
+  width: min(920px, 100%);
+  max-height: min(90vh, 720px);
+  overflow: auto;
+  border-radius: 16px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+  padding: 18px 20px 22px;
+  box-sizing: border-box;
+}
+/* Follow presentation color scheme (Тёмные / Светлые), not editor chrome. */
+.preview-imagesort-pick.is-scheme-dark .preview-imagesort-pick-card {
+  background: #1e1e24;
+  color: #e2e8f0;
+  border: 1px solid #404046;
+}
+.preview-imagesort-pick.is-scheme-light .preview-imagesort-pick-card {
+  background: #ffffff;
+  color: #1e293b;
+  border: 1px solid #e2e8f0;
+}
+.preview-imagesort-back {
+  border: 0;
+  background: transparent;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 2px 12px;
+}
+.preview-imagesort-pick.is-scheme-dark .preview-imagesort-back {
+  color: #9aa2b4;
+}
+.preview-imagesort-pick.is-scheme-dark .preview-imagesort-back:hover {
+  color: #e2e8f0;
+}
+.preview-imagesort-pick.is-scheme-light .preview-imagesort-back {
+  color: #64748b;
+}
+.preview-imagesort-pick.is-scheme-light .preview-imagesort-back:hover {
+  color: #1e293b;
+}
+.preview-imagesort-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  align-content: flex-start;
+}
+.preview-imagesort-option {
+  border-radius: 12px;
+  font-size: clamp(14px, 2.2vw, 18px);
+  font-weight: 600;
+  padding: 12px 18px;
+  min-width: 120px;
+  cursor: pointer;
+  white-space: pre-line;
+  text-align: center;
+  line-height: 1.25;
+}
+.preview-imagesort-pick.is-scheme-dark .preview-imagesort-option {
+  border: 1px solid #404046;
+  background: #2a2a2e;
+  color: #e2e8f0;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+}
+.preview-imagesort-pick.is-scheme-dark .preview-imagesort-option:hover {
+  background: #323236;
+  border-color: #3b82f6;
+}
+.preview-imagesort-pick.is-scheme-light .preview-imagesort-option {
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #1e293b;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+}
+.preview-imagesort-pick.is-scheme-light .preview-imagesort-option:hover {
+  background: #e2e8f0;
+  border-color: #3b82f6;
+}
+
+.react-class-zones > .react-props-field {
+  min-width: 0;
+  margin-bottom: 0;
 }
 
 .react-props-meta {
@@ -662,6 +986,87 @@ html:not(.light) .react-ribbon-body[data-tab='slideshow'] { --ribbon-ink: #bbf7d
   flex-wrap: wrap;
   gap: var(--props-gap, 8px);
   margin-bottom: var(--props-gap, 8px);
+}
+
+.react-guides-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 6px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.react-guides-row.is-sel {
+  border-color: var(--accent, #3b82f6);
+  background: color-mix(in srgb, var(--accent, #3b82f6) 10%, transparent);
+}
+.react-guides-row-sliders {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 4px;
+}
+.react-guides-row-sliders .color-bar-gslider-outer,
+.react-guides-row-sliders .app-gslider-outer {
+  min-width: 0;
+}
+
+.react-custom-guides {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 62;
+}
+/* Same look as Home-tab grid / margin guides (.react-guide-extra): white + dark rim. */
+.react-custom-guides .react-custom-guide-edge {
+  stroke: rgba(15, 23, 42, 0.55);
+  stroke-width: calc(3px * var(--react-chrome-inverse-scale, 1));
+  shape-rendering: geometricPrecision;
+  pointer-events: none;
+}
+.react-custom-guides .react-custom-guide-vis {
+  stroke: rgba(255, 255, 255, 0.95);
+  stroke-width: calc(1px * var(--react-chrome-inverse-scale, 1));
+  shape-rendering: geometricPrecision;
+  pointer-events: none;
+  filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.75));
+}
+.react-custom-guides .react-custom-guide-vis.is-sel {
+  stroke: #ffffff;
+  stroke-width: calc(1.5px * var(--react-chrome-inverse-scale, 1));
+  filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.95));
+}
+.react-slide-stage.is-guides-edit {
+  cursor: default;
+}
+.react-slide-stage.is-guides-edit .react-custom-guides {
+  pointer-events: auto;
+}
+.react-slide-stage.is-guides-edit .react-custom-guides .react-custom-guide-hit {
+  cursor: move;
+  pointer-events: stroke;
+  stroke: rgba(255, 255, 255, 0.01);
+  stroke-width: calc(10px * var(--react-chrome-inverse-scale, 1));
+}
+
+.react-slide-title-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.react-slide-title-row .react-sntog {
+  margin: 0;
+  flex-shrink: 0;
+}
+.react-slide-title-row input[type='text'] {
+  flex: 1;
+  min-width: 0;
 }
 
 .react-props-actions {
@@ -760,6 +1165,9 @@ html:not(.light) .react-ribbon-body[data-tab='slideshow'] { --ribbon-ink: #bbf7d
   max-width: 520px;
   width: min(520px, 94vw);
 }
+.react-applet-modal .theme-modal-footer {
+  border-top: none;
+}
 .react-applet-gallery {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -791,6 +1199,16 @@ html:not(.light) .react-ribbon-body[data-tab='slideshow'] { --ribbon-ink: #bbf7d
 .react-applet-card-ico {
   font-size: 26px;
   line-height: 1;
+  color: var(--text2, #9aa2b4);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.react-applet-card:hover .react-applet-card-ico {
+  color: var(--accent, #3b82f6);
+}
+.react-applet-card-ico svg {
+  display: block;
 }
 .react-applet-card-name {
   font-size: 10px;
@@ -899,6 +1317,47 @@ html:not(.light) .react-ribbon-body[data-tab='slideshow'] { --ribbon-ink: #bbf7d
   font-weight: 800;
   line-height: 1.1;
 }
+.react-el-audio {
+  background: transparent !important;
+}
+.react-audio-player {
+  width: 100%;
+  height: 100%;
+  accent-color: var(--react-audio-accent, #6366f1);
+  color: var(--react-audio-controls, #6366f1);
+  color-scheme: inherit;
+}
+.react-audio-player::-webkit-media-controls-enclosure {
+  background: transparent;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.react-audio-player::-webkit-media-controls-panel {
+  background-color: var(--react-audio-panel, #f1f5f9);
+  border-radius: 999px;
+  color: var(--react-audio-controls, #6366f1);
+}
+/* Time: contrast to cover (light on dark / dark on light). */
+.react-audio-player::-webkit-media-controls-current-time-display,
+.react-audio-player::-webkit-media-controls-time-remaining-display {
+  color: var(--react-audio-time, #0f172a) !important;
+  text-shadow: none;
+}
+/* Play / mute / overflow: palette «15». */
+.react-audio-player::-webkit-media-controls-play-button,
+.react-audio-player::-webkit-media-controls-mute-button,
+.react-audio-player::-webkit-media-controls-overflow-button,
+.react-audio-player::-webkit-media-controls-toggle-closed-captions-button {
+  filter: none;
+  background-color: transparent;
+  color: var(--react-audio-controls, #6366f1);
+}
+.react-audio-player::-webkit-media-controls-timeline,
+.react-audio-player::-webkit-media-controls-volume-slider {
+  accent-color: var(--react-audio-accent, #6366f1);
+  color: var(--react-audio-accent, #6366f1);
+}
+
 .react-media-triggers {
   display: flex;
   flex-direction: column;
@@ -933,6 +1392,12 @@ html:not(.light) .react-ribbon-body[data-tab='slideshow'] { --ribbon-ink: #bbf7d
   font-size: 11px;
   flex: 1;
   min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  outline: none;
+  box-shadow: none;
 }
 
 .react-props-btn:hover:not(:disabled) {
@@ -940,10 +1405,28 @@ html:not(.light) .react-ribbon-body[data-tab='slideshow'] { --ribbon-ink: #bbf7d
   color: var(--text);
 }
 
+.react-props-btn:focus,
+.react-props-btn:focus-visible,
+.react-props-btn:active {
+  outline: none !important;
+  box-shadow: none;
+}
+
 .react-props-btn.is-active {
   background: var(--accentl);
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.react-props-btn.is-icon {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 28px;
+  padding: 0;
+}
+
+.react-props-btn.is-icon svg {
+  display: block;
 }
 
 /* Image frame thumbnails in props panel */
@@ -960,7 +1443,20 @@ html:not(.light) .react-ribbon-body[data-tab='slideshow'] { --ribbon-ink: #bbf7d
 }
 .react-img-frame-thumb-ribbon {
   background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 100%);
-  box-shadow: 0 3px 0 var(--border2);
+  position: relative;
+  overflow: visible;
+  box-shadow: 0 2px 5px rgba(15, 23, 42, 0.22);
+}
+.react-img-frame-thumb-ribbon::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -4px;
+  width: 18px;
+  height: 8px;
+  background: #f3c089;
+  transform: translateX(-50%) rotate(-4deg);
+  clip-path: polygon(0 32%, 8% 2%, 16% 40%, 24% 0, 34% 36%, 48% 6%, 62% 34%, 74% 2%, 86% 38%, 100% 10%, 96% 70%, 84% 100%, 72% 62%, 58% 98%, 44% 64%, 30% 100%, 16% 60%, 4% 92%);
 }
 .react-img-frame-thumb-soft {
   background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 100%);
@@ -970,15 +1466,17 @@ html:not(.light) .react-ribbon-body[data-tab='slideshow'] { --ribbon-ink: #bbf7d
 .react-img-frame-thumb-polaroid {
   background: #fff;
   border-color: #ccc;
-  padding: 2px 2px 5px;
+  padding: 2px 2px 7px;
   position: relative;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.18);
 }
 .react-img-frame-thumb-polaroid::after {
   content: '';
   position: absolute;
-  inset: 2px 2px 5px;
+  inset: 2px 2px 7px;
   background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 100%);
   border-radius: 1px;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.12), inset 0 1px 3px rgba(15, 23, 42, 0.22);
 }
 
 .react-tprops-actions {
@@ -1292,28 +1790,178 @@ html:not(.light) .react-ribbon-body[data-tab='slideshow'] { --ribbon-ink: #bbf7d
   color: #fff;
 }
 
-@media (max-width: 640px) {
-  .app-shell-main {
+@media (max-width: 900px) {
+  .app-shell-main,
+  .app-shell-main.thumbs-collapsed {
+    position: relative;
     grid-template-columns: 1fr;
-    grid-template-rows: 1fr 112px 120px;
+    /* Color bar hidden by default on mobile — only canvas + thumb strip */
+    grid-template-rows: minmax(0, 1fr) 156px;
   }
-  .app-shell-main > .thumb-strip {
+  .app-shell-main.color-bar-hidden {
+    grid-template-rows: minmax(0, 1fr) 156px;
+  }
+  .app-shell-main > .thumb-strip,
+  .app-shell-main.thumbs-collapsed > .thumb-strip {
     grid-column: 1;
-    grid-row: 3;
+    grid-row: 2;
     width: 100%;
     max-width: none;
     min-width: 0;
+    min-height: 0;
+    border-right: none;
+    border-top: 1px solid #3a3d44;
   }
   .app-shell-main > .slide-canvas-host {
     grid-column: 1;
     grid-row: 1;
   }
   .app-shell-main > .react-color-bar {
-    grid-column: 1;
-    grid-row: 2;
+    display: none !important;
   }
+
+  .mobile-props-backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 28;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    background: rgba(0, 0, 0, 0.45);
+    cursor: pointer;
+  }
+
   .react-right-panel {
     display: none;
+  }
+
+  .app-shell-main.mobile-props-open > .react-right-panel {
+    display: flex;
+    flex-direction: column;
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    width: min(360px, 92%);
+    max-width: 100%;
+    height: auto;
+    border-left: 1px solid var(--border);
+    box-shadow: -12px 0 32px rgba(0, 0, 0, 0.28);
+    background: var(--surface);
+    color: var(--text);
+  }
+
+  .thumb-strip.is-horizontal {
+    flex-direction: column;
+  }
+
+  .thumb-strip-actions {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 6px 8px 0;
+  }
+
+  .thumb-strip-play {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 34px;
+    border: 0;
+    border-radius: 8px;
+    background: #3b82f6;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .thumb-strip-play:active {
+    filter: brightness(0.92);
+  }
+
+  .thumb-strip-play .app-icon {
+    color: #fff;
+  }
+
+  .thumb-strip-props {
+    flex-shrink: 0;
+    width: 34px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    background: var(--surface2);
+    color: var(--text);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .thumb-strip-props.is-open {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    color: #fff;
+  }
+
+  .thumb-strip-props:active {
+    filter: brightness(0.92);
+  }
+
+  /* Hide «Слайды N» under the play / menu row on mobile */
+  .thumb-strip.is-horizontal .thumb-strip-hdr {
+    display: none;
+  }
+
+  .thumb-strip-scroll.is-horizontal {
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0 4px 6px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  .thumb-strip-scroll.is-horizontal::-webkit-scrollbar {
+    height: 3px;
+    width: auto;
+  }
+
+  .thumb-strip-inner.is-horizontal {
+    position: relative;
+    height: 100%;
+    min-height: 72px;
+  }
+
+  .thumb-row.is-horizontal,
+  .thumb-add-row.is-horizontal {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 4px;
+  }
+
+  .thumb-row.is-horizontal .thumb-item,
+  .thumb-add-row.is-horizontal .thumb-add {
+    flex-shrink: 0;
+  }
+
+  .thumb-insert-line.is-horizontal {
+    left: auto;
+    right: auto;
+    width: 2px;
+    height: auto;
+    margin-top: 0;
   }
 }
 
@@ -1473,7 +2121,17 @@ html.light .react-ink-brush-cursor {
 .react-slide-stage.is-drawing .react-curve-handle,
 .react-slide-stage.is-drawing .react-cp-handle,
 .react-slide-stage.is-drawing .react-conn-hit,
-.react-slide-stage.is-drawing .react-sel-frame {
+.react-slide-stage.is-drawing .react-sel-frame,
+.react-slide-stage.is-drawing .react-shape-hit-area,
+.react-slide-stage.is-drawing .react-shape-hit-area * {
+  /* `!important` is required here because line/curve/clip/box shapes give their own hit
+     area (and its inner <path>) an explicit inline pointer-events (stroke/fill/auto) plus
+     `cursor: move` — an ancestor rule can't out-cascade that on its own, each of these
+     elements needs its own !important override so it stops swallowing the pointerdown
+     (and showing a move cursor) while a draw tool is active. Without covering
+     .react-shape-hit-area specifically, starting to draw/erase directly over a line, curve,
+     or cropped/clipped shape hit its onPointerDown (which stopPropagation()s) instead of
+     the stage's drawing handler. */
   pointer-events: none !important;
 }
 
@@ -1490,6 +2148,12 @@ html.light .react-ink-brush-cursor {
   pointer-events: none;
   z-index: 2;
   overflow: visible;
+  /* Promote to its own compositor layer so redrawing .react-ink-live on top (every
+     pointermove while drawing) doesn't force the browser to re-rasterize this whole SVG.
+     Without this, paint cost while drawing scales with the number of already-committed
+     strokes, not just the stroke currently being drawn. (No `contain: paint` here —
+     overflow: visible is intentional so glow/neon strokes near the edges aren't clipped.) */
+  will-change: transform;
 }
 
 .ink-sel-halo {
@@ -1504,6 +2168,10 @@ html.light .react-ink-brush-cursor {
   height: 100%;
   pointer-events: none;
   z-index: 40;
+  /* Own compositor layer for the same reason as .react-ink-layer above: this canvas is
+     cleared and redrawn on every pointermove while drawing, and without isolation the
+     browser repaints everything stacked underneath it (all committed ink) on every frame. */
+  will-change: transform;
 }
 
 .react-ink-live.is-under {
@@ -1571,6 +2239,11 @@ html.light .react-ink-brush-cursor {
   border-color: var(--border, #50545c);
 }
 
+.react-color-field-icon.is-active {
+  color: var(--accent, #3b82f6);
+  border-color: var(--accent, #3b82f6);
+}
+
 .react-drawing-panel .color-bar-gslider-wrap {
   margin: 8px 0 10px;
 }
@@ -1614,6 +2287,7 @@ html.light .react-ink-brush-cursor {
   z-index: 90;
   pointer-events: auto;
   touch-action: none;
+  transform: translate(-50%, -50%) scale(var(--react-chrome-inverse-scale, 1));
 }
 
 .react-slide-stage.is-rot-hover,
@@ -1635,10 +2309,14 @@ html.light .react-ink-brush-cursor {
   background: #fbbf24;
   border: 2px solid #fff;
   border-radius: 50%;
-  box-shadow: 0 0 0 1.5px #f59e0b, 0 2px 5px rgba(0, 0, 0, 0.5);
+  box-shadow:
+    0 0 0 calc(1.5px * var(--react-chrome-inverse-scale, 1)) #f59e0b,
+    0 calc(2px * var(--react-chrome-inverse-scale, 1))
+      calc(5px * var(--react-chrome-inverse-scale, 1)) rgba(0, 0, 0, 0.5);
   z-index: 91;
   pointer-events: auto;
   touch-action: none;
+  transform: scale(var(--react-chrome-inverse-scale, 1));
 }
 .react-adj-handle.is-square {
   border-radius: 3px;
@@ -1654,17 +2332,23 @@ html.light .react-ink-brush-cursor {
   background: #fff;
   border: 1.5px solid #3b82f6;
   border-radius: 1px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  box-shadow:
+    0 calc(1px * var(--react-chrome-inverse-scale, 1))
+      calc(4px * var(--react-chrome-inverse-scale, 1)) rgba(0, 0, 0, 0.45);
   z-index: 92;
   pointer-events: auto;
   touch-action: none;
+  transform: translate(-50%, -50%) scale(var(--react-chrome-inverse-scale, 1));
 }
 .react-line-ep.is-joined {
   background: #fbbf24;
   border-color: #d97706;
   border-radius: 2px;
-  box-shadow: 0 0 0 1.5px #f59e0b, 0 2px 5px rgba(0, 0, 0, 0.45);
-  transform: rotate(45deg);
+  box-shadow:
+    0 0 0 calc(1.5px * var(--react-chrome-inverse-scale, 1)) #f59e0b,
+    0 calc(2px * var(--react-chrome-inverse-scale, 1))
+      calc(5px * var(--react-chrome-inverse-scale, 1)) rgba(0, 0, 0, 0.45);
+  transform: translate(-50%, -50%) rotate(45deg) scale(var(--react-chrome-inverse-scale, 1));
 }
 
 /* Curve Bezier node editor */
@@ -1675,6 +2359,7 @@ html.light .react-ink-brush-cursor {
   z-index: 93;
   pointer-events: auto;
   touch-action: none;
+  transform: scale(var(--react-chrome-inverse-scale, 1));
 }
 .react-curve-handle.is-node {
   width: 10px;
@@ -1682,11 +2367,28 @@ html.light .react-ink-brush-cursor {
   background: #3b82f6;
   border: 2px solid #fff;
   border-radius: 50%;
-  box-shadow: 0 0 0 1px rgba(30, 64, 175, 0.55), 0 2px 4px rgba(0, 0, 0, 0.35);
+  box-shadow:
+    0 0 0 calc(1px * var(--react-chrome-inverse-scale, 1)) rgba(30, 64, 175, 0.55),
+    0 calc(2px * var(--react-chrome-inverse-scale, 1))
+      calc(4px * var(--react-chrome-inverse-scale, 1)) rgba(0, 0, 0, 0.35);
+}
+/* corner = square, smooth = circle, symmetric = diamond */
+.react-curve-handle.is-node.is-corner {
+  border-radius: 2px;
+}
+.react-curve-handle.is-node.is-smooth {
+  border-radius: 50%;
+}
+.react-curve-handle.is-node.is-symmetric {
+  border-radius: 2px;
+  transform: scale(var(--react-chrome-inverse-scale, 1)) rotate(45deg);
 }
 .react-curve-handle.is-node.is-sel {
   background: #2563eb;
-  box-shadow: 0 0 0 2px #93c5fd, 0 2px 6px rgba(0, 0, 0, 0.4);
+  box-shadow:
+    0 0 0 calc(2px * var(--react-chrome-inverse-scale, 1)) #93c5fd,
+    0 calc(2px * var(--react-chrome-inverse-scale, 1))
+      calc(6px * var(--react-chrome-inverse-scale, 1)) rgba(0, 0, 0, 0.4);
 }
 .react-curve-handle.is-cp {
   width: 8px;
@@ -1699,15 +2401,231 @@ html.light .react-ink-brush-cursor {
 
 .react-sel-outline {
   position: absolute;
-  box-sizing: border-box;
   pointer-events: none;
   z-index: 89;
-  outline: 2px solid #3b82f6;
-  outline-offset: -1px;
+}
+
+.react-text-quickbar {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.14);
+  pointer-events: auto;
+  transform: translate(-50%, calc(-100% - 8px)) scale(var(--react-chrome-inverse-scale, 1));
+  transform-origin: center bottom;
+  white-space: nowrap;
+}
+
+.react-text-quickbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #334155;
+  font: 600 12px/1 system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.react-text-quickbar-btn.is-size {
+  font-size: 11px;
+  letter-spacing: -0.02em;
+  text-transform: lowercase;
+}
+
+.react-text-quickbar-btn.is-size-nudge {
+  min-width: 22px;
+  padding: 0 3px;
+}
+
+.react-text-quickbar-btn:hover {
+  background: #f1f5f9;
+}
+
+.react-text-quickbar-btn.is-on {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.react-text-quickbar-btn.is-symbols {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  color: #334155;
+}
+
+.react-text-quickbar-btn.is-symbols:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.react-text-quickbar-btn.is-clearfmt {
+  color: #64748b;
+}
+
+.react-text-quickbar-btn.is-clearfmt:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.symbols-modal {
+  width: min(420px, calc(100vw - 32px));
+  max-width: 420px;
+  padding: 16px 16px 18px;
+  outline: none;
+  border: 1px solid var(--border2);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+  position: relative;
+}
+
+.symbols-modal:focus,
+.symbols-modal:focus-visible {
+  outline: none;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+}
+
+.symbols-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding-right: 28px;
+}
+
+.symbols-modal-head h2 {
+  margin: 0;
+}
+
+.symbols-modal-close,
+.settings-modal.symbols-modal button.symbols-modal-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  min-width: 28px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  margin: 0;
+  border-radius: 8px;
+  font-size: 16px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+}
+
+.symbols-modal-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.symbols-modal-cell,
+.settings-modal.symbols-modal button.symbols-modal-cell {
+  min-width: 0;
+  aspect-ratio: 1;
+  height: auto;
+  min-height: 52px;
+  padding: 0;
+  border-radius: 10px;
+  border: 3px solid transparent;
+  background: var(--surface2);
+  color: var(--text);
+  opacity: 0.85;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  transition: opacity 0.12s, background 0.12s, border-color 0.12s;
+}
+
+.settings-modal.symbols-modal button.symbols-modal-cell:hover {
+  opacity: 1;
+  background: var(--surface3, #e2e8f0);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.react-text-quickbar-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 3px;
+  background: #e2e8f0;
+}
+
+.react-selection-stroke {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.react-selection-stroke rect {
+  fill: none;
+  stroke: #3b82f6;
+  shape-rendering: geometricPrecision;
+}
+
+.react-group-outline .react-selection-stroke rect {
+  stroke: rgba(99, 102, 241, 0.75);
 }
 
 .react-el {
   z-index: 3;
+}
+
+.react-el-icon {
+  overflow: visible !important;
+}
+.react-el-icon svg {
+  overflow: visible !important;
+}
+
+.react-el-svg {
+  overflow: hidden;
+}
+.react-el-svg > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+/* Isolate image-fill layer so rotate AA does not pick up a dark fringe.
+   Do NOT use outline here — transparent outline becomes a sharp rectangular frame. */
+.react-el.has-fill-img {
+  isolation: isolate;
+}
+
+.react-shape-fillimg-clip {
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+}
+
+/* Fill-image transform box stays above sibling shapes while editing. */
+.react-el.has-fill-img-edit {
+  z-index: 60 !important;
+}
+.react-shape-fillimg-overlay {
+  z-index: 80;
 }
 
 .react-shape-grid {
@@ -2733,6 +3651,110 @@ html.light .react-rglbl {
   display: flex;
   align-items: baseline;
   gap: 5px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  font-family: inherit;
+  line-height: inherit;
+  outline: none;
+}
+.thumb-strip-title:focus,
+.thumb-strip-title:focus-visible {
+  outline: none;
+}
+.thumb-strip-title:hover {
+  color: var(--text);
+}
+
+/* Spacer only: 182px − 44px rail → Выровн. stays put. Title stays in ThumbStrip. */
+.thumb-strip-reopen-slot {
+  flex: 0 0 138px;
+  box-sizing: border-box;
+  display: block;
+  height: calc(100% + 12px);
+  margin: -6px 6px -6px -10px;
+  padding: 0;
+  border-right: 0;
+  pointer-events: none;
+}
+
+/* Collapsed rail: title above numbers (same as expanded), no grey gutter on the right. */
+.app-shell-main.thumbs-collapsed > .thumb-strip {
+  overflow: visible;
+  z-index: 22;
+  background: transparent;
+  border-right: none;
+}
+.thumb-strip.is-collapsed .thumb-strip-hdr {
+  width: max-content;
+  max-width: none;
+  border-bottom: none;
+  background: transparent;
+  overflow: visible;
+  padding: 0 10px;
+}
+.thumb-strip.is-collapsed .thumb-strip-scroll {
+  width: 44px;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 2px 0;
+  background: #1e2024;
+  border-top: 1px solid var(--border);
+  border-right: none;
+}
+.thumb-strip.is-collapsed .thumb-strip-scroll::-webkit-scrollbar {
+  width: 0;
+}
+.thumb-row.is-compact {
+  padding: 2px 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+.thumb-compact-num {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-height: 22px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--border2);
+  border-radius: 5px;
+  background: var(--surface2);
+  color: var(--text2);
+  font-size: 11px;
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  line-height: 1;
+}
+.thumb-row.is-compact:hover .thumb-compact-num {
+  border-color: var(--text3);
+  color: var(--text);
+}
+.thumb-row.is-compact.active .thumb-compact-num,
+.thumb-row.is-compact.multi .thumb-compact-num {
+  border: 2px solid #3b82f6;
+  color: #fff;
+  background: rgba(59, 130, 246, 0.35);
+}
+.thumb-row.is-compact.is-hidden .thumb-compact-num {
+  opacity: 0.45;
+}
+.thumb-add-row.is-compact {
+  padding: 2px 4px 4px;
+}
+.thumb-add.is-compact {
+  border-radius: 5px;
+  min-height: 22px;
+}
+.thumb-add.is-compact svg,
+.thumb-add.is-compact .app-icon {
+  width: 14px;
+  height: 14px;
 }
 
 .thumb-strip-count {
@@ -2740,6 +3762,120 @@ html.light .react-rglbl {
   color: var(--text3);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-weight: 600;
+}
+
+.thumb-strip-add-section {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--text3);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  padding: 2px 0 2px 8px;
+}
+
+.thumb-strip-add-section:hover {
+  color: var(--text);
+}
+
+.thumb-section {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  box-sizing: border-box;
+  background: #25272c;
+  border-bottom: 1px solid var(--border);
+  color: var(--text3);
+  z-index: 2;
+}
+
+.thumb-section-chev {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 18px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 8px;
+  line-height: 1;
+  padding: 0;
+}
+
+.thumb-section-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+}
+
+.thumb-section-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 18px;
+  border: 1px solid var(--accent, #3b82f6);
+  border-radius: 3px;
+  background: var(--bg, #111);
+  color: var(--text, #e8eef7);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0 4px;
+}
+
+.thumb-section-count {
+  flex: 0 0 auto;
+  font-size: 9px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 600;
+  opacity: 0.7;
+}
+
+.thumb-section.is-collapsed {
+  opacity: 0.88;
+}
+
+.thumb-section.is-horizontal {
+  flex-direction: column;
+  justify-content: center;
+  align-items: stretch;
+  padding: 4px 6px;
+  border-bottom: 0;
+  border-right: 1px solid var(--border);
+  gap: 2px;
+}
+
+.thumb-section.is-horizontal .thumb-section-title {
+  text-transform: none;
+  text-align: center;
+  font-size: 10px;
+  letter-spacing: 0;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.thumb-section.is-horizontal .thumb-section-count {
+  text-align: center;
 }
 
 .thumb-strip-scroll {
@@ -2838,6 +3974,45 @@ html.light .react-rglbl {
 
 .toast-host .toast.err {
   border-color: #dc2626;
+}
+
+.toast-host .toast.warn {
+  border-color: #d97706;
+}
+
+.offline-banner {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100001;
+  background: #b45309;
+  color: #fffbeb;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 4px 14px 5px;
+  border-radius: 0 0 8px 8px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+}
+
+.thumb-row.is-hidden .thumb-item {
+  opacity: 0.45;
+}
+
+.thumb-hiddenbadge {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  z-index: 3;
+  font-size: 11px;
+  line-height: 1;
+  background: rgba(15, 23, 42, 0.75);
+  color: #e2e8f0;
+  border-radius: 4px;
+  padding: 2px 4px;
+  pointer-events: none;
 }
 
 .settings-backdrop {
@@ -3219,6 +4394,24 @@ html.light .cfg-sel {
   border-color: #7f1d1d;
 }
 
+.cfg-lib-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0;
+}
+.cfg-lib-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+.cfg-lib-row .cfg-btn {
+  padding: 3px 8px;
+  margin-left: 4px;
+}
+
 .cfg-keys {
   width: 100%;
   border-collapse: collapse;
@@ -3596,6 +4789,24 @@ html.light .slide-ctx-menu {
 .slide-ctx-item.slide-ctx-warn:not(.disabled):hover .slide-ctx-ico {
   color: #ef4444;
 }
+.slide-ctx-sep {
+  height: 1px;
+  margin: 3px 8px;
+  background: var(--border2);
+}
+.slide-ctx-menu.is-compact {
+  min-width: 148px;
+  padding: 3px 0;
+}
+.slide-ctx-menu.is-compact .slide-ctx-item {
+  padding: 5px 10px;
+  gap: 6px;
+  font-size: 10.5px;
+}
+.slide-ctx-menu.is-compact .slide-ctx-ico {
+  width: 14px;
+  height: 14px;
+}
 
 .thumb-ctx-menu {
   position: fixed;
@@ -3638,6 +4849,44 @@ html.light .slide-ctx-menu {
 body.style-paint-mode,
 body.style-paint-mode * {
   cursor: cell !important;
+}
+
+body.style-pipette-mode,
+body.style-pipette-mode * {
+  cursor: crosshair !important;
+}
+
+body.table-border-paint .react-canvas-viewport.has-table-paint-cursor,
+body.table-border-paint .react-canvas-viewport.has-table-paint-cursor * {
+  cursor: none !important;
+}
+
+.react-table-paint-cursor {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 1200;
+  pointer-events: none;
+  width: 40px;
+  height: 40px;
+  will-change: transform;
+}
+.react-table-paint-cursor.eraser {
+  width: 28px;
+  height: 32px;
+}
+.react-table-paint-cursor svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  /* Graphite tip in the 40×40 viewBox sits at (3, 37). */
+  transform: translate(-3px, -37px);
+  filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.35));
+}
+.react-table-paint-cursor.eraser svg {
+  /* Rubbing corner of the eraser block is at (3, 30). */
+  transform: translate(-3px, -30px);
 }
 
 .react-color-bar .color-bar-paint {
@@ -3714,7 +4963,104 @@ body.style-paint-mode * {
   animation: load-icon-shadow-pulse 2.4s ease-in-out infinite;
 }
 
+/* Default loop; per-graph keyframes override for exact 1s hold after draw. */
+@keyframes react-graph-stroke-loop {
+  0% {
+    stroke-dashoffset: 1;
+  }
+  55% {
+    stroke-dashoffset: 0;
+  }
+  88% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: 1;
+  }
+}
+
+.react-graph-stroke-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: react-graph-stroke-loop var(--graph-anim-total, 3s) linear infinite;
+}
+
+.react-graph-nav {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.react-graph-nav-btn {
+  pointer-events: auto;
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.88);
+  color: #0f172a;
+  font-size: 12px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.18);
+  user-select: none;
+}
+
+.react-graph-nav-btn:hover {
+  background: #fff;
+}
+
+.react-graph-nav-btn.is-left {
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.react-graph-nav-btn.is-right {
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.react-graph-nav-btn.is-up {
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.react-graph-nav-btn.is-down {
+  bottom: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.react-graph-nav-btn.is-zoom-in {
+  right: 6px;
+  bottom: 36px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.react-graph-nav-btn.is-zoom-out {
+  right: 6px;
+  bottom: 6px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .react-graph-stroke-draw {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+
   .loading-splash .load-logo {
     animation: none;
     filter: drop-shadow(0 8px 16px rgba(59, 130, 246, 0.45));
@@ -4951,7 +6297,10 @@ body.preview-mode {
   position: absolute;
   inset: 0;
   background: #000;
-  z-index: 4;
+  /* Above slide transitions / exit snapshots so black never flickers while the
+     presenter advances slides under the curtain. */
+  z-index: 50;
+  pointer-events: auto;
 }
 .preview-jump-hint {
   position: fixed;
@@ -4967,13 +6316,56 @@ body.preview-mode {
   text-shadow: 0 2px 24px rgba(0, 0, 0, 0.8);
 }
 
+.preview-class-result {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 910;
+  pointer-events: none;
+  padding: 18px 36px;
+  border-radius: 14px;
+  font-size: clamp(28px, 5vw, 52px);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #fff;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.45);
+  animation: preview-class-pop 0.35s ease-out;
+}
+.preview-class-result.is-ok {
+  background: rgba(22, 163, 74, 0.92);
+  box-shadow: 0 12px 40px rgba(22, 163, 74, 0.35);
+}
+.preview-class-result.is-fail {
+  background: rgba(220, 38, 38, 0.92);
+  box-shadow: 0 12px 40px rgba(220, 38, 38, 0.35);
+}
+@keyframes preview-class-pop {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.86);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
 .preview-slide {
   position: relative;
   transform-origin: center center;
   overflow: hidden;
-  /* Promote slideshow stage to its own layer (helps when GPU compositing is on). */
-  transform: translateZ(0);
-  will-change: transform;
+  /* Transform is applied in JS only (applyCameraTransform). Do not use
+     will-change/translateZ here — that freezes a bitmap (soft “raster” look).
+     Zoom is capped at ~20× in clampCamera, same as the editor canvas. */
+}
+
+/* Keep vector shapes/SVG sharp under camera / fit scale (like .react-slide-stage). */
+.preview-slide svg,
+.preview-slide .react-el-svg,
+.preview-slide .react-el-shape {
+  shape-rendering: geometricPrecision;
+  text-rendering: geometricPrecision;
 }
 
 .react-decor-gl {
@@ -5041,6 +6433,140 @@ body.preview-mode {
   width: 20px;
   height: 20px;
 }
+.preview-nav.on {
+  background: rgba(239, 68, 68, 0.88);
+  border-color: rgba(255, 255, 255, 0.55);
+  color: #fff;
+}
+.preview-draw-tools {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 7;
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  align-items: center;
+}
+.preview-draw-tools .preview-nav {
+  position: static;
+  transform: none;
+}
+.preview-draw-layer {
+  position: fixed;
+  z-index: 5;
+  pointer-events: none;
+  touch-action: none;
+}
+.preview-draw-layer.is-active {
+  pointer-events: auto;
+  cursor: none;
+}
+.preview-draw-layer.is-erase {
+  cursor: none;
+}
+.preview-brush-cursor {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 8;
+  pointer-events: none;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 1.5px solid rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.55);
+  background: rgba(255, 255, 255, 0.14);
+  transform: translate(-9999px, -9999px);
+  will-change: transform;
+}
+.preview-brush-cursor.is-erase {
+  border-style: dashed;
+  background: rgba(248, 250, 252, 0.1);
+}
+.preview-brush-cursor.is-hidden {
+  display: none;
+}
+.preview-draw-opts {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(8px);
+}
+.preview-draw-widths,
+.preview-draw-colors {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.preview-draw-w {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(15, 23, 42, 0.35);
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.preview-draw-w span {
+  display: block;
+  border-radius: 50%;
+  background: #e2e8f0;
+}
+.preview-draw-w.on {
+  border-color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.16);
+}
+.preview-draw-c {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  padding: 0;
+  cursor: pointer;
+}
+.preview-draw-c.on {
+  box-shadow: 0 0 0 2px #fff, 0 0 0 3px rgba(15, 23, 42, 0.7);
+}
+.preview-draw-c-custom {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px dashed rgba(255, 255, 255, 0.45);
+  cursor: pointer;
+  position: relative;
+  padding: 0;
+  background:
+    conic-gradient(from 90deg, #ef4444, #eab308, #22c55e, #3b82f6, #a855f7, #ef4444);
+}
+.preview-draw-c-custom.on {
+  box-shadow: 0 0 0 2px #fff, 0 0 0 3px rgba(15, 23, 42, 0.7);
+}
+.preview-draw-color-wheel {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 10px);
+  z-index: 9;
+  padding: 10px;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+}
+.preview-draw-color-wheel .react-cp-wheel {
+  width: 192px;
+  height: 192px;
+}
 
 .react-ribbon-body[data-tab='slideshow'] .react-rg {
   gap: 6px;
@@ -5101,6 +6627,55 @@ body.preview-mode {
   font-family: inherit;
 }
 .react-ss-auto-apply:hover {
+  background: var(--surface2, #2a2a2e);
+  color: var(--text);
+}
+
+.react-ss-display {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 4px 2px;
+  min-width: 140px;
+}
+
+.react-ss-display-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--ribbon-ink, var(--text2));
+}
+
+.react-ss-display-select {
+  font: inherit;
+  font-size: 11px;
+  max-width: 220px;
+  background: var(--surface2, #2a2a2e);
+  border: 1px solid var(--border, #3a3d44);
+  color: var(--text, #e2e8f0);
+  border-radius: 4px;
+  padding: 3px 6px;
+}
+
+.react-ss-display-hint {
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--text3, #94a3b8);
+}
+
+.react-ss-display-ask {
+  font: inherit;
+  font-size: 11px;
+  border: 1px solid var(--border2, #3a3d44);
+  background: var(--surface3, #1e2024);
+  color: var(--ribbon-ink, var(--text2));
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.react-ss-display-ask:hover {
   background: var(--surface2, #2a2a2e);
   color: var(--text);
 }
@@ -5321,6 +6896,30 @@ body.preview-mode {
   margin-top: 8px;
   display: flex;
   justify-content: center;
+  position: relative;
+}
+.react-cp-pixel-pipette {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text2);
+  cursor: pointer;
+  padding: 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+.react-cp-pixel-pipette:hover {
+  color: var(--text);
+  border-color: var(--accent);
+  background: var(--surface2);
 }
 .react-cp-wheel {
   display: block;
@@ -5588,6 +7187,15 @@ html.light .react-props-field textarea {
 html.light .thumb-strip,
 html.light .react-ctoolbar {
   background: var(--surface);
+}
+html.light .thumb-strip.is-collapsed {
+  background: transparent;
+}
+html.light .thumb-strip.is-collapsed .thumb-strip-scroll {
+  background: var(--surface);
+}
+html.light .thumb-section {
+  background: var(--surface2, #e8edf3);
 }
 html.light .react-color-bar .color-bar-fx::before {
   background: #c5d0dc;
@@ -6222,23 +7830,23 @@ html:not(.light) .slide-tpl-item.active {
   overflow: hidden;
 }
 .react-anim-panel-v71 .anim-row.is-dragging { opacity: 0.45; }
-.react-anim-panel-v71 .anim-row.is-drop-target {
-  border-color: var(--accent, #3b82f6);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent, #3b82f6) 40%, transparent);
-}
-/* Drop zone below the last row so an item can actually be moved to the very end of the
-   list — dropping ON the last row only ever inserted BEFORE it (there was no way to target
-   "after everything"), so a block could never truly reach the bottom. */
-.react-anim-panel-v71 .anim-drop-end {
-  height: 10px;
-  margin: -2px 0 4px;
+/* Insertion gap (dashed empty block) — appears between rows while dragging. */
+.react-anim-panel-v71 .anim-drop-slot {
+  height: 0;
+  margin: 0;
   border-radius: 4px;
   border: 1px dashed transparent;
+  box-sizing: border-box;
+  overflow: hidden;
+  pointer-events: none;
+  transition: height 0.08s ease, margin 0.08s ease, border-color 0.08s ease, background 0.08s ease;
 }
-.react-anim-panel-v71 .anim-drop-end.is-drop-target {
-  height: 22px;
+.react-anim-panel-v71 .anim-drop-slot.is-active {
+  height: 28px;
+  margin: 2px 0 4px;
   border-color: var(--accent, #3b82f6);
-  background: color-mix(in srgb, var(--accent, #3b82f6) 15%, transparent);
+  background: color-mix(in srgb, var(--accent, #3b82f6) 12%, transparent);
+  pointer-events: auto;
 }
 .react-anim-panel-v71 .anim-block {
   background: color-mix(in srgb, #94a3b8 8%, transparent);
@@ -6248,10 +7856,6 @@ html:not(.light) .slide-tpl-item.active {
   overflow: hidden;
 }
 .react-anim-panel-v71 .anim-block.is-dragging { opacity: 0.45; }
-.react-anim-panel-v71 .anim-block.is-drop-target {
-  border-color: var(--accent, #3b82f6);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent, #3b82f6) 40%, transparent);
-}
 .react-anim-panel-v71 .anim-block-head {
   display: flex;
   align-items: center;
@@ -6396,6 +8000,22 @@ html:not(.light) .slide-tpl-item.active {
   flex-direction: column;
   gap: 2px;
 }
+.react-anim-panel-v71 .anim-ms-slider,
+.react-anim-panel-v71 .anim-row-props > .color-bar-gslider-wrap {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+.react-anim-panel-v71 .anim-ms-slider .color-bar-gslider-lbl,
+.react-anim-panel-v71 .anim-row-props .color-bar-gslider-lbl {
+  font-size: 9px;
+  margin-bottom: 2px;
+}
+.react-anim-panel-v71 .anim-ms-slider .color-bar-gslider-bg-path {
+  fill: var(--surface2, #eef2f6);
+}
+.react-anim-panel-v71 .anim-ms-slider .color-bar-gslider-stroke {
+  stroke: var(--border2, #c5d0dc);
+}
 .react-anim-panel-v71 .anim-row-props input[type='number'],
 .react-anim-panel-v71 .anim-row-props select {
   width: 100%;
@@ -6414,6 +8034,55 @@ html:not(.light) .slide-tpl-item.active {
   outline: none;
   box-shadow: none;
   border-color: var(--accent, #3b82f6);
+}
+.react-anim-panel-v71 .anim-recolor-fields {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.react-anim-panel-v71 .anim-recolor-fields .react-color-field-label {
+  font-size: 9px;
+  margin-bottom: 2px;
+}
+.react-anim-panel-v71 .anim-recolor-fields .react-color-field-swatch,
+.react-anim-panel-v71 .anim-recolor-fields .react-color-field-icon {
+  width: 22px;
+  height: 22px;
+}
+.react-anim-panel-v71 .anim-recolor-fields .react-color-field-input {
+  height: 22px;
+  font-size: 9px;
+  padding: 0 6px;
+}
+.react-anim-panel-v71 .anim-recolor-inv {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--text2, #94a3b8);
+}
+.react-anim-panel-v71 .anim-recolor-inv span {
+  font-size: 10px;
+  color: var(--text2, #94a3b8);
+}
+.react-anim-panel-v71 .anim-orbit-dir {
+  display: flex;
+  gap: 4px;
+}
+.react-anim-panel-v71 .anim-orbit-dir .react-props-btn {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  padding: 5px 6px;
+  font-size: 10px;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+.react-anim-panel-v71 .anim-orbit-deg-slider {
+  min-width: 0;
 }
 .react-anim-panel-v71 .anim-nav-label select {
   outline: none;
@@ -6573,6 +8242,10 @@ html:not(.light) .slide-tpl-item.active {
 
 /* Preview transitions */
 .preview-anim-wrap {
+  /* Fill the overlay so enter zoom/scale is centered on the viewport, not on a
+     shrink-wrapped slide box (which looked like the stage “jumped” top-left). */
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -6796,25 +8469,37 @@ html:not(.light) .slide-tpl-item.active {
 .react-tbl-grid {
   display: grid;
   grid-template-columns: repeat(10, 24px);
-  gap: 3px;
+  grid-template-rows: repeat(8, 24px);
+  gap: 4px;
   margin: 4px 0 6px;
   width: max-content;
 }
 
-.react-tbl-cell {
+/* Beat .settings-modal button { padding: 5px 14px } — that was swallowing column gaps. */
+.settings-modal.react-table-modal button.react-tbl-cell {
   box-sizing: border-box;
   width: 24px;
   height: 24px;
+  min-width: 0;
+  max-width: 24px;
   padding: 0;
   margin: 0;
   border: 1.5px solid var(--border2, #3f3f46);
   border-radius: 3px;
   background: var(--surface2, #27272a);
+  color: transparent;
+  font-size: 0;
+  line-height: 0;
 }
 
-.react-tbl-cell.on {
-  background: var(--accent, #3b82f6);
-  border-color: var(--accent, #3b82f6);
+.settings-modal.react-table-modal button.react-tbl-cell:hover {
+  color: transparent;
+}
+
+.settings-modal.react-table-modal button.react-tbl-cell.on {
+  background: color-mix(in srgb, var(--accent, #3b82f6) 38%, transparent);
+  border-color: color-mix(in srgb, var(--accent, #3b82f6) 55%, transparent);
+  color: transparent;
 }
 
 .react-tbl-lbl {
@@ -7379,27 +9064,53 @@ html:not(.light) .slide-tpl-item.active {
   max-width: 100%;
   max-height: 100%;
 }
+.react-img-frame-ribbon {
+  background: #fff;
+}
+.react-img-frame-polaroid {
+  background: #fff;
+}
 .react-img-ribbon-bar {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 14px;
-  background: linear-gradient(90deg, #ef4444, #f97316, #eab308);
+  left: 50%;
+  top: 0;
+  width: 46%;
+  min-width: 80px;
+  max-width: 220px;
+  height: 36px;
+  transform: translate(-50%, -58%) rotate(-4deg);
   pointer-events: none;
+  z-index: 4;
+  overflow: visible;
+  line-height: 0;
+  isolation: isolate;
+  filter: none;
+}
+.react-img-ribbon-bar svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
 }
 .react-img-polaroid-cap {
+  pointer-events: auto;
+}
+.react-img-polaroid-cap [contenteditable='true'] {
+  user-select: text;
+  -webkit-user-select: text;
+  caret-color: auto;
+  cursor: text;
+}
+.react-img-polaroid-cap.is-empty::after {
+  content: attr(data-ph);
   position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: 6px;
-  text-align: center;
-  font-size: 11px;
-  color: #334155;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(51, 65, 85, 0.38);
   pointer-events: none;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font: inherit;
 }
 /* Soft frame uses SVG oval vignette mask from imgStyles.imgSoftEdgeMaskUrl */
 .react-img-frame-soft {
@@ -7416,6 +9127,7 @@ body.export-capturing .react-line-ep,
 body.export-capturing .react-curve-handle,
 body.export-capturing .react-curve-levers,
 body.export-capturing .react-guide-extra,
+body.export-capturing .react-custom-guides,
 body.export-capturing .react-rubberband,
 body.export-capturing .react-align-bar,
 body.export-capturing .slide-canvas-host > .react-align-bar,
@@ -7426,6 +9138,17 @@ body.export-capturing .react-tbl-rrh,
 body.export-capturing .react-tbl-drag-border {
   visibility: hidden !important;
   pointer-events: none !important;
+}
+
+/* .react-slide-stage has its own editor-only chrome — a drop shadow and a dark background
+   peeking out at the edges — to make the slide visually stand out against the (also dark)
+   canvas viewport behind it while editing. That's not part of the slide itself, but it was
+   getting captured right along with the content for every export (PNG/PDF/print all funnel
+   through captureStageCanvas), showing up as a thick dark border around the exported/printed
+   slide. */
+body.export-capturing .react-slide-stage {
+  box-shadow: none !important;
+  background: transparent !important;
 }
 
 .react-props-check {
@@ -7564,15 +9287,14 @@ body.export-capturing .react-tbl-drag-border {
   position: absolute;
   pointer-events: none;
   z-index: 35;
-  border: 2px dashed rgba(99, 102, 241, 0.75);
+  border: 0;
   border-radius: 5px;
-  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.15);
   background: rgba(99, 102, 241, 0.04);
   box-sizing: border-box;
 }
 .react-group-label {
   position: absolute;
-  top: -18px;
+  top: calc(-18px * var(--react-chrome-inverse-scale, 1));
   left: 0;
   font-size: 10px;
   color: rgba(99, 102, 241, 0.95);
@@ -7582,6 +9304,8 @@ body.export-capturing .react-tbl-drag-border {
   white-space: nowrap;
   pointer-events: none;
   user-select: none;
+  transform-origin: top left;
+  transform: scale(var(--react-chrome-inverse-scale, 1));
 }
 .react-group-rh {
   position: absolute;
@@ -7590,10 +9314,13 @@ body.export-capturing .react-tbl-drag-border {
   background: #fff;
   border: 1.5px solid #6366f1;
   border-radius: 50%;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  box-shadow:
+    0 calc(1px * var(--react-chrome-inverse-scale, 1))
+      calc(4px * var(--react-chrome-inverse-scale, 1)) rgba(0, 0, 0, 0.45);
   z-index: 36;
   box-sizing: border-box;
   pointer-events: auto;
+  transform: translate(-50%, -50%) scale(var(--react-chrome-inverse-scale, 1));
 }
 .react-group-rot {
   position: absolute;
@@ -7606,6 +9333,7 @@ body.export-capturing .react-tbl-drag-border {
   box-sizing: border-box;
   cursor: grab;
   pointer-events: auto;
+  transform: translate(-50%, -50%) scale(var(--react-chrome-inverse-scale, 1));
 }
 
 .react-ep-ghost {
@@ -7618,7 +9346,7 @@ body.export-capturing .react-tbl-drag-border {
   background: rgba(99, 102, 241, 0.55);
   pointer-events: none;
   z-index: 50;
-  transform: translate(0, 0);
+  transform: translate(0, 0) scale(var(--react-chrome-inverse-scale, 1));
 }
 .react-ep-ghost.is-snap {
   background: rgba(52, 211, 153, 0.9);
@@ -7666,6 +9394,8 @@ body.export-capturing .react-tbl-drag-border {
 }
 .react-cp-handle {
   pointer-events: all;
+  vector-effect: non-scaling-stroke;
+  vector-effect: non-scaling-stroke;
 }
 .react-img-crop-shade {
   position: absolute;
@@ -8023,7 +9753,6 @@ html.light .settings-modal button.shape-card.is-selected:hover {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--props-gap, 8px);
-  margin-bottom: var(--props-gap, 8px);
 }
 .react-flip-btn {
   display: flex;
@@ -8064,6 +9793,12 @@ html.light .settings-modal button.shape-card.is-selected:hover {
   display: block;
   width: 100%;
   height: 100%;
+}
+/* Color only — stroke-width is baked as 1.5/zoom in the ring SVG (cancels stage scale). */
+.react-shape-sel-ring :is(path, ellipse, circle, line, polyline, polygon, rect) {
+  fill: none !important;
+  stroke: #3b82f6 !important;
+  shape-rendering: geometricPrecision;
 }
 .shape-picker-color-field {
   flex: 1;
@@ -8110,6 +9845,84 @@ html.light .settings-modal button.shape-card.is-selected:hover {
 /* Link badge on canvas objects — hidden (link still works on show) */
 .react-el.has-link::after {
   display: none;
+}
+
+/* Inline hyperlinks: same color as text, no visited blue */
+.react-el-text a[href],
+.react-el-table a[href],
+.react-shape-text a[href],
+.preview-overlay a[href],
+.pb-slide a[href],
+.slide a[href] {
+  color: inherit !important;
+  -webkit-text-fill-color: inherit;
+  cursor: pointer;
+  text-underline-offset: 0.12em;
+  text-decoration-thickness: 1.25px;
+  text-decoration-skip-ink: none;
+  pointer-events: auto;
+}
+.react-el-text a[href]:visited,
+.react-el-table a[href]:visited,
+.react-shape-text a[href]:visited,
+.preview-overlay a[href]:visited,
+.pb-slide a[href]:visited,
+.slide a[href]:visited {
+  color: inherit !important;
+  -webkit-text-fill-color: inherit;
+}
+/* Hover color only during show / playback / export — not on the editor canvas */
+.preview-overlay a[href]:hover,
+.preview-overlay a[href]:hover *,
+.preview-slide a[href]:hover,
+.preview-slide a[href]:hover *,
+.pb-slide a[href]:hover,
+.pb-slide a[href]:hover *,
+.slide-frame a[href]:hover,
+.slide-frame a[href]:hover *,
+.slide a[href]:hover,
+.slide a[href]:hover * {
+  color: var(--sf-link-hover, #93c5fd) !important;
+  -webkit-text-fill-color: var(--sf-link-hover, #93c5fd) !important;
+}
+/* Default dashed underline until text underline cycle changes/removes it */
+.react-el-text a[href]:not([data-ul]),
+.react-el-table a[href]:not([data-ul]),
+.react-shape-text a[href]:not([data-ul]),
+.preview-overlay a[href]:not([data-ul]),
+.pb-slide a[href]:not([data-ul]),
+.slide a[href]:not([data-ul]),
+.react-el-text a[href][data-ul='dashed'],
+.react-el-table a[href][data-ul='dashed'],
+.react-shape-text a[href][data-ul='dashed'],
+.preview-overlay a[href][data-ul='dashed'],
+.pb-slide a[href][data-ul='dashed'],
+.slide a[href][data-ul='dashed'] {
+  text-decoration: underline dashed;
+}
+.react-el-text a[href][data-ul='single'],
+.react-el-table a[href][data-ul='single'],
+.react-shape-text a[href][data-ul='single'],
+.preview-overlay a[href][data-ul='single'],
+.pb-slide a[href][data-ul='single'],
+.slide a[href][data-ul='single'] {
+  text-decoration: underline;
+}
+.react-el-text a[href][data-ul='double'],
+.react-el-table a[href][data-ul='double'],
+.react-shape-text a[href][data-ul='double'],
+.preview-overlay a[href][data-ul='double'],
+.pb-slide a[href][data-ul='double'],
+.slide a[href][data-ul='double'] {
+  text-decoration: underline double;
+}
+.react-el-text a[href][data-ul='none'],
+.react-el-table a[href][data-ul='none'],
+.react-shape-text a[href][data-ul='none'],
+.preview-overlay a[href][data-ul='none'],
+.pb-slide a[href][data-ul='none'],
+.slide a[href][data-ul='none'] {
+  text-decoration: none !important;
 }
 
 /* Link / history modals */
@@ -8181,12 +9994,66 @@ html.light .settings-modal button.shape-card.is-selected:hover {
   border-color: #3b82f6;
 }
 
+.react-motion-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  overflow: visible;
+}
+.react-motion-overlay-svg {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+.react-motion-ghost {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: auto;
+  cursor: grab;
+  z-index: 3;
+  outline: 1.5px dashed;
+  outline-offset: 0;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.04);
+  user-select: none;
+  touch-action: none;
+}
+.react-motion-ghost:active {
+  cursor: grabbing;
+}
+.react-motion-ghost-clone {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+.react-motion-ghost-clone .react-el {
+  pointer-events: none !important;
+}
+
+/* Drawn in zoom-space (outside stage scale) so 1px dashes stay screen-thin at any zoom. */
 .react-rubberband {
   position: absolute;
+  box-sizing: border-box;
   border: 1px dashed #3b82f6;
   background: rgba(59, 130, 246, 0.12);
   pointer-events: none;
   z-index: 80;
+}
+
+.react-ink-sel *,
+.react-curve-levers line,
+.react-conn-layer .react-conn-selection,
+.react-ep-handle {
+  vector-effect: non-scaling-stroke;
+}
+
+.react-cp-handle {
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: rotate(45deg) scale(var(--react-chrome-inverse-scale, 1));
 }
 
 .react-el-md h1,
@@ -8202,35 +10069,37 @@ html.light .settings-modal button.shape-card.is-selected:hover {
   color: #93c5fd;
 }
 
+/* --el-xf holds authored rotate/flip so entrance/emphasis keyframes don't un-mirror. */
+.react-el, .el { --el-xf: none; }
 @keyframes elFadeIn { from { opacity: 0; } to { opacity: 1; } }
-@keyframes elSlideUp { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: none; } }
-@keyframes elSlideDown { from { opacity: 0; transform: translateY(-28px); } to { opacity: 1; transform: none; } }
-@keyframes elSlideLeft { from { opacity: 0; transform: translateX(36px); } to { opacity: 1; transform: none; } }
-@keyframes elSlideRight { from { opacity: 0; transform: translateX(-36px); } to { opacity: 1; transform: none; } }
-@keyframes elZoomIn { from { opacity: 0; transform: scale(0.7); } to { opacity: 1; transform: none; } }
-@keyframes elBounce { 0% { opacity: 0; transform: translateY(40px); } 60% { opacity: 1; transform: translateY(-8px); } 100% { transform: none; } }
-@keyframes elSpin { from { opacity: 0; transform: rotate(-180deg) scale(0.6); } to { opacity: 1; transform: none; } }
+@keyframes elSlideUp { from { opacity: 0; transform: translateY(28px) var(--el-xf); } to { opacity: 1; transform: var(--el-xf); } }
+@keyframes elSlideDown { from { opacity: 0; transform: translateY(-28px) var(--el-xf); } to { opacity: 1; transform: var(--el-xf); } }
+@keyframes elSlideLeft { from { opacity: 0; transform: translateX(36px) var(--el-xf); } to { opacity: 1; transform: var(--el-xf); } }
+@keyframes elSlideRight { from { opacity: 0; transform: translateX(-36px) var(--el-xf); } to { opacity: 1; transform: var(--el-xf); } }
+@keyframes elZoomIn { from { opacity: 0; transform: scale(0.7) var(--el-xf); } to { opacity: 1; transform: var(--el-xf); } }
+@keyframes elBounce { 0% { opacity: 0; transform: translateY(40px) var(--el-xf); } 60% { opacity: 1; transform: translateY(-8px) var(--el-xf); } 100% { transform: var(--el-xf); } }
+@keyframes elSpin { from { opacity: 0; transform: rotate(-180deg) scale(0.6) var(--el-xf); } to { opacity: 1; transform: var(--el-xf); } }
 @keyframes elFadeOut { from { opacity: 1; } to { opacity: 0; } }
-@keyframes elSlideOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(40px); } }
-@keyframes elZoomOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(0.6); } }
-@keyframes elPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.06); } }
-@keyframes elShake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+@keyframes elSlideOut { from { opacity: 1; transform: var(--el-xf); } to { opacity: 0; transform: translateX(40px) var(--el-xf); } }
+@keyframes elZoomOut { from { opacity: 1; transform: var(--el-xf); } to { opacity: 0; transform: scale(0.6) var(--el-xf); } }
+@keyframes elPulse { 0%,100% { transform: scale(1) var(--el-xf); } 50% { transform: scale(1.06) var(--el-xf); } }
+@keyframes elShake { 0%,100% { transform: translateX(0) var(--el-xf); } 25% { transform: translateX(-6px) var(--el-xf); } 75% { transform: translateX(6px) var(--el-xf); } }
 @keyframes elFlash { 0%,100% { opacity: 1; } 50% { opacity: 0.2; } }
 @keyframes elDance {
-  0%, 100% { transform: rotate(0deg) translateY(0); }
-  25% { transform: rotate(-10deg) translateY(-5px); }
-  50% { transform: rotate(0deg) translateY(2px); }
-  75% { transform: rotate(10deg) translateY(-3px); }
+  0%, 100% { transform: rotate(0deg) translateY(0) var(--el-xf); }
+  25% { transform: rotate(-10deg) translateY(-5px) var(--el-xf); }
+  50% { transform: rotate(0deg) translateY(2px) var(--el-xf); }
+  75% { transform: rotate(10deg) translateY(-3px) var(--el-xf); }
 }
 @keyframes elSwing {
-  0%, 100% { transform: rotate(0deg); }
-  50% { transform: rotate(14deg); }
+  0%, 100% { transform: rotate(0deg) var(--el-xf); }
+  50% { transform: rotate(14deg) var(--el-xf); }
 }
 @keyframes elFloat {
-  0%, 100% { transform: translate(0, 0); }
-  25% { transform: translate(8px, -10px); }
-  50% { transform: translate(-5px, -4px); }
-  75% { transform: translate(5px, 7px); }
+  0%, 100% { transform: translate(0, 0) var(--el-xf); }
+  25% { transform: translate(8px, -10px) var(--el-xf); }
+  50% { transform: translate(-5px, -4px) var(--el-xf); }
+  75% { transform: translate(5px, 7px) var(--el-xf); }
 }
 
 .el-anim-fadein { animation: elFadeIn ease both; }
@@ -8250,6 +10119,14 @@ html.light .settings-modal button.shape-card.is-selected:hover {
 .el-anim-dance { animation: elDance 1.2s ease-in-out infinite; }
 .el-anim-swing { animation: elSwing 1s ease-in-out infinite; transform-origin: top center; }
 .el-anim-float { animation: elFloat 3s ease-in-out infinite; }
+
+/* Hide the source while particle clones fly — must beat React inline visibility/opacity. */
+.react-el.has-particles,
+.el.has-particles {
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
 
 /* HTML frame */
 .react-hf-modal {
@@ -8625,7 +10502,7 @@ html.light .settings-modal button.shape-card.is-selected:hover {
   flex: 1;
   position: relative;
   overflow: hidden;
-  background: #fff;
+  background: transparent;
   min-height: 0;
 }
 .react-hf-iframe-wrap.has-chrome {
@@ -8637,7 +10514,7 @@ html.light .settings-modal button.shape-card.is-selected:hover {
   border: none;
   display: block;
   pointer-events: none;
-  background: #fff;
+  background: transparent;
 }
 .preview-slide .react-hf-iframe {
   pointer-events: auto;
@@ -8654,13 +10531,17 @@ html.light .settings-modal button.shape-card.is-selected:hover {
     opacity var(--hfx-dur, 0.3s) ease;
 }
 
-.react-el-text:has([data-stress]) {
+.react-el-text:has([data-stress]),
+.react-el-table:has([data-stress]),
+.react-el-table :is(td, th):has([data-stress]) {
   overflow: visible !important;
 }
-.react-el-text [data-stress] {
+.react-el-text [data-stress],
+.react-el-table [data-stress] {
   position: relative;
 }
-.react-el-text [data-stress]::after {
+.react-el-text [data-stress]::after,
+.react-el-table [data-stress]::after {
   content: '\00B4';
   position: absolute;
   left: 50%;
@@ -8678,18 +10559,20 @@ html.light .settings-modal button.shape-card.is-selected:hover {
   user-select: none;
   z-index: 2;
 }
-.react-el-text [data-stress][data-stress-case='upper']::after {
+.react-el-text [data-stress][data-stress-case='upper']::after,
+.react-el-table [data-stress][data-stress-case='upper']::after {
   top: calc(-0.06em - 4px);
 }
-.react-el-text [data-stress][data-stress-case='lower']::after {
+.react-el-text [data-stress][data-stress-case='lower']::after,
+.react-el-table [data-stress][data-stress-case='lower']::after {
   top: -0.06em;
 }
 
-/* Dash-dot underline. Painted via a background-image trick on inline [data-ul="dash-dot"]
-   spans only (whole-box dash-dot is wrapped into such spans at render time), so the line
-   hugs the text width / line fragments instead of spanning the whole block. Vertical
-   position matches the native single underline (text-underline-offset: 0.12em). */
-.react-el-text [data-ul="dash-dot"] {
+/* Dash-dot: painted background. Wavy: smooth SVG wave via ::after (currentColor). */
+.react-el-text [data-ul="dash-dot"],
+.react-el-table [data-ul="dash-dot"],
+.react-el-text a[data-ul="dash-dot"],
+.react-el-table a[data-ul="dash-dot"] {
   text-decoration: none !important;
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
@@ -8712,6 +10595,43 @@ html.light .settings-modal button.shape-card.is-selected:hover {
     0 calc(0.88em + 0.12em + 0.875px) !important;
   background-origin: padding-box !important;
   background-clip: padding-box !important;
+}
+.react-el-text:has([data-ul='wavy']),
+.react-el-table:has([data-ul='wavy']) {
+  overflow: visible !important;
+}
+.react-el-text [data-ul='wavy'],
+.react-el-table [data-ul='wavy'],
+.react-el-text a[data-ul='wavy'],
+.react-el-table a[data-ul='wavy'] {
+  text-decoration: none !important;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  position: relative;
+  /* Keep inline metrics so the wave sits under the glyphs, not a block box */
+  display: inline;
+}
+.react-el-text [data-ul='wavy']::after,
+.react-el-table [data-ul='wavy']::after,
+.react-el-text a[data-ul='wavy']::after,
+.react-el-table a[data-ul='wavy']::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  width: 100%;
+  top: calc(0.88em + 0.08em);
+  height: 0.2em;
+  pointer-events: none;
+  background-color: currentColor;
+  /* Smooth sine tile — phase continuous under the whole run (incl. ф) */
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='4' viewBox='0 0 14 4'%3E%3Cpath d='M0 2 Q3.5 0 7 2 T14 2' fill='none' stroke='%23000' stroke-width='1.35' stroke-linecap='round'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='4' viewBox='0 0 14 4'%3E%3Cpath d='M0 2 Q3.5 0 7 2 T14 2' fill='none' stroke='%23000' stroke-width='1.35' stroke-linecap='round'/%3E%3C/svg%3E");
+  -webkit-mask-repeat: repeat-x;
+  mask-repeat: repeat-x;
+  -webkit-mask-size: 14px 100%;
+  mask-size: 14px 100%;
+  -webkit-mask-position: 0 50%;
+  mask-position: 0 50%;
 }
 
 /* ── Import / Export (v7.1-style) ── */
@@ -9417,3 +11337,378 @@ html:not(.light) .png-export-input {
   color: #ef4444;
 }
 
+/* Any print trigger — the Tools-tab Print button, Ctrl+P, or the browser's own
+   File/right-click "Print…" menu — is caught in App.jsx and redirected to printSlides(),
+   which prints a freshly generated PDF of just the slides in its own hidden iframe. That
+   iframe is appended directly to <body>, outside #root, specifically so this rule (which
+   only ever targets #root, the whole app shell) can't end up hiding it along with
+   everything else — the browser's *native* print target (whichever triggered beforeprint)
+   is left blank/suppressed here while the iframe's own print goes ahead unaffected. */
+html.app-native-print-suppress #root {
+  display: none !important;
+}
+
+.lego-picker-modal {
+  width: min(560px, 95vw);
+  max-width: 560px;
+  max-height: min(86vh, 820px);
+  overflow: auto;
+}
+.lego-gallery-hdr {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text2);
+  margin: 8px 0 4px;
+}
+.lego-gallery-wrap > .lego-gallery-hdr:first-child {
+  margin-top: 0;
+}
+.react-props-stack .lego-gallery-wrap {
+  max-height: none;
+  overflow: visible;
+}
+.lego-gallery {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.react-props-stack .lego-gallery {
+  grid-template-columns: repeat(3, 1fr);
+}
+.lego-card {
+  background: var(--surface2, #1e293b);
+  border: 1.5px solid var(--border2, #334155);
+  border-radius: 6px;
+  padding: 8px 6px 6px;
+  cursor: grab;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: inherit;
+  font-family: inherit;
+  user-select: none;
+  touch-action: none;
+}
+.lego-card:active {
+  cursor: grabbing;
+}
+.settings-modal button.lego-card,
+.settings-modal button.lego-card:hover,
+.settings-modal button.lego-card.is-selected,
+.settings-modal button.lego-card:focus,
+.settings-modal button.lego-card:focus-visible {
+  background: var(--surface2, #1e293b) !important;
+  border: 1.5px solid var(--border2, #334155) !important;
+  color: inherit !important;
+  box-shadow: none !important;
+  outline: none;
+}
+.lego-card:hover,
+.settings-modal button.lego-card:hover {
+  border-color: var(--accent, #3b82f6) !important;
+  background: var(--surface3, #273449) !important;
+}
+.lego-card.is-selected,
+.settings-modal button.lego-card.is-selected {
+  border-color: var(--accent, #3b82f6) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #3b82f6) 28%, transparent) !important;
+}
+.lego-card-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 48px;
+  pointer-events: none;
+}
+.lego-card-preview svg {
+  max-width: 100%;
+  max-height: 44px;
+  height: auto;
+  width: auto;
+  overflow: visible;
+}
+.lego-card-label {
+  font-size: 10px;
+  color: var(--text2);
+  line-height: 1.2;
+  text-align: center;
+}
+.lego-drag-ghost {
+  position: fixed;
+  z-index: 99999;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.35));
+  opacity: 0.92;
+}
+.lego-drag-ghost svg {
+  display: block;
+}
+
+.presenter-mode,
+.presenter-mode body,
+.presenter-mode #root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #0b1220;
+  color: #e8eef8;
+}
+.presenter-root {
+  --presenter-gap: 12px;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--presenter-gap);
+  padding: var(--presenter-gap);
+  box-sizing: border-box;
+  background: #0b1220;
+  color: #e8eef8;
+  font-family: inherit;
+  overflow: hidden;
+}
+.presenter-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--presenter-gap);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 2;
+}
+.presenter-bar-title {
+  font-weight: 700;
+  font-size: 16px;
+  flex: 1 1 auto;
+  min-width: 120px;
+}
+.presenter-status {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #1e293b;
+  color: #94a3b8;
+}
+.presenter-status.is-live {
+  background: #14532d;
+  color: #bbf7d0;
+}
+.presenter-timer button {
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  font-size: 22px;
+  font-weight: 700;
+  background: transparent;
+  color: #f8fafc;
+  border: 0;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.presenter-count {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 18px;
+}
+.presenter-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(220px, 0.9fr);
+  gap: var(--presenter-gap);
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  z-index: 0;
+}
+.presenter-stage > .presenter-thumb {
+  min-height: 0;
+  height: 100%;
+}
+.presenter-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--presenter-gap);
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.presenter-thumb {
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: hidden;
+}
+.presenter-thumb-label {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+.presenter-thumb-box {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.presenter-thumb-frame {
+  position: relative;
+  flex: 0 0 auto;
+  background: #020617;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid #1e293b;
+  max-width: 100%;
+  max-height: 100%;
+  pointer-events: none;
+}
+.presenter-slide-el {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: top left;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+.presenter-slide-el .el {
+  position: absolute;
+  box-sizing: border-box;
+}
+.presenter-slide-el .el svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.presenter-slide-el .el span[data-list-bullet],
+.presenter-slide-el .el span[data-list-num] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: var(--rt-bullet-gap, 10px);
+  color: currentColor;
+  user-select: none;
+  vertical-align: -0.2em;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.presenter-slide-el .el a[href] {
+  color: inherit !important;
+  -webkit-text-fill-color: inherit;
+  text-underline-offset: 0.12em;
+}
+.presenter-thumb-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-height: 48px;
+  border-radius: 10px;
+  border: 1px dashed #334155;
+  color: #64748b;
+  font-size: 28px;
+  box-sizing: border-box;
+}
+.presenter-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid #1e293b;
+  background: #0f172a;
+  padding: 10px 12px;
+  box-sizing: border-box;
+}
+.presenter-notes-label {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+.presenter-notes-input {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  box-sizing: border-box;
+  resize: none;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #e8eef8;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+  padding: 0;
+  overflow: auto;
+}
+.presenter-notes-input:focus {
+  outline: none;
+}
+.presenter-notes-input::placeholder {
+  color: #64748b;
+}
+.presenter-status.is-black {
+  background: #111827;
+  color: #fbbf24;
+  border: 1px solid #374151;
+}
+.presenter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 5;
+  background: #0b1220;
+}
+.presenter-actions button {
+  font: inherit;
+  font-size: 14px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid #334155;
+  background: #1e293b;
+  color: #e8eef8;
+  cursor: pointer;
+}
+.presenter-actions button.primary {
+  background: #2563eb;
+  border-color: #2563eb;
+}
+.presenter-actions button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+@media (max-width: 900px) {
+  .presenter-stage {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .presenter-side {
+    min-height: 0;
+    overflow: hidden;
+  }
+  .presenter-side > .presenter-thumb,
+  .presenter-side > .presenter-notes {
+    flex: 1 1 0;
+    min-height: 0;
+  }
+}

@@ -205,6 +205,8 @@ function labelFor(el, allEls, ru) {
       flip: ru ? 'Перевертыш' : 'Flip',
       periodic: el.pteSymbol || (ru ? 'Таблица Менделеева' : 'Periodic table'),
       notes: ru ? 'Заметка' : 'Notes',
+      classification: ru ? 'Классификация' : 'Classification',
+      imagesort: ru ? 'Сортировка картинок' : 'Image sort',
     };
     return (names[el.appletId] || el.appletId) + sfx;
   }

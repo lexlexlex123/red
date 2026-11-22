@@ -7,6 +7,18 @@ export function isInkDrawAnim(name) {
   return name === 'inkDraw';
 }
 
+// Ids of inkhost elements currently mid-animation. fireInkDrawAnim reveals strokes by
+// mutating their DOM nodes directly (stroke-dashoffset / opacity), completely outside
+// React. But the inkhost element is normally re-rendered by React on *any* relevant store
+// change (selection, animPlay flags, etc.) via dangerouslySetInnerHTML — and that overwrite
+// wipes out whatever this script had just applied, instantly. ElementView checks this
+// registry and freezes its rendered markup while the id is present, so the DOM this
+// animation is driving doesn't get silently replaced out from under it.
+const activeInkHosts = new Set();
+export function isInkDrawActiveFor(elId) {
+  return elId != null && activeInkHosts.has(String(elId));
+}
+
 function shuffle(arr) {
   const a = arr.slice();
   for (let i = a.length - 1; i > 0; i--) {
@@ -22,7 +34,7 @@ function parallelCount(anim, total) {
   const n = Math.max(1, +total || 1);
   if (!anim) return 1;
   const v = anim.inkParallel;
-  if (v === 0 || v === 'all') return n;
+  if (v === 0 || v === 'all' || v === true) return n;
   if (v == null) return 1;
   return Math.max(1, Math.min(n, Math.round(+v || 1)));
 }
@@ -212,8 +224,12 @@ function animateStroke(node, duration, ctl) {
   return (async () => {
     if (!node || ctl?.aborted) return;
     if (node.tagName?.toLowerCase() === 'g') {
-      // Reveal group children by opacity
-      const kids = Array.from(node.querySelectorAll('path'));
+      // Reveal group children by opacity. Brush-tool strokes render as a mix of <path>
+      // (connecting segments) and <circle> (round dab stamps) — only querying 'path' left
+      // every circle stamp fully visible the whole time (never hidden, never animated),
+      // which is why some parts of a brush stroke looked instantly drawn while others
+      // progressively appeared.
+      const kids = Array.from(node.querySelectorAll('path, circle'));
       if (!kids.length) {
         await tween(Math.min(280, duration), ctl, (p) => {
           node.style.opacity = String(p);
@@ -223,11 +239,21 @@ function animateStroke(node, duration, ctl) {
       }
       kids.forEach((k) => hideNode(k));
       node.style.opacity = '';
-      for (let i = 0; i < kids.length; i++) {
-        if (ctl.aborted) return;
-        await tweenDash(kids[i], Math.max(80, duration / Math.max(1, kids.length)), ctl);
-        showFinal(kids[i]);
-      }
+      // One continuous tween driving progressive reveal, instead of looping a separate
+      // tweenDash() per stamp (that couldn't go faster than roughly kids.length * 120ms
+      // regardless of the intended duration) or clipping the group with a dashed guide path
+      // (stroke-dasharray on a <clipPath> shape isn't reliably honored across browsers, and
+      // showed the whole stroke immediately with no further progress). This just tracks how
+      // many of the ordered stamps *should* be visible for the current elapsed fraction and
+      // reveals exactly that many each frame — cheap, and can't stall the pool since it's the
+      // same tween() used for every other reveal here.
+      let shown = 0;
+      await tween(duration, ctl, (p) => {
+        const target = p >= 1 ? kids.length : Math.floor(p * kids.length);
+        for (let i = shown; i < target; i++) showFinal(kids[i]);
+        shown = target;
+      });
+      if (!ctl.aborted) kids.forEach((k) => showFinal(k));
       if (!ctl.aborted) showFinal(node);
       return;
     }
@@ -281,6 +307,37 @@ function strokeDuration(node, baseDuration) {
     const scale = Math.max(0.3, Math.min(3, len / 320));
     return Math.round(base * scale);
   }
+  if (node?.tagName?.toLowerCase() === 'g') {
+    // Brush-tool strokes render as a <g> of stamps rather than one continuous path, so
+    // there's no getTotalLength() to scale off of. Stamp *count* is a poor stand-in for how
+    // long the stroke actually is — stamps are laid down per captured input point, not per
+    // unit of distance, so a long line drawn with a fast swipe can have fewer stamps than a
+    // short one drawn slowly and carefully, which is exactly why long and short lines were
+    // taking the same time regardless of their actual length. Sum the distance between
+    // consecutive stamp centers instead — a real geometric length, same idea as
+    // getTotalLength() above, just computed by hand since there's no <path> to ask.
+    let len = 0;
+    let prev = null;
+    node.querySelectorAll('path, circle').forEach((k) => {
+      let c = null;
+      if (k.tagName?.toLowerCase() === 'circle') {
+        c = { x: +k.getAttribute('cx') || 0, y: +k.getAttribute('cy') || 0 };
+      } else {
+        try {
+          const b = k.getBBox();
+          c = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+        } catch (e) {
+          c = null;
+        }
+      }
+      if (c) {
+        if (prev) len += Math.hypot(c.x - prev.x, c.y - prev.y);
+        prev = c;
+      }
+    });
+    const scale = Math.max(0.3, Math.min(3, Math.max(1, len) / 320));
+    return Math.round(base * scale);
+  }
   return base;
 }
 
@@ -328,6 +385,8 @@ export function inkDrawWaitMs(anim, strokeCount = 8) {
 
 export function resetInkDraw(domEl, elData) {
   if (!domEl) return;
+  const hostId = elData?.id != null ? String(elData.id) : domEl.getAttribute?.('data-id');
+  if (hostId) activeInkHosts.delete(hostId);
   if (domEl._inkDrawCtl) {
     domEl._inkDrawCtl.aborted = true;
     (domEl._inkDrawCtl.timers || []).forEach((t) => clearTimeout(t));
@@ -370,6 +429,8 @@ export function clearInkDraw(root) {
 export function fireInkDrawAnim(domEl, elData, anim, opts = {}) {
   if (!domEl || !anim) return { waitMs: 0, cancel: () => {} };
   resetInkDraw(domEl, elData);
+  const hostId = elData?.id != null ? String(elData.id) : null;
+  if (hostId) activeInkHosts.add(hostId);
   const delay = Math.max(0, opts.delay != null ? +opts.delay : +(anim.delay || 0));
   const perStroke = Math.max(200, +(anim.dur ?? anim.duration ?? 1400) || 1400);
   const fillDur = Math.min(700, Math.max(220, perStroke * 0.35));
@@ -428,6 +489,7 @@ export function fireInkDrawAnim(domEl, elData, anim, opts = {}) {
       if (!ctl.aborted && !infinite) {
         nodes.strokes.forEach(showFinal);
         nodes.fills.forEach(showFinal);
+        if (hostId) activeInkHosts.delete(hostId);
       }
     };
     runLoop();

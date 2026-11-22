@@ -51,11 +51,11 @@ export function scaleGroupMembers(bbox, handle, rdx, rdy, startMembers, lockAspe
     const rawDx = dx * rdx;
     const rawDy = dy * rdy;
     const delta = Math.abs(rawDx) >= Math.abs(rawDy) ? rawDx : rawDy * groupAspect;
-    newW = Math.max(40, bw + delta);
-    newH = Math.max(20, newW / groupAspect);
+    newW = Math.max(1, bw + delta);
+    newH = Math.max(1, newW / groupAspect);
   } else {
-    newW = Math.max(40, bw + dx * rdx);
-    newH = Math.max(20, bh + dy * rdy);
+    newW = Math.max(1, bw + dx * rdx);
+    newH = Math.max(1, bh + dy * rdy);
     if (dx === 0) newW = bw;
     if (dy === 0) newH = bh;
   }
@@ -65,21 +65,22 @@ export function scaleGroupMembers(bbox, handle, rdx, rdy, startMembers, lockAspe
   const originX = ax ? bx + bw : bx;
   const originY = ay ? by + bh : by;
 
+  const q = (n) => Math.round(n * 100) / 100;
   const patches = {};
   (startMembers || []).forEach((st) => {
     const relX = st.x - originX;
     const relY = st.y - originY;
     patches[st.id] = {
-      x: Math.round(originX + relX * scaleX),
-      y: Math.round(originY + relY * scaleY),
-      w: Math.max(20, Math.round(st.w * scaleX)),
-      h: Math.max(10, Math.round(st.h * scaleY)),
+      x: q(originX + relX * scaleX),
+      y: q(originY + relY * scaleY),
+      w: Math.max(1, q(st.w * scaleX)),
+      h: Math.max(1, q(st.h * scaleY)),
     };
   });
 
   const nbx = ax ? bx + bw - newW : bx;
   const nby = ay ? by + bh - newH : by;
-  return { patches, bbox: { x: nbx, y: nby, w: newW, h: newH } };
+  return { patches, bbox: { x: q(nbx), y: q(nby), w: q(newW), h: q(newH) } };
 }
 
 /**

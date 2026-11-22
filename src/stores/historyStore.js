@@ -13,6 +13,7 @@ function snap() {
     appliedThemeIdx: s.appliedThemeIdx,
     layoutIdx: s.layoutIdx,
     pnSettings: s.pnSettings,
+    guides: s.guides,
   });
 }
 

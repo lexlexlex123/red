@@ -21,3 +21,4 @@ createRoot(root).render(
     <App />
   </React.StrictMode>
 );
+window.__sfAppReady = 1;

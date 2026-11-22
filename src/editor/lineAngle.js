@@ -29,16 +29,22 @@ function normMarkCount(n) {
   return Math.min(4, Math.max(1, Math.round(v)));
 }
 
-function labelText(style, deg, displayDeg) {
+function hasManualAngleValue(d) {
+  if (!d || d.displayDeg == null || !Number.isFinite(+d.displayDeg)) return false;
+  if (d.manualDeg === true) return true;
+  if (d.manualDeg === false || d.deg == null || !Number.isFinite(+d.deg)) return false;
+  return Math.abs(+d.displayDeg - +d.deg) > 0.05;
+}
+
+function labelText(style, deg, d) {
   const s = normLabelStyle(style);
   if (s === 'hidden') return '';
   if (s === 'alpha') return 'α';
   if (s === 'beta') return 'β';
   if (s === 'gamma') return 'γ';
   if (s === 'qmark') return '?';
-  const v = displayDeg != null && Number.isFinite(+displayDeg) ? +displayDeg : deg;
-  const rounded = Math.round(v * 10) / 10;
-  return `${rounded}°`;
+  const v = hasManualAngleValue(d) ? +d.displayDeg : deg;
+  return `${Math.round(v)}°`;
 }
 
 /** Local line ends inside element box (matches shared shapes: 0…W round-cap centers). */
@@ -190,7 +196,7 @@ export function buildLineAngleDrawModel(d, els) {
   const fsPx = labelFsPx(fsPt);
   const useSquare = Math.abs(m.deg - 90) < 0.6 && nMarks === 1;
   const pad = r + Math.max(28, Math.ceil(fsPx * 1.2));
-  const label = labelText(style, m.deg, d.displayDeg);
+  const label = labelText(style, m.deg, d);
   let labelX = null;
   let labelY = null;
   if (label) {
@@ -265,15 +271,17 @@ export function buildLineAngleContent(d, els) {
     const sy = j.y + u2y * s;
     const rx = j.x + u1x * s + u2x * s;
     const ry = j.y + u1y * s + u2y * s;
-    mark = `<path d="M ${qx - ox} ${qy - oy} L ${rx - ox} ${ry - oy} L ${sx - ox} ${sy - oy}" fill="none" stroke="${esc(col)}" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"/>`;
+    const squarePath = `M ${qx - ox} ${qy - oy} L ${rx - ox} ${ry - oy} L ${sx - ox} ${sy - oy}`;
+    mark = `<path d="${squarePath}" fill="none" stroke="transparent" stroke-width="12" stroke-linecap="square" stroke-linejoin="miter" pointer-events="stroke"/><path d="${squarePath}" fill="none" stroke="${esc(col)}" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter" pointer-events="none"/>`;
   } else {
     for (let i = 0; i < nMarks; i++) {
       const rr = Math.max(10, r - i * 6);
-      mark += `<path d="${arcPath(j, m.a1, m.a2, rr, ox, oy)}" fill="none" stroke="${esc(col)}" stroke-width="2" stroke-linecap="round"/>`;
+      const path = arcPath(j, m.a1, m.a2, rr, ox, oy);
+      mark += `<path d="${path}" fill="none" stroke="transparent" stroke-width="12" stroke-linecap="round" pointer-events="stroke"/><path d="${path}" fill="none" stroke="${esc(col)}" stroke-width="2" stroke-linecap="round" pointer-events="none"/>`;
     }
   }
 
-  const label = labelText(style, m.deg, d.displayDeg);
+  const label = labelText(style, m.deg, d);
   if (label) {
     const mid = m.a1 + m.delta / 2;
     const lr = r + 14 + fsPx * 0.35 + (+d.labelOffset || 0);
@@ -312,4 +320,14 @@ export function defaultLineAngleFields(pair) {
   };
 }
 
-export { DEFAULT_R, DEFAULT_LABEL_FS, LABEL_STYLES, normLabelStyle, normMarkCount, labelFsPt, labelFsPx, labelText };
+export {
+  DEFAULT_R,
+  DEFAULT_LABEL_FS,
+  LABEL_STYLES,
+  normLabelStyle,
+  normMarkCount,
+  labelFsPt,
+  labelFsPx,
+  labelText,
+  hasManualAngleValue,
+};

@@ -1,4 +1,5 @@
 import React, { useLayoutEffect, useRef } from 'react';
+import { editorApi } from '../../editor/editorApi.js';
 
 function placeCaret(node, selectAll) {
   if (!node) return;
@@ -19,21 +20,31 @@ export default function EditableHtml({
   html,
   editing,
   onCommit,
+  onLiveChange,
   className,
   style,
   selectAll,
   clearOnEdit,
+  seedText,
+  onSeedConsumed,
   onBulletClick,
   onKeyDown,
+  suppressBlurCommit,
 }) {
   const ref = useRef(null);
   const htmlRef = useRef(html);
   const onCommitRef = useRef(onCommit);
+  const onLiveChangeRef = useRef(onLiveChange);
+  const onSeedConsumedRef = useRef(onSeedConsumed);
+  const suppressBlurCommitRef = useRef(suppressBlurCommit);
   const committedRef = useRef(false);
   /** Holds DOM html after leave-edit commit until props catch up. */
   const pendingHtmlRef = useRef(null);
   htmlRef.current = html;
   onCommitRef.current = onCommit;
+  onLiveChangeRef.current = onLiveChange;
+  onSeedConsumedRef.current = onSeedConsumed;
+  suppressBlurCommitRef.current = suppressBlurCommit;
 
   function commitNow(node) {
     if (!node || committedRef.current) return;
@@ -46,30 +57,55 @@ export default function EditableHtml({
   useLayoutEffect(() => {
     const node = ref.current;
     if (!node || editing) return;
-    const next = pendingHtmlRef.current != null ? pendingHtmlRef.current : html || '';
+    let next = pendingHtmlRef.current != null ? pendingHtmlRef.current : html || '';
     if (pendingHtmlRef.current != null && pendingHtmlRef.current === (html || '')) {
+      pendingHtmlRef.current = null;
+    }
+    const pendingText = String(pendingHtmlRef.current || '')
+      .replace(/<[^>]+>/g, '')
+      .replace(/[\u00a0\s]/g, '');
+    if (!pendingText && html && html !== pendingHtmlRef.current) {
+      next = html;
       pendingHtmlRef.current = null;
     }
     if (node.innerHTML !== next) node.innerHTML = next;
   }, [html, editing]);
+
+  const clearOnEditRef = useRef(clearOnEdit);
+  const seedTextRef = useRef(seedText);
+  clearOnEditRef.current = clearOnEdit;
+  seedTextRef.current = seedText;
 
   useLayoutEffect(() => {
     const node = ref.current;
     if (!node || !editing) return undefined;
     committedRef.current = false;
     pendingHtmlRef.current = null;
-    if (clearOnEdit) {
+    const shouldClear = !!clearOnEditRef.current;
+    const seed = seedTextRef.current;
+    if (shouldClear) {
       node.innerHTML = '';
     } else if (!node.innerHTML && htmlRef.current) {
       node.innerHTML = htmlRef.current;
     }
     node.focus({ preventScroll: true });
-    placeCaret(node, !!selectAll && !clearOnEdit);
+    placeCaret(node, !!selectAll && !shouldClear);
+    if (seed) {
+      try {
+        document.execCommand('insertText', false, seed);
+      } catch {
+        node.appendChild(document.createTextNode(seed));
+        placeCaret(node, false);
+      }
+    }
+    // Drop one-shot clear/seed flags after apply (do not re-run this effect).
+    if (shouldClear || seed) onSeedConsumedRef.current?.();
+    onLiveChangeRef.current?.(node.innerHTML);
     return () => {
       // Parent often clears editing before blur (click canvas / other el).
-      commitNow(node);
+      if (!suppressBlurCommitRef.current) commitNow(node);
     };
-  }, [editing, selectAll, clearOnEdit]);
+  }, [editing, selectAll]);
 
   return (
     <div
@@ -80,13 +116,47 @@ export default function EditableHtml({
       tabIndex={editing ? 0 : undefined}
       suppressContentEditableWarning
       spellCheck={false}
-      onBlur={
-        editing
+      onInput={
+        editing && onLiveChange
           ? (e) => {
-              commitNow(e.currentTarget);
+              onLiveChangeRef.current?.(e.currentTarget.innerHTML);
             }
           : undefined
       }
+      onBlur={
+        editing
+          ? (e) => {
+              if (suppressBlurCommitRef.current) return;
+              // Focus moved into a modal / quickbar that keeps editing alive.
+              const next = e.relatedTarget;
+              if (next && typeof next.closest === 'function' && next.closest('[data-keep-text-edit]')) {
+                return;
+              }
+              // relatedTarget is often null when clicking toolbar buttons; defer and re-check.
+              const node = e.currentTarget;
+              requestAnimationFrame(() => {
+                if (suppressBlurCommitRef.current) return;
+                const ae = document.activeElement;
+                if (ae === node) return;
+                if (ae && typeof ae.closest === 'function' && ae.closest('[data-keep-text-edit]')) {
+                  return;
+                }
+                commitNow(node);
+              });
+            }
+          : undefined
+      }
+      onClickCapture={(e) => {
+        const a = e.target.closest?.('a[href]');
+        if (!a || !e.currentTarget.contains(a)) return;
+        e.preventDefault();
+        // Ctrl/Cmd+click opens the link in the editor; plain click only selects/edits.
+        if (e.ctrlKey || e.metaKey) {
+          e.stopPropagation();
+          const href = a.getAttribute('href');
+          if (href) editorApi.followLink(href);
+        }
+      }}
       onPointerDownCapture={
         editing
           ? (e) => {
@@ -94,7 +164,7 @@ export default function EditableHtml({
               const marker = e.target.closest?.('[data-list-bullet]');
               if (marker) {
                 e.preventDefault();
-                onBulletClick?.();
+                onBulletClick?.(marker);
               }
             }
           : undefined

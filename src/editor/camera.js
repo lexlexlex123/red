@@ -1,11 +1,22 @@
 /**
  * Slide camera (Prezi-like) — pure math + playback helper.
  * Ported from js/18b-camera.js.
+ *
+ * Performance / crispness notes:
+ * - Do NOT set will-change:transform on the stage. That freezes a bitmap and makes
+ *   SVG/shapes look rasterized when zoomed (unlike the editor canvas zoom).
+ * - Do NOT drive the stage `transform` from React state during animation — React
+ *   commits overwrite/clear the inline transform and cause white flashes + jank.
+ *   Always write transform on the DOM node (see applyCameraTransform).
+ * - Match editor max zoom (~20×): clampCamera enforces a floor on cam.w.
  */
 
 import { DEFAULT_CANVAS_W, DEFAULT_CANVAS_H } from './canvasDims.js';
 
 export const CAM_COLOR = '#ef4444';
+
+/** Same ceiling as editor canvasZoom (uiStore / canvasViewport). */
+export const CAM_MAX_ZOOM = 20;
 
 function aspect(W, H) {
   return H / Math.max(1, W);
@@ -108,10 +119,17 @@ export function nudgeCameraInside(cam, W = DEFAULT_CANVAS_W, H = DEFAULT_CANVAS_
   return out;
 }
 
-/** Playback clamp: may shrink. */
+function playbackMinWidth(W) {
+  // Cap zoom at CAM_MAX_ZOOM (same as editor). Tiny authored cameras still work
+  // visually but won't ask Chrome for a 50× re-raster of the whole stage.
+  return Math.max(36, W / CAM_MAX_ZOOM);
+}
+
+/** Playback clamp: may shrink; enforces max zoom for stable crisp paint. */
 export function clampCamera(cam, W = DEFAULT_CANVAS_W, H = DEFAULT_CANVAS_H) {
   const out = { ...cam };
   const a = aspect(W, H);
+  const minW = playbackMinWidth(W);
   out.rot = (((+out.rot || 0) % 360) + 360) % 360;
   if (out.rot > 180) out.rot -= 360;
   out.cx = +out.cx || W / 2;
@@ -119,7 +137,7 @@ export function clampCamera(cam, W = DEFAULT_CANVAS_W, H = DEFAULT_CANVAS_H) {
   if (isFullSlideCam(out, W, H)) {
     return fullSlideCam(W, H);
   }
-  out.w = Math.max(36, Math.min(+out.w || W * 0.5, maxWidthAt(out.cx, out.cy, out.rot, W, H)));
+  out.w = Math.max(minW, Math.min(+out.w || W * 0.5, maxWidthAt(out.cx, out.cy, out.rot, W, H)));
   out.h = out.w * a;
 
   const pts = camCorners(out, W, H);
@@ -133,7 +151,7 @@ export function clampCamera(cam, W = DEFAULT_CANVAS_W, H = DEFAULT_CANVAS_H) {
   });
   out.cx += dx;
   out.cy += dy;
-  out.w = Math.max(36, Math.min(out.w, maxWidthAt(out.cx, out.cy, out.rot, W, H)));
+  out.w = Math.max(minW, Math.min(out.w, maxWidthAt(out.cx, out.cy, out.rot, W, H)));
   out.h = out.w * a;
   out.cx = Math.round(out.cx * 10) / 10;
   out.cy = Math.round(out.cy * 10) / 10;
@@ -162,11 +180,17 @@ export function camAlongPath(from, to, e, W = DEFAULT_CANVAS_W, H = DEFAULT_CANV
   const rot = (+from.rot || 0) + dRot * e;
   const cx = lerp(+from.cx || W / 2, +to.cx || W / 2, e);
   const cy = lerp(+from.cy || H / 2, +to.cy || H / 2, e);
-  const w0 = Math.max(36, +from.w || W);
-  const w1 = Math.max(36, +to.w || W);
+  const w0 = Math.max(playbackMinWidth(W), +from.w || W);
+  const w1 = Math.max(playbackMinWidth(W), +to.w || W);
   let w = Math.exp(lerp(Math.log(w0), Math.log(w1), e));
   w = Math.min(w, maxWidthAt(cx, cy, rot, W, H));
   return clampCamera({ cx, cy, w, h: w * a, rot }, W, H);
+}
+
+/** How far the camera is zoomed in (1 = full slide). */
+export function cameraZoomFactor(cam, W = DEFAULT_CANVAS_W, H = DEFAULT_CANVAS_H) {
+  if (!cam || isFullSlideCam(cam, W, H)) return 1;
+  return W / Math.max(1e-6, +cam.w || W);
 }
 
 /** CSS transform: fitSc * map camera → full slide. */
@@ -182,8 +206,31 @@ export function cameraCssTransform(cam, fitSc, W = DEFAULT_CANVAS_W, H = DEFAULT
 }
 
 /**
+ * Write camera transform on the DOM node only (never via React style).
+ * Clears will-change so Chrome re-rasters like the editor canvas zoom (vectors stay sharp).
+ */
+export function applyCameraTransform(el, cam, fitSc, W = DEFAULT_CANVAS_W, H = DEFAULT_CANVAS_H) {
+  if (!el) return '';
+  const state = cam || el._pvCamState || fullSlideCam(W, H);
+  const clamped = isFullSlideCam(state, W, H) ? fullSlideCam(W, H) : clampCamera(state, W, H);
+  el._pvCamState = {
+    cx: clamped.cx,
+    cy: clamped.cy,
+    w: clamped.w,
+    h: clamped.h,
+    rot: clamped.rot,
+  };
+  const t = cameraCssTransform(el._pvCamState, fitSc, W, H);
+  el.style.willChange = 'auto';
+  el.style.overflow = 'hidden';
+  el.style.transformOrigin = 'top left';
+  el.style.transform = t;
+  return t;
+}
+
+/**
  * Animate DOM element transform from → to camera.
- * @returns {{ abort: () => void }}
+ * @returns {{ abort: (opts?: { finish?: boolean, revert?: boolean }) => void, from: object, to: object }}
  */
 export function fireCameraAnim(el, cam, opts = {}) {
   if (!el || !cam) return { abort() {} };
@@ -215,14 +262,13 @@ export function fireCameraAnim(el, cam, opts = {}) {
   const dur = Math.max(200, +(cam.duration || opts.duration || 1200) || 1200);
   const delay = opts.delay != null ? +opts.delay : 0;
   const fit = opts.fitScale != null && opts.fitScale > 0 ? opts.fitScale : 1;
-  const ctl = { aborted: false, rafs: [], timers: [] };
+  // ctl.fit is mutable so a viewport/fullscreen resize mid-flight can update scale
+  // without aborting the camera (otherwise outer box grows and stage stays shrunk top-left).
+  const ctl = { aborted: false, finished: false, rafs: [], timers: [], from, to, W, H, fit };
   el._camCtl = ctl;
 
   const apply = (state) => {
-    el._pvCamState = { cx: state.cx, cy: state.cy, w: state.w, h: state.h, rot: state.rot };
-    el.style.overflow = 'hidden';
-    el.style.transformOrigin = 'top left';
-    el.style.transform = cameraCssTransform(el._pvCamState, fit, W, H);
+    applyCameraTransform(el, state, ctl.fit, W, H);
   };
 
   const run = () => {
@@ -238,6 +284,7 @@ export function fireCameraAnim(el, cam, opts = {}) {
         const id = requestAnimationFrame(step);
         ctl.rafs.push(id);
       } else {
+        ctl.finished = true;
         apply(to);
         opts.onDone?.();
       }
@@ -249,13 +296,19 @@ export function fireCameraAnim(el, cam, opts = {}) {
   else run();
 
   return {
-    /** @param {{ finish?: boolean }} [opts] finish=true snaps to end (does not call onDone) */
+    /**
+     * @param {{ finish?: boolean, revert?: boolean }} [opts]
+     * finish — snap to end; revert — snap to start (does not call onDone)
+     */
     abort(optsAbort = {}) {
       ctl.aborted = true;
       ctl.rafs.forEach((id) => cancelAnimationFrame(id));
       ctl.timers.forEach((t) => clearTimeout(t));
       if (optsAbort.finish) apply(to);
+      else if (optsAbort.revert) apply(from);
     },
+    from,
+    to,
   };
 }
 

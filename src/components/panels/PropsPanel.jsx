@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { usePresentationStore } from '../../stores/presentationStore';
 import { useUiStore } from '../../stores/uiStore';
@@ -8,13 +8,28 @@ import GSlider from '../ui/GSlider.jsx';
 import DragValueBox from '../ui/DragValueBox.jsx';
 import ColorField from '../ui/ColorField.jsx';
 import Toggle from '../ui/Toggle.jsx';
-import { FONT_FAMILIES, parseCsNumber, applyCsProp } from '../../editor/fonts.js';
-import { getTheme, resolveElTextColor } from '../../editor/themes.js';
+import PromptCopyBox from '../ui/PromptCopyBox.jsx';
+import { OBJ_LLM_PROMPT } from '../../editor/llmPrompts.js';
+import { captureInlineLinkSelection, DEFAULT_LINK_HOVER } from '../../editor/links.js';
+import {
+  DEFAULT_TEXT_FONT_FAMILY,
+  FONT_FAMILIES,
+  parseCsNumber,
+  applyCsProp,
+} from '../../editor/fonts.js';
+import { getTheme, resolveElTextColor, resolveSchemeColor, schemeSwatchColor } from '../../editor/themes.js';
 import { htmlHasList } from '../../editor/textLists.js';
 import { getIconById } from '../../editor/iconsLazy.js';
 import { iconHasAnim, iconAnimEnabled } from '../../editor/iconAnim.js';
-import { normLabelStyle, normMarkCount, canDrawAngleBetweenSelected } from '../../editor/lineAngle.js';
+import {
+  normLabelStyle,
+  normMarkCount,
+  canDrawAngleBetweenSelected,
+  buildLineAngleContent,
+  hasManualAngleValue,
+} from '../../editor/lineAngle.js';
 import { DEFAULT_CANVAS_W, DEFAULT_CANVAS_H } from '../../editor/canvasDims.js';
+import { polaroidFramePatch, POLAROID_CAPTION_FONT } from '../../editor/imgStyles.js';
 import { pteBySymbol, resolvePteColors } from '../../editor/periodicApplet.js';
 import {
   defaultHoverFx,
@@ -26,9 +41,24 @@ import {
 } from '../../editor/hoverFx.js';
 import { flipFontToken, resolveFlipColors, isFlipAppletId } from '../../editor/flipApplet.js';
 import {
+  CLASS_LAYOUTS,
+  CLASSIFICATION_DEFAULTS,
+  getClassLayout,
+  getClassZones,
+  classZoneLabel,
+  rememberClassificationIds,
+} from '../../editor/classificationApplet.js';
+import {
+  IMAGE_SORT_DEFAULTS,
+  getImageSortMarkers,
+} from '../../editor/imageSortApplet.js';
+import { slideElementNumber } from '../../editor/slideElNum.js';
+import { shapeHasFillImgData } from '../../editor/shapeFillImg.js';
+import {
   listAppletTriggerAnims,
   appletAnimOptionLabel,
   resolveAppletAnimRef,
+  triggerElLabel,
 } from '../../editor/appletOnEnd.js';
 import { getSlideDisplayTitle } from '../../editor/slideTitles.js';
 import {
@@ -36,26 +66,88 @@ import {
   deleteCurveNode,
   defaultCurvePoints,
   applyCurveBBox,
+  setCurveNodeWidth,
+  cycleCurveNodeType,
+  curveNodeTypeLabel,
 } from '../../editor/curveEditor.js';
-import { LEGO_PIECES, legoSizeFor } from '../../editor/lego.js';
-import { getTableCell } from '../../editor/tableCells.js';
+import { LEGO_COLOR_FALLBACK, legoPieceIdOf } from '../../editor/lego.js';
+import { beginLegoPaletteDrag } from '../../editor/legoPaletteDrag.js';
+import LegoPieceGrid from '../ui/LegoPieceGrid.jsx';
+import { getTableCell, tableAltRowsOn, tableCellAsTextView } from '../../editor/tableCells.js';
 import { CONN_MARKER_TYPES } from '../../editor/connectors.js';
 import { CONN_MARKER_SVGS } from '../../editor/connMarkers.jsx';
-import { CODE_LANGS, CODE_THEMES, normalizeCodeLang, ensureCodeHtml } from '../../editor/codeHighlight.js';
 import {
-  getShapeTextColor,
-  shapeTextFontFamily,
-  shapeTextFontSizePx,
-  shapeTextFontWeight,
-  withShapeTextColor,
-  withShapeTextProp,
-} from '../../editor/shapeText.js';
+  CODE_LANGS,
+  CODE_THEME_CHOICES,
+  CODE_THEME_SYSTEM,
+  codeThemeLabel,
+  normalizeCodeLang,
+  ensureCodeHtml,
+} from '../../editor/codeHighlight.js';
+import { getShapeTextColor, shapeAsTextView } from '../../editor/shapeText.js';
+import { shapeSupportsNodes } from '../../editor/shapeNodes.js';
+import { createGuide } from '../../editor/slideGuides.js';
 import { getShapeMeta } from '../../shared/shapesCatalog.js';
-import { LINE_MARKER_TYPES, LINE_MARKER_PREVIEWS, LINE_GEOM_MARKS, normalizeMoonPhase } from '../../shared/shapes.js';
+import {
+  LINE_MARKER_TYPES,
+  LINE_MARKER_PREVIEWS,
+  LINE_GEOM_MARKS,
+  CURVE_FILL_PATTERNS,
+  normalizeMoonPhase,
+  normalizeArrowHead,
+} from '../../shared/shapes.js';
 import { cloudNormForm, cloudRegenerate } from '../../shared/cloudGeom.js';
-import { PN_STYLES } from '../../editor/pagenum.js';
+import { PN_STYLES, pnNormalize } from '../../editor/pagenum.js';
 import TextPropsFmt from './TextPropsFmt.jsx';
 import GenAppletVisualProps from './GenAppletVisualProps.jsx';
+
+const CURVE_FILL_PAT_ICONS = {
+  solid: (
+    <svg viewBox="0 0 20 20" aria-hidden="true" width="18" height="18">
+      <rect x="3" y="3" width="14" height="14" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.4" />
+    </svg>
+  ),
+  lines: (
+    <svg viewBox="0 0 20 20" aria-hidden="true" width="18" height="18">
+      <rect x="3" y="3" width="14" height="14" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <g stroke="currentColor" strokeWidth="1.45">
+        <path d="M-2 15.7 L15.7 -2" />
+        <path d="M-2 22 L22 -2" />
+        <path d="M0 26.3 L26.3 0" />
+      </g>
+    </svg>
+  ),
+  hatch: (
+    <svg viewBox="0 0 20 20" aria-hidden="true" width="18" height="18">
+      <rect x="3" y="3" width="14" height="14" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <g stroke="currentColor" strokeWidth="1.35">
+        <path d="M-2 15.7 L15.7 -2" />
+        <path d="M-2 22 L22 -2" />
+        <path d="M0 26.3 L26.3 0" />
+        <path d="M-2 4.3 L15.7 22.2" />
+        <path d="M-2 -2 L22 22" />
+        <path d="M4.3 -2 L22.2 15.7" />
+      </g>
+    </svg>
+  ),
+  dots: (
+    <svg viewBox="0 0 20 20" aria-hidden="true" width="18" height="18">
+      <rect x="3" y="3" width="14" height="14" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <g fill="currentColor">
+        {[7, 10, 13].flatMap((y) =>
+          [7, 10, 13].map((x) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.15" />)
+        )}
+      </g>
+    </svg>
+  ),
+};
+
+const CURVE_FILL_PAT_TITLES = {
+  solid: { ru: 'Сплошная', en: 'Solid' },
+  lines: { ru: 'Штриховая', en: 'Lines' },
+  hatch: { ru: 'Крест-накрест', en: 'Cross-hatch' },
+  dots: { ru: 'Пунктирная', en: 'Dots' },
+};
 
 const CLOUD_FORM_OPTS = [
   { id: 'puff', ru: 'Облако', en: 'Cloud' },
@@ -85,45 +177,138 @@ function cloudPatchFromRegen(el, extra = {}) {
   };
 }
 
+function MediaAudioTriggers({ el, patch, ru }) {
+  const slides = usePresentationStore((s) => s.slides);
+  const pick = useUiStore((s) => s.mediaTriggerPick);
+  const picking = !!(pick && String(pick.audioElId) === String(el.id));
+  const trigIds = Array.isArray(el.maTriggerElIds)
+    ? el.maTriggerElIds
+    : el.maTriggerElId
+      ? [el.maTriggerElId]
+      : [];
+  return (
+    <div className="react-props-field">
+      <span>{ru ? 'Объекты-триггеры' : 'Trigger objects'}</span>
+      <div className="react-media-triggers">
+        {trigIds.length ? (
+          trigIds.map((tid) => (
+            <div key={tid} className="react-media-trigger-row">
+              <span>{triggerElLabel(slides, tid, ru ? 'ru' : 'en') || String(tid)}</span>
+              <button
+                type="button"
+                className="react-props-btn"
+                onClick={() =>
+                  patch({
+                    maTriggerElIds: trigIds.filter((x) => String(x) !== String(tid)),
+                    maTriggerElId: undefined,
+                  })
+                }
+              >
+                ✕
+              </button>
+            </div>
+          ))
+        ) : (
+          <div className="react-props-muted">{ru ? 'Не выбраны' : 'None'}</div>
+        )}
+      </div>
+      <button
+        type="button"
+        className={`react-props-btn${picking ? ' is-active' : ''}`}
+        style={{ width: '100%', justifyContent: 'center', marginTop: 6 }}
+        onClick={() => {
+          if (picking) editorApi.cancelMediaTriggerPick();
+          else editorApi.startMediaTriggerPick(el.id);
+        }}
+      >
+        {ru ? '🎯 Выбрать объект' : '🎯 Select object'}
+      </button>
+      {picking ? (
+        <div className="react-props-muted" style={{ marginTop: 4 }}>
+          {ru ? 'Кликните по объекту на слайде (Esc — отмена)' : 'Click an object on the slide (Esc to cancel)'}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function GradientAngleSlider({ el, field, patch, ru }) {
+  const label = ru ? 'Угол градиента' : 'Gradient angle';
+  const anglePatch = (value) => ({ [field]: Math.round(value) });
+  return (
+    <GSlider
+      label={label}
+      min={0}
+      max={360}
+      step={1}
+      value={el[field] ?? 90}
+      onChange={(value) => patch(anglePatch(value))}
+      onScrubStart={() => useHistoryStore.getState().push()}
+      onScrubChange={(value) =>
+        usePresentationStore.getState().patchElement(el.id, anglePatch(value), { live: true })
+      }
+      onScrubEnd={() => usePresentationStore.getState().persist()}
+    />
+  );
+}
+
 function ShapeGeomFields({ el, patch, ru }) {
   const meta = getShapeMeta(el.shape || 'rect');
   const special = meta?.special || el.shape;
   const curveEditMode = useUiStore((s) => s.curveEditMode);
+  const curveNodeSel = useUiStore((s) => s.curveNodeSel);
   if (special === 'ellipse' || el.shape === 'circle' || el.shape === 'ellipse') {
     const mode = el.arcMode || 'full';
     return (
       <>
         <label className="react-props-field">
           <span>{ru ? 'Режим дуги' : 'Arc mode'}</span>
-          <select value={mode} onChange={(e) => patch({ arcMode: e.target.value })}>
+          <select
+            value={mode}
+            onChange={(e) => {
+              const arcMode = e.target.value;
+              const next = { arcMode };
+              if (arcMode !== 'full') {
+                if (el.arcStart == null) next.arcStart = 0;
+                if (el.arcEnd == null) next.arcEnd = 270;
+              }
+              patch(next);
+            }}
+          >
             <option value="full">{ru ? 'Полный' : 'Full'}</option>
             <option value="sector">{ru ? 'Сектор' : 'Sector'}</option>
             <option value="chord">{ru ? 'Хорда' : 'Chord'}</option>
           </select>
         </label>
         {mode !== 'full' ? (
-          <div className="react-props-grid">
-            <label className="react-props-field react-props-field-compact">
-              <span>{ru ? 'Начало °' : 'Start °'}</span>
-              <input
-                type="number"
-                min="0"
-                max="360"
-                value={el.arcStart ?? 0}
-                onChange={(e) => patch({ arcStart: +e.target.value })}
-              />
-            </label>
-            <label className="react-props-field react-props-field-compact">
-              <span>{ru ? 'Конец °' : 'End °'}</span>
-              <input
-                type="number"
-                min="0"
-                max="360"
-                value={el.arcEnd ?? 270}
-                onChange={(e) => patch({ arcEnd: +e.target.value })}
-              />
-            </label>
-          </div>
+          <>
+            <GSlider
+              label={ru ? 'Начало °' : 'Start °'}
+              min={0}
+              max={360}
+              step={1}
+              value={Math.round(el.arcStart ?? 0)}
+              onChange={(value) => patch({ arcStart: Math.round(value) })}
+              onScrubStart={() => useHistoryStore.getState().push()}
+              onScrubChange={(value) =>
+                usePresentationStore.getState().patchElement(el.id, { arcStart: Math.round(value) }, { live: true })
+              }
+              onScrubEnd={() => usePresentationStore.getState().persist()}
+            />
+            <GSlider
+              label={ru ? 'Конец °' : 'End °'}
+              min={0}
+              max={360}
+              step={1}
+              value={Math.round(el.arcEnd ?? 270)}
+              onChange={(value) => patch({ arcEnd: Math.round(value) })}
+              onScrubStart={() => useHistoryStore.getState().push()}
+              onScrubChange={(value) =>
+                usePresentationStore.getState().patchElement(el.id, { arcEnd: Math.round(value) }, { live: true })
+              }
+              onScrubEnd={() => usePresentationStore.getState().persist()}
+            />
+          </>
         ) : null}
       </>
     );
@@ -189,30 +374,47 @@ function ShapeGeomFields({ el, patch, ru }) {
     const pts = el.curvePoints || [];
     return (
       <>
-        <button
-          type="button"
-          className={`react-props-btn${curveEditMode ? ' is-active' : ''}`}
-          style={{ width: '100%', marginBottom: 6 }}
-          onClick={() => {
-            const next = !useUiStore.getState().curveEditMode;
-            useUiStore.getState().setCurveEditMode(next);
-            if (!next) {
-              const bbox = applyCurveBBox(el);
-              if (bbox) editorApi.patchElementHistory(el.id, bbox);
-            }
-          }}
-        >
-          {curveEditMode ? (ru ? 'Перемещение' : 'Move') : ru ? 'Узлы' : 'Nodes'}
-        </button>
         {curveEditMode ? (
           <div className="react-props-actions" style={{ gap: 4, marginBottom: 6 }}>
             <button
               type="button"
               className="react-props-btn"
               style={{ flex: 1 }}
+              title={
+                ru
+                  ? 'Тип узла: острый → симметричный → сглаженный'
+                  : 'Node type: corner → symmetric → smooth'
+              }
               onClick={() => {
-                const next = addCurveNode(el.curvePoints || defaultCurvePoints(), !!el.curveClosed);
+                const sel = useUiStore.getState().curveNodeSel || [];
+                const idxs = sel.length ? sel : [0];
+                const next = cycleCurveNodeType(
+                  el.curvePoints || defaultCurvePoints(),
+                  idxs,
+                  !!el.curveClosed
+                );
                 editorApi.patchElementHistory(el.id, { curvePoints: next });
+              }}
+            >
+              {(() => {
+                const idx = curveNodeSel?.length ? curveNodeSel[curveNodeSel.length - 1] : 0;
+                const t = pts[idx]?.type;
+                return curveNodeTypeLabel(t, ru);
+              })()}
+            </button>
+            <button
+              type="button"
+              className="react-props-btn"
+              style={{ flex: 1 }}
+              onClick={() => {
+                const added = addCurveNode(
+                  el.curvePoints || defaultCurvePoints(),
+                  !!el.curveClosed,
+                  useUiStore.getState().curveNodeSel
+                );
+                const fitted = applyCurveBBox({ ...el, curvePoints: added.pts });
+                editorApi.patchElementHistory(el.id, fitted || { curvePoints: added.pts });
+                useUiStore.getState().setCurveNodeSel([added.select]);
               }}
             >
               {ru ? '+ Узел' : '+ Node'}
@@ -223,23 +425,63 @@ function ShapeGeomFields({ el, patch, ru }) {
               style={{ flex: 1 }}
               disabled={pts.length <= 2}
               onClick={() => {
+                const sel = useUiStore.getState().curveNodeSel || [];
+                const idx = sel.length ? sel[sel.length - 1] : pts.length - 1;
                 const next = deleteCurveNode(
                   el.curvePoints || defaultCurvePoints(),
-                  pts.length - 1,
+                  idx,
                   !!el.curveClosed
                 );
                 editorApi.patchElementHistory(el.id, { curvePoints: next });
+                useUiStore.getState().setCurveNodeSel([Math.max(0, Math.min(idx, next.length - 1))]);
               }}
             >
               {ru ? '− Узел' : '− Node'}
             </button>
           </div>
         ) : null}
+        {curveEditMode ? (
+          <GSlider
+            label={ru ? 'Толщина узла' : 'Node width'}
+            min={0.5}
+            max={40}
+            step={0.5}
+            value={(() => {
+              const idx = curveNodeSel?.length ? curveNodeSel[curveNodeSel.length - 1] : 0;
+              const pt = pts[idx];
+              return pt && pt.sw != null ? +pt.sw : el.sw != null ? +el.sw : 2;
+            })()}
+            onChange={(value) => {
+              const idx = (useUiStore.getState().curveNodeSel || [])[0] != null
+                ? useUiStore.getState().curveNodeSel[useUiStore.getState().curveNodeSel.length - 1]
+                : 0;
+              const base = el.sw != null ? +el.sw : 2;
+              const next = setCurveNodeWidth(el.curvePoints || defaultCurvePoints(), idx, value, base);
+              const fitted = applyCurveBBox({ ...el, curvePoints: next });
+              editorApi.patchElementHistory(el.id, fitted || { curvePoints: next });
+            }}
+            onScrubStart={() => useHistoryStore.getState().push()}
+            onScrubChange={(value) => {
+              const sel = useUiStore.getState().curveNodeSel || [];
+              const idx = sel.length ? sel[sel.length - 1] : 0;
+              const base = el.sw != null ? +el.sw : 2;
+              const next = setCurveNodeWidth(el.curvePoints || defaultCurvePoints(), idx, value, base);
+              usePresentationStore.getState().patchElement(el.id, { curvePoints: next }, { live: true });
+            }}
+            onScrubEnd={() => usePresentationStore.getState().persist()}
+          />
+        ) : null}
         <label className="react-props-check">
           <input
             type="checkbox"
             checked={!!el.curveClosed}
-            onChange={(e) => patch({ curveClosed: e.target.checked })}
+            onChange={(e) => {
+              if (e.target.checked) {
+                patch({ curveClosed: true, lineFromMarker: 'none', lineToMarker: 'none' });
+              } else {
+                patch({ curveClosed: false });
+              }
+            }}
           />
           {ru ? 'Замкнутая кривая' : 'Closed curve'}
         </label>
@@ -248,42 +490,49 @@ function ShapeGeomFields({ el, patch, ru }) {
   }
   if (special === 'polygon') {
     return (
-      <label className="react-props-field">
-        <span>{ru ? 'Количество углов' : 'Corners'}</span>
-        <input
-          type="number"
-          min="3"
-          max="16"
-          value={el.polySides ?? el.sides ?? 6}
-          onChange={(e) => patch({ polySides: +e.target.value, sides: +e.target.value })}
-        />
-      </label>
+      <GSlider
+        label={ru ? 'Количество углов' : 'Corners'}
+        min={3}
+        max={16}
+        step={1}
+        value={el.polySides ?? el.sides ?? 6}
+        onChange={(value) => patch({ polySides: Math.round(value), sides: Math.round(value) })}
+      />
     );
   }
   if (special === 'star') {
+    const rays = Math.max(4, Math.min(32, Math.round(el.starRays ?? 5)));
+    const inner = Math.max(0.1, Math.min(0.9, +(el.starInner ?? 0.45)));
     return (
       <>
-        <label className="react-props-field">
-          <span>{ru ? 'Количество лучей' : 'Rays'}</span>
-          <input
-            type="number"
-            min="4"
-            max="32"
-            value={el.starRays ?? 5}
-            onChange={(e) => patch({ starRays: +e.target.value })}
-          />
-        </label>
-        <label className="react-props-field react-props-field-compact">
-          <span>{ru ? 'Внутр. радиус' : 'Inner'}</span>
-          <input
-            type="number"
-            min="0.1"
-            max="0.9"
-            step="0.05"
-            value={el.starInner ?? 0.45}
-            onChange={(e) => patch({ starInner: +e.target.value })}
-          />
-        </label>
+        <GSlider
+          label={ru ? 'Количество лучей' : 'Rays'}
+          min={4}
+          max={32}
+          step={1}
+          value={rays}
+          onChange={(value) => patch({ starRays: Math.round(value) })}
+          onScrubStart={() => useHistoryStore.getState().push()}
+          onScrubChange={(value) =>
+            usePresentationStore.getState().patchElement(el.id, { starRays: Math.round(value) }, { live: true })
+          }
+          onScrubEnd={() => usePresentationStore.getState().persist()}
+        />
+        <GSlider
+          label={ru ? 'Внутр. радиус' : 'Inner radius'}
+          min={0.1}
+          max={0.9}
+          step={0.05}
+          value={inner}
+          onChange={(value) => patch({ starInner: Math.round(value * 100) / 100 })}
+          onScrubStart={() => useHistoryStore.getState().push()}
+          onScrubChange={(value) =>
+            usePresentationStore
+              .getState()
+              .patchElement(el.id, { starInner: Math.round(value * 100) / 100 }, { live: true })
+          }
+          onScrubEnd={() => usePresentationStore.getState().persist()}
+        />
       </>
     );
   }
@@ -353,21 +602,59 @@ function ShapeGeomFields({ el, patch, ru }) {
       </>
     );
   }
-  if (special === 'moon') {
-    const ui = Math.round(normalizeMoonPhase(el.moonPhase) * 100);
+  if (special === 'arrow') {
+    const head = normalizeArrowHead(el.arrowHead);
     return (
       <label className="react-props-field">
-        <span>{ru ? 'Фаза луны (−100…100)' : 'Moon phase (−100…100)'}</span>
+        <span>{ru ? 'Наконечник (%)' : 'Head %'}</span>
         <input
           type="number"
-          min="-100"
-          max="100"
-          value={ui}
-          onChange={(e) =>
-            patch({ moonPhase: Math.max(-100, Math.min(100, +e.target.value)) / 100 })
-          }
+          min="10"
+          max="70"
+          value={head}
+          onChange={(e) => patch({ arrowHead: normalizeArrowHead(+e.target.value) })}
         />
       </label>
+    );
+  }
+  if (special === 'noSymbol') {
+    const inner = Math.max(0.12, Math.min(0.88, +(el.ringInner ?? 0.5)));
+    return (
+      <GSlider
+        label={ru ? 'Внутр. радиус' : 'Inner radius'}
+        min={0.12}
+        max={0.88}
+        step={0.02}
+        value={inner}
+        onChange={(value) => patch({ ringInner: Math.round(value * 100) / 100 })}
+        onScrubStart={() => useHistoryStore.getState().push()}
+        onScrubChange={(value) =>
+          usePresentationStore
+            .getState()
+            .patchElement(el.id, { ringInner: Math.round(value * 100) / 100 }, { live: true })
+        }
+        onScrubEnd={() => usePresentationStore.getState().persist()}
+      />
+    );
+  }
+  if (special === 'moon') {
+    const phase = normalizeMoonPhase(el.moonPhase);
+    return (
+      <GSlider
+        label={ru ? 'Фаза луны' : 'Moon phase'}
+        min={-1}
+        max={1}
+        step={0.05}
+        value={Math.round(phase * 100) / 100}
+        onChange={(value) => patch({ moonPhase: Math.max(-1, Math.min(1, +value)) })}
+        onScrubStart={() => useHistoryStore.getState().push()}
+        onScrubChange={(value) =>
+          usePresentationStore
+            .getState()
+            .patchElement(el.id, { moonPhase: Math.max(-1, Math.min(1, +value)) }, { live: true })
+        }
+        onScrubEnd={() => usePresentationStore.getState().persist()}
+      />
     );
   }
   if (special === 'gear') {
@@ -427,6 +714,73 @@ function FlipIconButtons({ flipH, flipV, onFlipH, onFlipV, ru }) {
         </svg>
       </button>
     </div>
+  );
+}
+
+function TimerStartFields({ el, slides, ru }) {
+  const pick = useUiStore((s) => s.timerTriggerPick);
+  const picking = !!(pick && String(pick.timerElId) === String(el.id));
+  const mode = el.tmStart || 'auto';
+  const pickedLabel = el.tmStartElId
+    ? triggerElLabel(slides, el.tmStartElId, ru ? 'ru' : 'en')
+    : '';
+
+  function setStart(val) {
+    const patch = { tmStart: val };
+    if (val !== 'click-el') patch.tmStartElId = '';
+    editorApi.patchApplet(el.id, patch);
+  }
+
+  return (
+    <>
+      <label className="react-props-field">
+        <span>{ru ? 'Запуск' : 'Start'}</span>
+        <select value={mode} onChange={(e) => setStart(e.target.value)}>
+          <option value="auto">{ru ? 'Со слайдом' : 'With slide'}</option>
+          <option value="click-slide">{ru ? 'По клику на слайде' : 'Click on slide'}</option>
+          <option value="click-el">{ru ? 'Клик по объекту' : 'Click object'}</option>
+        </select>
+      </label>
+      {mode === 'click-el' ? (
+        <div className="react-props-field">
+          <span>{ru ? 'Объект-триггер' : 'Trigger object'}</span>
+          {pickedLabel ? (
+            <div className="react-media-trigger-row" style={{ marginTop: 4 }}>
+              <span>{pickedLabel}</span>
+              <button
+                type="button"
+                className="react-props-btn"
+                onClick={() => editorApi.patchApplet(el.id, { tmStartElId: '' })}
+              >
+                ✕
+              </button>
+            </div>
+          ) : (
+            <div className="react-props-muted" style={{ marginTop: 4 }}>
+              {ru ? 'Не выбран' : 'None'}
+            </div>
+          )}
+          <button
+            type="button"
+            className={`react-props-btn${picking ? ' is-active' : ''}`}
+            style={{ width: '100%', justifyContent: 'center', marginTop: 6 }}
+            onClick={() => {
+              if (picking) editorApi.cancelTimerTriggerPick();
+              else editorApi.startTimerTriggerPick(el.id);
+            }}
+          >
+            {ru ? '🎯 Выбрать объект' : '🎯 Select object'}
+          </button>
+          {picking ? (
+            <div className="react-props-muted" style={{ marginTop: 4 }}>
+              {ru
+                ? 'Кликните по объекту на слайде (Esc — отмена)'
+                : 'Click an object on the slide (Esc to cancel)'}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -498,12 +852,28 @@ function AppletOnEndFields({ el, slides, slide, ru, kind }) {
   );
 }
 
-function ShadowFields({ el, patch, ru }) {
-  const on = el.shadow === true || el.shadow === 'true';
+function ShadowFields({ el, patch, ru, keys }) {
+  const onKey = keys?.on || 'shadow';
+  const blurKey = keys?.blur || 'shadowBlur';
+  const sizeKey = keys?.size || 'shadowSize';
+  const colorKey = keys?.color || 'shadowColor';
+  const schemeKey =
+    keys?.scheme ||
+    (colorKey === 'shadowColor'
+      ? 'shadowColorScheme'
+      : colorKey === 'imgShadowColor'
+        ? 'imgShadowColorScheme'
+        : null);
+  const insetKey = keys?.inset || 'shadowInset';
+  const allowInset = !!keys?.allowInset;
+  const defaultBlur = keys?.defaultBlur ?? 4;
+  const defaultSize = keys?.defaultSize ?? 3;
+  const on = el[onKey] === true || el[onKey] === 'true';
+  const insetOn = el[insetKey] === true || el[insetKey] === 'true' || el[insetKey] === '1';
   return (
     <>
       <div className="react-tog-row">
-        <Toggle checked={on} onChange={(v) => patch({ shadow: v })} title={ru ? 'Тень' : 'Shadow'} />
+        <Toggle checked={on} onChange={(v) => patch({ [onKey]: v })} title={ru ? 'Тень' : 'Shadow'} />
         <span>{ru ? 'Включить тень' : 'Enable shadow'}</span>
       </div>
       {on ? (
@@ -514,23 +884,40 @@ function ShadowFields({ el, patch, ru }) {
               min={0}
               max={40}
               step={1}
-              value={el.shadowBlur ?? 4}
-              onChange={(v) => patch({ shadowBlur: v })}
+              value={el[blurKey] ?? defaultBlur}
+              onChange={(v) => patch({ [blurKey]: v })}
             />
             <GSlider
               label={ru ? 'Смещение' : 'Offset'}
               min={0}
               max={40}
               step={1}
-              value={el.shadowSize ?? 3}
-              onChange={(v) => patch({ shadowSize: v })}
+              value={el[sizeKey] ?? defaultSize}
+              onChange={(v) => patch({ [sizeKey]: v })}
             />
           </div>
           <ColorField
             label={ru ? 'Цвет тени' : 'Shadow color'}
-            value={el.shadowColor || '#000000'}
-            onChange={(c) => patch({ shadowColor: c })}
+            value={el[colorKey] || '#000000'}
+            schemeRef={schemeKey ? el[schemeKey] ?? null : null}
+            onChange={(c, sr) =>
+              patch(
+                schemeKey
+                  ? { [colorKey]: c, [schemeKey]: sr ?? null }
+                  : { [colorKey]: c }
+              )
+            }
           />
+          {allowInset ? (
+            <div className="react-tog-row">
+              <Toggle
+                checked={insetOn}
+                onChange={(v) => patch({ [insetKey]: !!v })}
+                title={ru ? 'Внутренняя тень' : 'Inner shadow'}
+              />
+              <span>{ru ? 'Внутренняя тень' : 'Inner shadow'}</span>
+            </div>
+          ) : null}
         </>
       ) : null}
     </>
@@ -548,12 +935,379 @@ function appletSectionTitle(el, ru) {
   if (id === 'timer') return ru ? 'Таймер' : 'Timer';
   if (id === 'counter') return ru ? 'Счётчик' : 'Counter';
   if (id === 'notes') return ru ? 'Заметка' : 'Notes';
+  if (id === 'classification') return ru ? '⚖ Классификация' : '⚖ Classification';
+  if (id === 'imagesort') return ru ? '📌 Сортировка картинок' : '📌 Image sort';
   return ru ? 'Аплет' : 'Applet';
+}
+
+function ImageSortProps({ el, ru }) {
+  const imageSortMarkerId = useUiStore((s) => s.imageSortMarkerId);
+  const markers = getImageSortMarkers(el);
+  const rowRefs = useRef({});
+
+  useEffect(() => {
+    const id = imageSortMarkerId ? String(imageSortMarkerId) : '';
+    if (!id) return;
+    const node = rowRefs.current[id];
+    if (node?.scrollIntoView) {
+      try {
+        node.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      } catch (e) {}
+    }
+  }, [imageSortMarkerId]);
+
+  return (
+    <>
+      <div className="react-props-actions" style={{ marginBottom: 8, display: 'flex', gap: 8 }}>
+        <button
+          type="button"
+          className="react-props-btn"
+          style={{ flex: 1 }}
+          title={ru ? 'Добавить метку' : 'Add marker'}
+          onClick={() => editorApi.addImageSortMarker(el.id)}
+        >
+          + {ru ? 'Метка' : 'Marker'}
+        </button>
+      </div>
+      <div className="react-imagesort-props-list" role="list">
+        {markers.length === 0 ? (
+          <p className="react-props-muted">
+            {ru ? 'Нет меток — нажмите «+ Метка».' : 'No markers — press “+ Marker”.'}
+          </p>
+        ) : (
+          markers.map((m, i) => {
+            const on = String(imageSortMarkerId || '') === String(m.id);
+            return (
+              <div
+                key={m.id}
+                ref={(node) => {
+                  if (node) rowRefs.current[m.id] = node;
+                  else delete rowRefs.current[m.id];
+                }}
+                role="listitem"
+                className={`react-imagesort-props-row${on ? ' is-sel' : ''}`}
+                onClick={() => editorApi.selectImageSortMarker(el.id, m.id)}
+              >
+                <span className="react-imagesort-props-idx" aria-hidden="true">
+                  {i + 1}
+                </span>
+                <input
+                  type="text"
+                  className="react-imagesort-props-input"
+                  value={m.answer || ''}
+                  placeholder={ru ? 'Ответ (\\n — новая строка)' : 'Answer (\\n = new line)'}
+                  onClick={(e) => e.stopPropagation()}
+                  onFocus={() => editorApi.selectImageSortMarker(el.id, m.id)}
+                  onChange={(e) =>
+                    editorApi.updateImageSortMarker(el.id, m.id, { answer: e.target.value })
+                  }
+                />
+                <button
+                  type="button"
+                  className="react-color-field-icon"
+                  title={ru ? 'Удалить' : 'Delete'}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    editorApi.removeImageSortMarker(el.id, m.id);
+                  }}
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                    <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" />
+                  </svg>
+                </button>
+              </div>
+            );
+          })
+        )}
+      </div>
+      <label className="react-props-field">
+        <span>{ru ? 'Кнопка' : 'Button'}</span>
+        <input
+          type="text"
+          value={el.sortBtnLabel ?? IMAGE_SORT_DEFAULTS.sortBtnLabel}
+          onChange={(e) => editorApi.patchApplet(el.id, { sortBtnLabel: e.target.value })}
+        />
+      </label>
+      <ColorField
+        label={ru ? 'Цвет кнопки' : 'Button color'}
+        value={el.sortBtnColor || ''}
+        schemeRef={
+          el.sortBtnColorScheme || (!el.sortBtnColor ? IMAGE_SORT_DEFAULTS.sortBtnColorScheme : null)
+        }
+        onChange={(c, sr) =>
+          editorApi.patchApplet(el.id, {
+            sortBtnColor: c,
+            sortBtnColorScheme: sr || null,
+          })
+        }
+      />
+      <label className="react-props-field">
+        <span>{ru ? 'Успех' : 'Success'}</span>
+        <input
+          type="text"
+          value={el.sortOkText ?? IMAGE_SORT_DEFAULTS.sortOkText}
+          onChange={(e) => editorApi.patchApplet(el.id, { sortOkText: e.target.value })}
+        />
+      </label>
+      <label className="react-props-field">
+        <span>{ru ? 'Неудача' : 'Failure'}</span>
+        <input
+          type="text"
+          value={el.sortFailText ?? IMAGE_SORT_DEFAULTS.sortFailText}
+          onChange={(e) => editorApi.patchApplet(el.id, { sortFailText: e.target.value })}
+        />
+      </label>
+    </>
+  );
 }
 
 /**
  * Element property editors — migrated slice of legacy #elprops.
  */
+function LinkPropsSection({ el, ru }) {
+  const caretLink = useUiStore((s) => s.caretLink);
+  const displayHref = caretLink?.href || el?.link || '';
+  const hover = caretLink?.hover || el?.linkHover || DEFAULT_LINK_HOVER;
+
+  useEffect(() => {
+    const sync = () => editorApi.syncCaretLink();
+    document.addEventListener('selectionchange', sync);
+    sync();
+    return () => document.removeEventListener('selectionchange', sync);
+  }, [el?.id]);
+
+  return (
+    <>
+      <div className="react-props-hdr" style={{ marginTop: 8 }}>
+        {ru ? 'Ссылка' : 'Link'}
+      </div>
+      <div className="react-props-field">
+        <label className="react-props-field">
+          <span>URL</span>
+          <input
+            type="text"
+            readOnly
+            value={displayHref}
+            placeholder={ru ? 'Добавить…' : 'Add…'}
+            onClick={() => editorApi.openLinkModal()}
+            style={{ cursor: 'pointer' }}
+            title={ru ? 'Нажмите, чтобы изменить' : 'Click to edit'}
+          />
+        </label>
+        {displayHref ? (
+          <p className="react-props-muted" style={{ marginTop: 4, wordBreak: 'break-all' }}>
+            {caretLink?.href
+              ? ru
+                ? 'Фрагмент текста под курсором'
+                : 'Text under caret'
+              : ru
+                ? 'Ссылка на весь объект'
+                : 'Whole-object link'}
+          </p>
+        ) : null}
+        <div className="react-props-row" style={{ marginTop: 6 }}>
+          <button type="button" className="react-props-btn" onClick={() => editorApi.openLinkModal()}>
+            {displayHref ? (ru ? 'Изменить…' : 'Edit…') : ru ? 'Добавить…' : 'Add…'}
+          </button>
+          {displayHref ? (
+            <button
+              type="button"
+              className="react-props-btn react-props-btn-ghost"
+              onClick={() => {
+                if (caretLink?.href) captureInlineLinkSelection();
+                editorApi.removeLink();
+              }}
+            >
+              {ru ? 'Убрать' : 'Remove'}
+            </button>
+          ) : null}
+        </div>
+        {displayHref ? (
+          <div style={{ marginTop: 8 }}>
+            <span>{ru ? 'Цвет при наведении' : 'Hover color'}</span>
+            <ColorField
+              value={hover}
+              schemeRef={caretLink?.hoverScheme || el?.linkHoverScheme || null}
+              onChange={(c, sr) => {
+                if (caretLink?.href) editorApi.setInlineLinkHover(c, sr ?? null);
+                else {
+                  const id = el?.id;
+                  if (id) {
+                    usePresentationStore.getState().patchElement(id, {
+                      linkHover: c,
+                      linkHoverScheme: sr ?? null,
+                    });
+                  }
+                }
+              }}
+            />
+          </div>
+        ) : null}
+      </div>
+    </>
+  );
+}
+
+function GuidesPropsPanel({ ru, canvasW, canvasH }) {
+  const guides = usePresentationStore((s) => (Array.isArray(s.guides) ? s.guides : []));
+  const selGuideId = useUiStore((s) => s.selGuideId);
+  const guidesVisible = useUiStore((s) => s.guidesVisible);
+  const cw = Math.max(100, +canvasW || DEFAULT_CANVAS_W);
+  const ch = Math.max(100, +canvasH || DEFAULT_CANVAS_H);
+
+  function patchGuides(next, opts = {}) {
+    usePresentationStore.getState().setGuides(next, opts);
+  }
+
+  function updateGuide(id, patch, opts = {}) {
+    const next = guides.map((g) => (g && String(g.id) === String(id) ? { ...g, ...patch } : g));
+    patchGuides(next, opts);
+  }
+
+  function addGuide() {
+    useHistoryStore.getState().push();
+    const g = createGuide({ x: Math.round(cw / 2), y: Math.round(ch / 2), angle: 0 });
+    patchGuides([...guides, g]);
+    useUiStore.getState().setSelGuideId(g.id);
+    if (!useUiStore.getState().guidesVisible) useUiStore.getState().setGuidesVisible(true);
+  }
+
+  function removeGuide(id) {
+    useHistoryStore.getState().push();
+    const next = guides.filter((g) => g && String(g.id) !== String(id));
+    patchGuides(next);
+    if (String(selGuideId) === String(id)) useUiStore.getState().setSelGuideId(null);
+  }
+
+  return (
+    <section className="react-props-section react-guides-props">
+      <div className="react-props-hdr" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ flex: 1 }}>{ru ? 'Направляющие' : 'Guides'}</span>
+        <button
+          type="button"
+          className={`react-props-btn${guidesVisible ? ' is-active' : ''}`}
+          style={{ minWidth: 56, padding: '4px 8px', fontSize: 11, lineHeight: 1.2 }}
+          title={
+            guidesVisible
+              ? ru
+                ? 'Скрыть направляющие на холсте'
+                : 'Hide guides on canvas'
+              : ru
+                ? 'Показать направляющие на холсте'
+                : 'Show guides on canvas'
+          }
+          onClick={() => useUiStore.getState().toggleGuidesVisible()}
+        >
+          {guidesVisible ? (ru ? 'Скрыть' : 'Hide') : ru ? 'Показать' : 'Show'}
+        </button>
+        <button
+          type="button"
+          className="react-props-btn"
+          style={{ width: 32, padding: '4px 0', fontSize: 16, lineHeight: 1 }}
+          title={ru ? 'Добавить направляющую' : 'Add guide'}
+          onClick={addGuide}
+        >
+          +
+        </button>
+      </div>
+      <p className="react-props-muted" style={{ marginBottom: 8 }}>
+        {ru
+          ? 'Общие для всех слайдов. X/Y — точка, угол 0° — горизонталь. Alt+перетаскивание — копия; за слайд — удаление.'
+          : 'Shared across all slides. X/Y origin, 0° = horizontal. Alt+drag copies; off-slide deletes.'}
+      </p>
+      {guides.length === 0 ? (
+        <div className="react-props-muted">{ru ? 'Нет направляющих' : 'No guides'}</div>
+      ) : (
+        guides.map((g, i) => {
+          if (!g) return null;
+          const selected = String(selGuideId) === String(g.id);
+          return (
+            <div
+              key={g.id || i}
+              className={`react-guides-row${selected ? ' is-sel' : ''}`}
+              onClick={() => useUiStore.getState().setSelGuideId(g.id)}
+            >
+              <div className="react-guides-row-sliders">
+                <GSlider
+                  label="X"
+                  min={0}
+                  max={cw}
+                  step={0.1}
+                  value={Math.round((+g.x || 0) * 100) / 100}
+                  onChange={(v) => {
+                    useHistoryStore.getState().push();
+                    updateGuide(g.id, { x: Math.round(v * 100) / 100 });
+                  }}
+                  onScrubStart={() => useHistoryStore.getState().push()}
+                  onScrubChange={(v) =>
+                    updateGuide(g.id, { x: Math.round(v * 100) / 100 }, { live: true })
+                  }
+                  onScrubEnd={() => usePresentationStore.getState().persist()}
+                />
+                <GSlider
+                  label="Y"
+                  min={0}
+                  max={ch}
+                  step={0.1}
+                  value={Math.round((+g.y || 0) * 100) / 100}
+                  onChange={(v) => {
+                    useHistoryStore.getState().push();
+                    updateGuide(g.id, { y: Math.round(v * 100) / 100 });
+                  }}
+                  onScrubStart={() => useHistoryStore.getState().push()}
+                  onScrubChange={(v) =>
+                    updateGuide(g.id, { y: Math.round(v * 100) / 100 }, { live: true })
+                  }
+                  onScrubEnd={() => usePresentationStore.getState().persist()}
+                />
+                <GSlider
+                  label={ru ? 'Угол' : 'Angle'}
+                  min={0}
+                  max={180}
+                  step={1}
+                  value={Math.round(+g.angle || 0)}
+                  onChange={(v) => {
+                    useHistoryStore.getState().push();
+                    updateGuide(g.id, { angle: Math.round(v) });
+                  }}
+                  onScrubStart={() => useHistoryStore.getState().push()}
+                  onScrubChange={(v) => updateGuide(g.id, { angle: Math.round(v) }, { live: true })}
+                  onScrubEnd={() => usePresentationStore.getState().persist()}
+                />
+              </div>
+              <button
+                type="button"
+                className="react-props-btn react-props-btn-warn"
+                style={{ width: 32, flex: '0 0 auto', padding: '4px 0', fontSize: 14 }}
+                title={ru ? 'Удалить' : 'Delete'}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeGuide(g.id);
+                }}
+              >
+                🗑
+              </button>
+            </div>
+          );
+        })
+      )}
+      <button
+        type="button"
+        className="react-props-btn"
+        style={{ width: '100%', marginTop: 10 }}
+        onClick={() => useUiStore.getState().setGuidesEditMode(false)}
+      >
+        {ru ? 'Закрыть' : 'Close'}
+      </button>
+    </section>
+  );
+}
+
 export default function ElementPropsPanel() {
   const selId = useSelectionStore((s) => s.selId);
   const multiSel = useSelectionStore((s) => s.multiSel);
@@ -566,6 +1320,13 @@ export default function ElementPropsPanel() {
   const canvasH = usePresentationStore((s) => s.canvasH);
   const appliedThemeIdx = usePresentationStore((s) => s.appliedThemeIdx);
   const lang = useUiStore((s) => s.lang);
+  const tableBorderPaint = useUiStore((s) => s.tableBorderPaint);
+  const shapeNodeMode = useUiStore((s) => s.shapeNodeMode);
+  const shapeFillImgEditId = useUiStore((s) => s.shapeFillImgEditId);
+  const curveEditMode = useUiStore((s) => s.curveEditMode);
+  const curveNodeSel = useUiStore((s) => s.curveNodeSel);
+  const guidesEditMode = useUiStore((s) => s.guidesEditMode);
+  const transformEditMode = useUiStore((s) => s.transformEditMode);
   const canUndo = useHistoryStore((s) => s.canUndo);
   const canRedo = useHistoryStore((s) => s.canRedo);
 
@@ -573,6 +1334,12 @@ export default function ElementPropsPanel() {
   const els = slide.els || [];
   const multiIds = (multiSel?.length ? multiSel : selId ? [selId] : []).map(String);
   const el = selId ? els.find((e) => e && String(e.id) === String(selId)) : null;
+  /** Stable per-slide number («Элемент N») — does not shift when other els are deleted. */
+  const elSlideNum = el ? slideElementNumber(els, el) : 0;
+
+  useEffect(() => {
+    usePresentationStore.getState().ensureSlideNumsOnSlide?.(cur);
+  }, [cur, els.length]);
   const conn = selConnId
     ? (slide.connectors || []).find((c) => c && String(c.id) === String(selConnId))
     : null;
@@ -583,6 +1350,11 @@ export default function ElementPropsPanel() {
   const cw = Math.max(100, +canvasW || DEFAULT_CANVAS_W);
   const ch = Math.max(100, +canvasH || DEFAULT_CANVAS_H);
   const canDrawAngle = multiIds.length === 2 && canDrawAngleBetweenSelected(els, multiIds);
+
+  // Guides props panel while Design → Guides is on (selection on canvas is left alone).
+  if (guidesEditMode) {
+    return <GuidesPropsPanel ru={ru} canvasW={cw} canvasH={ch} />;
+  }
 
   if (multiIds.length > 1) {
     return (
@@ -624,6 +1396,14 @@ export default function ElementPropsPanel() {
           </button>
         ) : null}
         <div className="react-props-actions">
+          <button
+            type="button"
+            className="react-props-btn"
+            title={ru ? 'Очистить форматирование' : 'Clear formatting'}
+            onClick={() => editorApi.resetFormattingSelected()}
+          >
+            {ru ? 'Очистить форматирование' : 'Clear formatting'}
+          </button>
           <button type="button" className="react-props-btn" disabled={!canUndo} onClick={() => editorApi.undo()}>
             {ru ? 'Отменить' : 'Undo'}
           </button>
@@ -900,7 +1680,7 @@ export default function ElementPropsPanel() {
   }
 
   function applyTextStyle(stylePatch, schemeRef) {
-    if (el.type !== 'text' && el.type !== 'formula') return;
+    if (el.type !== 'text' && el.type !== 'formula' && el.type !== 'shape') return;
     if (stylePatch.fontSize != null || stylePatch.color != null) {
       editorApi.applyTextInline({
         fontSize: stylePatch.fontSize != null ? +stylePatch.fontSize : undefined,
@@ -909,7 +1689,8 @@ export default function ElementPropsPanel() {
       });
       if (stylePatch.lineHeight == null && stylePatch.letterSpacing == null) return;
     }
-    let cs = el.cs || '';
+    const csKey = el.type === 'shape' ? 'shapeTextCss' : 'cs';
+    let cs = el[csKey] || '';
     if (stylePatch.lineHeight != null) {
       cs = applyCsProp(cs, 'line-height', String(stylePatch.lineHeight));
     }
@@ -917,76 +1698,236 @@ export default function ElementPropsPanel() {
       const v = stylePatch.letterSpacing;
       cs = applyCsProp(cs, 'letter-spacing', v === 0 || v === '0' ? '0' : `${v}px`);
     }
-    patch({ cs });
+    patch({ [csKey]: cs });
   }
+
+  function patchTextRadius(corner, value) {
+    const val = Math.max(0, +value || 0);
+    const base = el.rx ?? 0;
+    const next = {
+      rxUnit: el.rxUnit || 'px',
+      rx_tl: el.rx_tl ?? base,
+      rx_tr: el.rx_tr ?? base,
+      rx_br: el.rx_br ?? base,
+      rx_bl: el.rx_bl ?? base,
+    };
+    if (el.rxAll) {
+      next.rx_tl = val;
+      next.rx_tr = val;
+      next.rx_br = val;
+      next.rx_bl = val;
+    } else {
+      next[`rx_${corner}`] = val;
+    }
+    next.rx = next.rx_tl;
+    patch(next);
+  }
+
+  function patchTextPadding(side, value) {
+    const val = Math.max(0, +value || 0);
+    const next = {
+      padUnit: el.padUnit || 'px',
+      pad_t: el.pad_t ?? 0,
+      pad_r: el.pad_r ?? 0,
+      pad_b: el.pad_b ?? 0,
+      pad_l: el.pad_l ?? 0,
+    };
+    if (el.padAll) {
+      next.pad_t = val;
+      next.pad_r = val;
+      next.pad_b = val;
+      next.pad_l = val;
+    } else {
+      next[`pad_${side}`] = val;
+    }
+    patch(next);
+  }
+
+  const textPadField = (
+    <div className="react-props-field" style={{ marginTop: 8 }}>
+      <div className="react-props-row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+        <span>{ru ? 'Отступ' : 'Padding'}</span>
+        <div className="react-props-row" style={{ display: 'flex', gap: 3 }}>
+          <button
+            type="button"
+            className={`react-props-btn${el.padAll ? ' is-active' : ''}`}
+            style={{ padding: '2px 6px', fontSize: 9 }}
+            title={ru ? 'Одинаковый отступ со всех сторон' : 'Use the same padding on all sides'}
+            aria-pressed={!!el.padAll}
+            onClick={() => {
+              if (el.padAll) {
+                patch({ padAll: false });
+                return;
+              }
+              const value = Math.max(0, +(el.pad_t ?? 0) || 0);
+              patch({
+                padAll: true,
+                pad_t: value,
+                pad_r: value,
+                pad_b: value,
+                pad_l: value,
+              });
+            }}
+          >
+            {ru ? 'Все' : 'All'}
+          </button>
+          {['px', '%'].map((u) => (
+            <button
+              key={u}
+              type="button"
+              className={`react-props-btn${(el.padUnit || 'px') === u ? ' is-active' : ''}`}
+              style={{ padding: '2px 6px', fontSize: 9 }}
+              onClick={() => patch({ padUnit: u })}
+            >
+              {u}
+            </button>
+          ))}
+        </div>
+      </div>
+      <DragValueBox
+        mode="edge"
+        max={el.padUnit === '%' ? 100 : 200}
+        values={{
+          t: el.pad_t ?? 0,
+          r: el.pad_r ?? 0,
+          b: el.pad_b ?? 0,
+          l: el.pad_l ?? 0,
+        }}
+        onChange={patchTextPadding}
+      />
+      <div className="react-props-grid">
+        {[
+          { k: 'pad_t', label: ru ? 'Верх' : 'Top' },
+          { k: 'pad_r', label: ru ? 'Право' : 'Right' },
+          { k: 'pad_b', label: ru ? 'Низ' : 'Bottom' },
+          { k: 'pad_l', label: ru ? 'Лево' : 'Left' },
+        ].map(({ k, label }) => (
+          <GSlider
+            key={k}
+            label={label}
+            min={0}
+            max={el.padUnit === '%' ? 100 : 200}
+            step={1}
+            value={el[k] ?? 0}
+            onChange={(v) => patchTextPadding(k.slice(4), v)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+
+  const transformEditing =
+    !!(
+      transformEditMode &&
+      el &&
+      String(transformEditMode.elId) === String(el.id)
+    );
 
   return (
     <section className="react-props-section" aria-live="polite">
-      {el.type !== 'lineangle' ? (
+      {transformEditing ? (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6,
+            marginBottom: 10,
+            padding: '8px 8px 10px',
+            borderBottom: '1px solid var(--border)',
+          }}
+        >
+          <div className="react-props-hdr" style={{ margin: 0 }}>
+            {ru ? 'Трансформация' : 'Transform'}
+          </div>
+          <button
+            type="button"
+            className="react-props-btn"
+            style={{ width: '100%', justifyContent: 'center', fontWeight: 600 }}
+            onClick={() => editorApi.confirmTransformState(el.id, transformEditMode.ai)}
+          >
+            {ru ? 'Сохранить состояние' : 'Save state'}
+          </button>
+          <button
+            type="button"
+            className="react-props-btn react-props-btn-ghost"
+            style={{ width: '100%', justifyContent: 'center' }}
+            onClick={() => editorApi.cancelTransformEdit()}
+          >
+            {ru ? 'Отмена' : 'Cancel'}
+          </button>
+          <span className="react-props-muted" style={{ fontSize: 11, lineHeight: 1.35 }}>
+            {ru
+              ? 'Меняйте размер, поворот, положение и жёлтые маркеры — это конечное состояние морфинга.'
+              : 'Edit size, rotation, position and yellow handles — this is the morph end state.'}
+          </span>
+        </div>
+      ) : null}
+      {el.type !== 'lineangle' && el.type !== 'lego' ? (
         <>
-          <div className="react-props-hdr">{ru ? 'Элемент' : 'Element'}</div>
-          {el.type !== 'lego' ? (
-            <div className="react-props-el-dims">
-              <div className="react-props-el-grid">
-                <GSlider
-                  label="X"
-                  min={0}
-                  max={cw}
-                  step={1}
-                  value={Math.round(+el.x || 0)}
-                  disabled={!!el.locked}
-                  onChange={(v) => patch({ x: Math.round(v) })}
-                />
-                <GSlider
-                  label="Y"
-                  min={0}
-                  max={ch}
-                  step={1}
-                  value={Math.round(+el.y || 0)}
-                  disabled={!!el.locked}
-                  onChange={(v) => patch({ y: Math.round(v) })}
-                />
-                <GSlider
-                  label={ru ? 'Ш' : 'W'}
-                  min={20}
-                  max={cw}
-                  step={1}
-                  value={Math.round(+el.w || 0)}
-                  disabled={!!el.locked}
-                  onChange={(v) => patch({ w: Math.max(20, Math.round(v)) })}
-                />
-                <GSlider
-                  label={ru ? 'В' : 'H'}
-                  min={10}
-                  max={ch}
-                  step={1}
-                  value={Math.round(+el.h || 0)}
-                  disabled={!!el.locked}
-                  onChange={(v) => patch({ h: Math.max(10, Math.round(v)) })}
-                />
-              </div>
-              <div className="react-props-el-rot">
-                <GSlider
-                  label={ru ? 'Поворот (°)' : 'Rotation (°)'}
-                  min={-360}
-                  max={360}
-                  step={1}
-                  value={Math.round(+el.rot || 0)}
-                  disabled={!!el.locked}
-                  onChange={(v) => patch({ rot: Math.round(v) })}
-                />
-                <button
-                  type="button"
-                  className="react-props-icon-btn"
-                  disabled={!!el.locked || !(+el.rot || 0)}
-                  title={ru ? 'Сбросить вращение' : 'Reset rotation'}
-                  onClick={() => patch({ rot: 0 })}
-                >
-                  ✕
-                </button>
-              </div>
+          <div className="react-props-hdr">
+            {ru ? 'Элемент' : 'Element'}
+            {elSlideNum > 0 ? ` ${elSlideNum}` : ''}
+          </div>
+          <div className="react-props-el-dims">
+            <div className="react-props-el-grid">
+              <GSlider
+                label="X"
+                min={0}
+                max={cw}
+                step={0.1}
+                value={Math.round((+el.x || 0) * 100) / 100}
+                disabled={!!el.locked}
+                onChange={(v) => patch({ x: Math.round(v * 100) / 100 })}
+              />
+              <GSlider
+                label="Y"
+                min={0}
+                max={ch}
+                step={0.1}
+                value={Math.round((+el.y || 0) * 100) / 100}
+                disabled={!!el.locked}
+                onChange={(v) => patch({ y: Math.round(v * 100) / 100 })}
+              />
+              <GSlider
+                label={ru ? 'Ш' : 'W'}
+                min={1}
+                max={cw}
+                step={0.1}
+                value={Math.round((+el.w || 0) * 100) / 100}
+                disabled={!!el.locked}
+                onChange={(v) => patch({ w: Math.max(1, Math.round(v * 100) / 100) })}
+              />
+              <GSlider
+                label={ru ? 'В' : 'H'}
+                min={1}
+                max={ch}
+                step={0.1}
+                value={Math.round((+el.h || 0) * 100) / 100}
+                disabled={!!el.locked}
+                onChange={(v) => patch({ h: Math.max(1, Math.round(v * 100) / 100) })}
+              />
             </div>
-          ) : null}
+            <div className="react-props-el-rot">
+              <GSlider
+                label={ru ? 'Поворот (°)' : 'Rotation (°)'}
+                min={-360}
+                max={360}
+                step={1}
+                value={Math.round(+el.rot || 0)}
+                disabled={!!el.locked}
+                onChange={(v) => patch({ rot: Math.round(v) })}
+              />
+              <button
+                type="button"
+                className="react-props-icon-btn"
+                disabled={!!el.locked || !(+el.rot || 0)}
+                title={ru ? 'Сбросить вращение' : 'Reset rotation'}
+                onClick={() => patch({ rot: 0 })}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
         </>
       ) : null}
 
@@ -997,6 +1938,7 @@ export default function ElementPropsPanel() {
             label={ru ? 'Цвет формулы' : 'Formula color'}
             value={el.formulaColor || el.textColor || '#ffffff'}
             schemeRef={el.formulaColorScheme ?? el.textColorScheme ?? { col: 0, row: 4 }}
+            stylePipette
             onChange={(c, sr) =>
               patch({
                 formulaColor: c,
@@ -1006,6 +1948,60 @@ export default function ElementPropsPanel() {
               })
             }
           />
+          <div className="react-props-field">
+            <label>{ru ? 'Выравнивание' : 'Alignment'}</label>
+            <div className="react-props-row" style={{ gap: 4 }}>
+              {[
+                [
+                  'left',
+                  ru ? 'Слева' : 'Left',
+                  <svg key="l" width="14" height="12" viewBox="0 0 14 12" aria-hidden="true">
+                    <line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" strokeWidth="1.5" />
+                    <line x1="0" y1="5" x2="9" y2="5" stroke="currentColor" strokeWidth="1.5" />
+                    <line x1="0" y1="9" x2="12" y2="9" stroke="currentColor" strokeWidth="1.5" />
+                  </svg>,
+                ],
+                [
+                  'center',
+                  ru ? 'По центру' : 'Center',
+                  <svg key="c" width="14" height="12" viewBox="0 0 14 12" aria-hidden="true">
+                    <line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" strokeWidth="1.5" />
+                    <line x1="2.5" y1="5" x2="11.5" y2="5" stroke="currentColor" strokeWidth="1.5" />
+                    <line x1="1" y1="9" x2="13" y2="9" stroke="currentColor" strokeWidth="1.5" />
+                  </svg>,
+                ],
+                [
+                  'right',
+                  ru ? 'Справа' : 'Right',
+                  <svg key="r" width="14" height="12" viewBox="0 0 14 12" aria-hidden="true">
+                    <line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" strokeWidth="1.5" />
+                    <line x1="5" y1="5" x2="14" y2="5" stroke="currentColor" strokeWidth="1.5" />
+                    <line x1="2" y1="9" x2="14" y2="9" stroke="currentColor" strokeWidth="1.5" />
+                  </svg>,
+                ],
+              ].map(([id, title, icon]) => {
+                const cur = (
+                  ((el.cs || '').match(/text-align\s*:\s*([^;]+)/i) || [])[1] || 'left'
+                )
+                  .trim()
+                  .toLowerCase();
+                const on = (cur === 'center' || cur === 'right' ? cur : 'left') === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    className={`react-props-btn is-icon${on ? ' is-active' : ''}`}
+                    title={title}
+                    aria-pressed={on}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => editorApi.setTextAlign(id)}
+                  >
+                    {icon}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <button type="button" className="react-props-btn" onClick={() => editorApi.addFormula()}>
             {ru ? 'Редактировать LaTeX…' : 'Edit LaTeX…'}
           </button>
@@ -1025,40 +2021,23 @@ export default function ElementPropsPanel() {
           <div className="react-props-hdr">LEGO</div>
           <ColorField
             label={ru ? 'Цвет блока' : 'Brick color'}
-            value={el.legoColor || '#906cf9'}
-            onChange={(c) => patch({ legoColor: c })}
+            value={el.legoColor || LEGO_COLOR_FALLBACK}
+            schemeRef={el.legoColorScheme || null}
+            onChange={(c, sr) => patch({ legoColor: c, legoColorScheme: sr ?? null })}
           />
-          <label className="react-props-field">
-            <span>{ru ? 'Форма' : 'Piece'}</span>
-            <select
-              value={
-                LEGO_PIECES.find(
-                  (p) =>
-                    p.n === +(el.legoStuds || 2) &&
-                    !!p.tall === !!el.legoTall &&
-                    (p.slope || null) === (el.legoSlope || null) &&
-                    (p.stair || null) === (el.legoStair || null)
-                )?.id || '2f'
-              }
-              onChange={(e) => {
-                const piece = LEGO_PIECES.find((p) => p.id === e.target.value) || LEGO_PIECES[1];
-                const next = {
-                  legoStuds: piece.n,
-                  legoTall: !!piece.tall,
-                  legoSlope: piece.slope || null,
-                  legoStair: piece.stair || null,
-                };
-                Object.assign(next, legoSizeFor(next));
-                patch(next);
-              }}
-            >
-              {LEGO_PIECES.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {ru ? p.labelRu : p.labelEn}
-                </option>
-              ))}
-            </select>
-          </label>
+          <LegoPieceGrid
+            color={el.legoColor || LEGO_COLOR_FALLBACK}
+            selectedId={legoPieceIdOf(el)}
+            ru={ru}
+            onPointerDrag={(e, p) =>
+              beginLegoPaletteDrag(e, p, {
+                color: el.legoColor || LEGO_COLOR_FALLBACK,
+                schemeRef: el.legoColorScheme,
+                insertOnClick: false,
+                closeOnDrag: false,
+              })
+            }
+          />
         </div>
       ) : null}
 
@@ -1110,7 +2089,11 @@ export default function ElementPropsPanel() {
                   });
                 }}
                 onBlur={() => void editorApi.rebuildSelectedGraph()}
-                placeholder={ru ? 'y = x^2, x > 0\ny = sin(x)' : 'y = x^2, x > 0\ny = sin(x)'}
+                placeholder={
+                  ru
+                    ? 'y^2 + x^2 = 25\nx = 2, y > 0, y ≤ 2'
+                    : 'y^2 + x^2 = 25\nx = 2, y > 0, y ≤ 2'
+                }
                 spellCheck={false}
                 style={{ fontFamily: 'ui-monospace, Consolas, monospace', fontSize: 12 }}
               />
@@ -1119,11 +2102,106 @@ export default function ElementPropsPanel() {
           <ColorField
             label={ru ? 'Цвет' : 'Color'}
             value={el.graphColor || '#6366f1'}
-            onChange={(c) => {
-              patch({ graphColor: c });
+            schemeRef={el.graphColorScheme ?? null}
+            stylePipette
+            onChange={(c, sr) => {
+              patch({ graphColor: c, graphColorScheme: sr ?? null });
               setTimeout(() => void editorApi.rebuildSelectedGraph(), 0);
             }}
           />
+          <label className="react-props-field">
+            <span>{ru ? 'Тема графика' : 'Graph theme'}</span>
+            <select
+              value={
+                el.graphTheme ||
+                (el.graphDark === false ? 'light' : 'dark')
+              }
+              onChange={(e) => {
+                const theme = e.target.value;
+                const patchFields = { graphTheme: theme };
+                if (theme === 'light') {
+                  patchFields.graphDark = false;
+                  patchFields.graphBg = '#ffffff';
+                } else if (theme === 'dark') {
+                  patchFields.graphDark = true;
+                  patchFields.graphBg = '#16161e';
+                } else if (theme === 'transparent' || theme === 'blur') {
+                  patchFields.graphBg = 'transparent';
+                }
+                patch(patchFields);
+                setTimeout(() => void editorApi.rebuildSelectedGraph(), 0);
+              }}
+            >
+              <option value="system">{ru ? 'Системная' : 'System'}</option>
+              <option value="light">{ru ? 'Светлая' : 'Light'}</option>
+              <option value="dark">{ru ? 'Тёмная' : 'Dark'}</option>
+              <option value="transparent">{ru ? 'Прозрачная' : 'Transparent'}</option>
+              <option value="blur">{ru ? 'С размытием' : 'Blurred'}</option>
+            </select>
+          </label>
+          <GSlider
+            label={ru ? 'Скругление углов' : 'Corner radius'}
+            min={0}
+            max={48}
+            step={1}
+            value={el.graphRadius ?? 16}
+            onChange={(v) => patch({ graphRadius: v })}
+          />
+          {el.graphKind !== 'chem' && el.graphKind !== 'logic' ? (
+            <>
+              <label className="react-props-field react-props-check">
+                <input
+                  type="checkbox"
+                  checked={!!el.graphShowLabel}
+                  onChange={(e) => {
+                    patch({ graphShowLabel: e.target.checked });
+                    setTimeout(() => void editorApi.rebuildSelectedGraph(), 0);
+                  }}
+                />
+                <span>{ru ? 'Показать формулу' : 'Show formula'}</span>
+              </label>
+              <label className="react-props-field react-props-check">
+                <input
+                  type="checkbox"
+                  checked={!!el.graphAnimate}
+                  onChange={(e) => {
+                    patch({ graphAnimate: e.target.checked });
+                    setTimeout(() => void editorApi.rebuildSelectedGraph(), 0);
+                  }}
+                />
+                <span>{ru ? 'Анимировать построение графика' : 'Animate graph drawing'}</span>
+              </label>
+              <GSlider
+                label={ru ? 'Толщина линии' : 'Line width'}
+                min={0.5}
+                max={12}
+                step={0.5}
+                value={el.graphLineWidth ?? 2.5}
+                onChange={(v) => {
+                  patch({ graphLineWidth: v });
+                  setTimeout(() => void editorApi.rebuildSelectedGraph(), 0);
+                }}
+              />
+              {el.graphAnimate ? (
+                <GSlider
+                  label={ru ? 'Скорость рисования (сек)' : 'Draw speed (sec)'}
+                  min={0.4}
+                  max={8}
+                  step={0.2}
+                  value={el.graphAnimDur ?? 1.8}
+                  onChange={(v) => {
+                    patch({ graphAnimDur: v });
+                    setTimeout(() => void editorApi.rebuildSelectedGraph(), 0);
+                  }}
+                />
+              ) : null}
+              <div className="react-props-hint" style={{ opacity: 0.7, fontSize: 11 }}>
+                {ru
+                  ? 'Сдвиг и масштаб — стрелками и ± на графике (пропорции осей сохраняются).'
+                  : 'Pan/zoom with on-graph arrows and ± (axes stay proportional).'}
+              </div>
+            </>
+          ) : null}
           {el.graphKind === 'logic' ? (
             <label className="react-props-field react-props-check">
               <input
@@ -1137,12 +2215,20 @@ export default function ElementPropsPanel() {
               <span>{ru ? 'Показать формулу' : 'Show formula'}</span>
             </label>
           ) : null}
-          {el.graphKind !== 'chem' && el.graphKind !== 'logic' ? (
+          {el.graphKind !== 'chem' &&
+          el.graphKind !== 'logic' &&
+          el.graphTheme !== 'transparent' &&
+          el.graphTheme !== 'blur' &&
+          el.graphTheme !== 'system' ? (
             <ColorField
               label={ru ? 'Фон' : 'Background'}
-              value={el.graphBg || '#16161e'}
+              value={el.graphBg || (el.graphDark === false ? '#ffffff' : '#16161e')}
               onChange={(c) => {
                 patch({ graphBg: c });
+                setTimeout(() => void editorApi.rebuildSelectedGraph(), 0);
+              }}
+              onClear={() => {
+                patch({ graphBg: null });
                 setTimeout(() => void editorApi.rebuildSelectedGraph(), 0);
               }}
             />
@@ -1178,6 +2264,7 @@ export default function ElementPropsPanel() {
             label={ru ? 'Цвет текста' : 'Text color'}
             value={resolveElTextColor(el, theme)}
             schemeRef={el.textColorScheme}
+            stylePipette
             onChange={(c, sr) => applyTextStyle({ color: c }, sr)}
             onClear={() => applyTextStyle({ color: '#ffffff' }, null)}
           />
@@ -1216,9 +2303,6 @@ export default function ElementPropsPanel() {
               patch({
                 textBg: '',
                 textBgScheme: null,
-                textBgGrad: false,
-                textBgCol2: '',
-                textBgCol2Scheme: null,
               })
             }
           />
@@ -1262,23 +2346,12 @@ export default function ElementPropsPanel() {
             <>
               <ColorField
                 label={ru ? 'Фон 2' : 'Bg 2'}
-                value={el.textBgCol2 || '#ffffff'}
+                value={el.textBgCol2 || ''}
                 schemeRef={el.textBgCol2Scheme}
                 onChange={(c, sr) => patch({ textBgCol2: c, textBgCol2Scheme: sr })}
                 onClear={() => patch({ textBgCol2: '', textBgCol2Scheme: null })}
               />
-              <div className="react-props-row react-props-seg" style={{ marginBottom: 8 }}>
-                {[0, 45, 90, 135, 180].map((deg) => (
-                  <button
-                    key={deg}
-                    type="button"
-                    className={`react-props-btn${(el.textBgDir ?? 90) === deg ? ' is-active' : ''}`}
-                    onClick={() => patch({ textBgDir: deg })}
-                  >
-                    {deg}°
-                  </button>
-                ))}
-              </div>
+              <GradientAngleSlider el={el} field="textBgDir" patch={patch} ru={ru} />
             </>
           ) : null}
           <label className="react-props-check" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '6px 0' }}>
@@ -1306,28 +2379,47 @@ export default function ElementPropsPanel() {
               <ColorField
                 label={ru ? 'Текст 1' : 'Text 1'}
                 value={el.textColorGrad1 || el.textColor || '#ffffff'}
-                onChange={(c) => patch({ textColorGrad1: c })}
+                schemeRef={el.textColorGrad1Scheme ?? null}
+                onChange={(c, sr) => patch({ textColorGrad1: c, textColorGrad1Scheme: sr ?? null })}
               />
               <ColorField
                 label={ru ? 'Текст 2' : 'Text 2'}
                 value={el.textColorGrad2 || '#94a3b8'}
-                onChange={(c) => patch({ textColorGrad2: c })}
-                onClear={() => patch({ textColorGrad2: 'transparent' })}
+                schemeRef={el.textColorGrad2Scheme ?? null}
+                onChange={(c, sr) => patch({ textColorGrad2: c, textColorGrad2Scheme: sr ?? null })}
+                onClear={() => patch({ textColorGrad2: 'transparent', textColorGrad2Scheme: null })}
               />
-              <GSlider
-                label={ru ? 'Угол градиента' : 'Gradient angle'}
-                min={0}
-                max={360}
-                step={1}
-                value={el.textColorGradDir ?? 90}
-                onChange={(v) => patch({ textColorGradDir: Math.round(v) })}
-              />
+              <GradientAngleSlider el={el} field="textColorGradDir" patch={patch} ru={ru} />
             </>
           ) : null}
           <div className="react-props-field" style={{ marginBottom: 8 }}>
             <div className="react-props-row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
               <span>{ru ? 'Скругление' : 'Corner radius'}</span>
-              <div className="react-props-seg" style={{ display: 'flex', gap: 2 }}>
+              <div className="react-props-row" style={{ display: 'flex', gap: 3 }}>
+                <button
+                  type="button"
+                  className={`react-props-btn${el.rxAll ? ' is-active' : ''}`}
+                  style={{ padding: '2px 6px', fontSize: 9 }}
+                  title={ru ? 'Одинаковое скругление всех углов' : 'Use the same radius for all corners'}
+                  aria-pressed={!!el.rxAll}
+                  onClick={() => {
+                    if (el.rxAll) {
+                      patch({ rxAll: false });
+                      return;
+                    }
+                    const value = Math.max(0, +(el.rx_tl ?? el.rx ?? 0) || 0);
+                    patch({
+                      rxAll: true,
+                      rx: value,
+                      rx_tl: value,
+                      rx_tr: value,
+                      rx_br: value,
+                      rx_bl: value,
+                    });
+                  }}
+                >
+                  {ru ? 'Все' : 'All'}
+                </button>
                 {['px', '%'].map((u) => (
                   <button
                     key={u}
@@ -1350,19 +2442,7 @@ export default function ElementPropsPanel() {
                 bl: el.rx_bl ?? el.rx ?? 0,
                 br: el.rx_br ?? el.rx ?? 0,
               }}
-              onChange={(corner, val) => {
-                const base = el.rx ?? 0;
-                const next = {
-                  rxUnit: el.rxUnit || 'px',
-                  rx_tl: el.rx_tl ?? base,
-                  rx_tr: el.rx_tr ?? base,
-                  rx_br: el.rx_br ?? base,
-                  rx_bl: el.rx_bl ?? base,
-                  [`rx_${corner}`]: val,
-                };
-                next.rx = next.rx_tl;
-                patch(next);
-              }}
+              onChange={patchTextRadius}
             />
             <div className="react-props-grid">
               {[
@@ -1378,114 +2458,39 @@ export default function ElementPropsPanel() {
                   max={el.rxUnit === '%' ? 50 : 200}
                   step={1}
                   value={el[k] ?? el.rx ?? 0}
-                  onChange={(v) => {
-                    const val = Math.max(0, +v || 0);
-                    const base = el.rx ?? 0;
-                    const next = {
-                      rxUnit: el.rxUnit || 'px',
-                      rx_tl: el.rx_tl ?? base,
-                      rx_tr: el.rx_tr ?? base,
-                      rx_br: el.rx_br ?? base,
-                      rx_bl: el.rx_bl ?? base,
-                      [k]: val,
-                    };
-                    next.rx = next.rx_tl;
-                    patch(next);
-                  }}
+                  onChange={(v) => patchTextRadius(k.slice(3), v)}
                 />
               ))}
             </div>
           </div>
-          <div className="react-props-field" style={{ marginTop: 8 }}>
-            <div className="react-props-row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-              <span>{ru ? 'Отступ' : 'Padding'}</span>
-              <div className="react-props-seg" style={{ display: 'flex', gap: 2 }}>
-                {['px', '%'].map((u) => (
-                  <button
-                    key={u}
-                    type="button"
-                    className={`react-props-btn${(el.padUnit || 'px') === u ? ' is-active' : ''}`}
-                    style={{ padding: '2px 6px', fontSize: 9 }}
-                    onClick={() => patch({ padUnit: u })}
-                  >
-                    {u}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <DragValueBox
-              mode="edge"
-              max={el.padUnit === '%' ? 100 : 200}
-              values={{
-                t: el.pad_t ?? 0,
-                r: el.pad_r ?? 0,
-                b: el.pad_b ?? 0,
-                l: el.pad_l ?? 0,
-              }}
-              onChange={(side, val) => {
-                const unit = el.padUnit || 'px';
-                const next = { [`pad_${side}`]: val, padUnit: unit };
-                ['t', 'r', 'b', 'l'].forEach((s) => {
-                  if (s !== side && el[`pad_${s}`] === undefined) next[`pad_${s}`] = 0;
-                });
-                patch(next);
-              }}
-            />
-            <div className="react-props-grid">
-              {[
-                { k: 'pad_t', label: ru ? 'Верх' : 'Top' },
-                { k: 'pad_r', label: ru ? 'Право' : 'Right' },
-                { k: 'pad_b', label: ru ? 'Низ' : 'Bottom' },
-                { k: 'pad_l', label: ru ? 'Лево' : 'Left' },
-              ].map(({ k, label }) => (
-                <GSlider
-                  key={k}
-                  label={label}
-                  min={0}
-                  max={el.padUnit === '%' ? 100 : 200}
-                  step={1}
-                  value={el[k] ?? 0}
-                  onChange={(v) => {
-                    const val = Math.max(0, +v || 0);
-                    const unit = el.padUnit || 'px';
-                    const next = { [k]: val, padUnit: unit };
-                    ['pad_t', 'pad_r', 'pad_b', 'pad_l'].forEach((side) => {
-                      if (side !== k && el[side] === undefined) next[side] = 0;
-                    });
-                    patch(next);
-                  }}
-                />
-              ))}
-            </div>
-          </div>
+          {textPadField}
           <button type="button" className="react-props-btn" onClick={() => editorApi.autofitText(el.id)}>
             {ru ? 'Подогнать высоту' : 'Autofit height'}
           </button>
           <div className="react-props-field" style={{ marginTop: 8 }}>
             <span>{ru ? 'Граница' : 'Border'}</span>
-            <div className="react-props-row" style={{ alignItems: 'center', gap: 6, marginBottom: 6 }}>
-              <ColorField
-                value={el.textBorderColor || '#ffffff'}
-                schemeRef={el.textBorderColorScheme}
-                onChange={(c, sr) => patch({ textBorderColor: c, textBorderColorScheme: sr })}
-              />
-              <input
-                type="number"
-                min="0"
-                max="24"
-                style={{ flex: 1 }}
-                value={el.textBorderW ?? 0}
-                onChange={(e) => patch({ textBorderW: Math.max(0, +e.target.value || 0) })}
-              />
-              <button
-                type="button"
-                className="react-props-btn"
-                title={ru ? 'Убрать границу' : 'Remove border'}
-                onClick={() => patch({ textBorderW: 0 })}
-              >
-                ✕
-              </button>
-            </div>
+            <ColorField
+              value={el.textBorderColor || '#ffffff'}
+              schemeRef={el.textBorderColorScheme}
+              onChange={(c, sr) =>
+                patch({
+                  textBorderColor: c,
+                  textBorderColorScheme: sr,
+                  ...(+(el.textBorderW || 0) > 0 ? {} : { textBorderW: 2 }),
+                })
+              }
+              onClear={() =>
+                patch({ textBorderColor: '', textBorderColorScheme: null, textBorderW: 0 })
+              }
+            />
+            <GSlider
+              label={ru ? 'Толщина' : 'Width'}
+              min={0}
+              max={24}
+              step={1}
+              value={el.textBorderW ?? 0}
+              onChange={(v) => patch({ textBorderW: v })}
+            />
             {(el.textBorderW || 0) > 0 ? (
               <div className="react-props-row react-props-seg" style={{ flexWrap: 'wrap', gap: 4 }}>
                 {[
@@ -1508,34 +2513,6 @@ export default function ElementPropsPanel() {
                   </button>
                 ))}
               </div>
-            ) : null}
-          </div>
-          <div className="react-props-field" style={{ marginTop: 8 }}>
-            <span>{ru ? 'Тень текста' : 'Text shadow'}</span>
-            <div className="react-props-grid">
-              <GSlider
-                label={ru ? 'Размытие' : 'Blur'}
-                min={0}
-                max={40}
-                step={1}
-                value={el.textShadowBlur ?? 0}
-                onChange={(v) => patch({ textShadowBlur: v })}
-              />
-              <GSlider
-                label={ru ? 'Размер' : 'Size'}
-                min={0}
-                max={24}
-                step={1}
-                value={el.textShadowSize ?? 0}
-                onChange={(v) => patch({ textShadowSize: v })}
-              />
-            </div>
-            {(+(el.textShadowBlur || 0) > 0 || +(el.textShadowSize || 0) > 0) ? (
-              <ColorField
-                label={ru ? 'Цвет тени' : 'Shadow color'}
-                value={el.textShadowColor || '#000000'}
-                onChange={(c) => patch({ textShadowColor: c })}
-              />
             ) : null}
           </div>
           <div className="react-props-field" style={{ marginTop: 8 }}>
@@ -1584,13 +2561,26 @@ export default function ElementPropsPanel() {
             ) : null}
           </div>
           <ShadowFields el={el} patch={patch} ru={ru} />
+          <button
+            type="button"
+            className={`react-props-btn${shapeNodeMode ? ' is-active' : ''}`}
+            style={{ fontSize: 11, padding: '5px 8px' }}
+            title={ru ? 'Редактировать узлы (или Ctrl)' : 'Edit nodes (or hold Ctrl)'}
+            onClick={() => {
+              const next = !useUiStore.getState().shapeNodeMode;
+              useUiStore.getState().setShapeNodeMode(next);
+              if (next) useUiStore.getState().setCurveEditMode(false);
+            }}
+          >
+            {ru ? 'Узлы' : 'Nodes'}
+          </button>
         </div>
       ) : null}
 
       {el.type === 'shape' ? (
         <div className="react-props-stack">
           <div className="react-props-hdr">{ru ? 'Стиль фигуры' : 'Shape Style'}</div>
-          <div className="react-props-row" style={{ gap: 6, marginBottom: 8 }}>
+          <div className="react-props-row" style={{ gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
             <button
               type="button"
               className="react-props-btn"
@@ -1599,18 +2589,110 @@ export default function ElementPropsPanel() {
             >
               {ru ? '■ Сменить фигуру' : '■ Change shape'}
             </button>
-            <button
-              type="button"
-              className="react-props-btn"
-              style={{ flex: 1, fontSize: 11, padding: '5px 8px' }}
-              onClick={() => {
-                editorApi.pickElement(el.id);
-                useUiStore.getState().requestInlineEdit(el.id);
-              }}
-            >
-              {ru ? '✎ Текст фигуры' : '✎ Shape text'}
-            </button>
+            {!shapeNoFill ? (
+              <button
+                type="button"
+                className="react-props-btn"
+                style={{ flex: 1, fontSize: 11, padding: '5px 8px' }}
+                title={ru ? 'Вставить изображение вместо заливки' : 'Use image as fill'}
+                onClick={() => editorApi.openShapeFillImagePicker(el.id)}
+              >
+                {ru ? '🖼 Изображение' : '🖼 Image'}
+              </button>
+            ) : null}
+            {el.shape === 'curve' ? (
+              <button
+                type="button"
+                className={`react-props-btn${curveEditMode ? ' is-active' : ''}`}
+                style={{ flex: 1, fontSize: 11, padding: '5px 8px' }}
+                title={ru ? 'Редактировать узлы кривой' : 'Edit curve nodes'}
+                onClick={() => {
+                  const next = !useUiStore.getState().curveEditMode;
+                  useUiStore.getState().setCurveEditMode(next);
+                  useUiStore.getState().setShapeNodeMode(false);
+                  if (next) {
+                    const n = (el.curvePoints || defaultCurvePoints()).length;
+                    useUiStore.getState().setCurveNodeSel([Math.max(0, n - 1)]);
+                  } else {
+                    const bbox = applyCurveBBox(el);
+                    if (bbox) editorApi.patchElementHistory(el.id, bbox);
+                  }
+                }}
+              >
+                {curveEditMode ? (ru ? 'Перемещение' : 'Move') : ru ? 'Узлы' : 'Nodes'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className={`react-props-btn${shapeNodeMode ? ' is-active' : ''}`}
+                style={{ flex: 1, fontSize: 11, padding: '5px 8px' }}
+                disabled={!shapeSupportsNodes(el)}
+                title={
+                  shapeSupportsNodes(el)
+                    ? ru
+                      ? 'Редактировать узлы (или Ctrl)'
+                      : 'Edit nodes (or hold Ctrl)'
+                    : ru
+                      ? 'У этой фигуры нет угловых точек'
+                      : 'This shape has no corner points'
+                }
+                onClick={() => {
+                  const next = !useUiStore.getState().shapeNodeMode;
+                  useUiStore.getState().setShapeNodeMode(next);
+                  if (next) useUiStore.getState().setCurveEditMode(false);
+                }}
+              >
+                {ru ? 'Узлы' : 'Nodes'}
+              </button>
+            )}
           </div>
+          {shapeHasFillImgData(el) ? (
+            <>
+              <div className="react-props-row" style={{ gap: 6, marginBottom: 8 }}>
+                <button
+                  type="button"
+                  className={`react-props-btn${
+                    String(shapeFillImgEditId) === String(el.id) ? ' is-active' : ''
+                  }`}
+                  style={{ flex: 1, fontSize: 11, padding: '5px 8px' }}
+                  disabled={el.fillImgShow === false}
+                  onClick={() => {
+                    if (String(shapeFillImgEditId) === String(el.id)) editorApi.endShapeFillImgEdit();
+                    else editorApi.startShapeFillImgEdit(el.id);
+                  }}
+                >
+                  {ru ? 'Масштабировать' : 'Transform'}
+                </button>
+                <button
+                  type="button"
+                  className="react-props-btn"
+                  style={{ width: 36, flex: '0 0 auto', fontSize: 14, padding: '5px 0' }}
+                  title={ru ? 'Убрать изображение с этой фигуры' : 'Remove image from this shape'}
+                  onClick={() => editorApi.clearShapeFillImage(el.id)}
+                >
+                  ✕
+                </button>
+              </div>
+              <div
+                className="react-tog-row"
+                style={{ marginBottom: 8 }}
+                title={
+                  ru
+                    ? 'Показывать картинку или цвет заливки (картинка сохраняется)'
+                    : 'Show image or fill color (image is kept)'
+                }
+              >
+                <span style={{ flex: 1, fontSize: 11 }}>
+                  {ru ? 'Показывать изображение' : 'Show image'}
+                </span>
+                <Toggle
+                  checked={el.fillImgShow !== false}
+                  onChange={(on) => editorApi.setShapeFillImgShow(el.id, on)}
+                  aria-label={ru ? 'Показывать изображение' : 'Show image'}
+                />
+              </div>
+            </>
+          ) : null}
           <ShapeGeomFields el={el} patch={patch} ru={ru} />
           <FlipIconButtons
             flipH={!!el.shapeFlipH}
@@ -1623,10 +2705,31 @@ export default function ElementPropsPanel() {
             <>
               <ColorField
                 label={ru ? 'Цвет заливки' : 'Fill color'}
-                value={el.fill && el.fill !== 'none' ? el.fill : '#3b82f6'}
-                schemeRef={el.fillScheme}
-                onChange={(c, sr) => patch({ fill: c, fillScheme: sr })}
-                onClear={() => patch({ fill: 'none', fillScheme: null })}
+                value={el.fillGrad && el.fillGrad2
+                  ? el.fillGrad
+                  : el.fill && el.fill !== 'none'
+                    ? el.fill
+                    : '#3b82f6'}
+                schemeRef={
+                  el.fillGrad && el.fillGrad2
+                    ? el.fillGradScheme ?? null
+                    : el.fillScheme
+                }
+                stylePipette={!shapeNoFill && el.shape !== 'line'}
+                onChange={(c, sr) =>
+                  patch({
+                    fill: c,
+                    fillScheme: sr,
+                    ...(el.fillGrad && el.fillGrad2 ? { fillGrad: c, fillGradScheme: sr ?? null } : {}),
+                  })
+                }
+                onClear={() =>
+                  patch({
+                    fill: 'none',
+                    fillScheme: null,
+                    ...(el.fillGrad && el.fillGrad2 ? { fillGrad: 'transparent', fillGradScheme: null } : {}),
+                  })
+                }
               />
               <div className="react-tog-row">
                 <Toggle
@@ -1634,9 +2737,21 @@ export default function ElementPropsPanel() {
                   title={ru ? 'Градиент' : 'Gradient'}
                   onChange={(on) => {
                     if (on) {
+                      const defaultGrad2Scheme = { col: 0, row: 4 };
+                      const defaultGrad2 = schemeSwatchColor(
+                        theme,
+                        defaultGrad2Scheme.col,
+                        defaultGrad2Scheme.row
+                      );
                       patch({
                         fillGrad: el.fillGrad || el.fill || '#3b82f6',
-                        fillGrad2: el.fillGrad2 || '#1e40af',
+                        fillGradScheme: el.fillGrad
+                          ? el.fillGradScheme ?? null
+                          : el.fillScheme ?? null,
+                        fillGrad2: el.fillGrad2 || defaultGrad2 || '#1e40af',
+                        fillGrad2Scheme: el.fillGrad2
+                          ? el.fillGrad2Scheme || null
+                          : defaultGrad2 ? defaultGrad2Scheme : null,
                         fillGradDir: el.fillGradDir != null ? el.fillGradDir : 90,
                       });
                     } else {
@@ -1651,17 +2766,11 @@ export default function ElementPropsPanel() {
                   <ColorField
                     label={ru ? 'Цвет 2' : 'Color 2'}
                     value={el.fillGrad2}
-                    onChange={(c) => patch({ fillGrad2: c })}
-                    onClear={() => patch({ fillGrad2: 'transparent' })}
+                    schemeRef={el.fillGrad2Scheme ?? null}
+                    onChange={(c, sr) => patch({ fillGrad2: c, fillGrad2Scheme: sr ?? null })}
+                    onClear={() => patch({ fillGrad2: 'transparent', fillGrad2Scheme: null })}
                   />
-                  <GSlider
-                    label={ru ? 'Угол °' : 'Angle °'}
-                    min={0}
-                    max={360}
-                    step={1}
-                    value={el.fillGradDir ?? 90}
-                    onChange={(v) => patch({ fillGradDir: Math.round(v) })}
-                  />
+                  <GradientAngleSlider el={el} field="fillGradDir" patch={patch} ru={ru} />
                 </>
               ) : null}
               <div className="react-props-grid">
@@ -1685,36 +2794,40 @@ export default function ElementPropsPanel() {
               </div>
             </>
           ) : null}
-          {el.shape === 'line' ? (
+          {el.shape === 'line' || (el.shape === 'curve' && !el.curveClosed) ? (
             <div className="react-props-stack" style={{ gap: 8 }}>
-              <div className="react-props-hdr" style={{ marginTop: 4 }}>
-                {ru ? 'Геометрия' : 'Geometry'}
-              </div>
-              <div className="react-props-field">
-                <span>{ru ? 'Метка' : 'Mark'}</span>
-                <div className="react-props-row" style={{ flexWrap: 'wrap', gap: 3 }}>
-                  {LINE_GEOM_MARKS.map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      className={`react-props-btn${(el.lineMark || 'none') === m.id ? ' is-active' : ''}`}
-                      title={ru ? m.titleRu : m.titleEn}
-                      onClick={() => patch({ lineMark: m.id === 'none' ? 'none' : m.id })}
-                      style={{ minWidth: 34, height: 28, padding: '2px 6px', flex: '0 0 auto', fontSize: 11 }}
-                    >
-                      {m.id === 'none'
-                        ? '✕'
-                        : m.id === 'tick1'
-                          ? '|'
-                          : m.id === 'tick2'
-                            ? '||'
-                            : m.id === 'tick3'
-                              ? '|||'
-                              : 'S'}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              {el.shape === 'line' ? (
+                <>
+                  <div className="react-props-hdr" style={{ marginTop: 4 }}>
+                    {ru ? 'Геометрия' : 'Geometry'}
+                  </div>
+                  <div className="react-props-field">
+                    <span>{ru ? 'Метка' : 'Mark'}</span>
+                    <div className="react-props-row" style={{ flexWrap: 'wrap', gap: 3 }}>
+                      {LINE_GEOM_MARKS.map((m) => (
+                        <button
+                          key={m.id}
+                          type="button"
+                          className={`react-props-btn${(el.lineMark || 'none') === m.id ? ' is-active' : ''}`}
+                          title={ru ? m.titleRu : m.titleEn}
+                          onClick={() => patch({ lineMark: m.id === 'none' ? 'none' : m.id })}
+                          style={{ minWidth: 34, height: 28, padding: '2px 6px', flex: '0 0 auto', fontSize: 11 }}
+                        >
+                          {m.id === 'none'
+                            ? '✕'
+                            : m.id === 'tick1'
+                              ? '|'
+                              : m.id === 'tick2'
+                                ? '||'
+                                : m.id === 'tick3'
+                                  ? '|||'
+                                  : 'S'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              ) : null}
               <div className="react-props-hdr" style={{ marginTop: 4 }}>
                 {ru ? 'Маркеры' : 'Markers'}
               </div>
@@ -1752,16 +2865,90 @@ export default function ElementPropsPanel() {
             label={ru ? 'Цвет обводки' : 'Stroke color'}
             value={el.stroke && el.stroke !== 'none' ? el.stroke : '#1d4ed8'}
             schemeRef={el.strokeScheme}
+            stylePipette={shapeNoFill || el.shape === 'line'}
             onChange={(c, sr) => patch({ stroke: c, strokeScheme: sr })}
             onClear={() => patch({ stroke: 'transparent', strokeScheme: null, sw: 0 })}
           />
+          {el.shape === 'curve' ? (
+            <>
+              <ColorField
+                label={ru ? 'Цвет заливки' : 'Fill color'}
+                value={
+                  el.fill && el.fill !== 'none' && el.fill !== 'transparent' ? el.fill : 'transparent'
+                }
+                schemeRef={el.fillScheme}
+                onChange={(c, sr) =>
+                  patch({
+                    fill: c,
+                    fillScheme: sr ?? null,
+                    noFill: false,
+                    fillPattern: CURVE_FILL_PATTERNS.includes(el.fillPattern)
+                      ? el.fillPattern
+                      : 'solid',
+                  })
+                }
+                onClear={() => patch({ fill: 'none', fillScheme: null })}
+              />
+              <div className="react-props-field">
+                <span>{ru ? 'Стиль заливки' : 'Fill style'}</span>
+                <div className="draw-size-row" style={{ flexWrap: 'wrap', gap: 4 }}>
+                  {CURVE_FILL_PATTERNS.map((id) => (
+                    <button
+                      key={id}
+                      type="button"
+                      className={`draw-size-btn draw-fill-pat-btn${
+                        (el.fillPattern || 'solid') === id ? ' on' : ''
+                      }`}
+                      title={ru ? CURVE_FILL_PAT_TITLES[id].ru : CURVE_FILL_PAT_TITLES[id].en}
+                      onClick={() =>
+                        patch({
+                          fillPattern: id,
+                          noFill: false,
+                          ...(!(el.fill && el.fill !== 'none' && el.fill !== 'transparent')
+                            ? { fill: el.stroke && el.stroke !== 'none' ? el.stroke : '#1d4ed8' }
+                            : null),
+                        })
+                      }
+                    >
+                      {CURVE_FILL_PAT_ICONS[id]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <GSlider
+                label={ru ? 'Прозрачность заливки' : 'Fill opacity'}
+                min={0}
+                max={1}
+                step={0.05}
+                fadeTrack
+                value={el.fillOp ?? 1}
+                onChange={(v) => patch({ fillOp: v })}
+              />
+            </>
+          ) : null}
           <div className="react-props-grid">
             <GSlider
-              label={ru ? 'Толщина обводки' : 'Stroke width'}
+              label={
+                el.shape === 'curve' && curveEditMode
+                  ? ru
+                    ? 'Толщина узла'
+                    : 'Node width'
+                  : ru
+                    ? 'Толщина обводки'
+                    : 'Stroke width'
+              }
               min={0}
               max={50}
               step={0.5}
-              value={el.sw ?? 2}
+              value={
+                el.shape === 'curve' && curveEditMode && curveNodeSel?.length
+                  ? (() => {
+                      const idx = curveNodeSel[curveNodeSel.length - 1];
+                      const pt = el.curvePoints?.[idx];
+                      return pt && pt.sw != null ? +pt.sw : el.sw ?? 2;
+                    })()
+                  : el.sw ?? 2
+              }
               onChange={(v) => editorApi.setStrokeWidth(v)}
             />
             {!shapeNoFill ? (
@@ -1799,7 +2986,7 @@ export default function ElementPropsPanel() {
               ))}
             </div>
           </div>
-          <ShadowFields el={el} patch={patch} ru={ru} />
+          <ShadowFields el={el} patch={patch} ru={ru} keys={{ allowInset: true }} />
           <GSlider
             label={ru ? 'Прозрачность фигуры' : 'Shape opacity'}
             min={0}
@@ -1812,85 +2999,22 @@ export default function ElementPropsPanel() {
           {el.shape !== 'line' ? (
             <div className="react-props-stack" style={{ gap: 8 }}>
               <div className="react-props-hdr" style={{ marginTop: 4 }}>
-                {ru ? 'Текст фигуры' : 'Shape text'}
+                {ru ? 'Текст' : 'Text'}
               </div>
-              <button
-                type="button"
-                className="react-props-btn"
-                style={{ width: '100%' }}
-                onClick={() => {
-                  editorApi.pickElement(el.id);
-                  useUiStore.getState().requestInlineEdit(el.id);
-                }}
-              >
-                {ru ? '✏️ Редактировать (или двойной клик)' : '✏️ Edit (or double-click)'}
-              </button>
+              <TextPropsFmt
+                variant="shape"
+                el={shapeAsTextView(el)}
+                ru={ru}
+                applyTextStyle={applyTextStyle}
+              />
               <ColorField
                 label={ru ? 'Цвет текста' : 'Text color'}
                 value={getShapeTextColor(el)}
                 schemeRef={el.textColorScheme}
-                onChange={(c, sr) =>
-                  patch({
-                    shapeTextCss: withShapeTextColor(el.shapeTextCss, c),
-                    textColor: c,
-                    textColorScheme: sr,
-                  })
-                }
-                onClear={() =>
-                  patch({
-                    shapeTextCss: withShapeTextColor(el.shapeTextCss, '#ffffff'),
-                    textColor: '#ffffff',
-                    textColorScheme: null,
-                  })
-                }
+                onChange={(c, sr) => applyTextStyle({ color: c }, sr)}
+                onClear={() => applyTextStyle({ color: '#ffffff' }, null)}
               />
-              <label className="react-props-field">
-                <span>{ru ? 'Шрифт' : 'Font'}</span>
-                <select
-                  value={shapeTextFontFamily(el) || ''}
-                  onChange={(e) =>
-                    patch({
-                      shapeTextCss: withShapeTextProp(el.shapeTextCss, 'font-family', e.target.value),
-                    })
-                  }
-                >
-                  <option value="">{ru ? '— по умолчанию —' : '— default —'}</option>
-                  {FONT_FAMILIES.filter((f) => f.id).map((f) => (
-                    <option key={f.id} value={f.id} style={{ fontFamily: f.id }}>
-                      {f.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="react-props-grid">
-                <GSlider
-                  label={ru ? 'Размер шрифта' : 'Font size'}
-                  min={8}
-                  max={200}
-                  step={1}
-                  value={shapeTextFontSizePx(el)}
-                  onChange={(v) => {
-                    const n = Math.max(8, Math.min(200, Math.round(v)));
-                    patch({
-                      shapeTextCss: withShapeTextProp(el.shapeTextCss, 'font-size', `${n}px`),
-                    });
-                  }}
-                />
-                <label className="react-props-field react-props-field-compact">
-                  <span>{ru ? 'Насыщенность' : 'Weight'}</span>
-                  <select
-                    value={shapeTextFontWeight(el) === '400' ? '400' : '700'}
-                    onChange={(e) =>
-                      patch({
-                        shapeTextCss: withShapeTextProp(el.shapeTextCss, 'font-weight', e.target.value),
-                      })
-                    }
-                  >
-                    <option value="400">{ru ? 'Обычный' : 'Regular'}</option>
-                    <option value="700">{ru ? 'Жирный' : 'Bold'}</option>
-                  </select>
-                </label>
-              </div>
+              {textPadField}
             </div>
           ) : null}
         </div>
@@ -1963,77 +3087,32 @@ export default function ElementPropsPanel() {
                           ? `Ячейка ${cr + 1}:${cc + 1}`
                           : `Cell ${cr + 1}:${cc + 1}`}
                     </div>
-                    {/* Cell alignment — v7.1 layout with SVG icons */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 3, marginBottom: 6, alignItems: 'end' }}>
-                      <div style={{ margin: 0 }}>
-                        <span style={{ fontSize: 10, color: 'var(--text3)' }}>{ru ? 'По горизонтали' : 'Horizontal'}</span>
-                        <div style={{ display: 'flex', gap: 3, alignItems: 'center', marginTop: 2 }}>
-                          {[
-                            { a: 'left', svg: <svg width="13" height="11" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" strokeWidth="1.5"/><line x1="0" y1="5" x2="9" y2="5" stroke="currentColor" strokeWidth="1.5"/><line x1="0" y1="9" x2="12" y2="9" stroke="currentColor" strokeWidth="1.5"/></svg> },
-                            { a: 'center', svg: <svg width="13" height="11" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" strokeWidth="1.5"/><line x1="2.5" y1="5" x2="11.5" y2="5" stroke="currentColor" strokeWidth="1.5"/><line x1="1" y1="9" x2="13" y2="9" stroke="currentColor" strokeWidth="1.5"/></svg> },
-                            { a: 'right', svg: <svg width="13" height="11" viewBox="0 0 14 12"><line x1="0" y1="1" x2="14" y2="1" stroke="currentColor" strokeWidth="1.5"/><line x1="5" y1="5" x2="14" y2="5" stroke="currentColor" strokeWidth="1.5"/><line x1="2" y1="9" x2="14" y2="9" stroke="currentColor" strokeWidth="1.5"/></svg> },
-                          ].map(({ a, svg }) => (
-                            <button key={a} type="button" className={`ftbtn${(cellActive.align || 'left') === a ? ' active' : ''}`} onClick={() => editorApi.patchSelectedTableCells({ align: a })}>
-                              {svg}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <div style={{ margin: 0 }}>
-                        <span style={{ fontSize: 10, color: 'var(--text3)' }}>{ru ? 'По вертикали' : 'Vertical'}</span>
-                        <div style={{ display: 'flex', gap: 3, alignItems: 'center', marginTop: 2 }}>
-                          {[
-                            { a: 'top', svg: <svg width="12" height="13" viewBox="0 0 12 14"><line x1="0" y1="0" x2="12" y2="0" stroke="currentColor" strokeWidth="1.5"/><path d="M6 2v9" stroke="currentColor" strokeWidth="1.5"/><path d="M3 5l3-4 3 4" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg> },
-                            { a: 'middle', svg: <svg width="12" height="13" viewBox="0 0 12 14"><line x1="0" y1="7" x2="12" y2="7" stroke="currentColor" strokeWidth="1.5"/><path d="M6 3v3M6 8v3" stroke="currentColor" strokeWidth="1.5"/></svg> },
-                            { a: 'bottom', svg: <svg width="12" height="13" viewBox="0 0 12 14"><line x1="0" y1="14" x2="12" y2="14" stroke="currentColor" strokeWidth="1.5"/><path d="M6 5v7" stroke="currentColor" strokeWidth="1.5"/><path d="M3 9l3 4 3-4" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg> },
-                          ].map(({ a, svg }) => (
-                            <button key={a} type="button" className={`ftbtn${(cellActive.valign || 'middle') === a ? ' active' : ''}`} onClick={() => editorApi.patchSelectedTableCells({ valign: a })}>
-                              {svg}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <button type="button" className="ftbtn" title={ru ? 'Сбросить форматирование текста' : 'Reset text formatting'} onClick={() => editorApi.tableResetCellFormat()} style={{ color: 'var(--text3)', flexShrink: 0, height: 22 }}>
-                        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="1" y="12" fontFamily="serif" fontSize="12" fontWeight="700" fill="currentColor">A</text><line x1="10" y1="4" x2="15" y2="9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/><line x1="15" y1="4" x2="10" y2="9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>
-                      </button>
-                    </div>
-                    <GSlider
-                      label={ru ? 'Размер шрифта' : 'Font size'}
-                      min={8}
-                      max={72}
-                      step={1}
-                      value={cellActive.fs != null ? +cellActive.fs : el.fs || 15}
-                      onChange={(v) => editorApi.patchSelectedTableCells({ fs: +v })}
+                    <TextPropsFmt
+                      variant="cell"
+                      el={tableCellAsTextView(el, cellActive, cr)}
+                      ru={ru}
+                      applyTextStyle={(p, sr) =>
+                        editorApi.applyTextInline({
+                          fontSize: p.fontSize != null ? +p.fontSize : undefined,
+                          color: p.color,
+                          fontFamily: p.fontFamily,
+                          schemeRef: sr,
+                        })
+                      }
                     />
-                    <label className="react-props-field">
-                      <span>{ru ? 'Шрифт' : 'Font'}</span>
-                      <select
-                        value={cellActive.ff || el.ff || ''}
-                        onChange={(e) =>
-                          editorApi.patchSelectedTableCells({
-                            ff: e.target.value || undefined,
-                          })
-                        }
-                      >
-                        <option value="">{ru ? '— по умолчанию —' : '— default —'}</option>
-                        {FONT_FAMILIES.filter((f) => f.id).map((f) => (
-                          <option key={f.id} value={f.id} style={{ fontFamily: f.id }}>
-                            {f.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
                     <ColorField
                       label={ru ? 'Цвет текста' : 'Text color'}
                       value={cellActive.textColor || el.textColor || '#ffffff'}
-                      onChange={(c) => editorApi.patchSelectedTableCells({ textColor: c })}
-                      onClear={() => editorApi.patchSelectedTableCells({ textColor: '' })}
+                      schemeRef={cellActive.textColorScheme}
+                      onChange={(c, sr) => editorApi.applyTextInline({ color: c, schemeRef: sr })}
+                      onClear={() => editorApi.patchSelectedTableCells({ textColor: '', textColorScheme: '' })}
                     />
                     <ColorField
                       label={ru ? 'Цвет фона' : 'Background'}
                       value={cellActive.bg || 'transparent'}
-                      onChange={(c) => editorApi.patchSelectedTableCells({ bg: c })}
-                      onClear={() => editorApi.patchSelectedTableCells({ bg: '' })}
+                      schemeRef={cellActive.bgScheme}
+                      onChange={(c, sr) => editorApi.patchSelectedTableCells({ bg: c, bgScheme: sr ?? null })}
+                      onClear={() => editorApi.patchSelectedTableCells({ bg: '', bgScheme: '' })}
                     />
                   </div>
                 );
@@ -2066,11 +3145,61 @@ export default function ElementPropsPanel() {
                 />
               </div>
 
+              <div className="react-props-stack" style={{ gap: 6 }}>
+                <div className="react-props-hdr">{ru ? 'Карандаш границ' : 'Border pencil'}</div>
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className={`react-props-btn${tableBorderPaint && !tableBorderPaint.erase ? ' primary' : ''}`}
+                    title={ru ? 'Рисовать линию между ячейками' : 'Draw the line between cells'}
+                    onClick={() => {
+                      if (tableBorderPaint && !tableBorderPaint.erase) editorApi.tableToggleBorderPaint(false);
+                      else editorApi.tableToggleBorderPaint(true);
+                    }}
+                  >
+                    {ru ? 'Карандаш' : 'Pencil'}
+                  </button>
+                  <button
+                    type="button"
+                    className={`react-props-btn${tableBorderPaint?.erase ? ' primary' : ''}`}
+                    title={ru ? 'Стереть границу' : 'Erase border'}
+                    onClick={() => {
+                      if (tableBorderPaint?.erase) editorApi.tableToggleBorderPaint(false);
+                      else {
+                        editorApi.tableToggleBorderPaint(true);
+                        editorApi.tableSetBorderPaint({ erase: true });
+                      }
+                    }}
+                  >
+                    {ru ? 'Ластик' : 'Eraser'}
+                  </button>
+                </div>
+              </div>
               <ColorField
                 label={ru ? 'Линии таблицы' : 'Table lines'}
-                value={el.borderColor || el.stroke || '#3b82f680'}
-                schemeRef={el.borderColorScheme}
-                onChange={(c, sr) => patch({ borderColor: c, borderColorScheme: sr, stroke: c })}
+                value={tableBorderPaint?.color || el.borderColor || el.stroke || '#3b82f680'}
+                schemeRef={tableBorderPaint ? undefined : el.borderColorScheme}
+                onChange={(c, sr) => {
+                  if (tableBorderPaint) {
+                    patch({ borderColor: c, borderColorScheme: sr, stroke: c });
+                    editorApi.tableSetBorderPaint({
+                      color: c,
+                      erase: !c || c === 'transparent' || c === 'none',
+                    });
+                    return;
+                  }
+                  if (editorApi.tableApplySelBorders({ color: c, schemeRef: sr })) return;
+                  patch({ borderColor: c, borderColorScheme: sr, stroke: c });
+                }}
+                onClear={() => {
+                  if (tableBorderPaint) {
+                    patch({ borderColor: 'transparent', borderColorScheme: null, stroke: 'transparent' });
+                    editorApi.tableSetBorderPaint({ color: 'transparent', erase: true });
+                    return;
+                  }
+                  if (editorApi.tableApplySelBorders({ color: 'transparent', schemeRef: null })) return;
+                  patch({ borderColor: 'transparent', borderColorScheme: null, stroke: 'transparent' });
+                }}
               />
               <div className="react-props-el-rot">
                 <GSlider
@@ -2078,40 +3207,45 @@ export default function ElementPropsPanel() {
                   min={0}
                   max={10}
                   step={0.5}
-                  value={el.borderW != null ? +el.borderW : 1}
-                  onChange={(v) => patch({ borderW: +v })}
+                  value={
+                    tableBorderPaint
+                      ? +(tableBorderPaint.width ?? 1)
+                      : el.borderW != null
+                        ? +el.borderW
+                        : 1
+                  }
+                  onScrubStart={() => {
+                    if (!tableBorderPaint) useHistoryStore.getState().push();
+                  }}
+                  onScrubChange={(v) => {
+                    if (tableBorderPaint) editorApi.tableSetBorderPaint({ width: +v, erase: false });
+                    else if (!editorApi.tableApplySelBorders({ width: +v }, { history: false, live: true })) {
+                      usePresentationStore.getState().patchElement(el.id, { borderW: +v }, { live: true });
+                    }
+                  }}
+                  onScrubEnd={() => usePresentationStore.getState().persist()}
+                  onChange={(v) => {
+                    if (tableBorderPaint) editorApi.tableSetBorderPaint({ width: +v, erase: false });
+                    else if (!editorApi.tableApplySelBorders({ width: +v })) patch({ borderW: +v });
+                  }}
                 />
                 <button
                   type="button"
                   className="react-props-icon-btn"
                   title={ru ? 'Сбросить толщину' : 'Reset thickness'}
-                  disabled={el.borderW == null || +el.borderW === 1}
-                  onClick={() => patch({ borderW: 1 })}
+                  disabled={
+                    tableBorderPaint
+                      ? +(tableBorderPaint.width ?? 1) === 1
+                      : el.borderW == null || +el.borderW === 1
+                  }
+                  onClick={() => {
+                    if (tableBorderPaint) editorApi.tableSetBorderPaint({ width: 1 });
+                    else if (!editorApi.tableApplySelBorders({ width: 1 })) patch({ borderW: 1 });
+                  }}
                 >
                   ✕
                 </button>
               </div>
-              <ColorField
-                label={ru ? 'Цвет текста' : 'Text color'}
-                value={el.textColor || '#ffffff'}
-                schemeRef={el.textColorScheme}
-                onChange={(c, sr) => patch({ textColor: c, textColorScheme: sr })}
-              />
-              <label className="react-props-field">
-                <span>{ru ? 'Шрифт' : 'Font'}</span>
-                <select
-                  value={el.ff || ''}
-                  onChange={(e) => patch({ ff: e.target.value || undefined })}
-                >
-                  <option value="">{ru ? '— по умолчанию —' : '— default —'}</option>
-                  {FONT_FAMILIES.filter((f) => f.id).map((f) => (
-                    <option key={f.id} value={f.id} style={{ fontFamily: f.id }}>
-                      {f.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
               <div className="react-tog-row" style={{ justifyContent: 'space-between' }}>
                 <span>{ru ? 'Заголовок · первая строка' : 'Header · first row'}</span>
                 <Toggle
@@ -2138,12 +3272,12 @@ export default function ElementPropsPanel() {
               <div className="react-tog-row" style={{ justifyContent: 'space-between' }}>
                 <span>{ru ? 'Чередовать цвет строк' : 'Alternate row colors'}</span>
                 <Toggle
-                  checked={!!el.altBg}
+                  checked={tableAltRowsOn(el)}
                   onChange={(v) => editorApi.setTableAltRows(!!v)}
                   aria-label={ru ? 'Чередовать цвет строк' : 'Alternate row colors'}
                 />
               </div>
-              {el.altBg ? (
+              {tableAltRowsOn(el) ? (
                 <ColorField
                   label={ru ? 'Чередование' : 'Alt rows'}
                   value={el.altBg}
@@ -2303,15 +3437,14 @@ export default function ElementPropsPanel() {
               label={ru ? 'Градусы' : 'Degrees'}
               min={0}
               max={360}
-              step={0.1}
-              value={
-                el.displayDeg != null
-                  ? +el.displayDeg
-                  : Math.round((el.deg || 0) * 10) / 10
-              }
+              step={1}
+              value={hasManualAngleValue(el)
+                ? Math.round(+el.displayDeg)
+                : Math.round(buildLineAngleContent(el, els)?.deg ?? el.deg ?? 0)}
               onChange={(v) => {
-                const next = Math.round(+v * 10) / 10;
+                const next = Math.max(0, Math.min(360, Math.round(+v)));
                 patch({
+                  manualDeg: true,
                   displayDeg: next,
                   labelStyle: el.labelStyle === 'hidden' ? 'deg' : el.labelStyle,
                 });
@@ -2425,6 +3558,7 @@ export default function ElementPropsPanel() {
             label={ru ? 'Цвет' : 'Color'}
             value={el.color || '#64748b'}
             schemeRef={el.colorScheme}
+            stylePipette
             onChange={(c, sr) => patch({ color: c || '#64748b', colorScheme: sr })}
             onClear={() => patch({ color: '#64748b', colorScheme: { col: 0, row: 4 } })}
           />
@@ -2449,7 +3583,16 @@ export default function ElementPropsPanel() {
           <ColorField
             label={ru ? 'Цвет значка' : 'Icon color'}
             value={el.iconColor || el.textColor || '#6366f1'}
-            onChange={(c) => patch({ iconColor: c, textColor: c })}
+            schemeRef={el.iconColorScheme}
+            stylePipette
+            onChange={(c, sr) =>
+              patch({
+                iconColor: c,
+                textColor: c,
+                iconColorScheme: sr,
+                iconColorCustom: !sr,
+              })
+            }
           />
           <GSlider
             label={ru ? 'Обводка' : 'Stroke'}
@@ -2581,7 +3724,7 @@ export default function ElementPropsPanel() {
                       type="button"
                       className={`react-props-btn${(el.imgFrame || 'none') === f.id ? ' is-active' : ''}`}
                       title={f.title}
-                      onClick={() => patch({ imgFrame: f.id })}
+                      onClick={() => patch(polaroidFramePatch(el, f.id, cw, ch))}
                       style={{
                         display: 'flex',
                         flexDirection: 'column',
@@ -2607,7 +3750,7 @@ export default function ElementPropsPanel() {
                     value={el.imgCaption || ''}
                     placeholder={ru ? 'Текст под фото…' : 'Caption text…'}
                     onChange={(e) => patch({ imgCaption: e.target.value })}
-                    style={{ fontFamily: "'Segoe Script','Comic Sans MS',cursive,sans-serif" }}
+                    style={{ fontFamily: POLAROID_CAPTION_FONT }}
                   />
                 </label>
               ) : null}
@@ -2645,20 +3788,21 @@ export default function ElementPropsPanel() {
                 type="button"
                 className="react-props-btn"
                 onClick={() => editorApi.startImageCrop(el.id)}
-                style={{ width: '100%', marginBottom: 2 }}
+                style={{ width: '100%' }}
               >
                 {ru ? '✂️ Обрезка' : '✂️ Crop'}
               </button>
-              {/* Flip buttons */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 2 }}>
-                <FlipIconButtons
-                  flipH={!!el.imgFlipH}
-                  flipV={!!el.imgFlipV}
-                  ru={ru}
-                  onFlipH={() => patch({ imgFlipH: !el.imgFlipH })}
-                  onFlipV={() => patch({ imgFlipV: !el.imgFlipV })}
-                />
-              </div>
+              {/* Flip buttons — react-flip-row already splits these two 50/50 itself; an
+                  outer grid wrapper here just nested a second 1fr/1fr around that single
+                  child, which is why both buttons ended up squeezed into the first half of
+                  the row instead of spanning the full width. */}
+              <FlipIconButtons
+                flipH={!!el.imgFlipH}
+                flipV={!!el.imgFlipV}
+                ru={ru}
+                onFlipH={() => patch({ imgFlipH: !el.imgFlipH })}
+                onFlipV={() => patch({ imgFlipV: !el.imgFlipV })}
+              />
               {/* Set as background button */}
               <button
                 type="button"
@@ -2673,18 +3817,36 @@ export default function ElementPropsPanel() {
                 <span>{ru ? 'Обводка' : 'Border'}</span>
                 <ColorField
                   label={ru ? 'Цвет' : 'Color'}
-                  value={el.imgBc || '#ffffff'}
-                  onChange={(c) => patch({ imgBc: c })}
+                  value={el.imgBc || schemeSwatchColor(theme, 7, 8) || '#ffffff'}
+                  schemeRef={el.imgBcScheme ?? (!el.imgBc ? { col: 7, row: 8 } : null)}
+                  stylePipette
+                  onChange={(c, sr) => patch({ imgBc: c, imgBcScheme: sr })}
                 />
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                  <label className="react-props-field react-props-field-compact">
-                    <span>{ru ? 'Толщина' : 'Width'}</span>
-                    <input type="number" min="0" max="20" value={el.imgBw ?? 0} onChange={(e) => patch({ imgBw: +e.target.value })} />
-                  </label>
-                  <label className="react-props-field react-props-field-compact">
-                    <span>{ru ? 'Скругл.' : 'Radius'}</span>
-                    <input type="number" min="0" max="600" value={el.imgRx ?? 0} onChange={(e) => patch({ imgRx: +e.target.value })} />
-                  </label>
+                <div className="react-props-grid">
+                  <GSlider
+                    label={ru ? 'Толщина' : 'Width'}
+                    min={0}
+                    max={20}
+                    step={1}
+                    value={el.imgBw ?? 0}
+                    onChange={(v) =>
+                      patch({
+                        imgBw: Math.round(v),
+                        ...(!el.imgBc ? {
+                          imgBc: schemeSwatchColor(theme, 7, 8) || '#ffffff',
+                          imgBcScheme: { col: 7, row: 8 },
+                        } : {}),
+                      })
+                    }
+                  />
+                  <GSlider
+                    label={ru ? 'Скругл.' : 'Radius'}
+                    min={0}
+                    max={600}
+                    step={1}
+                    value={el.imgRx ?? 0}
+                    onChange={(v) => patch({ imgRx: Math.round(v) })}
+                  />
                 </div>
                 {/* Border style buttons */}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginTop: 4 }}>
@@ -2701,7 +3863,16 @@ export default function ElementPropsPanel() {
                       type="button"
                       title={b.title}
                       className={`react-props-btn${(el.imgBorderStyle || 'solid') === b.id ? ' is-active' : ''}`}
-                      onClick={() => patch({ imgBorderStyle: b.id, imgBw: el.imgBw > 0 ? el.imgBw : 3 })}
+                      onClick={() =>
+                        patch({
+                          imgBorderStyle: b.id,
+                          imgBw: el.imgBw > 0 ? el.imgBw : 3,
+                          ...(!el.imgBc ? {
+                            imgBc: schemeSwatchColor(theme, 7, 8) || '#ffffff',
+                            imgBcScheme: { col: 7, row: 8 },
+                          } : {}),
+                        })
+                      }
                       style={{ flex: '1 1 36px', minWidth: 36, padding: '3px 2px' }}
                     >
                       <svg viewBox="0 0 28 10" width="28" height="10" dangerouslySetInnerHTML={{ __html: b.svg }} />
@@ -2709,66 +3880,17 @@ export default function ElementPropsPanel() {
                   ))}
                 </div>
               </div>
-              {/* Shadow section */}
-              <div className="react-props-field">
-                <span>{ru ? 'Тень' : 'Shadow'}</span>
-                <label className="react-props-check" style={{ marginBottom: 4 }}>
-                  <input
-                    type="checkbox"
-                    checked={!!el.imgShadow}
-                    onChange={(e) => patch({ imgShadow: e.target.checked })}
-                  />
-                  {ru ? 'Включить тень' : 'Enable shadow'}
-                </label>
-                {el.imgShadow ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                      <ColorField
-                        label=""
-                        value={el.imgShadowColor || '#000000'}
-                        onChange={(c) => patch({ imgShadowColor: c })}
-                        compact
-                      />
-                      <input
-                        type="number"
-                        min="0"
-                        max="60"
-                        value={el.imgShadowBlur ?? 15}
-                        title={ru ? 'Размытие' : 'Blur'}
-                        placeholder="blur"
-                        onChange={(e) => patch({ imgShadowBlur: +e.target.value })}
-                        style={{ flex: 1, minWidth: 0, fontSize: 11 }}
-                      />
-                      <input
-                        type="number"
-                        min="0"
-                        max="60"
-                        value={el.imgShadowSize ?? 4}
-                        title={ru ? 'Смещение' : 'Offset'}
-                        placeholder="size"
-                        onChange={(e) => patch({ imgShadowSize: +e.target.value })}
-                        style={{ flex: 1, minWidth: 0, fontSize: 11 }}
-                      />
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-              {/* Opacity */}
-              <label className="react-props-field">
-                <span>{ru ? 'Прозрачность' : 'Opacity'}</span>
-                <input
-                  type="number"
-                  min="0"
-                  max="1"
-                  step="0.05"
-                  value={el.imgOpacity ?? el.elOpacity ?? 1}
-                  onChange={(e) => patch({ imgOpacity: +e.target.value, elOpacity: +e.target.value })}
-                />
-              </label>
-              {/* Change image button */}
-              <button type="button" className="react-props-btn" onClick={() => editorApi.openImagePicker()}>
-                {ru ? 'Сменить картинку…' : 'Change image…'}
-              </button>
+              <ShadowFields
+                el={el}
+                patch={patch}
+                ru={ru}
+                keys={{
+                  on: 'imgShadow',
+                  blur: 'imgShadowBlur',
+                  size: 'imgShadowSize',
+                  color: 'imgShadowColor',
+                }}
+              />
             </>
           ) : null}
           {(el.type === 'mediavideo' || el.type === 'mediaaudio') && (
@@ -2856,19 +3978,23 @@ export default function ElementPropsPanel() {
                 </>
               ) : (
                 <>
-                  <label className="react-props-field">
-                    <span>{ru ? 'Громкость' : 'Volume'}</span>
-                    <input
-                      type="number"
-                      min={0}
-                      max={1}
-                      step={0.05}
-                      value={el.maVolume != null ? el.maVolume : 1}
-                      onChange={(e) =>
-                        patch({ maVolume: Math.max(0, Math.min(1, +e.target.value || 0)) })
-                      }
-                    />
-                  </label>
+                  <GSlider
+                    label={ru ? 'Громкость' : 'Volume'}
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={el.maVolume != null ? +el.maVolume : 1}
+                    onChange={(value) =>
+                      patch({ maVolume: Math.max(0, Math.min(1, +value || 0)) })
+                    }
+                    onScrubStart={() => useHistoryStore.getState().push()}
+                    onScrubChange={(value) =>
+                      usePresentationStore
+                        .getState()
+                        .patchElement(el.id, { maVolume: Math.max(0, Math.min(1, +value || 0)) }, { live: true })
+                    }
+                    onScrubEnd={() => usePresentationStore.getState().persist()}
+                  />
                   <label className="react-props-field">
                     <span>{ru ? 'Запуск' : 'Start'}</span>
                     <select
@@ -2881,107 +4007,7 @@ export default function ElementPropsPanel() {
                     </select>
                   </label>
                   {(el.maStart || 'click-el') === 'click-el' ? (
-                    <div className="react-props-field">
-                      <span>{ru ? 'Объекты-триггеры' : 'Trigger objects'}</span>
-                      {(() => {
-                        const trigIds = Array.isArray(el.maTriggerElIds)
-                          ? el.maTriggerElIds
-                          : el.maTriggerElId
-                            ? [el.maTriggerElId]
-                            : [];
-                        const typeLabel = (t) =>
-                          ({
-                            text: ru ? 'Текст' : 'Text',
-                            image: ru ? 'Изображение' : 'Image',
-                            shape: ru ? 'Фигура' : 'Shape',
-                            icon: ru ? 'Значок' : 'Icon',
-                            table: ru ? 'Таблица' : 'Table',
-                            code: ru ? 'Код' : 'Code',
-                            markdown: 'Markdown',
-                            mediavideo: ru ? 'Видео' : 'Video',
-                            mediaaudio: ru ? 'Аудио' : 'Audio',
-                            applet: ru ? 'Аплет' : 'Applet',
-                          }[t] || t);
-                        return (
-                          <>
-                            <div className="react-media-triggers">
-                              {trigIds.length ? (
-                                trigIds.map((tid) => {
-                                  const te = els.find((e) => e && String(e.id) === String(tid));
-                                  const lab =
-                                    String(tid) === String(el.id)
-                                      ? ru
-                                        ? '♪ Этот объект'
-                                        : '♪ This object'
-                                      : te
-                                        ? `${typeLabel(te.type)} (${tid})`
-                                        : String(tid);
-                                  return (
-                                    <div key={tid} className="react-media-trigger-row">
-                                      <span>{lab}</span>
-                                      <button
-                                        type="button"
-                                        className="react-props-btn"
-                                        onClick={() =>
-                                          patch({
-                                            maTriggerElIds: trigIds.filter((x) => String(x) !== String(tid)),
-                                            maTriggerElId: undefined,
-                                          })
-                                        }
-                                      >
-                                        ✕
-                                      </button>
-                                    </div>
-                                  );
-                                })
-                              ) : (
-                                <div className="react-props-muted">{ru ? 'Не выбраны' : 'None'}</div>
-                              )}
-                            </div>
-                            <div className="react-props-actions" style={{ marginTop: 4 }}>
-                              <button
-                                type="button"
-                                className="react-props-btn"
-                                onClick={() => {
-                                  if (trigIds.some((x) => String(x) === String(el.id))) return;
-                                  patch({
-                                    maTriggerElIds: [...trigIds, el.id],
-                                    maTriggerElId: undefined,
-                                  });
-                                }}
-                              >
-                                {ru ? '♪ Этот объект' : '♪ This object'}
-                              </button>
-                            </div>
-                            <label className="react-props-field" style={{ marginTop: 4 }}>
-                              <span>{ru ? 'Добавить объект' : 'Add object'}</span>
-                              <select
-                                value=""
-                                onChange={(e) => {
-                                  const id = e.target.value;
-                                  if (!id) return;
-                                  if (trigIds.some((x) => String(x) === String(id))) return;
-                                  patch({
-                                    maTriggerElIds: [...trigIds, id],
-                                    maTriggerElId: undefined,
-                                  });
-                                  e.target.value = '';
-                                }}
-                              >
-                                <option value="">{ru ? 'Выбрать…' : 'Pick…'}</option>
-                                {els
-                                  .filter((e) => e && e.id != null)
-                                  .map((e) => (
-                                    <option key={e.id} value={e.id}>
-                                      {typeLabel(e.type)} ({e.id})
-                                    </option>
-                                  ))}
-                              </select>
-                            </label>
-                          </>
-                        );
-                      })()}
-                    </div>
+                    <MediaAudioTriggers el={el} patch={patch} ru={ru} />
                   ) : null}
                   <label className="react-props-field react-props-check">
                     <input
@@ -3140,33 +4166,30 @@ export default function ElementPropsPanel() {
           <label className="react-props-field">
             <span>{ru ? 'Тема' : 'Theme'}</span>
             <select
-              value={el.codeTheme || 'dark'}
+              value={el.codeTheme || CODE_THEME_SYSTEM}
               onChange={(e) => {
                 const codeTheme = e.target.value;
                 const next = { ...el, codeTheme };
                 patch({ codeTheme, ...ensureCodeHtml(next) });
               }}
             >
-              {Object.keys(CODE_THEMES).map((id) => (
+              {CODE_THEME_CHOICES.map((id) => (
                 <option key={id} value={id}>
-                  {id}
+                  {codeThemeLabel(id, ru)}
                 </option>
               ))}
             </select>
           </label>
-          <label className="react-props-field">
+          <div className="react-props-field" style={{ marginBottom: 6 }}>
             <span>{ru ? 'Размер шрифта' : 'Font size'}</span>
-            <input
-              type="number"
+            <GSlider
               min={10}
               max={28}
               step={1}
-              value={el.codeFs != null ? el.codeFs : 14}
-              onChange={(e) =>
-                patch({ codeFs: Math.max(10, Math.min(28, +e.target.value || 14)) })
-              }
+              value={el.codeFs != null ? el.codeFs : 18}
+              onChange={(v) => patch({ codeFs: Math.round(v) })}
             />
-          </label>
+          </div>
           <label className="react-props-check">
             <input
               type="checkbox"
@@ -3174,6 +4197,14 @@ export default function ElementPropsPanel() {
               onChange={(e) => patch({ codeGlass: e.target.checked })}
             />
             {ru ? 'Стекло' : 'Glass'}
+          </label>
+          <label className="react-props-check">
+            <input
+              type="checkbox"
+              checked={!!el.codeLineNums}
+              onChange={(e) => patch({ codeLineNums: e.target.checked })}
+            />
+            {ru ? 'Нумерация' : 'Line numbers'}
           </label>
         </div>
       ) : null}
@@ -3259,13 +4290,158 @@ export default function ElementPropsPanel() {
               </p>
             </>
           ) : null}
+          {el.appletId === 'classification' ? (
+            (() => {
+              const layout = getClassLayout(el);
+              const zones = getClassZones(el);
+              const zoneCount = layout.cols * layout.rows;
+              return (
+                <>
+                  <p className="react-props-muted" style={{ marginBottom: 8 }}>
+                    {ru
+                      ? 'Номера как в шапке «Элемент N» — не сдвигаются при удалении. Центр объекта решает зону.'
+                      : 'Numbers match “Element N” and stay stable after deletes. Object center picks the zone.'}
+                  </p>
+                  <p className="react-props-muted" style={{ marginBottom: 4 }}>
+                    {ru ? 'Шаблон' : 'Layout'}
+                  </p>
+                  <div className="react-class-layouts" role="group" aria-label={ru ? 'Шаблон зон' : 'Zone layout'}>
+                    {CLASS_LAYOUTS.map((L) => {
+                      const on = L.id === layout.id;
+                      const cells = L.cols * L.rows;
+                      return (
+                        <button
+                          key={L.id}
+                          type="button"
+                          className={`react-class-layout${on ? ' on' : ''}`}
+                          title={ru ? L.labelRu : L.labelEn}
+                          onClick={() => {
+                            if (on) return;
+                            const prev = getClassZones(el);
+                            const next = Array.from({ length: cells }, (_, i) => prev[i] || '');
+                            editorApi.patchApplet(el.id, {
+                              classLayout: L.id,
+                              classZones: next,
+                              classLeftIds: next[0] || '',
+                              classRightIds: next[1] || '',
+                            });
+                          }}
+                        >
+                          <span
+                            className="react-class-layout-grid"
+                            style={{
+                              gridTemplateColumns: `repeat(${L.cols}, 1fr)`,
+                              gridTemplateRows: `repeat(${L.rows}, 1fr)`,
+                            }}
+                          >
+                            {Array.from({ length: cells }, (_, i) => (
+                              <i key={i} />
+                            ))}
+                          </span>
+                          <span>{ru ? L.labelRu : L.labelEn}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div
+                    className={`react-class-zones cols-${layout.cols}`}
+                    style={
+                      layout.rows > 1
+                        ? { gridTemplateRows: `repeat(${layout.rows}, auto)` }
+                        : undefined
+                    }
+                  >
+                    {zones.map((raw, zi) => (
+                      <label key={zi} className="react-props-field">
+                        <span>{classZoneLabel(layout, zi, ru)}</span>
+                        <textarea
+                          rows={layout.rows > 1 ? 3 : 4}
+                          placeholder={zi === 0 ? '1, 3, 5' : '2, 4, 6'}
+                          value={raw}
+                          onChange={(e) => {
+                            const next = zones.map((z, i) => (i === zi ? e.target.value : z));
+                            while (next.length < zoneCount) next.push('');
+                            editorApi.patchApplet(el.id, {
+                              classZones: next.slice(0, zoneCount),
+                              classLeftIds: next[0] || '',
+                              classRightIds: next[1] || '',
+                            });
+                          }}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                  <div className="react-props-actions" style={{ marginBottom: 8 }}>
+                    <button
+                      type="button"
+                      className="react-props-btn"
+                      onClick={() => {
+                        const patch = rememberClassificationIds(els, cw, ch, el);
+                        editorApi.patchApplet(el.id, patch);
+                      }}
+                    >
+                      {ru ? 'Запомнить' : 'Remember'}
+                    </button>
+                  </div>
+                  <p className="react-props-muted" style={{ marginTop: -4, marginBottom: 8 }}>
+                    {ru
+                      ? 'Запоминает все объекты по зонам шаблона, кроме темы слайда и нумерации.'
+                      : 'Stores every object by layout zone, except the slide theme and page numbers.'}
+                  </p>
+                  <label className="react-props-field">
+                    <span>{ru ? 'Кнопка' : 'Button'}</span>
+                    <input
+                      type="text"
+                      value={el.classBtnLabel ?? CLASSIFICATION_DEFAULTS.classBtnLabel}
+                      onChange={(e) => editorApi.patchApplet(el.id, { classBtnLabel: e.target.value })}
+                    />
+                  </label>
+                  <ColorField
+                    label={ru ? 'Цвет кнопки' : 'Button color'}
+                    value={el.classBtnColor || ''}
+                    schemeRef={
+                      el.classBtnColorScheme ||
+                      (!el.classBtnColor ? CLASSIFICATION_DEFAULTS.classBtnColorScheme : null)
+                    }
+                    onChange={(c, sr) =>
+                      editorApi.patchApplet(el.id, {
+                        classBtnColor: c,
+                        classBtnColorScheme: sr || null,
+                      })
+                    }
+                  />
+                  <label className="react-props-field">
+                    <span>{ru ? 'Успех' : 'Success'}</span>
+                    <input
+                      type="text"
+                      value={el.classOkText ?? CLASSIFICATION_DEFAULTS.classOkText}
+                      onChange={(e) => editorApi.patchApplet(el.id, { classOkText: e.target.value })}
+                    />
+                  </label>
+                  <label className="react-props-field">
+                    <span>{ru ? 'Неудача' : 'Failure'}</span>
+                    <input
+                      type="text"
+                      value={el.classFailText ?? CLASSIFICATION_DEFAULTS.classFailText}
+                      onChange={(e) => editorApi.patchApplet(el.id, { classFailText: e.target.value })}
+                    />
+                  </label>
+                </>
+              );
+            })()
+          ) : null}
+          {el.appletId === 'imagesort' ? (
+            <ImageSortProps el={el} ru={ru} />
+          ) : null}
           {el.appletId === 'flip' || isFlipAppletId(el.appletId) ? (
             (() => {
               const theme = getTheme(appliedThemeIdx);
               const colors = resolveFlipColors(el, theme);
               const back = el.flipFace === 'back';
               const sideText = back ? el.flipBackText || '' : el.flipFrontText || '';
-              const sideFont = back ? el.flipBackFont || '' : el.flipFrontFont || '';
+              const sideFont = back
+                ? el.flipBackFont || flipFontToken(DEFAULT_TEXT_FONT_FAMILY)
+                : el.flipFrontFont || flipFontToken(DEFAULT_TEXT_FONT_FAMILY);
               const sideFs = back ? el.flipBackFs ?? 20 : el.flipFrontFs ?? 20;
               const sideImg = back ? el.flipBackImg : el.flipFrontImg;
               const patchSide = (patch) => {
@@ -3351,7 +4527,6 @@ export default function ElementPropsPanel() {
                       value={sideFont}
                       onChange={(e) => patchSide({ font: flipFontToken(e.target.value) })}
                     >
-                      <option value="">{ru ? '— по умолчанию —' : '— default —'}</option>
                       {FONT_FAMILIES.filter((f) => f.id).map((f) => {
                         const tok = flipFontToken(f.id);
                         return (
@@ -3485,27 +4660,28 @@ export default function ElementPropsPanel() {
           {el.appletId === 'timer' ? (
             <>
               <div className="react-props-grid">
-                <label className="react-props-field react-props-field-compact">
-                  <span>{ru ? 'Мин' : 'Min'}</span>
-                  <input
-                    type="number"
-                    min="0"
-                    max="99"
-                    value={el.tmMin ?? 5}
-                    onChange={(e) => editorApi.patchApplet(el.id, { tmMin: Math.max(0, +e.target.value || 0) })}
-                  />
-                </label>
-                <label className="react-props-field react-props-field-compact">
-                  <span>{ru ? 'Сек' : 'Sec'}</span>
-                  <input
-                    type="number"
-                    min="0"
-                    max="59"
-                    value={el.tmSec ?? 0}
-                    onChange={(e) => editorApi.patchApplet(el.id, { tmSec: Math.max(0, Math.min(59, +e.target.value || 0)) })}
-                  />
-                </label>
+                <GSlider
+                  label={ru ? 'Мин' : 'Min'}
+                  min={0}
+                  max={99}
+                  step={1}
+                  value={el.tmMin != null ? +el.tmMin : 5}
+                  onChange={(v) =>
+                    editorApi.patchApplet(el.id, { tmMin: Math.max(0, Math.min(99, Math.round(+v) || 0)) })
+                  }
+                />
+                <GSlider
+                  label={ru ? 'Сек' : 'Sec'}
+                  min={0}
+                  max={59}
+                  step={1}
+                  value={el.tmSec != null ? +el.tmSec : 0}
+                  onChange={(v) =>
+                    editorApi.patchApplet(el.id, { tmSec: Math.max(0, Math.min(59, Math.round(+v) || 0)) })
+                  }
+                />
               </div>
+              <TimerStartFields el={el} slides={slides} ru={ru} />
               <AppletOnEndFields el={el} slides={slides} slide={slides[cur]} ru={ru} kind="timer" />
             </>
           ) : null}
@@ -3669,8 +4845,8 @@ export default function ElementPropsPanel() {
                   : 'Double-click on canvas / click in preview.'
                 : el.appletId === 'timer'
                 ? ru
-                  ? 'В превью и экспорте таймер стартует сам.'
-                  : 'Timer auto-starts in preview and export.'
+                  ? 'Запуск: со слайдом, по клику на слайде или по объекту.'
+                  : 'Start: with slide, on slide click, or on object click.'
                 : null}
           </p>
         </div>
@@ -3702,26 +4878,30 @@ export default function ElementPropsPanel() {
           </label>
           <ColorField
             label={ru ? 'Акцент' : 'Accent'}
-            value={el.pnColor || '#3b82f6'}
-            onChange={(c) => editorApi.setPageNumbers({ color: c, customColor: true })}
+            value={resolveSchemeColor(pnNormalize({ color: el.pnColor, colorScheme: el.pnColorScheme }).colorScheme, theme) || el.pnColor || '#3b82f6'}
+            schemeRef={pnNormalize({ color: el.pnColor, colorScheme: el.pnColorScheme }).colorScheme}
+            onChange={(c, sr) =>
+              editorApi.setPageNumbers({ color: c, colorScheme: sr ?? null, customColor: !sr })
+            }
           />
           <ColorField
             label={ru ? 'Текст' : 'Text'}
-            value={el.pnTextColor || '#ffffff'}
-            onChange={(c) => editorApi.setPageNumbers({ textColor: c })}
+            value={resolveSchemeColor(pnNormalize({ textColor: el.pnTextColor, textColorScheme: el.pnTextColorScheme }).textColorScheme, theme) || el.pnTextColor || '#ffffff'}
+            schemeRef={pnNormalize({ textColor: el.pnTextColor, textColorScheme: el.pnTextColorScheme }).textColorScheme}
+            onChange={(c, sr) =>
+              editorApi.setPageNumbers({ textColor: c, textColorScheme: sr ?? null })
+            }
           />
-          <label className="react-props-field react-props-field-compact">
-            <span>{ru ? 'Кегль' : 'Size'}</span>
-            <input
-              type="number"
-              min="10"
-              max="48"
-              value={el.pnFontSize ?? 14}
-              onChange={(e) =>
-                editorApi.setPageNumbers({ fontSize: Math.max(10, Math.min(48, +e.target.value || 14)) })
-              }
-            />
-          </label>
+          <GSlider
+            label={ru ? 'Кегль' : 'Size'}
+            min={10}
+            max={48}
+            step={1}
+            value={el.pnFontSize ?? 14}
+            onChange={(v) =>
+              editorApi.setPageNumbers({ fontSize: Math.max(10, Math.min(48, +v || 14)) })
+            }
+          />
           <GSlider
             label={ru ? 'Прозрачность' : 'Opacity'}
             min={0.15}
@@ -3732,8 +4912,8 @@ export default function ElementPropsPanel() {
           />
           <p className="react-props-muted">
             {ru
-              ? 'Перетащите бейдж — позиция сохранится на всех слайдах. Сброс позиции — в свойствах слайда.'
-              : 'Drag the badge to set position for all slides. Reset position in slide props.'}
+              ? 'Перетащите бейдж — позиция сохранится на всех слайдах. Нажмите угол, чтобы вернуть на место.'
+              : 'Drag the badge to set position for all slides. Click a corner to snap it back.'}
           </p>
         </div>
       ) : null}
@@ -3771,12 +4951,14 @@ export default function ElementPropsPanel() {
           <ColorField
             label={ru ? 'Цвет' : 'Color'}
             value={el.objColor || '#6366f1'}
-            onChange={(c) => patch({ objColor: c })}
+            schemeRef={el.objColorScheme}
+            onChange={(c, sr) => patch({ objColor: c, objColorScheme: sr ?? null })}
           />
           <ColorField
             label={ru ? 'Фон' : 'Background'}
             value={el.objBg || '#0f172a'}
-            onChange={(c) => patch({ objBg: c, objBgCleared: false })}
+            schemeRef={el.objBgScheme}
+            onChange={(c, sr) => patch({ objBg: c, objBgScheme: sr ?? null, objBgCleared: false })}
           />
           <label className="react-props-check">
             <input
@@ -3794,24 +4976,46 @@ export default function ElementPropsPanel() {
             />
             {ru ? 'Автоповорот' : 'Auto-rotate'}
           </label>
-          <div className="react-props-grid">
-            <label className="react-props-field react-props-field-compact">
-              <span>Rot X</span>
-              <input
-                type="number"
-                value={el.objRotX ?? -15}
-                onChange={(e) => patch({ objRotX: +e.target.value || 0 })}
-              />
-            </label>
-            <label className="react-props-field react-props-field-compact">
-              <span>Rot Y</span>
-              <input
-                type="number"
-                value={el.objRotY ?? 25}
-                onChange={(e) => patch({ objRotY: +e.target.value || 0 })}
-              />
-            </label>
-          </div>
+          <label className="react-props-check">
+            <input
+              type="checkbox"
+              checked={!!el.objWireframe}
+              onChange={(e) => patch({ objWireframe: e.target.checked })}
+            />
+            {ru ? 'Каркас' : 'Wireframe'}
+          </label>
+          <GSlider
+            label={ru ? 'Толщина линии каркаса' : 'Wire / edge width'}
+            min={0.5}
+            max={8}
+            step={0.1}
+            value={el.objLineWidth != null ? +el.objLineWidth : 1.5}
+            onChange={(v) => patch({ objLineWidth: Math.max(0.5, Math.min(12, +v || 1.5)) })}
+          />
+          <GSlider
+            label={ru ? 'Наклон X' : 'Tilt X'}
+            min={-90}
+            max={90}
+            step={1}
+            value={el.objRotX ?? -15}
+            onChange={(v) => patch({ objRotX: v })}
+          />
+          <GSlider
+            label={ru ? 'Поворот Y' : 'Orbit Y'}
+            min={-180}
+            max={180}
+            step={1}
+            value={el.objRotY ?? 25}
+            onChange={(v) => patch({ objRotY: v })}
+          />
+          <GSlider
+            label={ru ? 'Вокруг оси' : 'Around axis'}
+            min={-180}
+            max={180}
+            step={1}
+            value={el.objSpin ?? 0}
+            onChange={(v) => patch({ objSpin: v })}
+          />
           <GSlider
             label={ru ? 'Скорость' : 'Speed'}
             min={0}
@@ -3820,6 +5024,7 @@ export default function ElementPropsPanel() {
             value={el.objRotSpeed ?? 1}
             onChange={(v) => patch({ objRotSpeed: v })}
           />
+          <PromptCopyBox text={OBJ_LLM_PROMPT} maxHeight={220} />
         </div>
       ) : null}
 
@@ -3931,35 +5136,7 @@ export default function ElementPropsPanel() {
         </div>
       ) : null}
 
-      <div className="react-props-field">
-        <span>{ru ? 'Стиль' : 'Style'}</span>
-        <div className="react-props-row react-props-seg">
-          <button type="button" className="react-props-btn" onClick={() => editorApi.copyStyle()} title="Ctrl+Shift+C">
-            {ru ? 'Копировать' : 'Copy'}
-          </button>
-          <button type="button" className="react-props-btn" onClick={() => editorApi.pasteStyle()} title="Ctrl+Shift+V">
-            {ru ? 'Вставить' : 'Paste'}
-          </button>
-          <button type="button" className="react-props-btn" onClick={() => editorApi.toggleStylePaint()} title={ru ? 'Кисть стиля' : 'Style paint'}>
-            {ru ? 'Кисть' : 'Paint'}
-          </button>
-        </div>
-      </div>
-
-      <div className="react-props-hdr" style={{ marginTop: 8 }}>{ru ? 'Ссылка' : 'Link'}</div>
-      <div className="react-props-field">
-        <div className="react-props-row">
-          <button type="button" className="react-props-btn" onClick={() => editorApi.openLinkModal()}>
-            {el.link ? (ru ? 'Изменить…' : 'Edit…') : ru ? 'Добавить…' : 'Add…'}
-          </button>
-          {el.link ? (
-            <button type="button" className="react-props-btn react-props-btn-ghost" onClick={() => editorApi.removeLink()}>
-              {ru ? 'Убрать' : 'Remove'}
-            </button>
-          ) : null}
-        </div>
-        {el.link ? <p className="react-props-muted" style={{ marginTop: 4, wordBreak: 'break-all' }}>{el.link}</p> : null}
-      </div>
+      <LinkPropsSection el={el} ru={ru} />
 
       <div className="react-props-actions">
         <button type="button" className="react-props-btn" disabled={!canUndo} onClick={() => editorApi.undo()}>

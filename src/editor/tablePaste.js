@@ -96,10 +96,6 @@ export function newTableFromTsv(tsvRows) {
   }
   return {
     ...base,
-    x: 160,
-    y: 140,
-    w: Math.min(900, Math.max(280, cols * 120)),
-    h: Math.min(500, Math.max(160, rows * 44)),
     cells,
     anims: [],
   };

@@ -6,6 +6,9 @@
 import { looksLikeHtmlDocument, containsHtmlTags } from './htmlFrame.js';
 import { extractPasteUrl } from './pasteUrl.js';
 import { detectPasteCodeLang, stripCodeFence } from './detectPasteCode.js';
+import { extractPasteLatex } from './detectPasteLatex.js';
+import { extractObjText, isObjFile, looksLikeObjText } from './detectPasteObj.js';
+import { looksLikePresentationJson, looksLikePresentationJsonRough } from './jsonLenient.js';
 import { htmlTableToTsv, isTsvText } from './tablePaste.js';
 import {
   getAppClipAt,
@@ -105,7 +108,7 @@ function hasRealText(plain, html) {
 
 /**
  * @param {object} api editorApi
- * @param {{ plain?: string, html?: string, customClip?: string, osImageFiles?: Blob[], htmlImgEl?: Element|null, preferThumbStrip?: boolean }} bag
+ * @param {{ plain?: string, html?: string, customClip?: string, osImageFiles?: Blob[], osObjFiles?: Blob[], htmlImgEl?: Element|null, preferThumbStrip?: boolean }} bag
  */
 export async function dispatchPaste(api, bag = {}) {
   const {
@@ -113,6 +116,7 @@ export async function dispatchPaste(api, bag = {}) {
     html = '',
     customClip = '',
     osImageFiles = [],
+    osObjFiles = [],
     htmlImgEl = null,
     preferThumbStrip = false,
   } = bag;
@@ -134,7 +138,7 @@ export async function dispatchPaste(api, bag = {}) {
       }
     } catch (e) {}
     if (!els?.length) return false;
-    api._pasteElements?.(els);
+    await api._pasteElements?.(els);
     return true;
   };
 
@@ -191,7 +195,7 @@ export async function dispatchPaste(api, bag = {}) {
     }
     if (hydrated.kind === 'elements' && hydrated.elements?.length) {
       api._pasteSetElements?.(hydrated.elements);
-      api._pasteElements?.(hydrated.elements);
+      await api._pasteElements?.(hydrated.elements);
       return true;
     }
     return false;
@@ -255,9 +259,43 @@ export async function dispatchPaste(api, bag = {}) {
   // 1. Bitmap
   if (isImagePaste && (await pasteOsBitmap())) return true;
 
+  // 1b. Wavefront OBJ file / text → 3D model element (faces and/or wireframe lines)
+  const pasteObj = async (text, name) => {
+    if (!looksLikeObjText(text) || typeof api.pasteModel3d !== 'function') return false;
+    const cleaned = extractObjText(text) || text;
+    return !!(await api.pasteModel3d(cleaned, name || 'model.obj'));
+  };
+  for (const f of osObjFiles || []) {
+    try {
+      const text = typeof f.text === 'function' ? await f.text() : '';
+      if (await pasteObj(text, f.name || 'model.obj')) return true;
+    } catch (_) {
+      /* try next */
+    }
+  }
+  if (hasRealExternalText && (await pasteObj(plainTrim, 'pasted.obj'))) return true;
+
+  // 1c. Full deck JSON from LLM / export → replace presentation (before plain text)
+  if (
+    hasRealExternalText &&
+    looksLikePresentationJson(plainTrim) &&
+    typeof api.pastePresentationJson === 'function'
+  ) {
+    const ok = await api.pastePresentationJson(plainTrim);
+    if (ok) return true;
+  }
+
   // 2. MAGIC / app clip
   if (await applyMagic(customClip) || await applyMagic(plain)) return true;
-  if (!isImagePaste && !pasteUrl && !(copiedOutside && hasRealExternalText) && (await pasteLastAppClip())) {
+  // Prefer real OS text (incl. in-app contentEditable copy) over a stale element clip.
+  // Previously `!copiedOutside && hasRealExternalText` still fell through to pasteLastAppClip,
+  // so copying "Винт" then pasting on the slide resurrected the whole text box.
+  if (
+    !isImagePaste &&
+    !pasteUrl &&
+    !hasRealExternalText &&
+    (await pasteLastAppClip())
+  ) {
     return true;
   }
 
@@ -273,10 +311,34 @@ export async function dispatchPaste(api, bag = {}) {
       } catch (e) {}
     }
     if (content && !isSysClip) {
+      // Deck JSON again (in case magic/app-clip ran first with empty result)
+      if (looksLikePresentationJson(content) && typeof api.pastePresentationJson === 'function') {
+        const ok = await api.pastePresentationJson(content);
+        if (ok) return true;
+      }
+      // Looks like a deck but parse failed (AI caution banners / broken quotes).
+      // Never turn that into an HTML frame — JSON string fields often contain <b>/<span>.
+      if (looksLikePresentationJsonRough(content) && typeof api.pastePresentationJson === 'function') {
+        const ok = await api.pastePresentationJson(content);
+        if (ok) return true;
+        api._pasteToast?.(
+          api._pasteRu?.()
+            ? 'Не удалось разобрать JSON презентации'
+            : 'Could not parse presentation JSON',
+          'err'
+        );
+        return true;
+      }
       // HTML content → htmlframe (check before code — HTML tags are a stronger signal)
+      // Skip when the plain text is clearly JSON (starts with { or [).
+      const plainLooksJson = /^\s*[{\[]/.test(plainTrim);
       // 1) Plain text with HTML tags (user copied HTML source code as text)
       let htmlSrc = '';
-      if (hasRealExternalText && (looksLikeHtmlDocument(plainTrim) || containsHtmlTags(plainTrim))) {
+      if (
+        hasRealExternalText &&
+        !plainLooksJson &&
+        (looksLikeHtmlDocument(plainTrim) || containsHtmlTags(plainTrim))
+      ) {
         htmlSrc = plainTrim;
       }
       // 2) Raw clipboard HTML with full document structure (user selected rendered page in browser)
@@ -287,6 +349,12 @@ export async function dispatchPaste(api, bag = {}) {
         api.applyHtmlFrame?.({ hfSrc: htmlSrc, w: 640, h: 400, hfScroll: true, hfChrome: true });
         api._pasteToast?.(api._pasteRu?.() ? 'HTML-блок вставлен' : 'HTML block pasted', 'ok');
         return true;
+      }
+      // LaTeX math → formula object (before code: \begin{…} etc. is math, not a program)
+      const latex = extractPasteLatex(content);
+      if (latex && typeof api.pasteLatexFormula === 'function') {
+        const ok = await api.pasteLatexFormula(latex);
+        if (ok) return true;
       }
       // Code detection — after HTML check so HTML tags aren't mistaken for code
       let codeSrc = stripCodeFence(content);
@@ -364,6 +432,7 @@ export async function handlePasteEvent(e, api) {
 
   const cd = e.clipboardData;
   let { osImageFiles, items } = collectOsImages(cd);
+  const osObjFiles = [];
   let html = '';
   let plain = '';
   let customClip = '';
@@ -396,6 +465,16 @@ export async function handlePasteEvent(e, api) {
             }
           })
         );
+      } else if (item.kind === 'file' || (item.type && !String(item.type).startsWith('image/'))) {
+        try {
+          const f = item.getAsFile?.();
+          if (f && isObjFile(f)) osObjFiles.push(f);
+        } catch (err) {}
+      }
+    }
+    if (cd.files?.length) {
+      for (const f of cd.files) {
+        if (isObjFile(f) && !osObjFiles.includes(f)) osObjFiles.push(f);
       }
     }
     if (textPromises.length) await Promise.all(textPromises);
@@ -440,6 +519,7 @@ export async function handlePasteEvent(e, api) {
     html,
     customClip,
     osImageFiles,
+    osObjFiles,
     htmlImgEl,
     preferThumbStrip,
   });

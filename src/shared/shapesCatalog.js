@@ -32,31 +32,36 @@ export const SHAPES = [
     id: 'arrow',
     name: 'Стрелка →',
     nameEn: 'Arrow →',
-    path: 'M 5 35 L 60 35 L 60 15 L 95 50 L 60 85 L 60 65 L 5 65 Z',
+    path: null,
+    special: 'arrow',
   },
   {
     id: 'arrowLeft',
     name: 'Стрелка ←',
     nameEn: 'Arrow ←',
-    path: 'M 95 35 L 40 35 L 40 15 L 5 50 L 40 85 L 40 65 L 95 65 Z',
+    path: null,
+    special: 'arrow',
   },
   {
     id: 'arrowUp',
     name: 'Стрелка ↑',
     nameEn: 'Arrow ↑',
-    path: 'M 35 95 L 35 40 L 15 40 L 50 5 L 85 40 L 65 40 L 65 95 Z',
+    path: null,
+    special: 'arrow',
   },
   {
     id: 'arrowDown',
     name: 'Стрелка ↓',
     nameEn: 'Arrow ↓',
-    path: 'M 35 5 L 35 60 L 15 60 L 50 95 L 85 60 L 65 60 L 65 5 Z',
+    path: null,
+    special: 'arrow',
   },
   {
     id: 'arrowDouble',
     name: 'Стрелка ↔',
     nameEn: 'Arrow ↔',
-    path: 'M 5 50 L 30 20 L 30 37 L 70 37 L 70 20 L 95 50 L 70 80 L 70 63 L 30 63 L 30 80 Z',
+    path: null,
+    special: 'arrow',
   },
   {
     id: 'cross',
@@ -132,7 +137,7 @@ export const SHAPES = [
   },
   { id: 'gear', name: 'Шестерня', nameEn: 'Gear', path: null, special: 'gear' },
   { id: 'moon', name: 'Луна', nameEn: 'Moon', path: null, special: 'moon' },
-  { id: 'noSymbol', name: 'Запрет', nameEn: 'No symbol', path: null, special: 'noSymbol' },
+  { id: 'noSymbol', name: 'Кольцо', nameEn: 'Ring', path: null, special: 'noSymbol' },
 ];
 
 export function getGalleryShapes() {
@@ -144,10 +149,18 @@ export function getShapeMeta(id) {
 }
 
 /** Shapes whose geometry may extend past the element box (need overflow:visible). */
-export function shapeNeedsOverflowVisible(shapeId) {
+export function shapeNeedsOverflowVisible(shapeId, el) {
   if (shapeId === 'line') return true;
   const meta = getShapeMeta(shapeId);
-  return !!(meta && (meta.special === 'callout' || meta.special === 'curve' || meta.special === 'cloud'));
+  if (meta && (meta.special === 'callout' || meta.special === 'curve' || meta.special === 'cloud')) return true;
+  if (el && Array.isArray(el.shapePts) && el.shapePts.length >= 3) return true;
+  if (el && el.shapeHtml) return true;
+  if (el) {
+    const sw = +el.sw || 0;
+    const stroke = el.stroke;
+    if (sw > 0 && stroke && stroke !== 'none' && stroke !== 'transparent') return true;
+  }
+  return false;
 }
 
 export default { SHAPES, SHAPE_GALLERY_HIDDEN, getGalleryShapes, getShapeMeta, shapeNeedsOverflowVisible };

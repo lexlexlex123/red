@@ -98,18 +98,24 @@ function editorThemeDark() {
   return !document.documentElement.classList.contains('light');
 }
 
-/** v7.1 _pteResolveColors: scheme 7,7 → diagonal gray–white–gray; other color → solid. */
+/** v7.1 _pteResolveColors: scheme 7,7 → diagonal gray–white–gray; other color → solid.
+ *  Follows the presentation theme (theme.dark), not the editor chrome light/dark class —
+ *  otherwise a dark deck with a light UI chrome forced a light element card. */
 export function resolvePteColors(d = {}, theme = null) {
-  const editorDark = editorThemeDark();
+  const presentDark = theme ? theme.dark !== false : editorThemeDark();
   let bg = d.genBg || '';
   let fg = d.genColor || '';
   const s = d.genBgScheme;
   const useGrad = !!(s && +s.col === 7 && +s.row === 7);
+  const hasExplicitBg = !!(d.genBg && String(d.genBg).trim());
   if (!bg && theme) bg = resolveSchemeColor(d.genBgScheme || pteDefaultBgScheme(), theme) || '';
-  if (!bg) bg = editorDark ? '#1e293b' : '#f8fafc';
-  // Light UI: default gradient card is always light grey→white→grey, not the dark theme slot.
-  if (useGrad && !editorDark) bg = '#f8fafc';
-  const isDark = luma(bg) < 0.45;
+  if (!bg) bg = presentDark ? '#1e293b' : '#f8fafc';
+  // Default gradient: lock to presentation light/dark, ignore editor chrome.
+  if (useGrad && !hasExplicitBg) {
+    bg = presentDark ? '#1e293b' : '#f8fafc';
+  }
+  let isDark = luma(bg) < 0.45;
+  if (useGrad && !hasExplicitBg) isDark = presentDark;
   if (!fg && theme) fg = resolveSchemeColor(d.genColorScheme || pteDefaultFgScheme(), theme) || '';
   if (!fg) fg = isDark ? '#f8fafc' : '#0f172a';
   if (isDark && luma(fg) < 0.55) fg = '#f8fafc';
@@ -117,19 +123,26 @@ export function resolvePteColors(d = {}, theme = null) {
   const accent = d.accent || (theme && theme.ac1) || (isDark ? '#818cf8' : '#4f46e5');
   let bg88 = bg;
   let bg89 = mixHex(bg, isDark ? '#000000' : '#ffffff', isDark ? 0.42 : 0.62);
-  if (useGrad && !editorDark) {
+  if (useGrad && !isDark) {
     bg88 = '#dddddd';
     bg89 = '#ffffff';
-  } else if (useGrad && theme) {
-    const c88 = resolveSchemeColor({ col: 7, row: 7 }, theme);
-    const c89 = resolveSchemeColor({ col: 7, row: 8 }, theme);
-    if (c88 && c89 && luma(c88) < 0.45 === isDark) {
-      bg88 = c88;
-      bg89 = c89;
+  } else if (useGrad && isDark) {
+    if (theme) {
+      const c88 = resolveSchemeColor({ col: 7, row: 7 }, theme);
+      const c89 =
+        resolveSchemeColor({ col: 7, row: 8 }, theme) ||
+        resolveSchemeColor({ col: 7, row: 6 }, theme);
+      if (c88 && c89 && luma(c88) < 0.45 && luma(c89) < 0.55) {
+        bg88 = c88;
+        bg89 = c89;
+      } else {
+        bg88 = '#0f172a';
+        bg89 = '#334155';
+      }
+    } else {
+      bg88 = '#0f172a';
+      bg89 = '#334155';
     }
-  } else if (useGrad && !theme && !isDark) {
-    bg88 = '#dddddd';
-    bg89 = '#ffffff';
   }
   return { bg, fg, isDark, accent, bg88, bg89, useGrad };
 }

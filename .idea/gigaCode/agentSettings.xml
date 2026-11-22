@@ -76,6 +76,118 @@
         <Execute>
           <option name="pattern" value="del &quot;C:/github/red v8/fix_strike.py&quot;" />
         </Execute>
+        <Execute>
+          <option name="pattern" value="powershell -Command &quot;Select-String -Path 'C:/github/red v8/src/App.css' -Pattern 'react-hf' -Context 2,5&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="powershell -Command &quot;Select-String -Path 'C:/github/red v8/src/components/panels/TextPropsFmt.jsx' -Pattern 'GSlider' | Select-Object LineNumber,Line&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="powershell -Command &quot;Select-String -Path 'C:/github/red v8/src/editor/slideThumb.js' -Pattern '^function drawThumbElCode' | Select-Object LineNumber&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="powershell -Command &quot;Select-String -Path 'C:/github/red v8/src/editor/slideThumb.js' -Pattern 'drawThumbElHtmlFrame' | Select-Object LineNumber,Line&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="powershell -Command &quot;Select-String -Path 'C:/github/red v8/src/editor/slideThumb.js' -Pattern 'el.type === .text' | Select-Object LineNumber&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="findstr /n &quot;pad_l\|pad_t\|pad_r\|pad_b\|padUnit&quot; &quot;C:\github\red v8\src\components\panels\PropsPanel.jsx&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="findstr /n &quot;textPadCss\|textPad&quot; &quot;C:\github\red v8\src\components\canvas\SlideCanvas.jsx&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="findstr /n &quot;pad_l\|pad_t\|pad_r\|pad_b\|padUnit&quot; &quot;C:\github\red v8\src\editor\styleCopy.js&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="findstr /n &quot;pad&quot; &quot;C:\github\red v8\src\editor\styleCopy.js&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="findstr /N &quot;data-list-bullet&quot; &quot;C:\Users\q3lex\Downloads\Новая презентация (1).html&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="powershell -Command &quot;Select-String -Path 'C:/Users/q3lex/Downloads/Новая презентация (1).html' -Pattern 'data-list-bullet|data-id=\&quot;emuja3wg6qxhn\&quot;' | ForEach-Object { $_.LineNumber }&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="powershell -Command &quot;$content = Get-Content 'C:/Users/q3lex/Downloads/Новая презентация (1).html' -Raw; $idx = $content.IndexOf('data-id=\&quot;emuja3wg6qxhn\&quot;'); Write-Host 'Found at position:' $idx; $endIdx = $content.IndexOf('&lt;/div&gt;', $idx + 100); Write-Host 'Closing div at position:' $endIdx; $snippet = $content.Substring($idx, $endIdx - $idx + 6); Write-Host 'Length:' $snippet.Length; $snippet&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="powershell -NoProfile -Command &quot;&amp; { $content = Get-Content 'C:\Users\q3lex\Downloads\Новая презентация (1).html' -Raw; $idx = $content.IndexOf('data-id='); $endIdx = $content.IndexOf('&lt;/div&gt;', $idx + 100); $snippet = $content.Substring($idx, $endIdx - $idx + 6); Write-Output $snippet }&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="powershell -Command &quot;$content = Get-Content 'C:\Users\q3lex\Downloads\Новая презентация (1).html' -Raw -Encoding UTF8; $jsonStart = $content.IndexOf('\&quot;id\&quot;:\&quot;_deck\&quot;') + 12; $jsonEnd = $content.IndexOf('&lt;/script&gt;', $jsonStart); $jsonStr = $content.Substring($jsonStart, $jsonEnd - $jsonStart); $jsonStr = $jsonStr.Replace('\\u003c', '&lt;').Replace('\\u003e', '&gt;'); $jsonStr.Substring(0, [Math]::Min(3000, $jsonStr.Length))&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="powershell -Command &quot;$content = Get-Content 'C:\Users\q3lex\Downloads\Новая презентация (4).html' -Raw -Encoding UTF8; $idx = $content.IndexOf('data-list-bullet'); if($idx -gt 0){ $start = [Math]::Max(0, $idx - 200); $end = [Math]::Min($content.Length, $idx + 2000); Write-Output $content.Substring($start, $end - $start) }&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="findstr /n &quot;emuja3wg6qxhn&quot; &quot;C:\Users\q3lex\Downloads\Новая презентация (4).html&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="powershell -Command &quot;(Get-Content 'C:\Users\q3lex\Downloads\Новая презентация (4).html' -Encoding UTF8) | Select-String -Pattern 'emuja3wg6qxhn' | ForEach-Object { $_.LineNumber }&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="powershell -Command &quot;Select-String -Path 'C:\Users\q3lex\Downloads\Новая презентация (4).html' -Pattern 'emuja3wg6qxhn' | Select-Object -First 1 | ForEach-Object { $_.LineNumber }&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="powershell -NoProfile -Command &quot;Select-String -Path 'C:\Users\q3lex\Downloads\Новая презентация (4).html' -Pattern 'emuja3wg6qxhn' | Select-Object -First 1 | ForEach-Object { $_.LineNumber }&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="python -c &quot;import re; f=open(r'C:\Users\q3lex\Downloads\Новая презентация (4).html','r',encoding='utf-8'); content=f.read(); f.close(); idx=content.find('data-id=\&quot;emuja3wg6qxhn\&quot;'); print('Found at char:', idx); print('Content from that point:'); print(content[idx:idx+3000])&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="python -c &quot;f=open(r'C:\\Users\\q3lex\\Downloads\\Новая презентация (4).html','r',encoding='utf-8');c=f.read();f.close();i=c.find('data-id=');print(c[i:i+5000])&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="python -c &quot;f=open(r'C:\Users\q3lex\Downloads\Новая презентация (4).html','r',encoding='utf-8');c=f.read();f.close();i=c.find('data-id=');print(c[i:i+8000])&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="python -c &quot;f=open(r'C:\Users\q3lex\Downloads\Новая презентация (4).html','r',encoding='utf-8');c=f.read();f.close();i=c.find('emuja3wg6qxhn');start=c.find('html',max(0,i-500));end=c.find('\&quot;',start+10);print(c[start:end+100])&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="python -c &quot;import json,f;f=open(r'C:\Users\q3lex\Downloads\Новая презентация (4).html','r',encoding='utf-8');c=f.read();f.close();j=json.loads(c[c.find('{'):c.rfind('}')+1]);slide=j['slides'][0];el=[x for x in slide['els'] if x['id']=='emuja3wg6qxhn'][0];print('html field length:', len(el.get('html','')));print('html field:');print(el.get('html',''))&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="python -c &quot;import json;f=open(r'C:\Users\q3lex\Downloads\Новая презентация (4).html','r',encoding='utf-8');c=f.read();f.close();j=json.loads(c[c.find('{'):c.rfind('}')+1]);slide=j['slides'][0];el=[x for x in slide['els'] if x['id']=='emuja3wg6qxhn'][0];print('html field length:', len(el.get('html','')));print('html field:');print(el.get('html',''))&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="python -c &quot;import json;f=open(r'C:\Users\q3lex\Downloads\Новая презентация (4).html','r',encoding='utf-8');c=f.read();f.close();s=c.find('\&quot;v\&quot;:1');j=json.loads(c[s:c.rfind('}')+1]);slide=j['slides'][0];el=[x for x in slide['els'] if x['id']=='emuja3wg6qxhn'][0];print('html field length:', len(el.get('html','')));print('html field:');print(el.get('html',''))&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="python -c &quot;import json;f=open(r'C:\Users\q3lex\Downloads\Новая презентация (4).html','r',encoding='utf-8');c=f.read();f.close();s=c.find('v');j=json.loads(c[s:c.rfind(chr(125))+1]);slide=j['slides'][0];el=[x for x in slide['els'] if x['id']=='emuja3wg6qxhn'][0];h=el.get('html','');print('Length:',len(h));print(h[:500]);print('...');print(h[-500:])&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="python -c &quot;f=open(r'C:\Users\q3lex\Downloads\Новая презентация (4).html','r',encoding='utf-8');c=f.read();f.close();s=c.find('emuja3wg6qxhn');start=c.find('html',s-200);end=c.find('\&quot;',start+10);print(c[start:end+200])&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="python -c &quot;f=open(r'C:\Users\q3lex\Downloads\Новая презентация (4).html','r',encoding='utf-8');c=f.read();f.close();s=c.find('emuja3wg6qxhn');start=c.find('html',s-200);end=c.find(chr(34),start+10);print(c[start:end+200])&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="python -c &quot;import urllib.parse as u;f=open(r'C:\Users\q3lex\Downloads\Новая презентация (4).html','r',encoding='utf-8');c=f.read();f.close();s=c.find('emuja3wg6qxhn');start=c.find('html',s-200);end=c.find(chr(34),start+10);raw=c[start+6:end];print(u.unescape(raw)[:3000])&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="python -c &quot;import html as h;f=open(r'C:\Users\q3lex\Downloads\Новая презентация (4).html','r',encoding='utf-8');c=f.read();f.close();s=c.find('emuja3wg6qxhn');start=c.find('html',s-200);end=c.find(chr(34),start+10);raw=c[start+6:end];print(h.unescape(raw)[:3000])&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="python -c &quot;import json as j;f=open(r'C:\Users\q3lex\Downloads\Новая презентация (4).html','r',encoding='utf-8');c=f.read();f.close();idx=c.find(chr(123));while idx&lt;len(c) and c[idx] not in chr(123):idx+=1;raw=c[idx:];d=j.loads(raw);slide=d['slides'][0];el=[x for x in slide['els'] if x['id']=='emuja3wg6qxhn'][0];print('html length:',len(el['html']));print(el['html'][:3000])&quot;" />
+        </Execute>
+      </list>
+    </option>
+    <option name="autoApprovedReads">
+      <list>
+        <Read>
+          <option name="pattern" value="$USER_HOME$/Downloads/Новая презентация (1).html" />
+        </Read>
+        <Read>
+          <option name="pattern" value="$USER_HOME$/Downloads/Новая презентация (4).html/*" />
+        </Read>
+        <Read>
+          <option name="pattern" value="$USER_HOME$/Downloads/Новая презентация (4).html" />
+        </Read>
+        <Read>
+          <option name="pattern" value="$USER_HOME$/Downloads/*" />
+        </Read>
       </list>
     </option>
   </component>

@@ -56,8 +56,6 @@ function contentTypesXml(slideCount, extraExts = []) {
   extraExts.forEach((ext) => {
     if (ext === 'png') defaults.png = 'image/png';
     if (ext === 'gif') defaults.gif = 'image/gif';
-    if (ext === 'webp') defaults.webp = 'image/webp';
-    if (ext === 'svg') defaults.svg = 'image/svg+xml';
     if (ext === 'jpeg' || ext === 'jpg') defaults.jpeg = 'image/jpeg';
     if (ext === 'mp4') defaults.mp4 = 'video/mp4';
     if (ext === 'webm') defaults.webm = 'video/webm';
@@ -305,9 +303,9 @@ export async function packPptxFromDeck(JSZip, deck) {
   const zip = new JSZip();
   const built = [];
   const mediaSeq = { n: 0 };
-  const extraExts = new Set(['jpeg']);
+  const extraExts = new Set(['jpeg', 'png']);
   for (const slide of slides) {
-    const part = buildNativeSlide(slide, { canvasW: W, canvasH: H, cx, cy }, mediaSeq);
+    const part = await buildNativeSlide(slide, { canvasW: W, canvasH: H, cx, cy }, mediaSeq);
     part.media.forEach((m) => extraExts.add(m.ext));
     built.push(part);
   }

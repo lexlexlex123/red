@@ -21,6 +21,7 @@ if ($root === false) {
   echo 'root missing';
   exit;
 }
+$root = rtrim(str_replace('\\', '/', $root), '/');
 
 $rel = isset($_GET['path']) ? (string)$_GET['path'] : '';
 $rel = str_replace(["\0", '\\'], '', $rel);
@@ -33,7 +34,15 @@ if ($rel === '') {
 }
 
 $file = realpath($root . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $rel));
-if ($file === false || strpos($file, $root) !== 0 || !is_file($file)) {
+if ($file === false) {
+  http_response_code(404);
+  header('Content-Type: text/plain; charset=utf-8');
+  echo 'not found';
+  exit;
+}
+$fileNorm = str_replace('\\', '/', $file);
+$underRoot = ($fileNorm === $root) || (strpos($fileNorm, $root . '/') === 0);
+if (!$underRoot || !is_file($file)) {
   http_response_code(404);
   header('Content-Type: text/plain; charset=utf-8');
   echo 'not found';

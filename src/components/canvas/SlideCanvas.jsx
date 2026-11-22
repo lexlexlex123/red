@@ -2,17 +2,21 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 're
 import { usePresentationStore } from '../../stores/presentationStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { extraGuidesKind, useUiStore } from '../../stores/uiStore';
+import { classificationGuideLines } from '../../editor/classificationApplet.js';
+import ImageSortMarkersLayer from './ImageSortMarkersLayer.jsx';
 import { useHistoryStore } from '../../stores/historyStore';
 import { editorApi } from '../../editor/editorApi';
-import { buildBasicShapeSVG, shapeOptsFromEl } from '../../shared/shapes.js';
+import { buildBasicShapeSVG, shapeOptsFromEl, shapeRxPx } from '../../shared/shapes.js';
 import { getShapeMeta, shapeNeedsOverflowVisible } from '../../shared/shapesCatalog.js';
 import AlignBar from './AlignBar.jsx';
 import CanvasCtxMenu, {
   canPasteElements,
+  canPasteTableCells,
   ctxGroupMenuState,
   qrTextFromEl,
 } from './CanvasCtxMenu.jsx';
 import EditableHtml from './EditableHtml.jsx';
+import TextQuickBar from './TextQuickBar.jsx';
 import { versionAttr } from '../../editor/versions.js';
 import { DEFAULT_CANVAS_W, DEFAULT_CANVAS_H } from '../../editor/canvasDims.js';
 import { snapBox } from '../../editor/objectSnap.js';
@@ -23,7 +27,9 @@ import { pickInkAt, inkIntersectsRect, inkSelectionHaloMarkup } from '../../edit
 import {
   hostedInkIdSet,
   inkHostInnerMarkup,
+  inkHostHitMarkup,
 } from '../../editor/inkHost.js';
+import { isInkDrawActiveFor } from '../../editor/inkDrawPlay.js';
 import {
   brushStamps,
   fillBrushStamps,
@@ -46,6 +52,7 @@ import {
   isCanvasZoomedIn,
 } from '../../editor/canvasViewport.js';
 import { listShapeAdjHandles, patchFromAdjDrag } from '../../editor/shapeAdjHandles.js';
+import { listShapeNodeHandles, patchShapeNodeDrag, shapeSupportsNodes } from '../../editor/shapeNodes.js';
 import { listLineEpHandles, migrateLineCapGeometry, lineCanvasEnds } from '../../editor/lineGeom.js';
 import {
   lineEndLooksJoined,
@@ -63,39 +70,74 @@ import {
   listCurveEditorHandles,
   moveCurveNode,
   moveCurveCp,
-  toggleCurveNodeType,
+  bendCurveSegment,
+  nearestCurveSegment,
+  cycleCurveNodeType,
   defaultCurvePoints,
   curveCanvasToNorm,
+  curveNormToCanvas,
   applyCurveBBox,
 } from '../../editor/curveEditor.js';
+import {
+  createGuide,
+  clipGuideToSlide,
+  guideIntersectsSlide,
+  hitTestGuide,
+  customGuidesToSnapLines,
+  snapPointToGuideLines,
+  snapBoxToGuideLines,
+  snapGuideToObjectEdges,
+  projectPointOntoGuide,
+} from '../../editor/slideGuides.js';
 import { getIconById, onIconsReady } from '../../editor/iconsLazy.js';
 import { iconAnimEnabled } from '../../editor/iconAnim.js';
 import AnimatedIcon from './AnimatedIcon.jsx';
-import { parseFontFamily, parseCsNumber } from '../../editor/fonts.js';
+import { DEFAULT_TEXT_FONT_FAMILY, elementFontFamily, parseCsNumber } from '../../editor/fonts.js';
 import { getTheme, resolveElTextColor, resolveSchemeColor } from '../../editor/themes.js';
-import { underlineBoxProps, dashDotWrapHtml } from '../../editor/textUnderline.js';
-import { getTableCell, tableCellBg, tableCellRadiusStyle, tableColWidthsPx, tableRowHeightsPx } from '../../editor/tableCells.js';
-import { imageRenderStyles, normImgFrame, imgBorderSvgMarkup } from '../../editor/imgStyles.js';
+import { underlineBoxProps, prepareTextUnderlineHtml } from '../../editor/textUnderline.js';
+import { getTableCell, tableCellBg, tableCellFontStyle, tableCellRadiusStyle, tableColWidthsPx, tableRowHeightsPx } from '../../editor/tableCells.js';
+import { hitTableBorderSide, paintHoverShadow, sideOnGridLine, tableCellBorderStyle, tableGridLineId } from '../../editor/tableBorders.js';
+import { imageRenderStyles, normImgFrame, imgBorderSvgMarkup, getCropFullBox, imgRibbonTapeStyle, imgRibbonTapeMarkup, polaroidCaptionStyle } from '../../editor/imgStyles.js';
+import {
+  imageHasCrop,
+  imageShowsUncrop,
+  isUncropHoverPreset,
+  uncropViewEl,
+  uncropWindowStyles,
+} from '../../editor/imgUncrop.js';
 import ImageCropOverlay from './ImageCropOverlay.jsx';
+import ShapeFillImgOverlay from './ShapeFillImgOverlay.jsx';
+import { normalizeFillImgLayout, shapeHasFillImg } from '../../editor/shapeFillImg.js';
 import CameraOverlay from './CameraOverlay.jsx';
 import MotionOverlay from './MotionOverlay.jsx';
 import SlideBgImgLayer from './SlideBgImgLayer.jsx';
 import { slideSolidBg } from '../../editor/slideBgImg.js';
-import { elBoxTransform, applyResize, resizeHandleCenters, resizeHandleCursor, nearCornerRot, elRotationDeg } from '../../editor/elTransform.js';
+import { elBoxTransform, applyResize, preserveResizeAspect, resizeHandleCenters, resizeHandleCursor, nearCornerRot, elRotationDeg } from '../../editor/elTransform.js';
 import { resolveMediaSrc } from '../../editor/mediaStore.js';
+import { audioPlayerHostStyle } from '../../editor/mediaPlay.js';
+import { formulaTagLabelOf } from '../../editor/formulaLayout.js';
+import ThemedAudioPlayer from './ThemedAudioPlayer.jsx';
 import { unionBBox, scaleGroupMembers, rotateGroupMembers } from '../../editor/groupGeom.js';
-import { buildHfSrcdoc, hfTitleFromSrc, isHttpUrl, HF_SANDBOX } from '../../editor/htmlFrame.js';
 import {
-  CODE_THEMES,
-  syntaxHighlight,
+  buildHfSrcdocClickThrough,
+  hfTitleFromSrc,
+  installHtmlFrameTransparentPointerListener,
+  isHttpUrl,
+  HF_SANDBOX,
+} from '../../editor/htmlFrame.js';
+import {
   codeBlockSurfaceStyle,
+  codeDisplayHtml,
+  codeGutterCss,
+  codeLineNumbersText,
 } from '../../editor/codeHighlight.js';
-import { elFilterCss } from '../../editor/elShadow.js';
+import { elFilterCss, elInsetShadowSvgMarkup, hasElShadow, isElShadowInset } from '../../editor/elShadow.js';
+import { recolorReactFilter } from '../../editor/recolorPlay.js';
 import { shapeBlurOverlayStyle, shapeBlurPx } from '../../editor/shapeBlur.js';
 import { shapeHitMode, shapeClipPath, shapeLineHitSvg, shapeCurveHitSvg } from '../../editor/shapeHit.js';
-import { shapeTextBoxStyle } from '../../editor/shapeText.js';
+import { shapeTextBoxStyle, shapeTextWarpCss } from '../../editor/shapeText.js';
 import { buildLineAngleContent } from '../../editor/lineAngle.js';
-import { hoverMotionStyle } from '../../editor/hoverFx.js';
+import { hoverMotionStyle, hoverTargetIdAt, opaqueElAt, isImgColorHoverPreset } from '../../editor/hoverFx.js';
 import { buildChartSvg, chartWrapStyle } from '../../editor/tableChart.js';
 import { floatFramesForEl, floatIsInfinite } from '../../editor/floatPlay.js';
 import { danceKeyframesCss, danceIsInfinite } from '../../editor/dancePlay.js';
@@ -106,16 +148,26 @@ import AppletView from './AppletView.jsx';
 import DecorGlView from './DecorGlView.jsx';
 import DecorSvgHost from './DecorSvgHost.jsx';
 import { attachDecorGlCfg, decorUsesGl } from '../../editor/layouts.js';
-import { buildLegoSvg, snapLegoPos } from '../../editor/lego.js';
+import {
+  buildLegoSvg,
+  isLegoTop,
+  LEGO_SNAP,
+  LEGO_U,
+  legoSnapSteps,
+  resolveLegoFreePos,
+  resolveLegoGroupOffset,
+  snapLegoCoord,
+} from '../../editor/lego.js';
 import { textBgLayerStyle, textColorGradStyle } from '../../editor/textBg.js';
 import {
   textBorderBoxStyle,
   textBorderSvgMarkup,
   needsTextBorderOverflow,
 } from '../../editor/textBorder.js';
-import { textGlyphShadowStyle, textBlockShadowStyle } from '../../editor/textShadow.js';
+import { textGlyphShadowStyle, textBlockShadowStyle, textNeedsOverflowVisible } from '../../editor/textShadow.js';
 import { textPadCss } from '../../editor/textPad.js';
 import { textBorderRadiusCss } from '../../editor/textRadius.js';
+import { textAlignSelf } from '../../editor/textAlign.js';
 
 const RESIZE_HANDLES = [
   { id: 'tl', dx: -1, dy: -1, cursor: 'nwse-resize' },
@@ -173,70 +225,95 @@ function extraGuideLines(mode, canvasW, canvasH) {
   return lines;
 }
 
-function snapTranslateToExtraGuides(x, y, w, h, lines, th = EXTRA_GUIDE_TH) {
-  let nx = x;
-  let ny = y;
-  const hit = [];
-  for (const g of lines) {
-    if (g.t === 'v') {
-      if (Math.abs(nx - g.pos) < th) {
-        nx = g.pos;
-        hit.push(g);
-      } else if (Math.abs(nx + w / 2 - g.pos) < th) {
-        nx = g.pos - w / 2;
-        hit.push(g);
-      } else if (Math.abs(nx + w - g.pos) < th) {
-        nx = g.pos - w;
-        hit.push(g);
-      }
-    } else if (Math.abs(ny - g.pos) < th) {
-      ny = g.pos;
-      hit.push(g);
-    } else if (Math.abs(ny + h / 2 - g.pos) < th) {
-      ny = g.pos - h / 2;
-      hit.push(g);
-    } else if (Math.abs(ny + h - g.pos) < th) {
-      ny = g.pos - h;
-      hit.push(g);
-    }
-  }
-  return { x: nx, y: ny, hit };
+function snapPointToGuides(x, y, lines, th = EXTRA_GUIDE_TH) {
+  return snapPointToGuideLines(x, y, lines, th);
 }
 
-function snapResizeToExtraGuides(box, handle, lines, th = EXTRA_GUIDE_TH) {
+function snapTranslateToExtraGuides(x, y, w, h, lines, th = EXTRA_GUIDE_TH) {
+  return snapBoxToGuideLines(x, y, w, h, lines, th);
+}
+
+function snapResizeToGuides(box, handle, lines, others, canvasW, canvasH, th = EXTRA_GUIDE_TH) {
   let { x, y, w, h } = box;
-  const min = 24;
+  const min = 1;
   const hit = [];
-  for (const g of lines) {
-    if (g.t === 'v') {
-      if (handle.dx > 0 && Math.abs(x + w - g.pos) < th) {
-        w = Math.max(min, g.pos - x);
-        hit.push(g);
-      } else if (handle.dx < 0 && Math.abs(x - g.pos) < th) {
+  const vertical = [...lines.filter((g) => g.t === 'v')];
+  const horizontal = [...lines.filter((g) => g.t === 'h')];
+  [0, canvasW / 2, canvasW].forEach((pos) => vertical.push({ t: 'v', pos }));
+  [0, canvasH / 2, canvasH].forEach((pos) => horizontal.push({ t: 'h', pos }));
+  (others || []).forEach((el) => {
+    if (!el || el._isDecor) return;
+    const ex = +el.x || 0;
+    const ey = +el.y || 0;
+    const ew = +el.w || 0;
+    const eh = +el.h || 0;
+    [ex, ex + ew / 2, ex + ew].forEach((pos) => vertical.push({ t: 'v', pos }));
+    [ey, ey + eh / 2, ey + eh].forEach((pos) => horizontal.push({ t: 'h', pos }));
+  });
+
+  function snapEdge(candidates, edge, axis, direction) {
+    if (!direction) return;
+    let best = null;
+    candidates.forEach((guide) => {
+      const dist = Math.abs(edge - guide.pos);
+      if (dist >= th || (best && dist >= best.dist)) return;
+      best = { ...guide, dist };
+    });
+    if (!best) return;
+    if (axis === 'x') {
+      if (direction > 0) w = Math.max(min, best.pos - x);
+      else {
         const right = x + w;
-        x = g.pos;
+        x = best.pos;
         w = Math.max(min, right - x);
-        hit.push(g);
       }
-    } else if (g.t === 'h') {
-      if (handle.dy > 0 && Math.abs(y + h - g.pos) < th) {
-        h = Math.max(min, g.pos - y);
-        hit.push(g);
-      } else if (handle.dy < 0 && Math.abs(y - g.pos) < th) {
-        const bottom = y + h;
-        y = g.pos;
-        h = Math.max(min, bottom - y);
-        hit.push(g);
+    } else if (direction > 0) h = Math.max(min, best.pos - y);
+    else {
+      const bottom = y + h;
+      y = best.pos;
+      h = Math.max(min, bottom - y);
+    }
+    hit.push({ t: best.t, pos: best.pos });
+  }
+
+  if (handle.dx) snapEdge(vertical, handle.dx > 0 ? x + w : x, 'x', handle.dx);
+  if (handle.dy) snapEdge(horizontal, handle.dy > 0 ? y + h : y, 'y', handle.dy);
+
+  // Angled guides: snap the moving corner (or mid-edge) onto the line.
+  const angled = lines.filter((g) => g && g.t === 'a');
+  if (angled.length) {
+    const mx = handle.dx < 0 ? x : handle.dx > 0 ? x + w : x + w / 2;
+    const my = handle.dy < 0 ? y : handle.dy > 0 ? y + h : y + h / 2;
+    let best = null;
+    angled.forEach((g) => {
+      const p = projectPointOntoGuide(mx, my, g);
+      if (p.dist < th && (!best || p.dist < best.dist)) best = { ...p, g };
+    });
+    if (best) {
+      const dx = best.x - mx;
+      const dy = best.y - my;
+      if (handle.dx > 0) w = Math.max(min, w + dx);
+      else if (handle.dx < 0) {
+        x += dx;
+        w = Math.max(min, w - dx);
       }
+      if (handle.dy > 0) h = Math.max(min, h + dy);
+      else if (handle.dy < 0) {
+        y += dy;
+        h = Math.max(min, h - dy);
+      }
+      hit.push({ t: 'a', x: best.g.x, y: best.g.y, angle: best.g.angle });
     }
   }
-  return { x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h), hit };
+
+  const q = (n) => Math.round(n * 100) / 100;
+  return { x: q(x), y: q(y), w: q(w), h: q(h), hit };
 }
 
 function snapResizeToGrid(box, handle, step, skip = { v: false, h: false }) {
   const st = Math.max(1, Math.round(step) || 20);
   let { x, y, w, h } = box;
-  const min = 24;
+  const min = 1;
   if (!skip.v) {
     if (handle.dx > 0) {
       w = Math.max(min, Math.round((x + w) / st) * st - x);
@@ -255,7 +332,8 @@ function snapResizeToGrid(box, handle, step, skip = { v: false, h: false }) {
       h = Math.max(min, bottom - y);
     }
   }
-  return { x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) };
+  const q = (n) => Math.round(n * 100) / 100;
+  return { x: q(x), y: q(y), w: q(w), h: q(h) };
 }
 
 function textFromEl(el) {
@@ -265,14 +343,14 @@ function textFromEl(el) {
 
 function ShapeTextLayer({ el, editing, onCommitText }) {
   return (
-    <div className="react-shape-text" style={shapeTextBoxStyle(el, { editing })}>
+    <div className={`react-shape-text${editing ? ' is-editing' : ''}`} style={shapeTextBoxStyle(el, { editing })}>
       <EditableHtml
         html={el.shapeHtml || ''}
         editing={editing}
         onCommit={onCommitText}
         style={{
           width: '100%',
-          textAlign: 'center',
+          textAlign: 'inherit',
           minHeight: 0,
           outline: 'none',
           lineHeight: 1.15,
@@ -285,11 +363,26 @@ function ShapeTextLayer({ el, editing, onCommitText }) {
   );
 }
 
-function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing, onCommitText, editingCell, onEditCell, onCommitCell, onEndCellEdit, cropActive, onNotesLive, scale, onTableStripDown }) {
-  const [hovered, setHovered] = useState(false);
+function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing, onCommitText, editingCell, onEditCell, onCommitCell, onEndCellEdit, onTableCellContextMenu, cropActive, onNotesLive, scale, onTableStripDown }) {
+  const hfxHoverId = useUiStore((s) => s.hfxHoverId);
+  const shapeFillImgEditId = useUiStore((s) => s.shapeFillImgEditId);
+  const inlineEditClear = useUiStore((s) => s.inlineEditClear);
+  const inlineEditSeed = useUiStore((s) => s.inlineEditSeed);
+  const symbolsModalOpen = useUiStore((s) => s.symbolsModalOpen);
   const tableCell = useSelectionStore((s) => s.tableCell);
   const tableCellSel = useSelectionStore((s) => s.tableCellSel);
+  const tableBorderPaint = useUiStore((s) => s.tableBorderPaint);
+  const lang = useUiStore((s) => s.lang);
+  const canvasW = usePresentationStore((s) => s.canvasW);
+  const canvasH = usePresentationStore((s) => s.canvasH);
+  const slideCur = usePresentationStore((s) => s.cur);
+  const appliedThemeIdx = usePresentationStore((s) => s.appliedThemeIdx);
+  const [paintHover, setPaintHover] = useState(null);
+  const paintDragRef = useRef(null);
+  const selInkIds = useSelectionStore((s) => s.selInkIds);
+  const frozenInkHtmlRef = useRef('');
   const animSt = useUiStore((s) => (s.animPlay ? s.animPlay[el.id] : null));
+  const animPlayOn = useUiStore((s) => !!s.animPlay);
   const connectorMode = useUiStore((s) => s.connectorMode);
   const hfxOn =
     !!(el.hoverFx && el.hoverFx.enabled) &&
@@ -297,13 +390,9 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
     !cropActive &&
     !el._isDecor &&
     el.type !== 'inkhost';
-  const hfx = hfxOn ? hoverMotionStyle(el, el.hoverFx, hovered && !selected) : null;
-  const hfxBind = hfxOn
-    ? {
-        onMouseEnter: () => setHovered(true),
-        onMouseLeave: () => setHovered(false),
-      }
-    : {};
+  const hovered = hfxOn && !selected && String(hfxHoverId) === String(el.id);
+  const hfx = hfxOn ? hoverMotionStyle(el, el.hoverFx, hovered) : null;
+  const hfxBind = {};
   const grouped = !!el.groupId;
   const floatAnimName = animSt?.float
     ? `rf_${String(el.id).replace(/[^\w-]/g, '_')}`
@@ -365,16 +454,41 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
     };
   }, [swingAnimName, el.rot]);
 
+  // JSON/LLM imports often omit formulaSvg — bake MathJax once when the el appears.
+  useEffect(() => {
+    if (el?.type !== 'formula' || !el.formulaRaw) return undefined;
+    const svg = el.formulaSvg;
+    if (typeof svg === 'string' && /<svg[\s>]/i.test(svg) && svg.length > 40) return undefined;
+    void editorApi.rebakeFormulaSvg(el.id, { silent: true });
+    return undefined;
+  }, [el?.id, el?.type, el?.formulaRaw, el?.formulaSvg]);
+
+  const motionTx = +(animSt?.motionTx || 0);
+  const motionTy = +(animSt?.motionTy || 0);
+  const motionPlaying = !!animSt?.motionPlaying;
+  const authoredXf = elBoxTransform(el);
+  const motionTransform = (() => {
+    const parts = [];
+    if (motionTx || motionTy) parts.push(`translate(${motionTx}px, ${motionTy}px)`);
+    if (authoredXf) parts.push(authoredXf);
+    return parts.length ? parts.join(' ') : undefined;
+  })();
+  // During WAAPI move: authored left/top + transform offset. After settle: bake into left/top
+  // so CSS entrance/emphasis anims do not leave a ghost at the original box.
   const style = {
     position: 'absolute',
-    left: el.x || 0,
-    top: el.y || 0,
+    left: motionPlaying ? el.x || 0 : (el.x || 0) + motionTx,
+    top: motionPlaying ? el.y || 0 : (el.y || 0) + motionTy,
     width: el.w || 100,
     height: el.h || 60,
-    transform: elBoxTransform(el),
-    opacity: animSt?.hidden ? 0 : el.elOpacity != null ? el.elOpacity : 1,
-    visibility: animSt?.hidden ? 'hidden' : undefined,
-    filter: elFilterCss(el),
+    transform: motionPlaying ? motionTransform : authoredXf,
+    // Authored rotate/flip for CSS entrance keyframes (App.css --el-xf).
+    ...(authoredXf ? { ['--el-xf']: authoredXf } : null),
+    opacity: animSt?.hidden || animSt?.particles ? 0 : el.elOpacity != null ? el.elOpacity : 1,
+    visibility: animSt?.hidden || animSt?.particles ? 'hidden' : undefined,
+    filter: animPlayOn
+      ? recolorReactFilter(elFilterCss(el), el.id, '#000000', animSt, el)
+      : elFilterCss(el),
     outline:
       el.type === 'shape'
         ? 'none'
@@ -392,15 +506,17 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
         : undefined,
     border: el.type === 'text' ? textBorderBoxStyle(el)?.border : undefined,
     borderRadius: el.type === 'text' ? textBorderRadiusCss(el) : undefined,
-    overflow:
-      needsTextBorderOverflow(el) ||
-      animSt?.live ||
-      animSt?.float ||
-      animSt?.dance ||
-      animSt?.swing ||
-      animSt?.pulseName
-        ? 'visible'
-        : 'hidden',
+      overflow:
+        el.type === 'icon' ||
+        needsTextBorderOverflow(el) ||
+        textNeedsOverflowVisible(el) ||
+        animSt?.live ||
+        animSt?.float ||
+        animSt?.dance ||
+        animSt?.swing ||
+        animSt?.pulseName
+          ? 'visible'
+          : 'hidden',
     ...(hfx || {}),
   };
   if (animSt?.float && floatAnimName) {
@@ -408,13 +524,24 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
     const infinite = floatIsInfinite({ swingCount: animSt.swingCount != null ? animSt.swingCount : 10 });
     const loops = infinite ? 'infinite' : Math.max(1, +(animSt.swingCount || 1));
     style.transform = undefined;
-    style.animation = `${floatAnimName} ${dur}ms ease-in-out ${loops}`;
+    // Longhand properties instead of the `animation` shorthand: mixing the shorthand here
+    // with the plain `animationDuration` set above (for the CSS-class entrance/emphasis
+    // case) made React warn on transitions between animation states — the shorthand
+    // implicitly resets sub-properties the longhand form doesn't touch, so which one was
+    // set on the *previous* render matters. Longhand throughout avoids that entirely.
+    style.animationName = floatAnimName;
+    style.animationDuration = `${dur}ms`;
+    style.animationTimingFunction = 'ease-in-out';
+    style.animationIterationCount = loops;
   } else if (animSt?.dance && danceAnimName) {
     const dur = Math.max(200, +(animSt.dur || 1200) || 1200);
     const infinite = danceIsInfinite({ swingCount: animSt.swingCount != null ? animSt.swingCount : 1 });
     const loops = infinite ? 'infinite' : Math.max(1, +(animSt.swingCount || 1));
     style.transform = undefined;
-    style.animation = `${danceAnimName} ${dur}ms ease-in-out ${loops}`;
+    style.animationName = danceAnimName;
+    style.animationDuration = `${dur}ms`;
+    style.animationTimingFunction = 'ease-in-out';
+    style.animationIterationCount = loops;
   } else if (animSt?.swing && swingAnimName) {
     const dur = Math.max(200, +(animSt.dur || 1200) || 1200);
     const infinite = swingIsInfinite({ swingCount: animSt.swingCount != null ? animSt.swingCount : 1 });
@@ -424,7 +551,10 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
       swingOx: animSt.swingOx,
       swingOy: animSt.swingOy,
     });
-    style.animation = `${swingAnimName} ${dur}ms ease-in-out ${loops}`;
+    style.animationName = swingAnimName;
+    style.animationDuration = `${dur}ms`;
+    style.animationTimingFunction = 'ease-in-out';
+    style.animationIterationCount = loops;
   } else if (animSt?.pulseName || (animSt?.cls && isPulseFamilyAnim(pulseNameFromCls(animSt.cls)))) {
     const pname = animSt.pulseName || pulseNameFromCls(animSt.cls);
     const dur = Math.max(50, +(animSt.dur || 600) || 600);
@@ -432,11 +562,17 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
     const iter = pulseCssIteration({
       swingCount: animSt.swingCount != null ? animSt.swingCount : 1,
     });
-    style.animation = `${kf} ${dur}ms ease ${iter}`;
+    style.animationName = kf;
+    style.animationDuration = `${dur}ms`;
+    style.animationTimingFunction = 'ease';
+    style.animationIterationCount = iter;
   } else if (hfx?.transform) {
     style.transform = hfx.transform;
+    style['--el-xf'] = hfx.transform;
   } else {
-    style.transform = elBoxTransform(el);
+    const xf = motionPlaying ? motionTransform : authoredXf;
+    style.transform = xf;
+    if (authoredXf) style['--el-xf'] = authoredXf;
   }
   if (hfx?.filter) style.filter = [elFilterCss(el), hfx.filter].filter(Boolean).join(' ');
   if (hfx?.opacity != null && !animSt?.hidden) style.opacity = hfx.opacity;
@@ -453,9 +589,20 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
         ? ' conn-source'
         : ' conn-target'
       : '';
-  const elClass = `react-el${grouped ? ' in-group' : ''}${el.link ? ' has-link' : ''}${el.locked ? ' is-locked' : ''}${hfxOn ? ' has-hover-fx' : ''}${el.textRole === 'toc' ? ' has-toc' : ''}${animSt?.cls && !skipCls ? ` ${animSt.cls}` : ''}${connCls}`;
+  const fillImgEditChrome =
+    el.type === 'shape' &&
+    shapeHasFillImg(el) &&
+    shapeFillImgEditId &&
+    String(shapeFillImgEditId) === String(el.id);
+  const elClass = `react-el${grouped ? ' in-group' : ''}${el.link ? ' has-link' : ''}${el.locked ? ' is-locked' : ''}${hfxOn ? ' has-hover-fx' : ''}${el.textRole === 'toc' ? ' has-toc' : ''}${animSt?.cls && !skipCls ? ` ${animSt.cls}` : ''}${animSt?.particles ? ' has-particles' : ''}${shapeHasFillImg(el) ? ' has-fill-img' : ''}${fillImgEditChrome ? ' has-fill-img-edit' : ''}${connCls}`;
+  const wrapMotionCssAnim = (node) => node;
 
-  if (el.type === 'formula' && el.formulaSvg) {
+  if (el.type === 'formula') {
+    const fAlign = ((el.cs || '').match(/text-align\s*:\s*([^;]+)/i) || [])[1]?.trim().toLowerCase();
+    const align = fAlign === 'center' || fAlign === 'right' ? fAlign : 'left';
+    const justify =
+      align === 'right' ? 'flex-end' : align === 'center' ? 'center' : 'flex-start';
+    const tagLabel = formulaTagLabelOf(el.formulaRaw || el.html || '');
     return (
       <div
         className={elClass}
@@ -466,40 +613,94 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
           padding: 8,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
+          gap: 8,
+          boxSizing: 'border-box',
         }}
         onPointerDown={onPointerDown}
         onDoubleClick={onDoubleClick}
         {...hfxBind}
-        dangerouslySetInnerHTML={{ __html: el.formulaSvg }}
-      />
+      >
+        {typeof el.formulaSvg === 'string' &&
+        /<svg[\s>]/i.test(el.formulaSvg) &&
+        el.formulaSvg.length > 40 ? (
+          <div
+            className="react-formula-math"
+            style={{
+              flex: '1 1 auto',
+              minWidth: 0,
+              height: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: justify,
+            }}
+            dangerouslySetInnerHTML={{ __html: el.formulaSvg }}
+          />
+        ) : (
+          <div
+            className="react-formula-math"
+            style={{
+              flex: '1 1 auto',
+              minWidth: 0,
+              opacity: 0.55,
+              fontSize: 13,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+            }}
+          >
+            {el.formulaRaw || '…'}
+          </div>
+        )}
+        {tagLabel ? (
+          <div
+            className="react-formula-tag"
+            style={{
+              flex: '0 0 auto',
+              fontFamily: 'Cambria, MathJax_NonItalic, serif',
+              fontSize: '0.85em',
+              lineHeight: 1,
+              userSelect: 'none',
+            }}
+          >
+            {tagLabel}
+          </div>
+        ) : null}
+      </div>
     );
   }
 
   if (el.type === 'text' || el.type === 'formula') {
     const css = el.cs || '';
     const fs = (css.match(/font-size\s*:\s*([\d.]+)px/i) || [])[1];
-    const align = (css.match(/text-align\s*:\s*([^;]+)/i) || [])[1] || (el.type === 'formula' ? 'center' : 'left');
+    const align = (css.match(/text-align\s*:\s*([^;]+)/i) || [])[1] || 'left';
     const weight = (css.match(/font-weight\s*:\s*([^;]+)/i) || [])[1];
     const fontStyle = (css.match(/font-style\s*:\s*([^;]+)/i) || [])[1];
-    const ulBox = el.type === 'text' ? underlineBoxProps(css) : { style: {}, className: '', kind: 'none' };
-    const family = parseFontFamily(css) || 'Georgia, serif';
+    const family = elementFontFamily(
+      el,
+      el.type === 'formula' ? 'Cambria, MathJax_NonItalic, serif' : DEFAULT_TEXT_FONT_FAMILY
+    );
     const lineH = parseCsNumber(css, 'line-height');
     const letterSp = parseCsNumber(css, 'letter-spacing');
     const textTransform = (css.match(/text-transform\s*:\s*([^;]+)/i) || [])[1];
     const valign = el.valign || (el.type === 'formula' ? 'middle' : 'top');
     const justify =
       valign === 'middle' ? 'center' : valign === 'bottom' ? 'flex-end' : 'flex-start';
-    // Whole-box dash-dot is drawn via inline [data-ul="dash-dot"] spans (see textUnderline),
-    // so wrap the text runs here — a block-level background would span the whole box width.
+    // Mixed-color runs: underline wraps use each glyph's color; plain text keeps box CSS.
     const rawHtml = el.html != null && el.html !== '' ? el.html : textFromEl(el);
-    const html = ulBox.kind === 'underline dash-dot' ? dashDotWrapHtml(rawHtml) : rawHtml;
+    const ulPrep =
+      el.type === 'text'
+        ? prepareTextUnderlineHtml(rawHtml, css)
+        : { html: rawHtml, paintBoxUnderline: false, kind: 'none' };
+    const html = ulPrep.html;
+    const ulBox =
+      el.type === 'text'
+        ? underlineBoxProps(css, { paintBoxUnderline: ulPrep.paintBoxUnderline })
+        : { style: {}, className: '', kind: 'none' };
     const theme = getTheme(usePresentationStore.getState().appliedThemeIdx);
     const showAsPlaceholder = !!el.textPlaceholder && !editing;
     const resolvedText = showAsPlaceholder
       ? TEXT_PH_COLOR
       : resolveElTextColor(el, theme);
-    const bgLayer = el.type === 'text' ? textBgLayerStyle(el) : null;
+    const bgLayer = el.type === 'text' ? textBgLayerStyle(el, { matchBorder: true }) : null;
     const colorGrad =
       el.type === 'text' && el.textRole !== 'toc' && !showAsPlaceholder
         ? textColorGradStyle(el)
@@ -507,11 +708,23 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
     const borderSvg = el.type === 'text' ? textBorderSvgMarkup(el) : '';
     const glyphSh = el.type === 'text' ? textGlyphShadowStyle(el) : null;
     const blockSh = el.type === 'text' ? textBlockShadowStyle(el) : null;
+    const warpCss = el.type === 'text' && !editing ? shapeTextWarpCss(el) : null;
     const hasList =
       el.type === 'text' &&
       (/(data-list-bullet|data-list-num)/i.test(html) || el.bulletIconId);
     const textStyle = {
       ...style,
+      overflow: warpCss || textNeedsOverflowVisible(el) || style.overflow === 'visible' ? 'visible' : style.overflow,
+      border: undefined,
+      borderRadius: undefined,
+      position: 'absolute',
+    };
+    const textBodyStyle = {
+      position: 'absolute',
+      inset: 0,
+      boxSizing: 'border-box',
+      transformOrigin: '0 0',
+      transform: warpCss || undefined,
       color: colorGrad ? undefined : (hfx && hfx.color) || resolvedText,
       fontSize: fs ? Number(fs) : el.type === 'formula' ? 40 : 36,
       padding: el.type === 'text' ? textPadCss(el) : 8,
@@ -527,24 +740,42 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
       textAlign: align.trim(),
       display: 'flex',
       flexDirection: 'column',
-      justifyContent: justify,
-      position: 'absolute',
+      // While editing, pin to top so new lines grow down instead of shifting the block up
+      // (middle/bottom valign) before the live height patch lands.
+      justifyContent: editing ? 'flex-start' : justify,
+      border: style.border,
+      borderRadius: style.borderRadius,
       ...(hasList ? { ['--rt-bullet-gap']: `${el.bulletGap != null ? el.bulletGap : 10}px` } : {}),
       ...(blockSh || {}),
+    };
+    const growTextBoxLive = (nextHtml) => {
+      if (el.type !== 'text' || el.locked) return;
+      const text = String(nextHtml || '').replace(/<[^>]+>/g, '');
+      const measured = measureTextHeight({ ...el, html: nextHtml, text });
+      const curH = el.h || 0;
+      if (measured <= curH + 1) return;
+      usePresentationStore.getState().applyElementPatches({ [el.id]: { h: measured } }, { live: true });
     };
     const inner = (
       <EditableHtml
         className="react-text-body"
         html={html}
         editing={editing}
-        clearOnEdit={!!el.textPlaceholder}
+        clearOnEdit={!!el.textPlaceholder || (editing && inlineEditClear)}
+        seedText={editing && inlineEditSeed ? inlineEditSeed : null}
+        onSeedConsumed={() => useUiStore.getState().consumeInlineEditFlags()}
+        suppressBlurCommit={!!symbolsModalOpen}
         onCommit={onCommitText}
-        onBulletClick={() => editorApi.openBulletIconPicker(el.id)}
+        onLiveChange={el.type === 'text' ? growTextBoxLive : undefined}
+        onBulletClick={(marker) => editorApi.openBulletIconPicker(el.id, marker || null)}
         style={{
           position: 'relative',
           zIndex: 1,
           flex: '0 1 auto',
-          width: '100%',
+          width: 'fit-content',
+          maxWidth: '100%',
+          minWidth: 0,
+          alignSelf: textAlignSelf(align),
           outline: 'none',
           cursor: editing ? 'text' : undefined,
           color: colorGrad ? undefined : (hfx && hfx.color) || resolvedText,
@@ -560,10 +791,11 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
         data-group-id={el.groupId || undefined}
         style={textStyle}
         onPointerDown={(e) => {
-          if (e.target.closest?.('[data-list-bullet]')) {
+          const marker = e.target.closest?.('[data-list-bullet]');
+          if (marker) {
             e.stopPropagation();
             e.preventDefault();
-            editorApi.openBulletIconPicker(el.id);
+            editorApi.openBulletIconPicker(el.id, marker);
             return;
           }
           onPointerDown(e);
@@ -571,46 +803,183 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
         onDoubleClick={onDoubleClick}
         {...hfxBind}
       >
-        {bgLayer ? <div className="react-el-bg-layer" aria-hidden="true" style={bgLayer} /> : null}
-        {borderSvg ? (
-          <div
-            aria-hidden="true"
-            style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 5 }}
-            dangerouslySetInnerHTML={{ __html: borderSvg }}
-          />
-        ) : null}
-        {inner}
+        {wrapMotionCssAnim(
+          <div className="react-text-warp" style={textBodyStyle}>
+            {bgLayer ? <div className="react-el-bg-layer" aria-hidden="true" style={bgLayer} /> : null}
+            {borderSvg ? (
+              <div
+                aria-hidden="true"
+                style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 5 }}
+                dangerouslySetInnerHTML={{ __html: borderSvg }}
+              />
+            ) : null}
+            {inner}
+          </div>
+        )}
       </div>
     );
   }
 
   if (el.type === 'image' && el.src) {
-    const rs = imageRenderStyles(el);
+    // While crop mode is open, show the image the way ImageCropOverlay expects: the full
+    // (pre-crop) picture at its full box, with the crop handles positioned at the current
+    // crop percentages on top of it — not the already-cropped, shrunk-down box. Otherwise
+    // reopening crop on an already-cropped image only ever showed the small cropped result
+    // (nothing left to expand back into), and the overlay's frame — sized to the *current*
+    // small box — no longer matched the picture it was drawn over.
+    const hoverUncropOn = hfxOn && isUncropHoverPreset(el.hoverFx?.preset);
+    const showUncrop = imageShowsUncrop(el, {
+      cropActive,
+      hovered: hovered && !selected,
+      preset: el.hoverFx?.preset,
+      uncrop: animSt?.uncrop,
+      uncropDone: animSt?.uncropDone,
+    });
+    // Crop-mode overlay still needs the full pre-crop box. Hover/anim uncrop keep the
+    // cropped window in place and only open clip-path — otherwise the picture appears
+    // to fly out of a corner while left/top/width/height and the inner % crop both tween.
+    const fullBox = cropActive ? getCropFullBox(el) : null;
+    const elForImg = fullBox ? uncropViewEl(el) : el;
+    const canUncrop = imageHasCrop(el) && !cropActive;
+    const uncropArmed =
+      canUncrop && ((hoverUncropOn && !selected) || !!(animSt?.uncrop || animSt?.uncropDone));
+    const uncropDur = hoverUncropOn
+      ? +(el.hoverFx?.dur || 0.3)
+      : animSt?.dur
+        ? (+animSt.dur || 400) / 1000
+        : 0.3;
+    const colorHover =
+      hfxOn && hovered && !selected && isImgColorHoverPreset(el.hoverFx?.preset);
+    const rs = imageRenderStyles(elForImg, {
+      colorHover,
+      canvasW,
+      canvasH,
+      transition: hfxOn ? `filter ${Math.max(0.05, +(el.hoverFx?.dur || 0.3))}s ease` : undefined,
+    });
+    if (canUncrop) {
+      const win = uncropWindowStyles(el, showUncrop && !cropActive, uncropArmed ? uncropDur : 0);
+      rs.inner = { ...rs.inner, ...win.inner };
+      rs.img = { ...rs.img, ...win.img, pointerEvents: showUncrop ? 'auto' : 'none' };
+    }
     const frame = normImgFrame(el.imgFrame);
     const borderSvg = frame === 'none' ? imgBorderSvgMarkup(el) : '';
+    const frameChrome = frame === 'ribbon' || frame === 'polaroid';
+    const tapeHoverFilt = frameChrome ? hfx?.filter : null;
+    const hostFilt = (
+      tapeHoverFilt
+        ? [elFilterCss(el), rs.box.filter]
+        : [style.filter, rs.box.filter]
+    )
+      .filter(Boolean)
+      .join(' ') || undefined;
     return (
       <div
         className={`${elClass} ${rs.frameClass}`.trim()}
         data-id={el.id}
-        style={{ ...style, ...rs.box, opacity: 1, overflow: borderSvg ? 'visible' : style.overflow }}
+        style={{
+          ...style,
+          ...rs.box,
+          ...(fullBox
+            ? { left: fullBox.x, top: fullBox.y, width: fullBox.w, height: fullBox.h }
+            : null),
+          ...(showUncrop && !cropActive ? { zIndex: 24 } : null),
+          // rs.box.filter (the image's own contour-following drop-shadow) and style.filter
+          // (blur / the element's generic shadow) are independent effects that should both
+          // apply — the plain spread above would let whichever one comes from rs.box just
+          // replace style.filter instead of combining with it.
+          // Ribbon tape sits on this host, so hover filters go on the inner picture only.
+          filter: hostFilt,
+          // Ribbon tape / Polaroid caption sit on this host — keep host opacity so
+          // the chrome fades with the picture. Other frames paint opacity on the <img>.
+          ...(frameChrome ? null : { opacity: 1 }),
+          // While crop mode is active, the crop handles sit right at (and slightly outside)
+          // the box edges — clipping them here cut off their outer half, on top of which
+          // they used to live *inside* the overflow:hidden `inner` wrapper below and got
+          // clipped a second time by that.
+          overflow:
+            cropActive || canUncrop || borderSvg || style.overflow === 'visible'
+              ? 'visible'
+              : rs.box.overflow,
+        }}
         onPointerDown={onPointerDown}
         {...hfxBind}
       >
-        <div style={rs.inner}>
-          <img alt="" src={el.src} draggable={false} style={rs.img} />
-          {cropActive ? <ImageCropOverlay el={el} /> : null}
-        </div>
-        {borderSvg ? (
-          <div
-            aria-hidden="true"
-            style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 3, overflow: 'visible' }}
-            dangerouslySetInnerHTML={{ __html: borderSvg }}
-          />
-        ) : null}
-        {frame === 'ribbon' ? <div className="react-img-ribbon-bar" /> : null}
-        {frame === 'polaroid' && el.imgCaption ? (
-          <div className="react-img-polaroid-cap">{el.imgCaption}</div>
-        ) : null}
+        {wrapMotionCssAnim(
+          <>
+            {rs.borderFilterSvg ? (
+              <div
+                aria-hidden="true"
+                style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }}
+                dangerouslySetInnerHTML={{ __html: rs.borderFilterSvg }}
+              />
+            ) : null}
+            <div
+              style={{
+                ...rs.inner,
+                ...(tapeHoverFilt
+                  ? { filter: [rs.inner.filter, tapeHoverFilt].filter(Boolean).join(' ') }
+                  : null),
+              }}
+            >
+              <img alt="" src={el.src} draggable={false} style={rs.img} />
+            </div>
+            {cropActive ? <ImageCropOverlay el={el} /> : null}
+            {borderSvg ? (
+              <div
+                aria-hidden="true"
+                style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 3, overflow: 'visible' }}
+                dangerouslySetInnerHTML={{ __html: borderSvg }}
+              />
+            ) : null}
+            {frame === 'ribbon' ? (
+              <div
+                className="react-img-ribbon-bar"
+                style={imgRibbonTapeStyle()}
+                dangerouslySetInnerHTML={{ __html: imgRibbonTapeMarkup() }}
+              />
+            ) : null}
+            {frame === 'polaroid' ? (
+              <div
+                className={`react-img-polaroid-cap${!el.imgCaption && !editing ? ' is-empty' : ''}`}
+                style={polaroidCaptionStyle(el, canvasW, canvasH, { editing })}
+                data-ph={lang === 'en' ? 'Caption' : 'Подпись'}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  onDoubleClick?.(e);
+                }}
+                onPointerDown={(e) => {
+                  // Keep selection/edit on the caption; do not start a move-drag (that ate dblclicks).
+                  e.stopPropagation();
+                  if (editing) return;
+                  onPointerDown?.(e);
+                }}
+              >
+                <EditableHtml
+                  html={el.imgCaption || ''}
+                  editing={editing}
+                  onCommit={onCommitText}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      e.currentTarget.blur();
+                    }
+                  }}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    minHeight: '1em',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    textAlign: 'center',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+            ) : null}
+          </>
+        )}
       </div>
     );
   }
@@ -618,18 +987,49 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
   if (el.type === 'shape') {
     const shapeMeta = getShapeMeta(el.shape || 'rect');
     const rectSelOnly = shapeMeta?.special === 'cloud';
-    const svg = buildBasicShapeSVG(el.shape || 'rect', shapeOptsFromEl(el));
+    // Transform chrome only on the shape being edited — never on neighbors.
+    const fillImgEdit =
+      !grouped &&
+      shapeHasFillImg(el) &&
+      !!shapeFillImgEditId &&
+      String(shapeFillImgEditId) === String(el.id);
+    const hasFillImg = shapeHasFillImg(el);
+    const fillImgLayout = hasFillImg ? normalizeFillImgLayout(el, el.w, el.h) : null;
+    // Don't inset the photo clip by a phantom stroke when stroke is off (default sw=2).
+    const fillImgClip = hasFillImg
+      ? shapeClipPath({
+          ...el,
+          sw:
+            el.stroke && el.stroke !== 'none' && el.stroke !== 'transparent' && +(el.sw || 0) > 0
+              ? el.sw
+              : 0,
+        })
+      : null;
+    // Editor paints the photo via a clipped HTML layer — SVG pattern fills fringe dark on rotate.
+    // Do not set noFill:true: that path forces a thick line stroke and drops corner rx.
+    const shapeOpts = shapeOptsFromEl(el);
+    const svg = buildBasicShapeSVG(el.shape || 'rect', {
+      ...shapeOpts,
+      ...(hasFillImg
+        ? { fill: 'none', fillGrad: null, fillGrad2: null, fillImg: null }
+        : null),
+    });
     const ringSvg =
       selected && !grouped && !rectSelOnly
         ? buildBasicShapeSVG(el.shape || 'rect', {
-            ...shapeOptsFromEl(el),
+            ...shapeOpts,
             fill: 'none',
             fillOp: 1,
             fillGrad: null,
             fillGrad2: null,
+            fillImg: null,
             stroke: '#3b82f6',
-            // Fixed thin ring — must not grow with stroke width (that looked like wrong stroke color).
-            strokeWidth: 2,
+            // Canvas units / zoom → ~1.5 screen px after stage CSS scale.
+            strokeWidth: 1.5 / Math.max(0.001, scale || 1),
+            noStrokeInset: true,
+            // Selection ring must not redraw end markers (looked like a second cross/arrow).
+            lineFromMarker: 'none',
+            lineToMarker: 'none',
           })
         : null;
     const sb = shapeBlurPx(el);
@@ -639,7 +1039,9 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
     const lineHit = hitMode === 'line' ? shapeLineHitSvg(el) : null;
     const curveHit = hitMode === 'curve' ? shapeCurveHitSvg(el) : null;
     const useHitOverlay =
-      !editing && (hitMode === 'clip' || hitMode === 'line' || hitMode === 'box' || hitMode === 'curve');
+      !editing &&
+      !fillImgEdit &&
+      (hitMode === 'clip' || hitMode === 'line' || hitMode === 'box' || hitMode === 'curve');
     const hitBind = useHitOverlay
       ? { onPointerDown, onDoubleClick, ...(hfxBind || {}) }
       : {};
@@ -653,30 +1055,94 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
         style={{
           ...style,
           overflow:
-            sb > 0 || editing || shapeNeedsOverflowVisible(el.shape)
-              ? 'visible'
-              : style.overflow,
+            // Keep image fill clipped to the silhouette unless actively transforming it.
+            hasFillImg && !fillImgEdit
+              ? 'hidden'
+              : sb > 0 || editing || fillImgEdit || shapeNeedsOverflowVisible(el.shape, el)
+                ? 'visible'
+                : style.overflow,
+          // Transform chrome must sit above neighboring shapes (same base z-index otherwise).
+          ...(fillImgEdit ? { zIndex: 60 } : null),
           transformOrigin: el.shape === 'line' ? 'center center' : style.transformOrigin,
           pointerEvents: useHitOverlay ? 'none' : style.cursor === 'text' ? 'auto' : undefined,
         }}
         {...hostBind}
       >
-        {blurStyle ? (
-          <div className="react-shape-blur-overlay" aria-hidden="true" style={blurStyle} />
-        ) : null}
-        <div
-          style={{ position: 'relative', zIndex: 1, width: '100%', height: '100%', pointerEvents: 'none' }}
-          dangerouslySetInnerHTML={{ __html: svg }}
-        />
-        {ringSvg ? (
-          <div
-            className="react-shape-sel-ring"
-            aria-hidden="true"
-            style={{ position: 'absolute', inset: 0, zIndex: 2, pointerEvents: 'none' }}
-            dangerouslySetInnerHTML={{ __html: ringSvg }}
-          />
-        ) : null}
-        <ShapeTextLayer el={el} editing={editing} onCommitText={onCommitText} />
+        {wrapMotionCssAnim(
+          <>
+            {blurStyle ? (
+              <div className="react-shape-blur-overlay" aria-hidden="true" style={blurStyle} />
+            ) : null}
+            {hasFillImg && fillImgLayout ? (
+              <div
+                className="react-shape-fillimg-clip"
+                aria-hidden="true"
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  zIndex: 0,
+                  overflow: 'hidden',
+                  // Axis-aligned round only when nodes are not customized (clip-path handles shapePts).
+                  borderRadius:
+                    !(Array.isArray(el.shapePts) && el.shapePts.length >= 3) &&
+                    (shapeMeta?.special === 'rect' || el.shape === 'rect' || el.shape === 'roundrect')
+                      ? shapeRxPx(el.rx, el.w, el.h)
+                      : undefined,
+                  pointerEvents: 'none',
+                  clipPath: fillImgClip || undefined,
+                  WebkitClipPath: fillImgClip || undefined,
+                }}
+              >
+                <img
+                  key={`${el.fillImgKey || ''}:${el.fillImg}`}
+                  src={el.fillImg}
+                  alt=""
+                  draggable={false}
+                  style={{
+                    position: 'absolute',
+                    // Bleed 1px so clip AA does not sample empty pixels (dark fringe).
+                    left: fillImgLayout.x - 1,
+                    top: fillImgLayout.y - 1,
+                    width: fillImgLayout.w + 2,
+                    height: fillImgLayout.h + 2,
+                    maxWidth: 'none',
+                    transform: fillImgLayout.rot ? `rotate(${fillImgLayout.rot}deg)` : undefined,
+                    transformOrigin: 'center center',
+                    display: 'block',
+                  }}
+                />
+              </div>
+            ) : null}
+            <div
+              style={{ position: 'relative', zIndex: 1, width: '100%', height: '100%', pointerEvents: 'none' }}
+              dangerouslySetInnerHTML={{ __html: svg }}
+            />
+            {hasElShadow(el) && isElShadowInset(el) ? (
+              <div
+                className="react-shape-inset-shadow"
+                aria-hidden="true"
+                style={{ position: 'absolute', inset: 0, zIndex: 2, pointerEvents: 'none' }}
+                dangerouslySetInnerHTML={{ __html: elInsetShadowSvgMarkup(el) }}
+              />
+            ) : null}
+            {ringSvg ? (
+              <div
+                className="react-shape-sel-ring"
+                aria-hidden="true"
+                style={{ position: 'absolute', inset: 0, zIndex: 3, pointerEvents: 'none' }}
+                dangerouslySetInnerHTML={{ __html: ringSvg }}
+              />
+            ) : null}
+            {fillImgEdit ? (
+              <ShapeFillImgOverlay
+                el={el}
+                scale={scale}
+                primary={String(el.id) === String(shapeFillImgEditId)}
+              />
+            ) : null}
+            <ShapeTextLayer el={el} editing={editing} onCommitText={onCommitText} />
+          </>
+        )}
         {useHitOverlay && hitMode === 'line' && lineHit ? (
           <svg
             className="react-shape-hit-area"
@@ -780,9 +1246,9 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
     if (ic) {
       return (
         <div
-          className={elClass}
+          className={`${elClass} react-el-icon`}
           data-id={el.id}
-          style={{ ...style, padding: 0 }}
+          style={{ ...style, padding: 0, overflow: 'visible' }}
           onPointerDown={onPointerDown}
           onDoubleClick={() => editorApi.openIconPickerForElement(el.id)}
         {...hfxBind}
@@ -835,13 +1301,7 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
     const cols = el.cols || 3;
     const rx = +(el.rx || 0);
     const blur = +(el.tableBgBlur || 0);
-    const bw = el.borderW != null ? +el.borderW : 1;
     const theme = getTheme(usePresentationStore.getState().appliedThemeIdx);
-    // v7.1: borderless only when explicitly transparent and no scheme ref
-    const bc =
-      (!el.borderColor || el.borderColor === 'transparent') && !el.borderColorScheme
-        ? 'transparent'
-        : resolveSchemeColor(el.borderColorScheme, theme) || el.borderColor || el.stroke || 'transparent';
     const textColor = resolveElTextColor(el, theme);
     const W = el.w || 100;
     const H = el.h || 60;
@@ -856,8 +1316,47 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
     const editingThisTable = !!(editingCell && String(editingCell).startsWith(`${el.id}:`));
     const z = scale || 1;
 
+    function paintFromPoint(clientX, clientY, history) {
+      const target = document.elementFromPoint(clientX, clientY);
+      const tc = target && (target.matches?.('td,th') ? target : target.closest?.('td,th'));
+      if (!tc || tc.dataset?.r == null) return false;
+      const wrap = tc.closest('.react-el-table');
+      if (!wrap || String(wrap.dataset?.id) !== String(el.id)) return false;
+      const side = hitTableBorderSide(tc, { clientX, clientY });
+      if (!side) return false;
+      const rr = +tc.dataset.r;
+      const cc = +tc.dataset.c;
+      const line = tableGridLineId(el, rr, cc, side);
+      if (line && paintDragRef.current?.line === line) return false;
+      const ok = editorApi.tablePaintBorder(el.id, rr, cc, side, { history, live: true });
+      if (ok && paintDragRef.current) paintDragRef.current.line = line;
+      return ok;
+    }
+
     // v7.1 cell mousedown: pick anchor, drag = range select, plain click = edit
     function cellPointerDown(ev, r, c) {
+      // Right-click opens the cell menu — do not collapse a multi-cell selection.
+      if (ev.button != null && ev.button !== 0) return;
+      if (tableBorderPaint) {
+        ev.stopPropagation();
+        ev.preventDefault();
+        if (!selected) editorApi.pickElement(el.id);
+        paintDragRef.current = { line: null };
+        let pushed = paintFromPoint(ev.clientX, ev.clientY, true);
+        const mm = (ev2) => {
+          ev2.preventDefault();
+          if (paintFromPoint(ev2.clientX, ev2.clientY, !pushed)) pushed = true;
+        };
+        const mu = () => {
+          paintDragRef.current = null;
+          window.removeEventListener('pointermove', mm);
+          window.removeEventListener('pointerup', mu);
+          if (pushed) usePresentationStore.getState().persist();
+        };
+        window.addEventListener('pointermove', mm, { passive: false });
+        window.addEventListener('pointerup', mu);
+        return;
+      }
       const key = `${el.id}:${r}:${c}`;
       if (editingCell === key) return; // let the browser place the caret
       ev.stopPropagation();
@@ -892,13 +1391,26 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
       window.addEventListener('pointerup', mu);
     }
 
-    // v7.1 cell keydown: Tab = next cell, Enter = cell below, F5 = preview
+    // Tab = next cell (last cell → new row); Enter = cell below; F5 = preview
     function cellKeyDown(ev, r, c) {
       if (ev.key === 'Tab') {
         ev.preventDefault();
-        const nc = c + 1 < cols ? c + 1 : 0;
-        const nr = c + 1 < cols ? r : r + 1 < rows ? r + 1 : 0;
-        onEditCell?.(el.id, nr, nc);
+        if (ev.shiftKey) {
+          if (c > 0) onEditCell?.(el.id, r, c - 1);
+          else if (r > 0) onEditCell?.(el.id, r - 1, cols - 1);
+          return;
+        }
+        if (c + 1 < cols) {
+          onEditCell?.(el.id, r, c + 1);
+          return;
+        }
+        if (r + 1 < rows) {
+          onEditCell?.(el.id, r + 1, 0);
+          return;
+        }
+        editorApi.pickTableCell(el.id, r, c);
+        editorApi.tableAddRow({ after: true });
+        onEditCell?.(el.id, r + 1, 0, { focus: true });
       } else if (ev.key === 'Enter' && !ev.shiftKey) {
         ev.preventDefault();
         if (r + 1 < rows) onEditCell?.(el.id, r + 1, c);
@@ -1000,12 +1512,13 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
 
     return (
       <div
-        className={`${elClass} react-el-table${selected ? ' is-selected' : ''}`}
+        className={`${elClass} react-el-table${selected ? ' is-selected' : ''}${tableBorderPaint ? ' is-border-paint' : ''}`}
         data-id={el.id}
         data-editing={editingThisTable ? 'true' : undefined}
         style={{
           ...style,
           background: 'transparent',
+          cursor: tableBorderPaint ? 'none' : style.cursor,
         }}
         onPointerDown={onPointerDown}
         {...hfxBind}
@@ -1044,7 +1557,7 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
               tableLayout: 'fixed',
               fontSize: el.fs || 15,
               color: textColor,
-              fontFamily: el.ff || undefined,
+              fontFamily: el.ff || DEFAULT_TEXT_FONT_FAMILY,
               userSelect: 'none',
               background: 'transparent',
             }}
@@ -1062,8 +1575,6 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
                     if (cell.hidden) return null;
                     const cs = cell.colspan || 1;
                     const rs = cell.rowspan || 1;
-                    const isLastC = c + cs - 1 >= cols - 1;
-                    const isLastR = r + rs - 1 >= rows - 1;
                     const isH = r === 0 && el.headerRow !== false;
                     const key = `${el.id}:${r}:${c}`;
                     const isEdit = editingCell === key;
@@ -1082,26 +1593,51 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
                         rowSpan={rs > 1 ? rs : undefined}
                         style={{
                           background: tableCellBg(el, r, c, cell, theme),
-                          borderTop: `${bw}px solid ${bc}`,
-                          borderLeft: `${bw}px solid ${bc}`,
-                          borderRight: isLastC ? `${bw}px solid ${bc}` : undefined,
-                          borderBottom: isLastR ? `${bw}px solid ${bc}` : undefined,
+                          ...tableCellBorderStyle(el, r, c, cell, theme),
                           textAlign: cell.align || 'left',
                           verticalAlign: cell.valign || 'middle',
-                          padding: '5px 9px',
+                          padding: '3px 8px',
                           overflow: 'hidden',
                           wordBreak: 'normal',
                           overflowWrap: 'break-word',
-                          fontWeight: isH ? 700 : 400,
+                          ...tableCellFontStyle(el, r, c, cell),
                           boxSizing: 'border-box',
                           fontSize: cell.fs != null ? +cell.fs : undefined,
-                          fontFamily: cell.ff || undefined,
+                          fontFamily: cell.ff || el.ff || DEFAULT_TEXT_FONT_FAMILY,
                           color: cellTc || undefined,
-                          outline: isCellSel ? '2px solid #3b82f6' : undefined,
-                          outlineOffset: isCellSel ? -1 : undefined,
+                          outline: isCellSel && !tableBorderPaint ? '2px solid #3b82f6' : undefined,
+                          outlineOffset: isCellSel && !tableBorderPaint ? -1 : undefined,
+                          boxShadow:
+                            tableBorderPaint && paintHover?.line
+                              ? paintHoverShadow(
+                                  sideOnGridLine(el, r, c, paintHover.line),
+                                  tableBorderPaint.erase || !tableBorderPaint.color || tableBorderPaint.color === 'transparent'
+                                    ? '#f87171'
+                                    : tableBorderPaint.color
+                                )
+                              : undefined,
+                          cursor: tableBorderPaint ? 'none' : undefined,
                           ...tableCellRadiusStyle(el, r, c, cs, rs),
                         }}
                         onPointerDown={(ev) => cellPointerDown(ev, r, c)}
+                        onContextMenu={(ev) => {
+                          ev.preventDefault();
+                          ev.stopPropagation();
+                          onTableCellContextMenu?.(el, r, c, ev);
+                        }}
+                        onPointerMove={
+                          tableBorderPaint
+                            ? (ev) => {
+                                if (paintDragRef.current) return;
+                                const side = hitTableBorderSide(ev.currentTarget, ev);
+                                const line = side ? tableGridLineId(el, r, c, side) : null;
+                                setPaintHover((prev) =>
+                                  prev?.line === line ? prev : line ? { line } : null
+                                );
+                              }
+                            : undefined
+                        }
+                        onPointerLeave={tableBorderPaint ? () => setPaintHover(null) : undefined}
                       >
                         <EditableHtml
                           html={cell.html || ''}
@@ -1113,6 +1649,7 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
                             minHeight: '1em',
                             width: '100%',
                             cursor: isEdit ? 'text' : undefined,
+                            color: cellTc || 'inherit',
                           }}
                         />
                       </Tag>
@@ -1123,52 +1660,58 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
             </tbody>
           </table>
         </div>
-        {colHandleLefts.map((left, ci) => (
-          <div
-            key={`tch-${ci}`}
-            className="react-tbl-crh"
-            style={{
-              position: 'absolute',
-              left,
-              top: 0,
-              width: 6,
-              height: '100%',
-              cursor: 'col-resize',
-              zIndex: 30,
-            }}
-            onPointerDown={(ev) => colResizeDown(ev, ci)}
-          />
-        ))}
-        {rowHandleTops.map((top, ri) => (
-          <div
-            key={`trh-${ri}`}
-            className="react-tbl-rrh"
-            style={{
-              position: 'absolute',
-              left: 0,
-              top,
-              width: '100%',
-              height: 6,
-              cursor: 'row-resize',
-              zIndex: 30,
-            }}
-            onPointerDown={(ev) => rowResizeDown(ev, ri)}
-          />
-        ))}
-        {[
-          { side: 'top', st: { left: 0, top: 0, width: '100%', height: 14 } },
-          { side: 'bottom', st: { left: 0, bottom: 0, width: '100%', height: 14 } },
-          { side: 'left', st: { left: 0, top: 0, width: 14, height: '100%' } },
-          { side: 'right', st: { right: 0, top: 0, width: 14, height: '100%' } },
-        ].map((s) => (
-          <div
-            key={`tbs-${s.side}`}
-            className="react-tbl-drag-border"
-            data-side={s.side}
-            style={{ position: 'absolute', zIndex: 25, cursor: 'move', ...s.st }}
-            onPointerDown={(ev) => onTableStripDown?.(el, ev)}
-          />
-        ))}
+        {tableBorderPaint
+          ? null
+          : colHandleLefts.map((left, ci) => (
+              <div
+                key={`tch-${ci}`}
+                className="react-tbl-crh"
+                style={{
+                  position: 'absolute',
+                  left,
+                  top: 0,
+                  width: 6,
+                  height: '100%',
+                  cursor: 'col-resize',
+                  zIndex: 30,
+                }}
+                onPointerDown={(ev) => colResizeDown(ev, ci)}
+              />
+            ))}
+        {tableBorderPaint
+          ? null
+          : rowHandleTops.map((top, ri) => (
+              <div
+                key={`trh-${ri}`}
+                className="react-tbl-rrh"
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  top,
+                  width: '100%',
+                  height: 6,
+                  cursor: 'row-resize',
+                  zIndex: 30,
+                }}
+                onPointerDown={(ev) => rowResizeDown(ev, ri)}
+              />
+            ))}
+        {tableBorderPaint
+          ? null
+          : [
+              { side: 'top', st: { left: 0, top: 0, width: '100%', height: 14 } },
+              { side: 'bottom', st: { left: 0, bottom: 0, width: '100%', height: 14 } },
+              { side: 'left', st: { left: 0, top: 0, width: 14, height: '100%' } },
+              { side: 'right', st: { right: 0, top: 0, width: 14, height: '100%' } },
+            ].map((s) => (
+              <div
+                key={`tbs-${s.side}`}
+                className="react-tbl-drag-border"
+                data-side={s.side}
+                style={{ position: 'absolute', zIndex: 25, cursor: 'move', ...s.st }}
+                onPointerDown={(ev) => onTableStripDown?.(el, ev)}
+              />
+            ))}
       </div>
     );
   }
@@ -1223,19 +1766,22 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
 
   if (el.type === 'mediaaudio') {
     const src = resolveMediaSrc(el);
+    const host = audioPlayerHostStyle(appliedThemeIdx);
     return (
       <div
-        className={elClass}
+        className={`${elClass} react-el-audio`}
         data-id={el.id}
-        style={{ ...style, background: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 8 }}
+        style={{ ...style, ...host }}
         onPointerDown={onPointerDown}
         {...hfxBind}
       >
-        {src ? (
-          <audio src={src} controls style={{ width: '100%', pointerEvents: 'none' }} />
-        ) : (
-          <span style={{ color: '#94a3b8', fontSize: 13 }}>Audio</span>
-        )}
+        <ThemedAudioPlayer
+          elId={el.id}
+          src={src}
+          themeOrIdx={appliedThemeIdx}
+          volume={el.maVolume != null ? +el.maVolume : 1}
+          loop={!!el.maLoop}
+        />
       </div>
     );
   }
@@ -1284,9 +1830,9 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
   }
 
   if (el.type === 'code') {
-    const surface = codeBlockSurfaceStyle(el);
-    const T = CODE_THEMES[el.codeTheme || 'dark'] || CODE_THEMES.dark;
-    const html = el.codeHtml || syntaxHighlight(el.codeRaw || '', el.codeLang || 'js', el.codeTheme || 'dark');
+    const slideOpts = { themeIdx: appliedThemeIdx };
+    const surface = codeBlockSurfaceStyle(el, slideOpts);
+    const html = codeDisplayHtml(el, slideOpts);
     return (
       <div
         className={elClass}
@@ -1300,19 +1846,29 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
         }}
       >
         <div style={surface}>
-          <div style={{ fontSize: 9, color: T.cmt, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.8 }}>
-            {el.codeLang || 'code'}
-          </div>
-          <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: html }} />
+          {el.codeLineNums ? (
+            <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+              <pre style={codeGutterCss(el, slideOpts)} aria-hidden="true">
+                {codeLineNumbersText(el.codeRaw)}
+              </pre>
+              <pre
+                style={{ margin: 0, whiteSpace: 'pre-wrap', flex: 1, minWidth: 0 }}
+                dangerouslySetInnerHTML={{ __html: html }}
+              />
+            </div>
+          ) : (
+            <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: html }} />
+          )}
         </div>
       </div>
     );
   }
 
-  if (el.type === 'svg' || el.svgContent) {
+  if (el.type === 'svg' || el.svgContent || el.svg) {
     const isDecor = !!el._isDecor;
     if (isDecor) attachDecorGlCfg(el);
     const useGl = isDecor && decorUsesGl(el);
+    const svgHtml = el.svgContent || el.svg || '';
     const boxStyle = {
       ...style,
       outline: isDecor ? 'none' : style.outline,
@@ -1323,9 +1879,9 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
     if (useGl) {
       return (
         <div className={`${elClass}${isDecor ? ' react-el-decor' : ''}`} data-id={el.id} style={boxStyle}>
-          {el.svgContent ? (
+          {svgHtml ? (
             <DecorSvgHost
-              html={el.svgContent}
+              html={svgHtml}
               still
               style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
             />
@@ -1340,18 +1896,19 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
           className={`${elClass} react-el-decor`}
           dataId={el.id}
           style={boxStyle}
-          html={el.svgContent || ''}
+          html={svgHtml}
         />
       );
     }
     return (
       <div
-        className={elClass}
+        className={`${elClass} react-el-svg`}
         data-id={el.id}
         style={boxStyle}
         onPointerDown={onPointerDown}
+        onDoubleClick={onDoubleClick}
         {...hfxBind}
-        dangerouslySetInnerHTML={{ __html: el.svgContent || '' }}
+        dangerouslySetInnerHTML={{ __html: svgHtml }}
       />
     );
   }
@@ -1424,9 +1981,9 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
             allowFullScreen
             scrolling={el.hfScroll ? 'auto' : 'no'}
             src={url ? src : undefined}
-            srcDoc={url ? undefined : buildHfSrcdoc(src)}
+            srcDoc={url ? undefined : buildHfSrcdocClickThrough(src, { captureOpaque: true })}
+            style={{ pointerEvents: 'auto' }}
           />
-          <div className="react-hf-overlay" />
         </div>
       </div>
     );
@@ -1447,7 +2004,7 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
           height: built?.h != null ? built.h : style.height,
           overflow: 'visible',
           background: 'transparent',
-          pointerEvents: 'auto',
+          pointerEvents: 'none',
         }}
         onPointerDown={onPointerDown}
         {...hfxBind}
@@ -1460,7 +2017,27 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
     const canvasW = usePresentationStore.getState().canvasW || DEFAULT_CANVAS_W;
     const canvasH = usePresentationStore.getState().canvasH || DEFAULT_CANVAS_H;
     const slide = usePresentationStore.getState().slides[usePresentationStore.getState().cur] || {};
-    const inner = inkHostInnerMarkup(slide, el, inkStrokeSvgMarkup, inkFillsSvgMarkup);
+    const rawInner = inkHostInnerMarkup(slide, el, inkStrokeSvgMarkup, inkFillsSvgMarkup);
+    const hit = inkHostHitMarkup(slide, el);
+    // Selection halo for this host's own strokes, rendered *inside* the same SVG as the
+    // stroke content (below) instead of the stage-level free-ink layer — that global layer
+    // sits outside this div and never rotates with it, so a rotated stroke's halo used to
+    // stay stuck at its original, unrotated position while the stroke itself visibly turned.
+    const selHere = (el.inkIds || []).map(String).filter((id) => (selInkIds || []).includes(id));
+    const rawHalo = selHere.length ? inkSelectionHaloMarkup(slide, selHere) : '';
+    const rawCombined = rawHalo + rawInner;
+    // While the inkDraw animation is actively revealing this host's strokes, it drives the
+    // rendered <path>/<g> nodes directly via stroke-dashoffset/opacity — completely outside
+    // React. If this component re-renders for any other reason meanwhile (selection change,
+    // an unrelated animPlay flag, etc.), recomputing dangerouslySetInnerHTML here would
+    // silently replace those nodes with fresh, fully-visible ones and the animation would
+    // appear to just not play (every stroke visible immediately). Freeze the markup we feed
+    // React while that's happening; isInkDrawActiveFor is set by inkDrawPlay.js itself, so
+    // this covers both the real slide-play pipeline and the editor's hover-preview.
+    const inkDrawFrozenRef = frozenInkHtmlRef;
+    const animating = isInkDrawActiveFor(el.id);
+    if (!animating) inkDrawFrozenRef.current = rawCombined;
+    const combined = animating ? inkDrawFrozenRef.current : rawCombined;
     const op = el.elOpacity != null ? +el.elOpacity : 1;
     return (
       <div
@@ -1468,6 +2045,10 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
         data-id={el.id}
         style={{
           ...style,
+          // Only the actual stroke/fill hit-paths below should be clickable, not the whole
+          // rectangular bounding box — a click on the transparent gap inside it should fall
+          // through to whatever's behind the drawing.
+          pointerEvents: 'none',
           background: 'transparent',
           border: selected ? '1px dashed rgba(59,130,246,0.55)' : '1px dashed transparent',
           overflow: 'visible',
@@ -1476,7 +2057,7 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
         onPointerDown={onPointerDown}
         title="ink"
       >
-        {inner ? (
+        {combined ? (
           <svg
             className="react-inkhost-svg"
             viewBox={`0 0 ${canvasW} ${canvasH}`}
@@ -1492,7 +2073,26 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
               pointerEvents: 'none',
             }}
             aria-hidden="true"
-            dangerouslySetInnerHTML={{ __html: inner }}
+            dangerouslySetInnerHTML={{ __html: combined }}
+          />
+        ) : null}
+        {hit ? (
+          <svg
+            className="react-inkhost-hit-svg"
+            viewBox={`0 0 ${canvasW} ${canvasH}`}
+            width={canvasW}
+            height={canvasH}
+            style={{
+              position: 'absolute',
+              left: -(el.x || 0),
+              top: -(el.y || 0),
+              width: canvasW,
+              height: canvasH,
+              overflow: 'visible',
+              pointerEvents: 'none',
+            }}
+            aria-hidden="true"
+            dangerouslySetInnerHTML={{ __html: hit }}
           />
         ) : null}
       </div>
@@ -1523,7 +2123,7 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
         onPointerDown={onPointerDown}
         {...hfxBind}
       >
-        <Model3dView el={el} />
+        <Model3dView key={`m3d-${el.id}-${slideCur}`} el={el} slideKey={slideCur} />
       </div>
     );
   }
@@ -1536,12 +2136,39 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
         style={{ ...style, overflow: 'visible', background: 'transparent', padding: 0 }}
         onPointerDown={onPointerDown}
         {...hfxBind}
-        dangerouslySetInnerHTML={{ __html: buildLegoSvg(el) }}
+        dangerouslySetInnerHTML={{ __html: buildLegoSvg(el, els) }}
       />
     );
   }
 
   if (el.type === 'graph') {
+    const graphTheme = el.graphTheme;
+    const graphBlur = graphTheme === 'blur';
+    const graphTransparent = graphTheme === 'transparent' || graphBlur || el.graphKind === 'chem';
+    const graphBg = graphTransparent
+      ? 'transparent'
+      : el.graphBg || (el.graphDark === false ? '#ffffff' : '#16161e');
+    const paths = Array.isArray(el.graphPaths) ? el.graphPaths : [];
+    const animateCurve = !!(el.graphAnimate && el.graphAxesImg && paths.length);
+    const animDur = Math.max(0.4, Math.min(12, +(el.graphAnimDur ?? 1.8) || 1.8));
+    const holdSec = 1;
+    const eraseSec = 0.28;
+    const animTotal = animDur + holdSec + eraseSec;
+    const pDraw = Math.max(1, Math.min(90, (animDur / animTotal) * 100));
+    const pHold = Math.max(pDraw + 1, Math.min(99, ((animDur + holdSec) / animTotal) * 100));
+    const kfName = `rgstroke_${String(el.id).replace(/[^\w-]/g, '_')}`;
+    const showNav = !!(selected && el.graphKind !== 'chem' && el.graphKind !== 'logic' && !animPlayOn);
+    const imgFit = {
+      width: '100%',
+      height: '100%',
+      objectFit: 'contain',
+      display: 'block',
+      pointerEvents: 'none',
+    };
+    const stopNav = (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+    };
     return (
       <div
         className={`${elClass} react-el-graph`}
@@ -1550,16 +2177,68 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
           ...style,
           padding: 0,
           overflow: 'hidden',
-          background: el.graphKind === 'chem' ? (el.graphBg || 'transparent') : el.graphBg || '#16161e',
+          background: graphBg,
+          borderRadius: el.graphRadius ?? 16,
+          ...(graphBlur
+            ? { backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)' }
+            : null),
         }}
         onPointerDown={onPointerDown}
         {...hfxBind}
       >
+        {animateCurve ? (
+          <style>{`@keyframes ${kfName}{0%{stroke-dashoffset:1}${pDraw}%{stroke-dashoffset:0}${pHold}%{stroke-dashoffset:0}100%{stroke-dashoffset:1}}`}</style>
+        ) : null}
         {el.graphImg ? (
-          <img src={el.graphImg} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', pointerEvents: 'none' }} />
+          animateCurve ? (
+            <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+              <img src={el.graphAxesImg} alt="" style={{ ...imgFit, position: 'absolute', inset: 0 }} />
+              <svg
+                className="react-graph-curves"
+                viewBox={`0 0 ${el.graphPathW || 800} ${el.graphPathH || 560}`}
+                preserveAspectRatio="none"
+                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
+              >
+                {paths.map((p, i) => (
+                  <path
+                    key={i}
+                    className="react-graph-stroke-draw"
+                    d={p.d}
+                    fill="none"
+                    stroke={p.color || el.graphColor || '#6366f1'}
+                    strokeWidth={p.width ?? el.graphLineWidth ?? 2.5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    pathLength="1"
+                    style={{
+                      animationName: kfName,
+                      animationDuration: `${animTotal}s`,
+                      ['--graph-anim-total']: `${animTotal}s`,
+                    }}
+                  />
+                ))}
+              </svg>
+            </div>
+          ) : (
+            <img
+              src={el.graphImg}
+              alt=""
+              style={imgFit}
+            />
+          )
         ) : (
           <div style={{ padding: 8, fontSize: 12, color: '#94a3b8' }}>{el.graphLatex || el.graphExpr || 'graph'}</div>
         )}
+        {showNav ? (
+          <div className="react-graph-nav" onPointerDown={stopNav} onDoubleClick={stopNav}>
+            <button type="button" className="react-graph-nav-btn is-left" title={lang === 'en' ? 'Pan left' : 'Влево'} onClick={() => void editorApi.nudgeSelectedGraph(-1, 0)}>◀</button>
+            <button type="button" className="react-graph-nav-btn is-right" title={lang === 'en' ? 'Pan right' : 'Вправо'} onClick={() => void editorApi.nudgeSelectedGraph(1, 0)}>▶</button>
+            <button type="button" className="react-graph-nav-btn is-up" title={lang === 'en' ? 'Pan up' : 'Вверх'} onClick={() => void editorApi.nudgeSelectedGraph(0, 1)}>▲</button>
+            <button type="button" className="react-graph-nav-btn is-down" title={lang === 'en' ? 'Pan down' : 'Вниз'} onClick={() => void editorApi.nudgeSelectedGraph(0, -1)}>▼</button>
+            <button type="button" className="react-graph-nav-btn is-zoom-in" title={lang === 'en' ? 'Zoom in' : 'Крупнее'} onClick={() => void editorApi.zoomSelectedGraph(0.8)}>+</button>
+            <button type="button" className="react-graph-nav-btn is-zoom-out" title={lang === 'en' ? 'Zoom out' : 'Мельче'} onClick={() => void editorApi.zoomSelectedGraph(1.25)}>−</button>
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -1572,8 +2251,13 @@ function ElementView({ el, els, selected, onPointerDown, onDoubleClick, editing,
   );
 }
 
+function captureTrustedPointer(e, target = e.currentTarget) {
+  if (e.isTrusted) target?.setPointerCapture?.(e.pointerId);
+}
+
 export default function SlideCanvas() {
   const hostRef = useRef(null);
+  useEffect(() => installHtmlFrameTransparentPointerListener(), []);
   const slides = usePresentationStore((s) => s.slides);
   const cur = usePresentationStore((s) => s.cur);
   const canvasW = usePresentationStore((s) => s.canvasW);
@@ -1593,13 +2277,17 @@ export default function SlideCanvas() {
   const multiSel = useSelectionStore((s) => s.multiSel);
   const selConnId = useSelectionStore((s) => s.selConnId);
   const selInkIds = useSelectionStore((s) => s.selInkIds);
-  const finishBoot = useUiStore((s) => s.finishBoot);
   const canvasZoom = useUiStore((s) => s.canvasZoom);
   const setCanvasZoom = useUiStore((s) => s.setCanvasZoom);
   const snapEnabled = useUiStore((s) => s.snapEnabled);
   const snapStep = useUiStore((s) => s.snapStep);
   const extraGuidesMode = useUiStore((s) => s.extraGuidesMode);
+  const guidesEditMode = useUiStore((s) => s.guidesEditMode);
+  const guidesVisible = useUiStore((s) => s.guidesVisible);
+  const selGuideId = useUiStore((s) => s.selGuideId);
   const cropModeElId = useUiStore((s) => s.cropModeElId);
+  const shapeFillImgEditId = useUiStore((s) => s.shapeFillImgEditId);
+  const tableBorderPaint = useUiStore((s) => s.tableBorderPaint);
   const [fitScale, setFitScale] = useState(1);
   const [hostSize, setHostSize] = useState({ w: 0, h: 0 });
   const [iconsTick, setIconsTick] = useState(0);
@@ -1621,24 +2309,47 @@ export default function SlideCanvas() {
     useUiStore.getState().clearInlineEditRequest();
   }, [inlineEditRequestId]);
   const [editingCell, setEditingCell] = useState(null);
+  // Leaving a slide must end in-place text/table edit (and drop the DOM selection).
+  useEffect(() => {
+    setEditingId(null);
+    setEditingCell(null);
+    try {
+      const sel = window.getSelection?.();
+      if (sel && !sel.isCollapsed) sel.removeAllRanges();
+    } catch (_) {}
+  }, [cur]);
   const [band, setBand] = useState(null);
   const [snapGuides, setSnapGuides] = useState([]);
   const [epGhost, setEpGhost] = useState(null);
   const [brushCur, setBrushCur] = useState(null);
+  const overlayCurRef = useRef(null);
+  const overlayCurOnRef = useRef(false);
   const dragRef = useRef(null);
   const resizeRef = useRef(null);
   const rotDragRef = useRef(null);
   const adjRef = useRef(null);
+  const shapeNodeRef = useRef(null);
   const lineEpRef = useRef(null);
   const curveDragRef = useRef(null);
-  const [curveSelIdx, setCurveSelIdx] = useState(0);
+  const guideDragRef = useRef(null);
+  const [ctrlNodes, setCtrlNodes] = useState(false);
   const curveEditMode = useUiStore((s) => s.curveEditMode);
+  const curveNodeSel = useUiStore((s) => s.curveNodeSel);
+  const shapeNodeMode = useUiStore((s) => s.shapeNodeMode);
+
+  useEffect(() => {
+    if (!shapeFillImgEditId) return;
+    if (String(selId) !== String(shapeFillImgEditId)) {
+      useUiStore.getState().setShapeFillImgEditId(null);
+    }
+  }, [selId, shapeFillImgEditId]);
   const groupResizeRef = useRef(null);
   const groupRotRef = useRef(null);
   const epDragRef = useRef(null);
   const inkRef = useRef(null);
   const inkDragRef = useRef(null);
   const liveInkCanvasRef = useRef(null);
+  const livePaintRafRef = useRef(null);
   const cpDragRef = useRef(null);
   const bandRef = useRef(null);
   const movedRef = useRef(false);
@@ -1654,10 +2365,15 @@ export default function SlideCanvas() {
     drawTool === 'marker' ||
     drawTool === 'eraser' ||
     drawTool === 'fill';
+  const showTablePaintCursor = !!tableBorderPaint;
+  const showOverlayCursor = showBrushCursor || showTablePaintCursor;
 
   useEffect(() => {
-    if (!showBrushCursor) setBrushCur(null);
-  }, [showBrushCursor]);
+    if (!showOverlayCursor) {
+      overlayCurOnRef.current = false;
+      setBrushCur(null);
+    }
+  }, [showOverlayCursor]);
 
   useEffect(() => {
     if (!connectorMode && (!drawTool || drawTool === 'cursor')) return undefined;
@@ -1792,13 +2508,13 @@ export default function SlideCanvas() {
     if (!curveEditMode || !soleSelected || soleSelected.shape !== 'curve') {
       return { nodes: [], cps: [], lines: [] };
     }
-    return listCurveEditorHandles(soleSelected, curveSelIdx);
-  }, [curveEditMode, soleSelected, curveSelIdx]);
+    return listCurveEditorHandles(soleSelected, curveNodeSel);
+  }, [curveEditMode, soleSelected, curveNodeSel]);
 
   useEffect(() => {
     if (!soleSelected || soleSelected.shape !== 'curve') {
       if (useUiStore.getState().curveEditMode) useUiStore.getState().setCurveEditMode(false);
-      setCurveSelIdx(0);
+      if ((useUiStore.getState().curveNodeSel || []).length) useUiStore.getState().setCurveNodeSel([]);
     }
   }, [soleSelected?.id, soleSelected?.shape]);
 
@@ -1819,14 +2535,78 @@ export default function SlideCanvas() {
     return () => window.removeEventListener('keydown', onKey);
   }, [curveEditMode, soleSelected, editingId]);
 
+  const showShapeNodes = !!(
+    soleSelected &&
+    !soleSelected.locked &&
+    shapeSupportsNodes(soleSelected) &&
+    (shapeNodeMode || ctrlNodes)
+  );
+
+  const shapeNodeHandles = useMemo(
+    () => (showShapeNodes ? listShapeNodeHandles(soleSelected) : []),
+    [showShapeNodes, soleSelected]
+  );
+
+  useEffect(() => {
+    const onDown = (e) => {
+      if (e.key === 'Control' || e.key === 'Meta') setCtrlNodes(true);
+    };
+    const onUp = (e) => {
+      if (e.key === 'Control' || e.key === 'Meta') setCtrlNodes(false);
+    };
+    const onBlur = () => setCtrlNodes(false);
+    window.addEventListener('keydown', onDown);
+    window.addEventListener('keyup', onUp);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onDown);
+      window.removeEventListener('keyup', onUp);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!soleSelected || !shapeSupportsNodes(soleSelected)) {
+      if (useUiStore.getState().shapeNodeMode) useUiStore.getState().setShapeNodeMode(false);
+    }
+  }, [soleSelected?.id, soleSelected?.type, soleSelected?.shape]);
+
+  useEffect(() => {
+    if (!shapeNodeMode) return undefined;
+    const onKey = (e) => {
+      if (e.key !== 'Escape' && e.key !== 'Enter') return;
+      if (editingId) return;
+      e.preventDefault();
+      useUiStore.getState().setShapeNodeMode(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [shapeNodeMode, editingId]);
+
   const guideLines = useMemo(() => {
     if (extraGuidesKind(extraGuidesMode) === 'none') return [];
     return extraGuideLines(extraGuidesMode, canvasW, canvasH);
   }, [extraGuidesMode, canvasW, canvasH]);
 
-  useEffect(() => {
-    finishBoot();
-  }, [finishBoot]);
+  /** Classification zone guides — only while the Check button is selected. */
+  const classGuideLines = useMemo(() => {
+    const els = slide?.els || [];
+    const selected =
+      (selId && els.find((e) => e && String(e.id) === String(selId))) ||
+      null;
+    if (!selected || selected.type !== 'applet' || selected.appletId !== 'classification') {
+      return [];
+    }
+    return classificationGuideLines(selected, canvasW, canvasH);
+  }, [slide?.els, selId, canvasW, canvasH]);
+
+  // Deck-wide guides: same on every slide; visibility toggle hides draw + snap.
+  const deckGuides = usePresentationStore((s) => (Array.isArray(s.guides) ? s.guides : []));
+  const customSlideGuides = guidesVisible ? deckGuides : [];
+  const allGuideLines = useMemo(
+    () => [...guideLines, ...classGuideLines, ...customGuidesToSnapLines(customSlideGuides)],
+    [guideLines, classGuideLines, customSlideGuides],
+  );
 
   useEffect(() => {
     const host = hostRef.current;
@@ -1895,7 +2675,8 @@ export default function SlideCanvas() {
   }, [editingId, canvasZoom, scale, stageLeft, stageTop, setCanvasZoom]);
 
   function gridSnap(v) {
-    if (!snapEnabled) return Math.round(v);
+    // Without snap: keep sub-pixels (hundredths) so zoomed edits are smooth.
+    if (!snapEnabled) return Math.round(v * 100) / 100;
     const step = Math.max(1, snapStep || 20);
     return Math.round(v / step) * step;
   }
@@ -1924,10 +2705,14 @@ export default function SlideCanvas() {
     if (orphan) usePresentationStore.getState().ensureInkHosts();
   }, [cur, slide.ink, slide.inkFills, slide.els]);
 
-  const inkHaloMarkup = useMemo(
-    () => inkSelectionHaloMarkup(slide, selInkIds),
-    [slide.ink, slide.inkFills, selInkIds]
-  );
+  const inkHaloMarkup = useMemo(() => {
+    // Hosted strokes get their halo drawn inside their own (correctly rotating) inkhost SVG
+    // instead — see ElementView's `el.type === 'inkhost'` branch. Only genuinely free/
+    // unhosted strokes belong in this stage-level, non-rotating layer.
+    const hosted = hostedInkIdSet(slide);
+    const freeSelIds = (selInkIds || []).filter((id) => !hosted.has(String(id)));
+    return inkSelectionHaloMarkup(slide, freeSelIds);
+  }, [slide.ink, slide.inkFills, slide.els, selInkIds]);
 
   function canvasPoint(e) {
     const stage = stageRef.current || hostRef.current?.querySelector('.react-slide-stage');
@@ -1946,22 +2731,21 @@ export default function SlideCanvas() {
     idSet.forEach((id) => {
       const node = stage.querySelector(`.react-el[data-id="${CSS.escape(String(id))}"]`);
       if (!node) return;
-      const el = (slide.els || []).find((e) => e && String(e.id) === String(id));
       drag.domEls.push({
         node,
-        baseTransform: elBoxTransform(el) || '',
+        baseTranslate: node.style.translate,
       });
       node.style.willChange = 'transform';
     });
     drag.domChrome = [];
     stage
       .querySelectorAll(
-        '.react-sel-outline, .react-rh, .react-group-outline, .react-group-label, .react-group-rh, .react-group-rot, .react-adj-handle, .react-line-ep, .react-ep-handle, .react-curve-handle, .react-sel-frame'
+        '.react-sel-outline, .react-rh, .react-group-outline, .react-group-rh, .react-group-rot, .react-adj-handle, .react-line-ep, .react-ep-handle, .react-curve-handle, .react-sel-frame'
       )
       .forEach((node) => {
         drag.domChrome.push({
           node,
-          baseTransform: node.style.transform || '',
+          baseTranslate: node.style.translate,
         });
         node.style.willChange = 'transform';
       });
@@ -1976,14 +2760,12 @@ export default function SlideCanvas() {
 
   function applyDragDom(drag, dx, dy) {
     ensureDragDom(drag);
-    const t = dx || dy ? `translate3d(${dx}px, ${dy}px, 0)` : '';
-    (drag.domEls || []).forEach(({ node, baseTransform }) => {
-      const next = t ? (baseTransform ? `${t} ${baseTransform}` : t) : baseTransform || '';
-      node.style.transform = next;
+    const translation = dx || dy ? `${dx}px ${dy}px` : '';
+    (drag.domEls || []).forEach(({ node }) => {
+      node.style.translate = translation;
     });
-    (drag.domChrome || []).forEach(({ node, baseTransform }) => {
-      const next = t ? (baseTransform ? `${t} ${baseTransform}` : t) : baseTransform || '';
-      node.style.transform = next;
+    (drag.domChrome || []).forEach(({ node }) => {
+      node.style.translate = translation;
     });
   }
 
@@ -2012,12 +2794,12 @@ export default function SlideCanvas() {
 
   function clearDragDom(drag) {
     if (!drag) return;
-    (drag.domEls || []).forEach(({ node, baseTransform }) => {
-      node.style.transform = baseTransform || '';
+    (drag.domEls || []).forEach(({ node, baseTranslate }) => {
+      node.style.translate = baseTranslate;
       node.style.willChange = '';
     });
-    (drag.domChrome || []).forEach(({ node, baseTransform }) => {
-      node.style.transform = baseTransform || '';
+    (drag.domChrome || []).forEach(({ node, baseTranslate }) => {
+      node.style.translate = baseTranslate;
       node.style.willChange = '';
     });
     if (drag.guideLayer) {
@@ -2135,7 +2917,26 @@ export default function SlideCanvas() {
     ctx.restore();
   }
 
+  function scheduleLivePaint() {
+    // Coalesce live-preview repaints to at most one per animation frame. Pointer/pen input
+    // can fire pointermove far more often than the screen refreshes (high-poll-rate mice,
+    // most styluses), and neon's live preview redraws its whole accumulated stroke with two
+    // blur passes every call — repainting once per raw event instead of once per frame means
+    // doing that expensive work multiple times for a single visible frame. This doesn't drop
+    // or simplify any point: inkRef.current.points still gets every sample in full, and the
+    // committed stroke is unaffected — only how often the (in-progress) preview repaints.
+    if (livePaintRafRef.current != null) return;
+    livePaintRafRef.current = requestAnimationFrame(() => {
+      livePaintRafRef.current = null;
+      if (inkRef.current) paintLiveInk(inkRef.current);
+    });
+  }
+
   function clearLiveInkCanvas() {
+    if (livePaintRafRef.current != null) {
+      cancelAnimationFrame(livePaintRafRef.current);
+      livePaintRafRef.current = null;
+    }
     const cnv = liveInkCanvasRef.current;
     if (!cnv) return;
     const ctx = cnv.getContext('2d');
@@ -2152,7 +2953,75 @@ export default function SlideCanvas() {
     cnv.style.height = '100%';
   }
 
+  /** Start corner-rotate if the pointer is in the selection's rotate zone.
+   * Must win over other objects' boxes (incl. transparent PNG padding) under the corner. */
+  function tryBeginCornerRotate(e) {
+    if (e.target.closest?.('.react-rh, .react-group-rh, .react-group-rot, .react-cp-handle, .react-ep-handle, .react-adj-handle, .react-line-ep, .react-curve-handle')) {
+      return false;
+    }
+    if (
+      groupBBox &&
+      multiMembers &&
+      !multiMembers.some((el) => el.locked)
+    ) {
+      const pt0 = canvasPoint(e);
+      const virt = { x: groupBBox.x, y: groupBBox.y, w: groupBBox.w, h: groupBBox.h, rot: 0 };
+      if (pt0 && nearCornerRot(virt, pt0[0], pt0[1], scale)) {
+        e.preventDefault();
+        e.stopPropagation();
+        onGroupRotPointerDown(e);
+        return true;
+      }
+      return false;
+    }
+    if (
+      soleSelectedView &&
+      !soleSelectedView.locked &&
+      soleSelectedView.type !== 'lego' &&
+      soleSelectedView.type !== 'lineangle' &&
+      soleSelectedView.shape !== 'line' &&
+      !(curveEditMode && soleSelectedView.shape === 'curve') &&
+      !shapeNodeMode
+    ) {
+      const pt0 = canvasPoint(e);
+      if (pt0 && nearCornerRot(soleSelectedView, pt0[0], pt0[1], scale)) {
+        e.preventDefault();
+        e.stopPropagation();
+        const cx = (soleSelectedView.x || 0) + (soleSelectedView.w || 0) / 2;
+        const cy = (soleSelectedView.y || 0) + (soleSelectedView.h || 0) / 2;
+        rotDragRef.current = {
+          id: soleSelectedView.id,
+          cx,
+          cy,
+          a0: (Math.atan2(pt0[1] - cy, pt0[0] - cx) * 180) / Math.PI,
+          rot0: elRotationDeg(soleSelectedView),
+        };
+        movedRef.current = false;
+        captureTrustedPointer(e);
+        return true;
+      }
+    }
+    return false;
+  }
+
   function onStagePointerDown(e) {
+    if (guidesEditMode) {
+      const gpt = canvasPoint(e);
+      if (gpt) {
+        const th = Math.max(4, 10 / Math.max(0.001, scale));
+        let best = null;
+        (customSlideGuides || []).forEach((g) => {
+          if (!g) return;
+          const d = hitTestGuide(g, gpt[0], gpt[1], canvasW, canvasH, th);
+          if (d != null && (!best || d < best.d)) best = { g, d };
+        });
+        if (best) {
+          onGuidePointerDown(best.g, e);
+          return;
+        }
+        useUiStore.getState().setSelGuideId(null);
+      }
+    }
     if (drawing) {
       const pt = canvasPoint(e);
       if (!pt) return;
@@ -2165,7 +3034,7 @@ export default function SlideCanvas() {
           editorApi.pickInk(fillHit.id, { additive });
           if (!additive) {
             inkDragRef.current = { px: pt[0], py: pt[1], lastX: pt[0], lastY: pt[1] };
-            e.currentTarget.setPointerCapture?.(e.pointerId);
+            captureTrustedPointer(e);
           }
           return;
         }
@@ -2197,51 +3066,20 @@ export default function SlideCanvas() {
       };
       if (drawTool !== 'eraser') {
         paintLiveInk(inkRef.current);
+      } else {
+        // Erase right away from the initial touch point too — previously the first erase
+        // pass only ran on the first pointermove, so a stationary tap (press + release with
+        // no drag) never erased anything even when it landed squarely on a stroke.
+        const pts = inkRef.current.points.map((p) => [p.x, p.y]);
+        editorApi.eraseInkNear(pts, (inkRef.current.width || 10) * 0.75);
       }
-      e.currentTarget.setPointerCapture?.(e.pointerId);
+      captureTrustedPointer(e);
       return;
     }
+    // Corner rotate before ignoring .react-el — transparent padding of a neighbour image
+    // still targets that .react-el, which used to swallow the rotate gesture.
+    if (tryBeginCornerRotate(e)) return;
     if (e.target.closest('.react-el') || e.target.closest('.react-rh') || e.target.closest('.react-cp-handle') || e.target.closest('.react-group-rh') || e.target.closest('.react-group-rot') || e.target.closest('.react-ep-handle') || e.target.closest('.react-adj-handle') || e.target.closest('.react-line-ep') || e.target.closest('.react-curve-handle')) return;
-    // Corner rotate zone (v7.1): just outside resize handles — single el or whole group
-    if (
-      groupBBox &&
-      multiMembers &&
-      !multiMembers.some((el) => el.locked)
-    ) {
-      const pt0 = canvasPoint(e);
-      const virt = { x: groupBBox.x, y: groupBBox.y, w: groupBBox.w, h: groupBBox.h, rot: 0 };
-      if (pt0 && nearCornerRot(virt, pt0[0], pt0[1])) {
-        e.preventDefault();
-        e.stopPropagation();
-        onGroupRotPointerDown(e);
-        return;
-      }
-    } else if (
-      soleSelectedView &&
-      !soleSelectedView.locked &&
-      soleSelectedView.type !== 'lego' &&
-      soleSelectedView.type !== 'lineangle' &&
-      soleSelectedView.shape !== 'line' &&
-      !(curveEditMode && soleSelectedView.shape === 'curve')
-    ) {
-      const pt0 = canvasPoint(e);
-      if (pt0 && nearCornerRot(soleSelectedView, pt0[0], pt0[1])) {
-        e.preventDefault();
-        e.stopPropagation();
-        const cx = (soleSelectedView.x || 0) + (soleSelectedView.w || 0) / 2;
-        const cy = (soleSelectedView.y || 0) + (soleSelectedView.h || 0) / 2;
-        rotDragRef.current = {
-          id: soleSelectedView.id,
-          cx,
-          cy,
-          a0: (Math.atan2(pt0[1] - cy, pt0[0] - cx) * 180) / Math.PI,
-          rot0: elRotationDeg(soleSelectedView),
-        };
-        movedRef.current = false;
-        e.currentTarget.setPointerCapture?.(e.pointerId);
-        return;
-      }
-    }
     if (useUiStore.getState().connectorMode) {
       // Click outside objects (empty slide / chrome) exits connect mode.
       editorApi.cancelConnectorMode();
@@ -2267,7 +3105,7 @@ export default function SlideCanvas() {
       }
       setEditingId(null);
       setEditingCell(null);
-      e.currentTarget.setPointerCapture?.(e.pointerId);
+      captureTrustedPointer(e);
       return;
     }
     bandRef.current = { x0: pt[0], y0: pt[1], x1: pt[0], y1: pt[1] };
@@ -2275,11 +3113,30 @@ export default function SlideCanvas() {
     editorApi.pickElement(null);
     setEditingId(null);
     setEditingCell(null);
-    e.currentTarget.setPointerCapture?.(e.pointerId);
+    captureTrustedPointer(e);
+  }
+
+  function moveOverlayCursor(x, y) {
+    const node = overlayCurRef.current;
+    if (node) node.style.transform = `translate(${x}px, ${y}px)`;
   }
 
   function onStagePointerMove(e) {
-    if (showBrushCursor) {
+    if (!drawing && !dragRef.current && !resizeRef.current && !inkRef.current) {
+      const root = stageRef.current || hostRef.current;
+      const id = hoverTargetIdAt(slide.els, root, e.clientX, e.clientY, {
+        skipId: selId,
+        editingId,
+      });
+      if (useUiStore.getState().hfxHoverId !== id) useUiStore.getState().setHfxHoverId(id);
+    }
+    if (showTablePaintCursor) {
+      if (!overlayCurOnRef.current) {
+        overlayCurOnRef.current = true;
+        setBrushCur({ x: e.clientX, y: e.clientY });
+      }
+      moveOverlayCursor(e.clientX, e.clientY);
+    } else if (showBrushCursor) {
       setBrushCur({ x: e.clientX, y: e.clientY });
     }
     if (
@@ -2296,7 +3153,7 @@ export default function SlideCanvas() {
       const stage = stageRef.current;
       if (stage && ptHover) {
         const virt = { x: groupBBox.x, y: groupBBox.y, w: groupBBox.w, h: groupBBox.h, rot: 0 };
-        const near = nearCornerRot(virt, ptHover[0], ptHover[1]);
+        const near = nearCornerRot(virt, ptHover[0], ptHover[1], scale);
         stage.classList.toggle('is-rot-hover', !!near);
       }
     } else if (
@@ -2310,12 +3167,13 @@ export default function SlideCanvas() {
       soleSelectedView.type !== 'lego' &&
       soleSelectedView.type !== 'lineangle' &&
       soleSelectedView.shape !== 'line' &&
-      !(curveEditMode && soleSelectedView.shape === 'curve')
+      !(curveEditMode && soleSelectedView.shape === 'curve') &&
+      !shapeNodeMode
     ) {
       const ptHover = canvasPoint(e);
       const stage = stageRef.current;
       if (stage && ptHover) {
-        const near = nearCornerRot(soleSelectedView, ptHover[0], ptHover[1]);
+        const near = nearCornerRot(soleSelectedView, ptHover[0], ptHover[1], scale);
         stage.classList.toggle('is-rot-hover', !!near);
       }
     } else if (stageRef.current) {
@@ -2345,11 +3203,20 @@ export default function SlideCanvas() {
         const pressure = e.pressure > 0 && e.pointerType === 'pen' ? e.pressure : 0.5;
         inkRef.current.points.push({ x: pt[0], y: pt[1], p: pressure, t: performance.now() });
         if (inkRef.current.tool === 'eraser') {
-          // Erase immediately while moving (like v7.1)
-          const pts = inkRef.current.points.map((p) => [p.x, p.y]);
-          editorApi.eraseInkNear(pts, (inkRef.current.width || 10) * 0.75);
+          // Erase immediately while moving (like v7.1). {live:true}: cheap per-move update,
+          // no history snapshot / persist on every sample — see onStagePointerUp for the
+          // single persist() at the end of the gesture. Only test the newest travelled
+          // segment (previous point → this one), not the whole accumulated path: strokes
+          // only ever get removed here, never added, so anything near an earlier segment
+          // was already caught (and erased) on the move that produced it — rescanning the
+          // full growing history every single move is wasted, compounding work for no
+          // benefit.
+          const n = inkRef.current.points.length;
+          const from = n >= 2 ? n - 2 : 0;
+          const pts = inkRef.current.points.slice(from).map((p) => [p.x, p.y]);
+          editorApi.eraseInkNear(pts, (inkRef.current.width || 10) * 0.75, { live: true });
         } else {
-          paintLiveInk(inkRef.current);
+          scheduleLivePaint();
         }
       }
       return;
@@ -2368,6 +3235,35 @@ export default function SlideCanvas() {
       d.lastX = pt[0];
       d.lastY = pt[1];
       editorApi.moveSelectedInk(dx, dy, { live: true });
+      return;
+    }
+    if (guideDragRef.current) {
+      const gd = guideDragRef.current;
+      const pt = canvasPoint(e);
+      if (!pt) return;
+      let next = {
+        id: gd.id,
+        x: gd.ox + (pt[0] - gd.px),
+        y: gd.oy + (pt[1] - gd.py),
+        angle: gd.start.angle,
+      };
+      const th = Math.max(3, EXTRA_GUIDE_TH / Math.max(0.001, scale));
+      const snapped = snapGuideToObjectEdges(next, slide.els || [], th);
+      next = { id: gd.id, x: snapped.x, y: snapped.y, angle: next.angle };
+      const hvHits = (snapped.hit || []).filter((h) => h.t === 'h' || h.t === 'v');
+      setSnapGuides(hvHits);
+      if (!movedRef.current) {
+        if (!gd.copied) useHistoryStore.getState().push();
+        movedRef.current = true;
+      }
+      usePresentationStore.getState().mutateGuides((list) => {
+        for (let i = 0; i < list.length; i++) {
+          if (list[i] && String(list[i].id) === String(gd.id)) {
+            list[i] = { ...list[i], ...next };
+            break;
+          }
+        }
+      }, { live: true });
       return;
     }
     if (bandRef.current) {
@@ -2432,7 +3328,24 @@ export default function SlideCanvas() {
         movedRef.current = true;
       }
       const patches = rotateGroupMembers(g.bbox, delta, g.startMembers);
-      usePresentationStore.getState().applyElementPatches(patches, { live: true });
+      if (g.inkHostIds && g.inkHostIds.size) {
+        // Drawing objects in the group orbit via their own point data (see
+        // rotateInkFromSnapshot) instead of the x/y/rot patch rotateGroupMembers computed
+        // for them above — applying that too would spin the host's CSS box on top of the
+        // already-rotated points, rotating it twice.
+        g.inkHostIds.forEach((id) => delete patches[id]);
+      }
+      if (Object.keys(patches).length) {
+        usePresentationStore.getState().applyElementPatches(patches, { live: true });
+      }
+      if (g.inkSnapshot) {
+        usePresentationStore.getState().rotateInkFromSnapshot(
+          g.inkSnapshot,
+          { x: g.cx, y: g.cy },
+          delta,
+          { live: true }
+        );
+      }
       return;
     }
     if (rotDragRef.current) {
@@ -2460,9 +3373,43 @@ export default function SlideCanvas() {
       let rdx = pt[0] - g.px;
       let rdy = pt[1] - g.py;
       if (snapEnabled) {
-        const st = Math.max(1, snapStep || 20);
-        rdx = Math.round(rdx / st) * st;
-        rdy = Math.round(rdy / st) * st;
+        const next = applyResize(g.bbox, g.handle, rdx, rdy, {
+          keepAspect: e.shiftKey,
+          min: 1,
+        });
+        const groupIds = new Set(g.startMembers.map((el) => String(el.id)));
+        const others = (slide.els || []).filter(
+          (el) => el && !el._isDecor && !groupIds.has(String(el.id))
+        );
+        const snapped = snapResizeToGuides(
+          next,
+          g.handle,
+          allGuideLines,
+          others,
+          canvasW,
+          canvasH
+        );
+        const skipV = snapped.hit.some((line) => line.t === 'v');
+        const skipH = snapped.hit.some((line) => line.t === 'h');
+        const gridSnapped = snapResizeToGrid(
+          snapped,
+          g.handle,
+          snapStep || 20,
+          { v: skipV, h: skipH }
+        );
+        setSnapGuides(snapped.hit);
+        if (g.handle.dx > 0) {
+          rdx = gridSnapped.x + gridSnapped.w - (g.bbox.x + g.bbox.w);
+        } else if (g.handle.dx < 0) {
+          rdx = gridSnapped.x - g.bbox.x;
+        }
+        if (g.handle.dy > 0) {
+          rdy = gridSnapped.y + gridSnapped.h - (g.bbox.y + g.bbox.h);
+        } else if (g.handle.dy < 0) {
+          rdy = gridSnapped.y - g.bbox.y;
+        }
+      } else {
+        setSnapGuides([]);
       }
       if (!movedRef.current) {
         useHistoryStore.getState().push();
@@ -2480,16 +3427,20 @@ export default function SlideCanvas() {
       const dy = pt[1] - rz.py;
       const live = (slide.els || []).find((el) => el && String(el.id) === String(rz.id));
       const typ = live?.type || rz.type;
+      const hx = rz.handle?.dx || 0;
+      const hy = rz.handle?.dy || 0;
+      const corner = hx !== 0 && hy !== 0;
+      // Images & SVG: corner scales proportionally, side stretches freely.
+      // Shift on a side handle still keeps the current box aspect. Icons / chem stay locked.
       const keepAspect =
         e.shiftKey ||
         typ === 'icon' ||
-        typ === 'image' ||
-        typ === 'svg' ||
+        ((typ === 'image' || typ === 'svg') && corner) ||
         (typ === 'graph' && (live?.graphKind === 'chem' || live?.graphKind === 'logic'));
       let next = applyResize(rz.start, rz.handle, dx, dy, {
         keepAspect,
         rot: rz.rot || 0,
-        min: typ === 'icon' ? 16 : 24,
+        min: 1,
       });
       if (rz.rideConnId) {
         const rconn = (slide.connectors || []).find((c) => c && String(c.id) === String(rz.rideConnId));
@@ -2505,20 +3456,58 @@ export default function SlideCanvas() {
       if (snapEnabled && Math.abs(rz.rot || 0) < 0.001 && !rz.rideConnId) {
         let skipV = false;
         let skipH = false;
-        if (guideLines.length) {
-          const snapped = snapResizeToExtraGuides(next, rz.handle, guideLines);
+        const others = (slide.els || []).filter(
+          (el) => el && !el._isDecor && String(el.id) !== String(rz.id)
+        );
+        if (allGuideLines.length || others.length) {
+          const snapped = snapResizeToGuides(next, rz.handle, allGuideLines, others, canvasW, canvasH);
           next = { x: snapped.x, y: snapped.y, w: snapped.w, h: snapped.h };
           skipV = snapped.hit.some((g) => g.t === 'v');
           skipH = snapped.hit.some((g) => g.t === 'h');
           setSnapGuides(snapped.hit);
-        }
+        } else setSnapGuides([]);
         next = snapResizeToGrid(next, rz.handle, snapStep || 20, { v: skipV, h: skipH });
-      }
+        if ((typ === 'image' || typ === 'svg') && keepAspect) {
+          next = preserveResizeAspect(rz.start, next, rz.handle);
+        }
+      } else setSnapGuides([]);
       if (!movedRef.current) {
         useHistoryStore.getState().push();
         movedRef.current = true;
       }
-      usePresentationStore.getState().applyElementPatches({ [rz.id]: next }, { live: true });
+      if (typ === 'inkhost') {
+        // Resizing an inkhost used to just patch the host's own x/y/w/h — but the actual
+        // stroke content is rendered from its own absolute point data, not from the host
+        // box, so the drawing never visibly changed size. Scale the underlying points
+        // instead; syncInkHostBBoxes (inside scaleInkByIds) brings the host box back in
+        // sync with the result.
+        usePresentationStore.getState().scaleInkByIds(live?.inkIds || [], rz.start, next, { live: true });
+      } else if (typ === 'graph' && live?.graphKind !== 'chem' && live?.graphKind !== 'logic') {
+        // Keep units/px; grow/shrink the plotted window with the box (don't squash axes).
+        const scale =
+          rz.graphScale > 0
+            ? rz.graphScale
+            : ((rz.startXMax ?? 10) - (rz.startXMin ?? -10)) / Math.max(1, rz.start.w || 1);
+        rz.graphScale = scale;
+        const cx = ((rz.startXMin ?? -10) + (rz.startXMax ?? 10)) / 2;
+        const half = Math.max(0.5, (scale * next.w) / 2);
+        const patch = {
+          ...next,
+          graphScale: scale,
+          graphXMin: cx - half,
+          graphXMax: cx + half,
+          graphYMin: null,
+          graphYMax: null,
+        };
+        usePresentationStore.getState().applyElementPatches({ [rz.id]: patch }, { live: true });
+        if (rz.rebuildTimer) clearTimeout(rz.rebuildTimer);
+        rz.rebuildTimer = setTimeout(() => {
+          void editorApi.rebuildSelectedGraph();
+        }, 48);
+      } else {
+        const patch = typ === 'image' && !keepAspect ? { ...next, imgFit: 'fill' } : next;
+        usePresentationStore.getState().applyElementPatches({ [rz.id]: patch }, { live: true });
+      }
       return;
     }
     if (adjRef.current) {
@@ -2533,6 +3522,24 @@ export default function SlideCanvas() {
         movedRef.current = true;
       }
       usePresentationStore.getState().patchElement(ad.id, patch);
+      return;
+    }
+    if (shapeNodeRef.current) {
+      const nd = shapeNodeRef.current;
+      const pt = canvasPoint(e);
+      if (!pt) return;
+      const th = Math.max(3, EXTRA_GUIDE_TH / Math.max(0.001, scale));
+      const snapped = snapPointToGuides(pt[0], pt[1], allGuideLines, th);
+      if (snapped.hit.length) setSnapGuides(snapped.hit);
+      else setSnapGuides([]);
+      const liveEl = (slide.els || []).find((el) => el && String(el.id) === String(nd.id)) || nd.start;
+      const patch = patchShapeNodeDrag(liveEl, nd.idx, snapped.x, snapped.y);
+      if (!patch) return;
+      if (!movedRef.current) {
+        useHistoryStore.getState().push();
+        movedRef.current = true;
+      }
+      usePresentationStore.getState().patchElement(nd.id, patch);
       return;
     }
     if (lineEpRef.current) {
@@ -2551,6 +3558,12 @@ export default function SlideCanvas() {
         px = le.fixed.x + Math.cos(rad) * len;
         py = le.fixed.y + Math.sin(rad) * len;
       }
+      const guideTh = Math.max(3, EXTRA_GUIDE_TH / Math.max(0.001, scale));
+      const guideSnap = snapPointToGuides(px, py, allGuideLines, guideTh);
+      if (guideSnap.hit.length) {
+        px = guideSnap.x;
+        py = guideSnap.y;
+      }
       const store = usePresentationStore.getState();
       const liveSlide = store.slides[store.cur];
       let snap = snapLineEpToGeometry(liveSlide, { x: px, y: py }, le.id, 14);
@@ -2568,6 +3581,10 @@ export default function SlideCanvas() {
           { t: 'v', pos: snap.x, kind: 'element' },
           { t: 'h', pos: snap.y, kind: 'element' },
         ]);
+      } else if (guideSnap.hit.length) {
+        le.lastSnap = null;
+        setEpGhost(null);
+        setSnapGuides(guideSnap.hit);
       } else {
         le.lastSnap = null;
         setEpGhost(null);
@@ -2587,43 +3604,87 @@ export default function SlideCanvas() {
       const cd = curveDragRef.current;
       const pt = canvasPoint(e);
       if (!pt) return;
-      const liveEl = (slide.els || []).find((el) => el && String(el.id) === String(cd.id)) || cd.start;
-      const pts0 = liveEl.curvePoints || defaultCurvePoints();
-      const norm = curveCanvasToNorm(liveEl, pt[0], pt[1]);
-      let nextPts;
-      if (cd.kind === 'node') nextPts = moveCurveNode(pts0, cd.idx, norm.x, norm.y, !!liveEl.curveClosed);
-      else nextPts = moveCurveCp(pts0, cd.idx, cd.kind, norm.x, norm.y, !!liveEl.curveClosed);
+      const closed = !!cd.startEl.curveClosed;
+      const n0 = curveCanvasToNorm(cd.startEl, cd.px, cd.py);
+      const n1 = curveCanvasToNorm(cd.startEl, pt[0], pt[1]);
+      const dx = n1.x - n0.x;
+      const dy = n1.y - n0.y;
+      const guideTh = Math.max(3, EXTRA_GUIDE_TH / Math.max(0.001, scale));
+      const snapNormTarget = (nx, ny) => {
+        const c = curveNormToCanvas(cd.startEl, nx, ny);
+        const snapped = snapPointToGuides(c.x, c.y, allGuideLines, guideTh);
+        if (snapped.hit.length) {
+          setSnapGuides(snapped.hit);
+          return curveCanvasToNorm(cd.startEl, snapped.x, snapped.y);
+        }
+        setSnapGuides([]);
+        return { x: nx, y: ny };
+      };
+      let nextPts = null;
+      if (cd.kind === 'node') {
+        const base = cd.basePts[cd.idx];
+        if (base) {
+          const t = snapNormTarget(base.x + dx, base.y + dy);
+          nextPts = moveCurveNode(cd.basePts, cd.idx, t.x, t.y);
+        }
+      } else if (cd.kind === 'bend') {
+        nextPts = bendCurveSegment(cd.basePts, cd.idx, dx, dy, closed, cd.t);
+        setSnapGuides([]);
+      } else if (cd.kind === 'cp1' || cd.kind === 'cp2') {
+        const base = cd.basePts[cd.idx];
+        if (base) {
+          const ox = cd.kind === 'cp1' ? (base.cp1x != null ? base.cp1x : base.x) : base.cp2x != null ? base.cp2x : base.x;
+          const oy = cd.kind === 'cp1' ? (base.cp1y != null ? base.cp1y : base.y) : base.cp2y != null ? base.cp2y : base.y;
+          const t = snapNormTarget(ox + dx, oy + dy);
+          nextPts = moveCurveCp(cd.basePts, cd.idx, cd.kind, t.x, t.y);
+        }
+      }
+      if (!nextPts) return;
       if (!movedRef.current) {
         useHistoryStore.getState().push();
         movedRef.current = true;
       }
-      usePresentationStore.getState().patchElement(cd.id, { curvePoints: nextPts });
+      // Keep the original box while dragging — remapping every move stretches the levers.
+      usePresentationStore.getState().patchElement(cd.id, { curvePoints: nextPts }, { live: true });
       return;
     }
     const drag = dragRef.current;
     if (!drag) return;
     const pt = canvasPoint(e);
     if (!pt) return;
-    let nx = gridSnap(drag.ox + (pt[0] - drag.px));
-    let ny = gridSnap(drag.oy + (pt[1] - drag.py));
+    const dragEls = (slide.els || []).filter((el) => el && drag.ids.includes(String(el.id)));
+    const legoDrag = dragEls.length > 0 && dragEls.every((el) => el.type === 'lego');
+    let nx;
+    let ny;
+    let guides = [];
     const primary = (slide.els || []).find((el) => el && String(el.id) === String(drag.id));
     const w = primary?.w || drag.w || 100;
     const h = primary?.h || drag.h || 60;
-    let guides = [];
-    if (snapEnabled && primary) {
-      const others = (slide.els || []).filter(
-        (el) => el && !el._isDecor && !drag.ids.includes(String(el.id))
-      );
-      const snapped = snapBox({ x: nx, y: ny, w, h }, others, { canvasW, canvasH });
-      nx = snapped.x;
-      ny = snapped.y;
-      guides = snapped.guides || [];
-    }
-    if (guideLines.length) {
-      const extra = snapTranslateToExtraGuides(nx, ny, w, h, guideLines);
-      nx = extra.x;
-      ny = extra.y;
-      if (extra.hit.length) guides = [...guides, ...extra.hit];
+    if (legoDrag) {
+      const steps = dragEls.every(isLegoTop) ? { x: LEGO_U, y: LEGO_U } : legoSnapSteps(dragEls[0]);
+      nx = snapLegoCoord(drag.ox + (pt[0] - drag.px), steps.x);
+      ny = snapLegoCoord(drag.oy + (pt[1] - drag.py), steps.y);
+      const off = resolveLegoGroupOffset(dragEls, nx - drag.ox, ny - drag.oy, slide.els, canvasW, canvasH);
+      nx = drag.ox + off.dx;
+      ny = drag.oy + off.dy;
+    } else {
+      nx = gridSnap(drag.ox + (pt[0] - drag.px));
+      ny = gridSnap(drag.oy + (pt[1] - drag.py));
+      if (snapEnabled && primary) {
+        const others = (slide.els || []).filter(
+          (el) => el && !el._isDecor && !drag.ids.includes(String(el.id))
+        );
+        const snapped = snapBox({ x: nx, y: ny, w, h }, others, { canvasW, canvasH });
+        nx = snapped.x;
+        ny = snapped.y;
+        guides = snapped.guides || [];
+      }
+      if (allGuideLines.length) {
+        const extra = snapTranslateToExtraGuides(nx, ny, w, h, allGuideLines);
+        nx = extra.x;
+        ny = extra.y;
+        if (extra.hit.length) guides = [...guides, ...extra.hit];
+      }
     }
     const dx = nx - drag.ox;
     const dy = ny - drag.oy;
@@ -2634,8 +3695,19 @@ export default function SlideCanvas() {
     }
     drag.pendingNx = nx;
     drag.pendingNy = ny;
-    // Every pointer sample — no rAF coalesce, no React setState.
-    applyDragDom(drag, dx, dy);
+    if (drag.liveJoinedLineMove) {
+      usePresentationStore.getState().moveElements(
+        drag.ids,
+        dx - drag.liveDx,
+        dy - drag.liveDy,
+        { live: true }
+      );
+      drag.liveDx = dx;
+      drag.liveDy = dy;
+    } else {
+      // Every pointer sample — no rAF coalesce, no React setState.
+      applyDragDom(drag, dx, dy);
+    }
     syncDragGuidesDom(drag, guides);
   }
 
@@ -2643,10 +3715,11 @@ export default function SlideCanvas() {
     if (inkRef.current) {
       const stroke = inkRef.current;
       if (stroke.tool === 'eraser') {
-        if (stroke.points.length >= 1) {
-          const pts = stroke.points.map((p) => [p.x, p.y]);
-          editorApi.eraseInkNear(pts, (stroke.width || 16) * 0.75);
-        }
+        // No re-scan needed here: pointerdown tested the first point and every pointermove
+        // already tested its own newest travelled segment (see above), so the whole path
+        // has already been covered incrementally. Just persist the accumulated result once
+        // for the whole gesture instead of on every intermediate sample.
+        if (stroke.points.length >= 1) usePresentationStore.getState().persist();
       } else if (stroke.points.length >= 1) {
         editorApi.addInkStroke(stroke);
       }
@@ -2740,8 +3813,10 @@ export default function SlideCanvas() {
         dy = drag.pendingNy - drag.oy;
       }
       clearDragDom(drag);
-      if (dx || dy) {
+      if ((dx || dy) && !drag.liveJoinedLineMove) {
         usePresentationStore.getState().moveElements(drag.ids, dx, dy);
+      } else if (drag.liveJoinedLineMove && movedRef.current) {
+        usePresentationStore.getState().persist();
       }
       const ids = drag.ids || [];
       const patches = {};
@@ -2751,7 +3826,7 @@ export default function SlideCanvas() {
         if (!el || !ids.includes(String(el.id))) return;
         if (el.type === 'pagenum') pnEl = el;
         if (el.type !== 'lego') return;
-        const snapped = snapLegoPos(el.x, el.y);
+        const snapped = resolveLegoFreePos(el, afterEls, canvasW, canvasH);
         if (snapped.x !== el.x || snapped.y !== el.y) {
           patches[el.id] = { x: snapped.x, y: snapped.y };
         }
@@ -2766,6 +3841,25 @@ export default function SlideCanvas() {
       clearDragDom(dragRef.current);
     }
     dragRef.current = null;
+    if (movedRef.current && (resizeRef.current || rotDragRef.current)) {
+      // Resize/rotate patch the store with {live:true} while dragging (same as every other
+      // drag ref in this function) but — unlike adjRef/curveDragRef/groupResizeRef/
+      // inkDragRef/epDragRef just above and below — nothing here persisted the final result
+      // once the pointer was released. In-memory state (undo included) was still correct,
+      // but the change wasn't guaranteed to make it to disk until some unrelated later
+      // action happened to call persist(). This also covers the new inkhost point-scaling
+      // added above, which relies on the same persist-once-on-release pattern.
+      usePresentationStore.getState().persist();
+    }
+    if (resizeRef.current?.rebuildTimer) {
+      clearTimeout(resizeRef.current.rebuildTimer);
+      if (
+        movedRef.current &&
+        resizeRef.current.type === 'graph'
+      ) {
+        void editorApi.rebuildSelectedGraph();
+      }
+    }
     resizeRef.current = null;
     rotDragRef.current = null;
     if (stageRef.current) {
@@ -2774,6 +3868,10 @@ export default function SlideCanvas() {
     if (adjRef.current) {
       if (movedRef.current) usePresentationStore.getState().persist();
       adjRef.current = null;
+    }
+    if (shapeNodeRef.current) {
+      if (movedRef.current) usePresentationStore.getState().persist();
+      shapeNodeRef.current = null;
     }
     if (lineEpRef.current) {
       const le = lineEpRef.current;
@@ -2818,11 +3916,75 @@ export default function SlideCanvas() {
       lineEpRef.current = null;
     }
     if (curveDragRef.current) {
-      if (movedRef.current) usePresentationStore.getState().persist();
+      const cd = curveDragRef.current;
       curveDragRef.current = null;
+      if (movedRef.current) {
+        const st = usePresentationStore.getState();
+        const live = (st.slides[st.cur]?.els || []).find((el) => el && String(el.id) === String(cd.id));
+        if (live && live.shape === 'curve') {
+          const fitted = applyCurveBBox(live);
+          if (fitted) st.patchElement(cd.id, fitted, { live: true });
+        }
+        st.persist();
+      }
+    }
+    if (guideDragRef.current) {
+      const gd = guideDragRef.current;
+      guideDragRef.current = null;
+      const st = usePresentationStore.getState();
+      const live = (st.guides || []).find((g) => g && String(g.id) === String(gd.id));
+      if (live && !guideIntersectsSlide(live, canvasW, canvasH)) {
+        // History already snapshot at drag/copy start — removing is part of this gesture.
+        if (!movedRef.current && !gd.copied) useHistoryStore.getState().push();
+        st.mutateGuides((list) => {
+          for (let i = list.length - 1; i >= 0; i--) {
+            if (list[i] && String(list[i].id) === String(gd.id)) list.splice(i, 1);
+          }
+        });
+        if (String(useUiStore.getState().selGuideId) === String(gd.id)) {
+          useUiStore.getState().setSelGuideId(null);
+        }
+      } else if (movedRef.current || gd.copied) {
+        st.persist();
+      }
     }
     movedRef.current = false;
     setSnapGuides([]);
+  }
+
+  function onGuidePointerDown(g, e) {
+    if (!guidesEditMode || !g) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const pt = canvasPoint(e);
+    if (!pt) return;
+    let id = g.id;
+    let start = { id: g.id, x: +g.x || 0, y: +g.y || 0, angle: +g.angle || 0 };
+    let copied = false;
+    if (e.altKey) {
+      useHistoryStore.getState().push();
+      const copy = createGuide({ x: start.x, y: start.y, angle: start.angle });
+      usePresentationStore.getState().mutateGuides((list) => {
+        list.push(copy);
+      }, { live: true });
+      id = copy.id;
+      start = { ...copy };
+      copied = true;
+      useUiStore.getState().setSelGuideId(copy.id);
+    } else {
+      useUiStore.getState().setSelGuideId(g.id);
+    }
+    guideDragRef.current = {
+      id,
+      start,
+      px: pt[0],
+      py: pt[1],
+      ox: start.x,
+      oy: start.y,
+      copied,
+    };
+    movedRef.current = false;
+    captureTrustedPointer(e);
   }
 
   function startInlineEdit(el) {
@@ -2830,11 +3992,17 @@ export default function SlideCanvas() {
       editorApi.addFormula();
       return;
     }
+    if (el.type === 'svg' || (el.svgContent && !el._isDecor) || (el.svg && !el._isDecor)) {
+      editorApi.pickElement(el.id);
+      editorApi.openSvgModal();
+      return;
+    }
     if (el.type === 'applet' && el.appletId === 'periodic') {
       editorApi.reselectPeriodicElement(el.id);
       return;
     }
     if (el.type === 'text' || el.type === 'shape') setEditingId(el.id);
+    else if (el.type === 'image' && normImgFrame(el.imgFrame) === 'polaroid') setEditingId(el.id);
     else if (el.type === 'markdown') editorApi.editMarkdown(el.id);
     else if (el.type === 'code') editorApi.editCode(el.id);
     else if (el.type === 'htmlframe') editorApi.openHtmlFrameModal();
@@ -2842,7 +4010,7 @@ export default function SlideCanvas() {
 
   /** v7.1 `_tblDragBorder`: 14px strips on the table edges — clear cell selection, drag the table. */
   function onTableStripDown(el, e) {
-    if (drawing || el._isDecor) return;
+    if (tableBorderPaint || drawing || el._isDecor) return;
     e.preventDefault();
     e.stopPropagation();
     // Clicking the table border exits cell selection/editing (v7.1 tblClearSel)
@@ -2869,22 +4037,108 @@ export default function SlideCanvas() {
   }
 
   function onElPointerDown(el, e) {
+    // Ctrl/Cmd+click follows links in the editor (inline <a> or whole-object link).
+    if ((e.ctrlKey || e.metaKey) && e.button === 0 && !drawing) {
+      const inlineA = e.target?.closest?.('a[href]');
+      const href = inlineA?.getAttribute?.('href') || el.link || '';
+      if (href) {
+        e.preventDefault();
+        e.stopPropagation();
+        editorApi.followLink(href);
+        return;
+      }
+    }
+    if (tableBorderPaint && el.type === 'table') {
+      e.stopPropagation();
+      e.preventDefault();
+      if (!useSelectionStore.getState().selId || String(useSelectionStore.getState().selId) !== String(el.id)) {
+        editorApi.pickElement(el.id);
+      }
+      return;
+    }
     if (drawing || el._isDecor) return;
+    // Selected corner-rotate wins over whatever box is under the cursor (other image,
+    // this image's own transparent PNG padding, etc.).
+    if (tryBeginCornerRotate(e)) return;
+    // Transparent image pixels: pick/drag the opaque object behind instead.
+    if (el.type === 'image' && normImgFrame(el.imgFrame) === 'none') {
+      const root = stageRef.current || hostRef.current;
+      const hit = opaqueElAt(slide?.els || [], root, e.clientX, e.clientY);
+      if (!hit) return; // empty air — let the canvas handle rubber-band / deselect
+      if (String(hit.id) !== String(el.id)) {
+        onElPointerDown(hit, e);
+        return;
+      }
+    }
     if (el.type === 'inkhost') {
       e.stopPropagation();
       e.preventDefault();
       const additive = !!(e.shiftKey || e.ctrlKey || e.metaKey);
-      editorApi.pickElement(el.id, { shift: additive });
-      if (el.inkIds?.length) editorApi.pickInk(el.inkIds, { additive, keepObjectSel: true });
+      // If several drawing objects are already selected together (rubber-band, shift-click),
+      // and this host is one of them, keep that whole selection intact instead of
+      // collapsing it down to just this host. pickElement/pickInk below are non-additive by
+      // default and would otherwise silently deselect every other picked stroke, so only the
+      // one actually clicked would end up in the drag (and therefore be the only one that
+      // visibly moves).
+      const before = useSelectionStore.getState();
+      const beforeMultiSel = (
+        before.multiSel?.length ? before.multiSel : before.selId ? [before.selId] : []
+      ).map(String);
+      const beforeInkIds = (before.selInkIds || []).map(String);
+      const hostInkIds = (el.inkIds || []).map(String);
+      const alreadyGrouped =
+        (beforeMultiSel.includes(String(el.id)) && beforeMultiSel.length > 1) ||
+        (hostInkIds.some((id) => beforeInkIds.includes(id)) && beforeInkIds.length > hostInkIds.length);
+      if (!additive && alreadyGrouped) {
+        // Selection already covers this host (and more) — leave it as-is.
+      } else if (additive) {
+        // Compute the merged/toggled ink-id set *before* touching selection state.
+        // pickElement()/togglePick() (shift-click) unconditionally clears selInkIds as a
+        // side effect of updating multiSel — calling pickInk({additive:true}) afterwards
+        // would then be toggling against an already-wiped set, silently dropping every
+        // previously-selected stroke except the one just clicked. That's exactly why
+        // shift-selecting a second drawing only ever moved the one clicked last.
+        const nextInkSet = new Set(beforeInkIds);
+        hostInkIds.forEach((id) => {
+          if (nextInkSet.has(id)) nextInkSet.delete(id);
+          else nextInkSet.add(id);
+        });
+        editorApi.pickElement(el.id, { shift: true });
+        useSelectionStore.getState().setSelInkIds([...nextInkSet]);
+      } else {
+        editorApi.pickElement(el.id, { shift: false });
+        // pickElement() above may have expanded the selection to the whole group (when
+        // el.groupId is set, pick() auto-selects every member into multiSel) — gather every
+        // grouped member's own ink ids too, not just the one host actually clicked, or
+        // dragging a *grouped* set of drawings would (like the ungrouped multi-select case
+        // above) only ever move the single stroke you happened to press on.
+        const afterMultiSel = (useSelectionStore.getState().multiSel || []).map(String);
+        const curSlideEls =
+          usePresentationStore.getState().slides[usePresentationStore.getState().cur]?.els || [];
+        const groupInkIds =
+          afterMultiSel.length > 1
+            ? afterMultiSel.flatMap((mid) => {
+                const memberEl = curSlideEls.find((e) => e && String(e.id) === mid);
+                return memberEl?.type === 'inkhost' ? (memberEl.inkIds || []) : [];
+              })
+            : el.inkIds || [];
+        if (groupInkIds.length) editorApi.pickInk(groupInkIds, { additive: false, keepObjectSel: true });
+      }
       movedRef.current = false;
       const pt = canvasPoint(e);
       if (pt && !additive) {
         inkDragRef.current = { px: pt[0], py: pt[1], lastX: pt[0], lastY: pt[1] };
-        e.currentTarget.setPointerCapture?.(e.pointerId);
+        captureTrustedPointer(e);
       }
       return;
     }
-    if (editingId && String(editingId) === String(el.id) && (el.type === 'text' || el.type === 'shape')) {
+    if (
+      editingId &&
+      String(editingId) === String(el.id) &&
+      (el.type === 'text' ||
+        el.type === 'shape' ||
+        (el.type === 'image' && normImgFrame(el.imgFrame) === 'polaroid'))
+    ) {
       return;
     }
     if (editingCell && String(editingCell).startsWith(`${el.id}:`)) {
@@ -2894,6 +4148,16 @@ export default function SlideCanvas() {
     const pickCtx = useUiStore.getState().animTriggerPick;
     if (pickCtx && pickCtx.elId != null && pickCtx.ai != null) {
       editorApi.completeAnimTriggerPick(el.id);
+      return;
+    }
+    const mediaPick = useUiStore.getState().mediaTriggerPick;
+    if (mediaPick && mediaPick.audioElId != null) {
+      editorApi.completeMediaTriggerPick(el.id);
+      return;
+    }
+    const timerPick = useUiStore.getState().timerTriggerPick;
+    if (timerPick && timerPick.timerElId != null) {
+      editorApi.completeTimerTriggerPick(el.id);
       return;
     }
     if (useUiStore.getState().connectorMode) {
@@ -2910,8 +4174,45 @@ export default function SlideCanvas() {
     if (!multiDrag) {
       editorApi.pickElement(el.id, { shift: e.shiftKey });
     }
+    if (curveEditMode && el.shape === 'curve' && e.button === 0) {
+      const ptBend = canvasPoint(e);
+      if (ptBend) {
+        const hit = nearestCurveSegment(el, ptBend[0], ptBend[1], Math.max(12, 18 / (scale || 1)));
+        if (hit) {
+          e.stopPropagation();
+          e.preventDefault();
+          const pts = (el.curvePoints || defaultCurvePoints()).map((p) => ({ ...p }));
+          const n = pts.length;
+          const a = hit.seg;
+          const b = (hit.seg + 1) % n;
+          useUiStore.getState().setCurveNodeSel(a === b ? [a] : [a, b]);
+          curveDragRef.current = {
+            id: el.id,
+            kind: 'bend',
+            idx: hit.seg,
+            t: hit.t != null ? hit.t : 0.5,
+            px: ptBend[0],
+            py: ptBend[1],
+            startEl: { ...el, curvePoints: pts },
+            basePts: pts,
+          };
+          movedRef.current = false;
+          captureTrustedPointer(e);
+          return;
+        }
+      }
+    }
     if (e.detail >= 2) {
       startInlineEdit(el);
+      return;
+    }
+    // Caption clicks select / start edit, but must not begin a move-drag — otherwise the
+    // pointer capture from the first click of a double-click swallows the second click.
+    if (
+      el.type === 'image' &&
+      normImgFrame(el.imgFrame) === 'polaroid' &&
+      e.target?.closest?.('.react-img-polaroid-cap')
+    ) {
       return;
     }
     if (el.locked) return;
@@ -2924,7 +4225,8 @@ export default function SlideCanvas() {
       viewEl.type !== 'lineangle' &&
       viewEl.shape !== 'line' &&
       !(curveEditMode && viewEl.shape === 'curve') &&
-      nearCornerRot(viewEl, pt[0], pt[1])
+      !shapeNodeMode &&
+      nearCornerRot(viewEl, pt[0], pt[1], scale)
     ) {
       const cx = (viewEl.x || 0) + (viewEl.w || 0) / 2;
       const cy = (viewEl.y || 0) + (viewEl.h || 0) / 2;
@@ -2936,7 +4238,7 @@ export default function SlideCanvas() {
         rot0: elRotationDeg(viewEl),
       };
       movedRef.current = false;
-      e.currentTarget.setPointerCapture?.(e.pointerId);
+      captureTrustedPointer(e);
       return;
     }
     const { multiSel: ms, selId: sid } = useSelectionStore.getState();
@@ -2958,10 +4260,19 @@ export default function SlideCanvas() {
       h: el.h || 60,
       px: pt?.[0] || 0,
       py: pt?.[1] || 0,
+      liveJoinedLineMove: ids.some((id) => {
+        const member = st.slides[st.cur]?.els?.find((item) => item && String(item.id) === String(id));
+        return (
+          member?.shape === 'line' &&
+          (lineEndLooksJoined(slide, member, 'a') || lineEndLooksJoined(slide, member, 'b'))
+        );
+      }),
+      liveDx: 0,
+      liveDy: 0,
     };
     movedRef.current = false;
     bindDragWindowListeners(dragRef.current);
-    e.currentTarget.setPointerCapture?.(e.pointerId);
+    captureTrustedPointer(e);
   }
 
   function onResizePointerDown(handle, e) {
@@ -2977,11 +4288,17 @@ export default function SlideCanvas() {
       handle,
       rot: elRotationDeg(el),
       start: { x: el.x || 0, y: el.y || 0, w: el.w || 100, h: el.h || 60 },
+      startXMin: el.graphXMin ?? -10,
+      startXMax: el.graphXMax ?? 10,
+      graphScale:
+        el.graphScale > 0
+          ? el.graphScale
+          : ((el.graphXMax ?? 10) - (el.graphXMin ?? -10)) / Math.max(1, el.w || 1),
       px: pt?.[0] || 0,
       py: pt?.[1] || 0,
     };
     movedRef.current = false;
-    e.currentTarget.setPointerCapture?.(e.pointerId);
+    captureTrustedPointer(e);
   }
 
   function onAdjPointerDown(handle, e) {
@@ -2994,7 +4311,20 @@ export default function SlideCanvas() {
       start: { ...soleSelected },
     };
     movedRef.current = false;
-    e.currentTarget.setPointerCapture?.(e.pointerId);
+    captureTrustedPointer(e);
+  }
+
+  function onShapeNodePointerDown(handle, e) {
+    if (!soleSelected || soleSelected.locked || !shapeSupportsNodes(soleSelected)) return;
+    e.stopPropagation();
+    e.preventDefault();
+    shapeNodeRef.current = {
+      id: soleSelected.id,
+      idx: handle.idx,
+      start: { ...soleSelected },
+    };
+    movedRef.current = false;
+    captureTrustedPointer(e);
   }
 
   function onLineEpPointerDown(handle, e) {
@@ -3037,22 +4367,36 @@ export default function SlideCanvas() {
       lastSnap: null,
     };
     movedRef.current = false;
-    e.currentTarget.setPointerCapture?.(e.pointerId);
+    captureTrustedPointer(e);
   }
 
   function onCurveHandlePointerDown(handle, e) {
     if (!soleSelected || soleSelected.shape !== 'curve') return;
     e.stopPropagation();
     e.preventDefault();
-    if (handle.kind === 'node') setCurveSelIdx(handle.idx);
+    if (handle.kind === 'node') {
+      const prev = useUiStore.getState().curveNodeSel || [];
+      if (e.shiftKey) {
+        const has = prev.includes(handle.idx);
+        const nextSel = has ? prev.filter((i) => i !== handle.idx) : [...prev, handle.idx].slice(-2);
+        useUiStore.getState().setCurveNodeSel(nextSel.length ? nextSel : [handle.idx]);
+      } else {
+        useUiStore.getState().setCurveNodeSel([handle.idx]);
+      }
+    }
+    const pt = canvasPoint(e);
+    const pts = (soleSelected.curvePoints || defaultCurvePoints()).map((p) => ({ ...p }));
     curveDragRef.current = {
       id: soleSelected.id,
       kind: handle.kind,
       idx: handle.idx,
-      start: { ...soleSelected },
+      px: pt?.[0] || 0,
+      py: pt?.[1] || 0,
+      startEl: { ...soleSelected, curvePoints: pts },
+      basePts: pts,
     };
     movedRef.current = false;
-    e.currentTarget.setPointerCapture?.(e.pointerId);
+    captureTrustedPointer(e);
   }
 
   function onGroupResizePointerDown(handle, e) {
@@ -3076,7 +4420,7 @@ export default function SlideCanvas() {
       py: pt?.[1] || 0,
     };
     movedRef.current = false;
-    e.currentTarget.setPointerCapture?.(e.pointerId);
+    captureTrustedPointer(e);
   }
 
   function onGroupRotPointerDown(e) {
@@ -3087,6 +4431,27 @@ export default function SlideCanvas() {
     const pt = canvasPoint(e);
     const cx = groupBBox.x + groupBBox.w / 2;
     const cy = groupBBox.y + groupBBox.h / 2;
+    // Snapshot the original (pre-rotation) points of every drawing object in the group, so
+    // the group can orbit them around the shared pivot (cx, cy) as one rigid body instead of
+    // just spinning each one's own host box in place — see rotateInkFromSnapshot.
+    const inkHostIds = new Set(
+      multiMembers.filter((el) => el.type === 'inkhost').map((el) => String(el.id))
+    );
+    let inkSnapshot = null;
+    if (inkHostIds.size) {
+      const allInkIds = new Set();
+      multiMembers.forEach((el) => {
+        if (inkHostIds.has(String(el.id))) (el.inkIds || []).forEach((id) => allInkIds.add(String(id)));
+      });
+      inkSnapshot = {
+        strokes: (slide.ink || [])
+          .filter((s) => s && allInkIds.has(String(s.id)))
+          .map((s) => ({ id: s.id, points: JSON.parse(JSON.stringify(s.points || [])) })),
+        fills: (slide.inkFills || [])
+          .filter((f) => f && allInkIds.has(String(f.id)))
+          .map((f) => ({ id: f.id, points: JSON.parse(JSON.stringify(f.points || [])) })),
+      };
+    }
     groupRotRef.current = {
       bbox: { ...groupBBox },
       cx,
@@ -3100,9 +4465,11 @@ export default function SlideCanvas() {
         h: el.h || 60,
         rot: el.rot || 0,
       })),
+      inkHostIds,
+      inkSnapshot,
     };
     movedRef.current = false;
-    e.currentTarget.setPointerCapture?.(e.pointerId);
+    captureTrustedPointer(e);
   }
 
   function onStageContextMenu(e) {
@@ -3147,12 +4514,13 @@ export default function SlideCanvas() {
     });
   }
 
+  // Screen-space rubberband (sibling of scaled stage) — keeps 1px dashed border crisp.
   const bandStyle = band
     ? {
-        left: Math.min(band.x0, band.x1),
-        top: Math.min(band.y0, band.y1),
-        width: Math.abs(band.x1 - band.x0),
-        height: Math.abs(band.y1 - band.y0),
+        left: stageLeft + Math.min(band.x0, band.x1) * scale,
+        top: stageTop + Math.min(band.y0, band.y1) * scale,
+        width: Math.abs(band.x1 - band.x0) * scale,
+        height: Math.abs(band.y1 - band.y0) * scale,
       }
     : null;
 
@@ -3168,6 +4536,55 @@ export default function SlideCanvas() {
   return (
     <div className="slide-canvas-host react-canvas-host" {...versionAttr('SlideCanvas')}>
       <AlignBar />
+      {showTablePaintCursor && brushCur ? (
+        <div
+          ref={overlayCurRef}
+          className={`react-table-paint-cursor${tableBorderPaint.erase || !tableBorderPaint.color || tableBorderPaint.color === 'transparent' ? ' eraser' : ''}`}
+          style={{ transform: `translate(${brushCur.x}px, ${brushCur.y}px)` }}
+          aria-hidden="true"
+        >
+          {tableBorderPaint.erase || !tableBorderPaint.color || tableBorderPaint.color === 'transparent' ? (
+            <svg viewBox="0 0 28 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M3 30 11.2 8.4 24.6 13.5 16.4 35.1Z" fill="#f9a8d4" />
+              <path d="M3 30 11.2 8.4 15.4 10 7.2 31.6Z" fill="#db2777" />
+              <path d="M11.2 8.4 16.8 3.2 26.2 6.8 24.6 13.5Z" fill="#fda4af" />
+              <path d="M9.4 13.2 21.8 17.9 20.2 22.2 7.8 17.5Z" fill="#f8fafc" />
+              <path d="M8.6 15.4 20.8 20 20.2 21.6 8 17Z" fill="#cbd5e1" />
+              <path
+                d="M3 30 11.2 8.4 24.6 13.5 16.4 35.1Z"
+                stroke="#831843"
+                strokeWidth="1.05"
+                strokeLinejoin="round"
+              />
+              <path d="M3 30 5.8 29.1" stroke="#4c0519" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M24.53 19.78 28.14 15.75C29.1 14.79 29.05 13.4 27.9 12.4L24.25 11.86 20.22 15.47Z" fill="#fb7185" />
+              <path d="M25.4 14.4 27.9 12.4 28.14 15.75Z" fill="#fda4af" />
+              <path d="M21.84 23.03 24.53 19.78 20.22 15.47 16.97 18.16Z" fill="#c0c7d1" />
+              <path d="M22.7 21.4 24.9 19.2" stroke="#f8fafc" strokeWidth="0.7" />
+              <path d="M21.3 20.7 23.5 18.5" stroke="#64748b" strokeWidth="0.55" />
+              <path d="M12.93 31.94 21.84 23.03 16.97 18.16 8.06 27.07Z" fill="#f5c518" />
+              <path d="M12.93 31.94 21.84 23.03 19.4 20.6 10.5 29.5Z" fill="#c4920a" />
+              <path d="M10.5 29.5 19.4 20.6 16.97 18.16 8.06 27.07Z" fill="#fde047" />
+              <path d="M7 34.77 12.93 31.94 8.06 27.07 5.23 33Z" fill="#e8c39e" />
+              <path d="M7 34.77 12.93 31.94 10.5 29.5 6.11 33.89Z" fill="#c4a06a" />
+              <path
+                d="M3 37 7 34.77 5.23 33Z"
+                fill={tableBorderPaint.color && tableBorderPaint.color !== 'transparent' ? tableBorderPaint.color : '#1e293b'}
+              />
+              <path d="M3 37 5.4 35.4 4.2 34.6Z" fill="#111827" />
+              <path
+                d="M3 37 7 34.77 12.93 31.94 21.84 23.03 24.53 19.78 28.14 15.75C29.1 14.79 29.05 13.4 27.9 12.4L24.25 11.86 20.22 15.47 16.97 18.16 8.06 27.07 5.23 33Z"
+                stroke="#334155"
+                strokeWidth="1.05"
+                strokeLinejoin="round"
+              />
+            </svg>
+          )}
+        </div>
+      ) : null}
       {showBrushCursor && brushCur ? (
         <div
           className={`react-ink-brush-cursor show${drawTool === 'eraser' ? ' eraser' : ''}${drawTool === 'marker' ? ' marker' : ''}${drawTool === 'neon' ? ' neon' : ''}${drawTool === 'fill' ? ' fill' : ''}`}
@@ -3195,17 +4612,33 @@ export default function SlideCanvas() {
       ) : null}
       <CanvasCtxMenu menu={elCtxMenu} ru={lang !== 'en'} onClose={() => setElCtxMenu(null)} />
       <div
-        className={`react-canvas-viewport${drawing ? ' is-drawing' : ''}${showBrushCursor ? ' has-brush-cursor' : ''}`}
+        className={`react-canvas-viewport${drawing ? ' is-drawing' : ''}${showBrushCursor ? ' has-brush-cursor' : ''}${showTablePaintCursor ? ' has-table-paint-cursor' : ''}`}
         ref={hostRef}
         onPointerDown={onStagePointerDown}
         onPointerMove={onStagePointerMove}
         onPointerUp={onStagePointerUp}
         onPointerCancel={onStagePointerUp}
-        onPointerLeave={() => {
-          if (!inkRef.current) setBrushCur(null);
+        onPointerLeave={(e) => {
+          const rel = e.relatedTarget;
+          const leftHost =
+            !rel ||
+            typeof rel !== 'object' ||
+            typeof rel.nodeType !== 'number' ||
+            !e.currentTarget.contains(rel);
+          if (leftHost && useUiStore.getState().hfxHoverId) {
+            useUiStore.getState().setHfxHoverId(null);
+          }
+          if (!inkRef.current) {
+            overlayCurOnRef.current = false;
+            setBrushCur(null);
+          }
         }}
         onPointerEnter={(e) => {
-          if (showBrushCursor) setBrushCur({ x: e.clientX, y: e.clientY });
+          if (showOverlayCursor) {
+            overlayCurOnRef.current = true;
+            setBrushCur({ x: e.clientX, y: e.clientY });
+            moveOverlayCursor(e.clientX, e.clientY);
+          }
         }}
         onContextMenu={(e) => {
           if (drawing) return;
@@ -3226,7 +4659,7 @@ export default function SlideCanvas() {
         >
         <div
           ref={stageRef}
-          className={`react-slide-stage${drawing ? ' is-drawing' : ''}`}
+          className={`react-slide-stage${drawing ? ' is-drawing' : ''}${guidesEditMode ? ' is-guides-edit' : ''}`}
           data-icons-tick={iconsTick}
           onContextMenu={onStageContextMenu}
           style={{
@@ -3235,6 +4668,7 @@ export default function SlideCanvas() {
             left: stageLeft,
             top: stageTop,
             transform: `scale(${scale})`,
+            '--react-chrome-inverse-scale': 1 / scale,
             background: slideSolidBg(slide),
           }}
         >
@@ -3315,6 +4749,7 @@ export default function SlideCanvas() {
                   />
                   {selected ? (
                     <path
+                      className="react-conn-selection"
                       d={d}
                       fill="none"
                       stroke="#3b82f6"
@@ -3361,7 +4796,7 @@ export default function SlideCanvas() {
                         y2={cps.cp1.y}
                         stroke="#94a3b8"
                         strokeWidth={1}
-                        strokeDasharray="4 3"
+                        strokeDasharray={`${4 / scale} ${3 / scale}`}
                         pointerEvents="none"
                       />
                       <line
@@ -3371,7 +4806,7 @@ export default function SlideCanvas() {
                         y2={cps.cp2.y}
                         stroke="#94a3b8"
                         strokeWidth={1}
-                        strokeDasharray="4 3"
+                        strokeDasharray={`${4 / scale} ${3 / scale}`}
                         pointerEvents="none"
                       />
                       {[
@@ -3400,7 +4835,7 @@ export default function SlideCanvas() {
                               startCp2: { ...cps.cp2 },
                             };
                             movedRef.current = false;
-                            hostRef.current?.setPointerCapture?.(e.pointerId);
+                            captureTrustedPointer(e, hostRef.current);
                           }}
                         />
                       ))}
@@ -3415,7 +4850,7 @@ export default function SlideCanvas() {
                       className="react-ep-handle"
                       cx={h.p.x}
                       cy={h.p.y}
-                      r={7}
+                      r={7 / scale}
                       fill="#6366f1"
                       stroke="#fff"
                       strokeWidth={2.5}
@@ -3435,7 +4870,7 @@ export default function SlideCanvas() {
                         };
                         movedRef.current = false;
                         setEpGhost({ x: h.p.x, y: h.p.y, ok: true });
-                        hostRef.current?.setPointerCapture?.(e.pointerId);
+                        captureTrustedPointer(e, hostRef.current);
                       }}
                     />
                   ))}
@@ -3469,15 +4904,38 @@ export default function SlideCanvas() {
                 startInlineEdit(el);
               }}
               onCommitText={(html) => {
+                if (el.type === 'image') {
+                  const text = String(html || '').replace(/<[^>]+>/g, '').replace(/\u00a0/g, ' ').trim();
+                  editorApi.patchElementHistory(el.id, { imgCaption: text });
+                  setEditingId(null);
+                  return;
+                }
                 if (el.type === 'shape') {
                   editorApi.patchElementHistory(el.id, { shapeHtml: html });
                   setEditingId(null);
                   return;
                 }
                 const text = String(html || '').replace(/<[^>]+>/g, '');
-                if (textPlainIsBlank(html) && isLayoutTextPlaceholder(el)) {
-                  const lang = useUiStore.getState().lang;
-                  editorApi.patchElementHistory(el.id, restoreTextPlaceholderPatch(el, lang));
+                const plain = String(html || '')
+                  .replace(/<[^>]+>/g, '')
+                  .replace(/\u00a0/g, ' ')
+                  .trim();
+                const lang = useUiStore.getState().lang;
+                const prompt = isLayoutTextPlaceholder(el)
+                  ? el.textPlaceholderLabel
+                  : el.textPlaceholderLabel ||
+                    (lang === 'en' ? 'Double-click to edit' : 'Дважды кликните для редактирования');
+                if (textPlainIsBlank(html) || (prompt && plain === prompt)) {
+                  const st = usePresentationStore.getState();
+                  const fresh = (st.slides[st.cur]?.els || []).find((e) => e && String(e.id) === String(el.id));
+                  if (fresh?.textPlaceholder && prompt && String(fresh.text || '').trim() === prompt) {
+                    setEditingId(null);
+                    return;
+                  }
+                  editorApi.patchElementHistory(
+                    el.id,
+                    restoreTextPlaceholderPatch({ ...el, textPlaceholderLabel: prompt }, lang)
+                  );
                   setEditingId(null);
                   return;
                 }
@@ -3488,15 +4946,82 @@ export default function SlideCanvas() {
                 editorApi.patchElementHistory(el.id, patch);
                 setEditingId(null);
               }}
-              onEditCell={(id, r, c) => {
+              onEditCell={(id, r, c, opts) => {
                 editorApi.pickElement(id);
-                setEditingCell(`${id}:${r}:${c}`);
+                const key = `${id}:${r}:${c}`;
+                setEditingCell(key);
                 setEditingId(null);
+                if (!opts?.focus) return;
+                // Row insert commits the previous cell and re-renders the table;
+                // focus after that paint so the caret lands in the new first cell.
+                requestAnimationFrame(() => {
+                  setEditingCell(key);
+                  requestAnimationFrame(() => {
+                    let root = null;
+                    try {
+                      root = document.querySelector(`[data-id="${CSS.escape(String(id))}"]`);
+                    } catch (e) {
+                      root = document.querySelector(`[data-id="${String(id)}"]`);
+                    }
+                    const cell = root?.querySelector(`[data-r="${r}"][data-c="${c}"]`);
+                    const ed = cell?.querySelector('[contenteditable="true"]');
+                    if (!ed) return;
+                    ed.focus();
+                    try {
+                      const range = document.createRange();
+                      range.selectNodeContents(ed);
+                      range.collapse(true);
+                      const sel = window.getSelection();
+                      sel?.removeAllRanges();
+                      sel?.addRange(range);
+                    } catch (e) {}
+                  });
+                });
               }}
               onEndCellEdit={() => setEditingCell(null)}
+              onTableCellContextMenu={(tel, r, c, ev) => {
+                if (!tel) return;
+                const st0 = useSelectionStore.getState();
+                if (!st0.selId || String(st0.selId) !== String(tel.id)) {
+                  editorApi.pickElement(tel.id);
+                }
+                const st = useSelectionStore.getState();
+                const sameTable = st.tableCell && String(st.tableCell.elId) === String(tel.id);
+                const covered =
+                  sameTable && (st.tableCellSel || []).some((k) => +k.r === r && +k.c === c);
+                // Keep multi-selection when RMB is inside it; only retarget if outside.
+                if (!covered) editorApi.pickTableCell(tel.id, r, c);
+                setEditingCell(null);
+                const live =
+                  (usePresentationStore.getState().slides[usePresentationStore.getState().cur]?.els || []).find(
+                    (x) => x && String(x.id) === String(tel.id)
+                  ) || tel;
+                const st1 = useSelectionStore.getState();
+                const selCount =
+                  (st1.tableCellSel || []).filter(
+                    (k) => !getTableCell(live, +k.r, +k.c).hidden
+                  ).length || 1;
+                const anchor =
+                  st1.tableCell && String(st1.tableCell.elId) === String(tel.id)
+                    ? getTableCell(live, st1.tableCell.r, st1.tableCell.c)
+                    : getTableCell(live, r, c);
+                const canSplit = !!(anchor && ((anchor.colspan || 1) > 1 || (anchor.rowspan || 1) > 1));
+                setElCtxMenu({
+                  kind: 'table-cells',
+                  x: ev.clientX,
+                  y: ev.clientY,
+                  elId: String(tel.id),
+                  canPaste: canPasteTableCells(),
+                  rows: live.rows || 1,
+                  cols: live.cols || 1,
+                  selCount,
+                  canSplit,
+                });
+              }}
               onCommitCell={(id, r, c, html) => {
                 editorApi.patchTableCell(id, r, c, html);
-                // Keep a cell that was just entered via Tab/Enter in edit mode.
+                // Drop edit mode only if we are still on the cell that just committed.
+                // Tab-to-new-row already moved the caret; don't clear that target.
                 setEditingCell((cur) => (cur === `${id}:${r}:${c}` ? null : cur));
               }}
               cropActive={!!cropModeElId && String(cropModeElId) === String(el.id)}
@@ -3504,20 +5029,64 @@ export default function SlideCanvas() {
             />
             );
           })}
-          {guideLines.map((g, i) => (
-            <div
-              key={`eg-${i}`}
-              className={`react-guide-extra ${g.t === 'h' ? 'h' : 'v'}`}
-              style={g.t === 'h' ? { top: g.pos } : { left: g.pos }}
-            />
-          ))}
-          {snapGuides.map((g, i) => (
-            <div
-              key={`sg-${i}`}
-              className={`react-guide-extra snap ${g.t === 'h' ? 'h' : 'v'}`}
-              style={g.t === 'h' ? { top: g.pos } : { left: g.pos }}
-            />
-          ))}
+          <ImageSortMarkersLayer
+            slide={slide}
+            canvasW={canvasW}
+            canvasH={canvasH}
+            mode="edit"
+          />
+          {allGuideLines
+            .filter((g) => g && (g.t === 'h' || g.t === 'v') && !g.guideId)
+            .map((g, i) => (
+              <div
+                key={`eg-${i}`}
+                className={`react-guide-extra ${g.t === 'h' ? 'h' : 'v'}`}
+                style={g.t === 'h' ? { top: g.pos } : { left: g.pos }}
+              />
+            ))}
+          <svg className="react-custom-guides" aria-hidden="true">
+            {(customSlideGuides || []).map((g) => {
+              if (!g) return null;
+              const clip = clipGuideToSlide(g, canvasW, canvasH);
+              if (!clip) return null;
+              const selected = String(selGuideId) === String(g.id);
+              return (
+                <g key={g.id}>
+                  <line
+                    className="react-custom-guide-hit"
+                    x1={clip.x1}
+                    y1={clip.y1}
+                    x2={clip.x2}
+                    y2={clip.y2}
+                    onPointerDown={(e) => onGuidePointerDown(g, e)}
+                  />
+                  <line
+                    className="react-custom-guide-edge"
+                    x1={clip.x1}
+                    y1={clip.y1}
+                    x2={clip.x2}
+                    y2={clip.y2}
+                  />
+                  <line
+                    className={`react-custom-guide-vis${selected ? ' is-sel' : ''}`}
+                    x1={clip.x1}
+                    y1={clip.y1}
+                    x2={clip.x2}
+                    y2={clip.y2}
+                  />
+                </g>
+              );
+            })}
+          </svg>
+          {snapGuides
+            .filter((g) => g && (g.t === 'h' || g.t === 'v'))
+            .map((g, i) => (
+              <div
+                key={`sg-${i}`}
+                className={`react-guide-extra snap ${g.t === 'h' ? 'h' : 'v'}`}
+                style={g.t === 'h' ? { top: g.pos } : { left: g.pos }}
+              />
+            ))}
           {soleSelectedView &&
           !(cropModeElId && String(cropModeElId) === String(soleSelectedView.id)) &&
           (soleSelectedView.type !== 'shape' && soleSelectedView.type !== 'lineangle'
@@ -3533,12 +5102,31 @@ export default function SlideCanvas() {
                 height: soleSelectedView.h || 60,
                 transform: elBoxTransform(soleSelectedView),
               }}
-            />
+            >
+              {soleSelectedView.type === 'text' ? <TextQuickBar el={soleSelectedView} /> : null}
+              <svg
+                className="react-selection-stroke"
+                viewBox={`0 0 ${soleSelectedView.w || 100} ${soleSelectedView.h || 60}`}
+                preserveAspectRatio="none"
+                aria-hidden="true"
+              >
+                <rect
+                  x="0"
+                  y="0"
+                  width={soleSelectedView.w || 100}
+                  height={soleSelectedView.h || 60}
+                  style={{ strokeWidth: 1.5 / scale }}
+                />
+              </svg>
+            </div>
           ) : null}
           {soleSelectedView &&
           !soleSelectedView.locked &&
+          !(tableBorderPaint && soleSelectedView.type === 'table') &&
           !(cropModeElId && String(cropModeElId) === String(soleSelectedView.id)) &&
+          !(shapeFillImgEditId && String(shapeFillImgEditId) === String(soleSelectedView.id)) &&
           !(curveEditMode && soleSelectedView.shape === 'curve') &&
+          !shapeNodeMode &&
           soleSelectedView.shape !== 'line' &&
           soleSelectedView.type !== 'lineangle'
             ? resizeHandleCenters(soleSelectedView, RESIZE_HANDLES).map((h) => {
@@ -3548,8 +5136,8 @@ export default function SlideCanvas() {
                     key={h.id}
                     className="react-rh"
                     style={{
-                      left: h.cx - 4,
-                      top: h.cy - 4,
+                      left: h.cx,
+                      top: h.cy,
                       cursor: resizeHandleCursor(h.id, rot),
                     }}
                     onPointerDown={(e) => onResizePointerDown(h, e)}
@@ -3557,14 +5145,29 @@ export default function SlideCanvas() {
                 );
               })
             : null}
-          {adjHandles.length && !(curveEditMode && soleSelected?.shape === 'curve')
+          {adjHandles.length && !showShapeNodes && !(curveEditMode && soleSelected?.shape === 'curve')
             ? adjHandles.map((h) => (
                 <div
                   key={h.id}
+                  role="button"
                   className={`react-adj-handle${h.square ? ' is-square' : ''}`}
                   title={h.title}
+                  aria-label={h.title}
                   style={{ left: h.x, top: h.y, cursor: h.cursor }}
                   onPointerDown={(e) => onAdjPointerDown(h, e)}
+                />
+              ))
+            : null}
+          {showShapeNodes
+            ? shapeNodeHandles.map((h) => (
+                <div
+                  key={h.id}
+                  role="button"
+                  className="react-adj-handle"
+                  title={h.title}
+                  aria-label={h.title}
+                  style={{ left: h.x, top: h.y, cursor: h.cursor }}
+                  onPointerDown={(e) => onShapeNodePointerDown(h, e)}
                 />
               ))
             : null}
@@ -3607,7 +5210,8 @@ export default function SlideCanvas() {
                   y2={ln.y2}
                   stroke="rgba(255,255,255,0.65)"
                   strokeWidth="1"
-                  strokeDasharray="3 2"
+                  strokeDasharray={`${3 / scale} ${2 / scale}`}
+                  vectorEffect="non-scaling-stroke"
                 />
               ))}
             </svg>
@@ -3616,7 +5220,7 @@ export default function SlideCanvas() {
             ? curveOverlay.nodes.map((h) => (
                 <div
                   key={h.id}
-                  className={`react-curve-handle is-node${h.selected ? ' is-sel' : ''}`}
+                  className={`react-curve-handle is-node is-${h.type || 'corner'}${h.selected ? ' is-sel' : ''}`}
                   title={h.title}
                   style={{ left: h.x, top: h.y }}
                   onPointerDown={(e) => onCurveHandlePointerDown(h, e)}
@@ -3624,8 +5228,9 @@ export default function SlideCanvas() {
                     e.stopPropagation();
                     e.preventDefault();
                     const pts = soleSelected.curvePoints || defaultCurvePoints();
-                    const next = toggleCurveNodeType(pts, h.idx, !!soleSelected.curveClosed);
+                    const next = cycleCurveNodeType(pts, [h.idx], !!soleSelected.curveClosed);
                     editorApi.patchElementHistory(soleSelected.id, { curvePoints: next });
+                    useUiStore.getState().setCurveNodeSel([h.idx]);
                   }}
                 />
               ))
@@ -3651,14 +5256,29 @@ export default function SlideCanvas() {
                   height: groupBBox.h,
                 }}
               >
+                <svg
+                  className="react-selection-stroke"
+                  viewBox={`0 0 ${groupBBox.w} ${groupBBox.h}`}
+                  preserveAspectRatio="none"
+                  aria-hidden="true"
+                >
+                  <rect
+                    x="0"
+                    y="0"
+                    width={groupBBox.w}
+                    height={groupBBox.h}
+                    style={{ strokeWidth: 1.5 / scale }}
+                    strokeDasharray={`${6 / scale} ${4 / scale}`}
+                  />
+                </svg>
                 <span className="react-group-label">Группа</span>
               </div>
               <div
                 className="react-group-rot"
                 title="Rotate"
                 style={{
-                  left: groupBBox.x + groupBBox.w / 2 - 6,
-                  top: groupBBox.y - 28,
+                  left: groupBBox.x + groupBBox.w / 2,
+                  top: groupBBox.y - 22 / scale,
                 }}
                 onPointerDown={onGroupRotPointerDown}
               />
@@ -3667,8 +5287,8 @@ export default function SlideCanvas() {
                 const by = groupBBox.y;
                 const bw = groupBBox.w;
                 const bh = groupBBox.h;
-                const left = h.dx < 0 ? bx - 4 : h.dx > 0 ? bx + bw - 4 : bx + bw / 2 - 4;
-                const top = h.dy < 0 ? by - 4 : h.dy > 0 ? by + bh - 4 : by + bh / 2 - 4;
+                const left = h.dx < 0 ? bx : h.dx > 0 ? bx + bw : bx + bw / 2;
+                const top = h.dy < 0 ? by : h.dy > 0 ? by + bh : by + bh / 2;
                 return (
                   <div
                     key={`g-${h.id}`}
@@ -3680,10 +5300,10 @@ export default function SlideCanvas() {
               })}
             </>
           ) : null}
-          {bandStyle ? <div className="react-rubberband" style={bandStyle} /> : null}
           <CameraOverlay />
           <MotionOverlay />
         </div>
+          {bandStyle ? <div className="react-rubberband" style={bandStyle} /> : null}
         </div>
       </div>
     </div>

@@ -4,6 +4,7 @@ import {
   appletStepMessage,
   counterMountHtml,
   postToAppletIframe,
+  timerStartMode,
 } from '../../editor/applets.js';
 import { isFlipAppletId } from '../../editor/flipApplet.js';
 import { editorApi } from '../../editor/editorApi';
@@ -37,6 +38,8 @@ export default function AppletView({
   const iframeLive =
     (interactive &&
       (el?.appletId === 'calculator' ||
+        el?.appletId === 'classification' ||
+        el?.appletId === 'imagesort' ||
         isFlip ||
         el?.appletId === 'notes')) ||
     notesLive;
@@ -45,11 +48,12 @@ export default function AppletView({
 
   useEffect(() => {
     if (!interactive || el?.appletId !== 'timer') return undefined;
+    if (timerStartMode(el) !== 'auto') return undefined;
     const t = window.setTimeout(() => {
       postToAppletIframe(iframeRef.current, { type: 'timerStart' });
     }, 80);
     return () => clearTimeout(t);
-  }, [interactive, el?.appletId, el?.id, html]);
+  }, [interactive, el?.appletId, el?.id, el?.tmStart, html]);
 
   // Keep flip face in sync (props toggle, undo) without reloading srcDoc.
   useEffect(() => {
@@ -90,7 +94,9 @@ export default function AppletView({
       else e.stopPropagation();
       return;
     }
-    if (interactive && stepMsg && !isFlip) {
+    // Preview click-to-step: counter only. Generator keeps a fixed value during show
+    // (regen via props / double-click in the editor).
+    if (interactive && stepMsg && !isFlip && el?.appletId === 'counter') {
       e.stopPropagation();
       fireStep();
       return;
@@ -134,7 +140,13 @@ export default function AppletView({
         // Border is an overlay (v7.1) — CSS border on this box gets clipped R/B by parents.
         border: 'none',
         position: style?.position || 'relative',
-        cursor: el?.appletId === 'periodic' || stepMsg || iframeLive ? 'pointer' : undefined,
+        cursor:
+          el?.appletId === 'periodic' ||
+          el?.appletId === 'counter' ||
+          (mode === 'edit' && stepMsg) ||
+          iframeLive
+            ? 'pointer'
+            : undefined,
       }}
       onPointerDown={onHostPointerDown}
       onDoubleClick={onDoubleClick}

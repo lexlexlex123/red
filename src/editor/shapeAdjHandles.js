@@ -4,7 +4,13 @@
  */
 
 import { getShapeMeta } from '../shared/shapesCatalog.js';
-import { normalizeMoonPhase } from '../shared/shapes.js';
+import {
+  normalizeMoonPhase,
+  normalizeRingInner,
+  normalizeArrowHead,
+  normalizeTrapTop,
+  normalizeTrapBot,
+} from '../shared/shapes.js';
 import { calloutDefaultRoundRel } from '../shared/calloutGeom.js';
 
 const HS = 6; // half of 12px handle
@@ -53,8 +59,11 @@ function starInnerPos(el, ir) {
 function paraSkewPos(el, skewDeg) {
   const W = Math.max(1, +el.w || 1);
   const H = Math.max(1, +el.h || 1);
-  const sk = Math.max(-45, Math.min(45, +skewDeg || 20));
-  const off = (H / 2) * Math.tan((sk * Math.PI) / 180);
+  const raw = skewDeg != null && skewDeg !== '' ? +skewDeg : 20;
+  const sk = Math.max(-45, Math.min(45, Number.isFinite(raw) ? raw : 20));
+  // Handle on the moving top corner (matches parallelogramPts / side angle).
+  const off = Math.min(W - 1, Math.abs(H * Math.tan((sk * Math.PI) / 180)));
+  if (sk < 0) return { lx: W / 2 - off, ly: -H / 2 };
   return { lx: -W / 2 + off, ly: -H / 2 };
 }
 
@@ -65,10 +74,39 @@ function trapInsetPos(el, which, inset) {
   return { lx: -W / 2 + t * W, ly: which === 'top' ? -H / 2 : H / 2 };
 }
 
-function moonPhasePos(el, phase) {
+/** Match moonPath radii: inset by stroke/2 like buildBasicShapeSVG. */
+function moonDrawRadii(el) {
   const W = Math.max(1, +el.w || 1);
+  const H = Math.max(1, +el.h || 1);
+  const sw = Math.max(0, +el.sw || 0);
+  const margin = sw > 0 ? sw / 2 : 0;
+  return {
+    rx: Math.max(1, W - margin * 2) / 2,
+    ry: Math.max(1, H - margin * 2) / 2,
+  };
+}
+
+function ringDrawRadii(el) {
+  const W = Math.max(1, +el.w || 1);
+  const H = Math.max(1, +el.h || 1);
+  const sw = Math.max(0, +el.sw || 0);
+  const margin = sw > 0 ? sw / 2 : 0;
+  return {
+    rx: Math.max(1, W - margin * 2) / 2,
+    ry: Math.max(1, H - margin * 2) / 2,
+  };
+}
+
+function ringInnerPos(el, ir) {
+  const { rx } = ringDrawRadii(el);
+  return { lx: rx * normalizeRingInner(ir), ly: 0 };
+}
+
+function moonPhasePos(el, phase) {
+  const { rx } = moonDrawRadii(el);
   const p = normalizeMoonPhase(phase);
-  return { lx: p * (W / 2), ly: 0 };
+  // Terminator at cx + phase*rx (same as moonPath)
+  return { lx: p * rx, ly: 0 };
 }
 
 function chevOuterPos(el, skewPct) {
@@ -85,6 +123,20 @@ function chevInnerPos(el, innerPct) {
   const isLeft = el.shape === 'chevronLeft';
   const lx = isLeft ? W / 2 - W * s : -W / 2 + W * s;
   return { lx, ly: 0 };
+}
+
+/** Neck where shaft meets the triangular head (local coords from box center). */
+function arrowHeadPos(el, headPct) {
+  const W = Math.max(1, +el.w || 1);
+  const H = Math.max(1, +el.h || 1);
+  const head = normalizeArrowHead(headPct) / 100;
+  const id = el.shape || 'arrow';
+  if (id === 'arrowUp') return { lx: 0, ly: -H / 2 + H * head };
+  if (id === 'arrowDown') return { lx: 0, ly: H / 2 - H * head };
+  if (id === 'arrowLeft') return { lx: -W / 2 + W * head, ly: 0 };
+  // arrow / arrowDouble — neck on the tip side (right for double)
+  const h = id === 'arrowDouble' ? Math.min(head, 0.4) : head;
+  return { lx: W / 2 - W * h, ly: 0 };
 }
 
 /** Arc endpoint in local coords (0° = top, CW) — v7.1 `_buildArcHandles`. */
@@ -128,8 +180,8 @@ export function listShapeAdjHandles(el) {
   }
 
   if (special === 'trapezoid') {
-    const top = el.trapTop != null ? +el.trapTop : 0.15;
-    const bot = el.trapBot != null ? +el.trapBot : 0;
+    const top = normalizeTrapTop(el.trapTop);
+    const bot = normalizeTrapBot(el.trapBot);
     push('trapTop', 'trapTop', trapInsetPos(el, 'top', top), 'ew-resize', 'Сужение сверху');
     push('trapBot', 'trapBot', trapInsetPos(el, 'bot', bot), 'ew-resize', 'Сужение снизу');
   }
@@ -138,11 +190,29 @@ export function listShapeAdjHandles(el) {
     push('moonPhase', 'moonPhase', moonPhasePos(el, el.moonPhase), 'ew-resize', 'Фаза луны');
   }
 
+  if (special === 'noSymbol') {
+    push('ringInner', 'ringInner', ringInnerPos(el, el.ringInner), 'ew-resize', 'Внутр. радиус');
+  }
+
   if (special === 'chevron') {
     const skew = el.chevSkew != null ? +el.chevSkew : 25;
     const inner = el.chevInner != null ? +el.chevInner : skew;
     push('chevSkew', 'chevSkew', chevOuterPos(el, skew), 'ew-resize', 'Внешний угол', { square: true });
     push('chevInner', 'chevInner', chevInnerPos(el, inner), 'ew-resize', 'Внутренний угол', { square: true });
+  }
+
+  if (special === 'arrow') {
+    const head = normalizeArrowHead(el.arrowHead);
+    const id = el.shape || 'arrow';
+    const vert = id === 'arrowUp' || id === 'arrowDown';
+    push(
+      'arrowHead',
+      'arrowHead',
+      arrowHeadPos(el, head),
+      vert ? 'ns-resize' : 'ew-resize',
+      'Длина ствола',
+      { square: true },
+    );
   }
 
   if (special === 'ellipse' || el.shape === 'circle' || el.shape === 'ellipse') {
@@ -188,8 +258,15 @@ export function patchFromAdjDrag(el, kind, canvasX, canvasY) {
   }
 
   if (kind === 'paraSkew') {
-    const off = lx + W / 2;
-    let skewNew = (Math.atan2(off, H / 2) * 180) / Math.PI;
+    // Side angle from vertical: distance from left (or right) edge over full height.
+    const fromLeft = lx + W / 2;
+    const fromRight = W / 2 - lx;
+    let skewNew;
+    if (fromLeft <= fromRight) {
+      skewNew = (Math.atan2(fromLeft, H) * 180) / Math.PI;
+    } else {
+      skewNew = -(Math.atan2(fromRight, H) * 180) / Math.PI;
+    }
     skewNew = Math.max(-45, Math.min(45, Math.round(skewNew)));
     return { paraSkew: skewNew };
   }
@@ -201,9 +278,16 @@ export function patchFromAdjDrag(el, kind, canvasX, canvasY) {
   }
 
   if (kind === 'moonPhase') {
-    let p = lx / (W / 2);
+    const { rx } = moonDrawRadii(el);
+    let p = lx / Math.max(1, rx);
     p = Math.max(-1, Math.min(1, p));
     return { moonPhase: Math.round(p * 100) / 100 };
+  }
+
+  if (kind === 'ringInner') {
+    const { rx, ry } = ringDrawRadii(el);
+    const dist = Math.hypot(lx / Math.max(1, rx), ly / Math.max(1, ry));
+    return { ringInner: Math.round(normalizeRingInner(dist) * 100) / 100 };
   }
 
   if (kind === 'chevSkew') {
@@ -214,6 +298,16 @@ export function patchFromAdjDrag(el, kind, canvasX, canvasY) {
   if (kind === 'chevInner') {
     const raw = isLeft ? Math.round(((W / 2 - lx) / W) * 100) : Math.round(((lx + W / 2) / W) * 100);
     return { chevInner: Math.max(0, Math.min(45, raw)) };
+  }
+
+  if (kind === 'arrowHead') {
+    const id = el.shape || 'arrow';
+    let raw;
+    if (id === 'arrowUp') raw = Math.round(((ly + H / 2) / H) * 100);
+    else if (id === 'arrowDown') raw = Math.round(((H / 2 - ly) / H) * 100);
+    else if (id === 'arrowLeft') raw = Math.round(((lx + W / 2) / W) * 100);
+    else raw = Math.round(((W / 2 - lx) / W) * 100); // arrow / arrowDouble
+    return { arrowHead: normalizeArrowHead(raw) };
   }
 
   if (kind === 'arcStart' || kind === 'arcEnd') {

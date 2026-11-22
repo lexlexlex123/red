@@ -153,15 +153,14 @@ export function migrateLineCapGeometry(el) {
 export function listLineEpHandles(el, opts = {}) {
   if (!el || el.type !== 'shape' || el.shape !== 'line' || el.locked) return [];
   const ends = lineCanvasEnds(el);
-  const HS = 6;
   const joinedA = !!opts.joinedA;
   const joinedB = !!opts.joinedB;
   return [
     {
       id: 'line-a',
       which: 'a',
-      x: ends.a.x - HS,
-      y: ends.a.y - HS,
+      x: ends.a.x,
+      y: ends.a.y,
       cursor: 'crosshair',
       joined: joinedA,
       title: joinedA
@@ -171,8 +170,8 @@ export function listLineEpHandles(el, opts = {}) {
     {
       id: 'line-b',
       which: 'b',
-      x: ends.b.x - HS,
-      y: ends.b.y - HS,
+      x: ends.b.x,
+      y: ends.b.y,
       cursor: 'crosshair',
       joined: joinedB,
       title: joinedB

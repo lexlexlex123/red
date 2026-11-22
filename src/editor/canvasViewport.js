@@ -6,7 +6,7 @@ import { useUiStore } from '../stores/uiStore.js';
 export const CANVAS_ZOOM_MIN = 0.25;
 export const CANVAS_ZOOM_MAX = 20; // 2000%
 /** Margin around the slide in the scrollport / default fit inset. */
-export const CANVAS_ZOOM_PAD = 40;
+export const CANVAS_ZOOM_PAD = 20;
 
 export function getCanvasViewport() {
   return document.querySelector('.react-canvas-viewport');

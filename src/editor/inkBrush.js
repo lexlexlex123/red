@@ -491,18 +491,12 @@ function _brushStamps(stroke, sx, sy){
       pnx=nx; pny=ny;
       nxArr[i]=nx; nyArr[i]=ny;
     }
+    // Stamps are generated in *spatial* order (circle at each point, then the quad segment
+    // to the next point) rather than "all quads, then all circles" — the ink-draw animation
+    // reveals stamps in the order they appear here, and revealing every quad from start to
+    // end and *then* every circle from start to end again drew the whole line twice: once
+    // as the connecting segments, then a second time as the round dabs on top.
     const stamps=[];
-    for(let i=0;i<n-1;i++){
-      const hw0=half[i]*sc, hw1=half[i+1]*sc;
-      const ax=pts[i].x*sx, ay=pts[i].y*sy;
-      const bx=pts[i+1].x*sx, by=pts[i+1].y*sy;
-      stamps.push(_quadStamp(
-        ax+nxArr[i]*hw0, ay+nyArr[i]*hw0,
-        bx+nxArr[i+1]*hw1, by+nyArr[i+1]*hw1,
-        bx-nxArr[i+1]*hw1, by-nyArr[i+1]*hw1,
-        ax-nxArr[i]*hw0, ay-nyArr[i]*hw0
-      ));
-    }
     const taper=stroke.taper||'both';
     for(let i=0;i<n;i++){
       let r=half[i]*sc;
@@ -510,6 +504,17 @@ function _brushStamps(stroke, sx, sy){
       if(taper==='out'&&i===n-1) r*=0.72;
       else if(taper==='in'&&i===0) r*=0.72;
       stamps.push({kind:'circle', cx:pts[i].x*sx, cy:pts[i].y*sy, r:r});
+      if(i<n-1){
+        const hw0=half[i]*sc, hw1=half[i+1]*sc;
+        const ax=pts[i].x*sx, ay=pts[i].y*sy;
+        const bx=pts[i+1].x*sx, by=pts[i+1].y*sy;
+        stamps.push(_quadStamp(
+          ax+nxArr[i]*hw0, ay+nyArr[i]*hw0,
+          bx+nxArr[i+1]*hw1, by+nyArr[i+1]*hw1,
+          bx-nxArr[i+1]*hw1, by-nyArr[i+1]*hw1,
+          ax-nxArr[i]*hw0, ay-nyArr[i]*hw0
+        ));
+      }
     }
     return stamps;
   }

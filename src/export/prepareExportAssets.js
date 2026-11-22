@@ -84,7 +84,10 @@ export async function prepareDeckForHtmlExport(deck) {
       if (!d) continue;
       await rewriteSrc(d, 'src', cache);
       await rewriteSrc(d, 'graphImg', cache);
+      await rewriteSrc(d, 'graphAxesImg', cache);
+      await rewriteSrc(d, 'graphCurveImg', cache);
       await rewriteSrc(d, 'mediaSrc', cache);
+      await rewriteSrc(d, 'fillImg', cache);
     }
   }
   return withMedia;

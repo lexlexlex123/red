@@ -28,6 +28,10 @@ export function altBgFromHeader(headerBg) {
   return headerBg;
 }
 
+/** Compact cell metrics — same density as Excel/TSV paste. */
+export const TABLE_COL_PX = 112;
+export const TABLE_ROW_PX = 36;
+
 /** Build fields for a new table element (without id). */
 export function buildNewTableFields(rows, cols, theme, opts = {}) {
   const rr = Math.max(1, Math.min(30, Math.round(+rows || 3)));
@@ -48,13 +52,17 @@ export function buildNewTableFields(rows, cols, theme, opts = {}) {
       });
     }
   }
-  const border = hexWithAlpha(tc.ac1, '80');
+  const border = hexWithAlpha(tc.ac1, '66');
+  const w = Math.min(canvasW - 80, Math.max(200, cc * TABLE_COL_PX));
+  const h = Math.min(canvasH - 100, Math.max(72, rr * TABLE_ROW_PX));
+  const x = Math.max(40, Math.round((canvasW - w) / 2));
+  const y = Math.max(48, Math.round((canvasH - h) / 2) - 24);
   return {
     type: 'table',
-    x: 60,
-    y: 80,
-    w: Math.min(960, canvasW - 120),
-    h: Math.min(420, canvasH - 160),
+    x,
+    y,
+    w,
+    h,
     rows: rr,
     cols: cc,
     cells,
@@ -64,15 +72,15 @@ export function buildNewTableFields(rows, cols, theme, opts = {}) {
     borderColor: border,
     borderColorScheme: { col: 0, row: 4 },
     headerRow: true,
-    rx: 8,
-    fs: 15,
+    rx: 4,
+    fs: 13,
     textColor: tc.text,
     textColorScheme: { col: 0, row: 2 },
-    headerBg: tc.ac1,
+    headerBg: hexWithAlpha(tc.ac1, 'CC'),
     headerBgScheme: { col: 0, row: 6 },
-    cellBg: hexWithAlpha(tc.ac2, '20'),
+    cellBg: hexWithAlpha(tc.ac2, '14'),
     cellBgScheme: { col: 0, row: 8 },
-    altBg: hexWithAlpha(tc.ac1, '12'),
+    altBg: hexWithAlpha(tc.ac1, '0A'),
     altBgScheme: { col: 0, row: 7 },
     tableBgOp: 1,
     tableBgBlur: 0,

@@ -3,79 +3,46 @@
  * Text / shapes / images / tables / connectors / ink round-trip through pptxImport.
  */
 
-import { parseCsNumber, parseFontFamily } from '../editor/fonts.js';
-import { getTableCell, tableCellBg } from '../editor/tableCells.js';
+import { getTableCell, tableCellBg, tableColWidthsPx, tableRowHeightsPx } from '../editor/tableCells.js';
+import { isNoneTableColor, resolveTableEdge } from '../editor/tableBorders.js';
 import { getShapeMeta } from '../shared/shapesCatalog.js';
 import { buildIconSVG } from '../editor/iconSvg.js';
 import { iconPathForRender } from '../editor/iconAnim.js';
 import { getIconById } from '../editor/iconsLazy.js';
 import { shapeTextFontSizePx, getShapeTextColor } from '../editor/shapeText.js';
 import { slideSolidBg, bgImgSrc } from '../editor/slideBgImg.js';
+import { captureHtmlFrameSnapshot } from '../editor/htmlFrameSnapshot.js';
+import { resolveExportPoster } from './mediaPoster.js';
+import { pptxTimingXml } from './pptxTiming.js';
+import { linkTypeFromHref, resolveSlideLinkIndex } from '../editor/links.js';
 import { normalizeInkPoints } from '../editor/inkBrush.js';
 import { ptXY } from '../editor/inkFill.js';
 import { nearestSides, edgeMid } from '../editor/connectors.js';
 import { buildLegoSvg } from '../editor/lego.js';
 import { buildLineAngleContent } from '../editor/lineAngle.js';
 import { buildChartSvg } from '../editor/tableChart.js';
-import { escXml } from './xmlEsc.js';
+import {
+  escXml,
+  hexRgb,
+  algnOf,
+  shapePreset,
+  geomAdjXml,
+  gradFillXml,
+  dataUrlToPart,
+  svgPart,
+  textBoxMeta,
+  pathToCustGeomXml,
+  rasterizePartForOffice,
+} from './nativeShared.js';
 
 export { escXml };
 
 const REL_OFFICE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 const REL_TABLE = 'http://schemas.openxmlformats.org/drawingml/2006/table';
 
-const SHAPE_PRST = {
-  rect: 'rect',
-  ellipse: 'ellipse',
-  circle: 'ellipse',
-  triangle: 'triangle',
-  star: 'star5',
-  line: 'line',
-  arrow: 'rightArrow',
-  arrowLeft: 'leftArrow',
-  arrowUp: 'upArrow',
-  arrowDown: 'downArrow',
-  arrowDouble: 'leftRightArrow',
-  chevron: 'chevron',
-  chevronLeft: 'chevron',
-  parallelogram: 'parallelogram',
-  trapezoid: 'trapezoid',
-  heart: 'heart',
-  callout: 'wedgeRoundRectCallout',
-  moon: 'moon',
-  cross: 'plus',
-  noSymbol: 'noSmoking',
-  gear: 'gear6',
-  polygon: 'hexagon',
-  cloud: 'ellipse',
-  curve: 'line',
-};
-
-function hexRgb(color) {
-  const raw = String(color || '').trim();
-  if (!raw || raw === 'none' || raw === 'transparent') return null;
-  const rgb = raw.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)$/i);
-  if (rgb) {
-    const val = [rgb[1], rgb[2], rgb[3]]
-      .map((n) => Math.max(0, Math.min(255, +n)).toString(16).padStart(2, '0'))
-      .join('')
-      .toUpperCase();
-    const a = rgb[4] != null ? +rgb[4] : 1;
-    return { val, alpha: Number.isFinite(a) && a < 1 ? a : null };
-  }
-  let h = raw.replace(/^#/, '');
-  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
-  if (h.length === 8) {
-    const a = parseInt(h.slice(6), 16) / 255;
-    return { val: h.slice(0, 6).toUpperCase(), alpha: a < 1 ? a : null };
-  }
-  if (h.length < 6) return { val: '000000', alpha: null };
-  return { val: h.slice(0, 6).toUpperCase(), alpha: null };
-}
-
 function solidFillXml(color, opacity) {
   const c = hexRgb(color);
-  if (!c) return '<a:noFill/>';
+  if (!c || !/^[0-9A-F]{6}$/i.test(c.val)) return '<a:noFill/>';
   let a = c.alpha;
   if (opacity != null && Number.isFinite(+opacity) && +opacity < 1) {
     a = (a != null ? a : 1) * Math.max(0, +opacity);
@@ -236,179 +203,83 @@ function lnXml(el, canvasW, cx) {
   return `<a:ln w="${w}" cap="${cap}" cmpd="sng" algn="ctr">${solidFillXml(el.stroke || '#1d4ed8')}<a:prstDash val="${dash}"/>${ends}</a:ln>`;
 }
 
-function latinFace(cs) {
-  const raw = parseFontFamily(cs) || '';
-  const first = raw.replace(/^["']|["']$/g, '').split(',')[0].trim().replace(/^["']|["']$/g, '');
-  return first || 'Calibri';
-}
-
 function szFromPx(px) {
   const n = +px || 18;
   return Math.max(600, Math.round(n * 75));
 }
 
-function algnOf(align) {
-  if (align === 'center' || align === 'ctr' || align === 'middle') return 'ctr';
-  if (align === 'right' || align === 'r' || align === 'end') return 'r';
-  return 'l';
-}
-
-function decodeEntities(s) {
-  return String(s || '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n));
-}
-
-function runsFromHtml(html) {
-  if (typeof DOMParser === 'undefined') {
-    return [{ text: decodeEntities(String(html || '').replace(/<[^>]+>/g, '')), bold: false, italic: false, underline: false }];
-  }
-  const doc = new DOMParser().parseFromString(`<div>${html || ''}</div>`, 'text/html');
-  const runs = [];
-  const walk = (node, st) => {
-    if (!node) return;
-    if (node.nodeType === 3) {
-      const t = node.nodeValue || '';
-      if (t) runs.push({ text: t, bold: !!st.bold, italic: !!st.italic, underline: !!st.underline });
-      return;
-    }
-    if (node.nodeType !== 1) return;
-    const n = node.tagName.toLowerCase();
-    if (n === 'br') {
-      runs.push({ paraBreak: true });
-      return;
-    }
-    const next = { ...st };
-    if (n === 'b' || n === 'strong') next.bold = true;
-    if (n === 'i' || n === 'em') next.italic = true;
-    if (n === 'u') next.underline = true;
-    if (n === 'p' || n === 'div' || n === 'li' || /^h[1-6]$/.test(n)) {
-      if (runs.length && !runs[runs.length - 1].paraBreak) runs.push({ paraBreak: true });
-    }
-    for (const c of node.childNodes) walk(c, next);
-    if (n === 'p' || n === 'div' || n === 'li' || /^h[1-6]$/.test(n)) {
-      if (runs.length && !runs[runs.length - 1].paraBreak) runs.push({ paraBreak: true });
-    }
-  };
-  walk(doc.body.firstChild || doc.body, {});
-  if (runs.length && runs[runs.length - 1].paraBreak) runs.pop();
-  return runs.length ? runs : [{ text: '', bold: false, italic: false, underline: false }];
-}
-
-function parasFromRuns(runs) {
-  const paras = [[]];
-  for (const r of runs) {
-    if (r.paraBreak) {
-      if (paras[paras.length - 1].length) paras.push([]);
-      continue;
-    }
-    paras[paras.length - 1].push(r);
-  }
-  return paras.filter((p) => p.length);
-}
-
 function rPrXml(run, fsPx, color, face) {
-  const sz = szFromPx(fsPx);
+  const sz = szFromPx(run.fs != null ? run.fs : fsPx);
   const b = run.bold ? ' b="1"' : '';
   const i = run.italic ? ' i="1"' : '';
   const u = run.underline ? ' u="sng"' : '';
-  return `<a:rPr lang="ru-RU" sz="${sz}"${b}${i}${u} dirty="0">${solidFillXml(color)}<a:latin typeface="${escXml(face)}"/></a:rPr>`;
+  const strike = run.strike ? ' strike="sngStrike"' : '';
+  const baseline =
+    run.script === 'sup' ? ' baseline="30000"' : run.script === 'sub' ? ' baseline="-25000"' : '';
+  const c = hexRgb(run.color || color);
+  const fill =
+    c && /^[0-9A-F]{6}$/i.test(c.val)
+      ? `<a:solidFill><a:srgbClr val="${c.val}"/></a:solidFill>`
+      : '<a:solidFill><a:srgbClr val="000000"/></a:solidFill>';
+  const typeface = escXml(String(run.face || face || 'Calibri').replace(/["<>]/g, ''));
+  return `<a:rPr lang="ru-RU" sz="${sz}"${b}${i}${u}${strike}${baseline} dirty="0">${fill}<a:latin typeface="${typeface}"/></a:rPr>`;
 }
 
 function tXml(text) {
-  const s = String(text || '');
+  const s = String(text || '').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
   const space = /^\s|\s$/.test(s) || s.includes('  ') ? ' xml:space="preserve"' : '';
   return `<a:t${space}>${escXml(s)}</a:t>`;
 }
 
-function txBodyXml(html, cs, fallbackColor, fallbackAlign, ns = 'p') {
-  const fs = parseCsNumber(cs, 'font-size') || 24;
-  const color = fallbackColor || ((cs || '').match(/(?:^|;)\s*color\s*:\s*([^;]+)/i) || [])[1] || '#ffffff';
-  const align = fallbackAlign || ((cs || '').match(/text-align\s*:\s*([^;]+)/i) || [])[1] || 'left';
-  const face = latinFace(cs);
-  const paras = parasFromRuns(runsFromHtml(html));
-  const algn = algnOf(String(align).trim());
+function txBodyXml(html, cs, fallbackColor, fallbackAlign, ns = 'p', extra = {}) {
+  const meta = textBoxMeta({ cs, textColor: fallbackColor, textAlign: fallbackAlign }, html);
+  const fs = meta.fs;
+  const color = fallbackColor || meta.color;
+  const face = meta.face;
+  const paras = meta.paras;
+  const algn = algnOf(String(fallbackAlign || meta.align).trim());
+  const anchor = extra.anchor || meta.anchor || 't';
   let body = '';
-  for (const para of paras.length ? paras : [[{ text: '', bold: false, italic: false, underline: false }]]) {
+  const fallback = [{ runs: [{ text: '', bold: false, italic: false, underline: false }], listBullet: false, listNum: false }];
+  for (const para of paras.length ? paras : fallback) {
     let rs = '';
-    for (const run of para) {
+    for (const run of para.runs) {
       rs += `<a:r>${rPrXml(run, fs, color, face)}${tXml(run.text)}</a:r>`;
     }
     if (!rs) rs = `<a:r>${rPrXml({}, fs, color, face)}${tXml('')}</a:r>`;
-    body += `<a:p><a:pPr algn="${algn}"/>${rs}<a:endParaRPr lang="ru-RU" sz="${szFromPx(fs)}"/></a:p>`;
+    let bu = '<a:buNone/>';
+    if (para.listBullet) bu = '<a:buFont typeface="Arial"/><a:buChar char="•"/>';
+    else if (para.listNum) bu = '<a:buAutoNum type="arabicPeriod"/>';
+    body += `<a:p><a:pPr algn="${algn}">${bu}</a:pPr>${rs}<a:endParaRPr lang="ru-RU" sz="${szFromPx(fs)}"/></a:p>`;
   }
   const open = ns === 'a' ? 'a:txBody' : 'p:txBody';
   return (
-    `<${open}><a:bodyPr wrap="square" lIns="91440" tIns="45720" rIns="91440" bIns="45720" rtlCol="0" anchor="t">` +
+    `<${open}><a:bodyPr wrap="square" lIns="91440" tIns="45720" rIns="91440" bIns="45720" rtlCol="0" anchor="${anchor}">` +
     '<a:spAutoFit/></a:bodyPr><a:lstStyle/>' +
     body +
     `</${open}>`
   );
 }
 
-function nvSpPr(id, name, isTxBox) {
+function nvSpPr(id, name, isTxBox, hlink = '') {
   const tx = isTxBox ? '<p:cNvSpPr txBox="1"/>' : '<p:cNvSpPr/>';
-  return `<p:nvSpPr><p:cNvPr id="${id}" name="${escXml(name)}"/>${tx}<p:nvPr/></p:nvSpPr>`;
+  return `<p:nvSpPr><p:cNvPr id="${id}" name="${escXml(name)}">${hlink}</p:cNvPr>${tx}<p:nvPr/></p:nvSpPr>`;
 }
 
 function shapePrst(el) {
-  const id = el.shape || 'rect';
-  if (id === 'rect' && +(el.rx || 0) > 2) return 'roundRect';
-  const meta = getShapeMeta(id);
-  if (meta?.special === 'polygon') {
-    const sides = Math.max(3, Math.min(12, +(el.polySides || el.sides || 6)));
-    if (sides === 3) return 'triangle';
-    if (sides === 4) return 'diamond';
-    if (sides === 5) return 'pentagon';
-    if (sides === 6) return 'hexagon';
-    if (sides === 8) return 'octagon';
-  }
-  if (id === 'star') {
-    const rays = +(el.starRays || 5);
-    if (rays <= 4) return 'star4';
-    if (rays >= 8) return 'star8';
-    if (rays >= 6) return 'star6';
-    return 'star5';
-  }
-  return SHAPE_PRST[id] || 'rect';
+  return shapePreset(el);
 }
 
-function spPrGeom(prst) {
-  return `<a:prstGeom prst="${prst}"><a:avLst/></a:prstGeom>`;
+function spPrGeom(prst, el) {
+  return `<a:prstGeom prst="${prst}">${geomAdjXml(el || {}, prst)}</a:prstGeom>`;
 }
 
-function dataUrlToPart(src) {
-  const s = String(src || '');
-  const m = s.match(/^data:([^;,]+)?(;base64)?,(.*)$/s);
-  if (!m) return null;
-  const mime = (m[1] || 'application/octet-stream').toLowerCase();
-  const payload = m[3] || '';
-  let bytes;
-  if (m[2]) {
-    const bin = atob(payload);
-    bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  } else {
-    bytes = new TextEncoder().encode(decodeURIComponent(payload));
-  }
-  let ext = 'bin';
-  if (mime.includes('png')) ext = 'png';
-  else if (mime.includes('jpeg') || mime.includes('jpg')) ext = 'jpeg';
-  else if (mime.includes('gif')) ext = 'gif';
-  else if (mime.includes('webp')) ext = 'webp';
-  else if (mime.includes('svg')) ext = 'svg';
-  else if (mime.includes('mp4')) ext = 'mp4';
-  else if (mime.includes('webm')) ext = 'webm';
-  else if (mime.includes('quicktime') || mime.includes('mp4v')) ext = 'mov';
-  else if (mime.includes('mpeg') && mime.includes('audio')) ext = 'mp3';
-  else if (mime.includes('mp3') || mime.includes('mpeg3')) ext = 'mp3';
-  else if (mime.includes('wav')) ext = 'wav';
-  else if (mime.includes('m4a') || mime.includes('x-m4a') || mime.includes('aac')) ext = 'm4a';
-  return { bytes, mime, ext };
+function shapeFillXml(el) {
+  const noFill = el.fill === 'none' || el.fill === 'transparent' || el.fillOp === 0 || el.noFill;
+  if (noFill) return '<a:noFill/>';
+  const grad = gradFillXml(el);
+  if (grad) return grad;
+  return solidFillXml(el.fill || '#3b82f6', el.fillOp);
 }
 
 function mediaPosterPart(el, bg, label) {
@@ -439,32 +310,29 @@ function mediaPosterPart(el, bg, label) {
   );
 }
 
-function svgPart(markup) {
-  const xml = String(markup || '').trim();
-  if (!xml) return null;
-  const full = xml.includes('xmlns=') ? xml : xml.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
-  return { bytes: new TextEncoder().encode(full), mime: 'image/svg+xml', ext: 'svg' };
-}
 
 /**
  * @param {object} slide
  * @param {{ canvasW:number, canvasH:number, cx:number, cy:number }} geom
  * @param {{ n:number }} mediaSeq
  */
-export function buildNativeSlide(slide, geom, mediaSeq) {
+export async function buildNativeSlide(slide, geom, mediaSeq) {
   const { canvasW, canvasH, cx, cy } = geom;
   const media = [];
   const rels = [{ id: 'rId1', type: `${REL_OFFICE}/slideLayout`, target: '../slideLayouts/slideLayout1.xml' }];
   let rid = 1;
   let spId = 1;
 
-  const addMedia = (part, relKind = 'image') => {
-    if (!part || !part.bytes) return null;
+  const addMedia = async (part, relKind = 'image') => {
+    let ready = part;
+    if (relKind === 'image') ready = await rasterizePartForOffice(part);
+    if (!ready || !ready.bytes) return null;
+    const ext = String(ready.ext || 'png').replace(/[^a-z0-9]/gi, '') || 'png';
     mediaSeq.n += 1;
     rid += 1;
     const prefix = relKind === 'video' ? 'video' : relKind === 'audio' ? 'audio' : 'image';
-    const name = `${prefix}${mediaSeq.n}.${part.ext}`;
-    media.push({ name, bytes: part.bytes, ext: part.ext, mime: part.mime });
+    const name = `${prefix}${mediaSeq.n}.${ext}`;
+    media.push({ name, bytes: ready.bytes, ext, mime: ready.mime });
     const id = `rId${rid}`;
     const type =
       relKind === 'video' ? `${REL_OFFICE}/video` : relKind === 'audio' ? `${REL_OFFICE}/audio` : `${REL_OFFICE}/image`;
@@ -472,10 +340,11 @@ export function buildNativeSlide(slide, geom, mediaSeq) {
     return id;
   };
 
-  const bgc = slideSolidBg(slide);
+  const bgParsed = hexRgb(slideSolidBg(slide));
+  const bgc = bgParsed ? `#${bgParsed.val}` : '#1e293b';
   const bgSrc = bgImgSrc(slide.bgImg);
   const bgPart = bgSrc ? dataUrlToPart(bgSrc) : null;
-  const bgRid = bgPart ? addMedia(bgPart) : null;
+  const bgRid = bgPart ? await addMedia(bgPart) : null;
   const bgXml = bgRid
     ? `<p:bg><p:bgPr><a:blipFill dpi="0" rotWithShape="1"><a:blip r:embed="${bgRid}"/><a:stretch><a:fillRect/></a:stretch></a:blipFill><a:effectLst/></p:bgPr></p:bg>`
     : `<p:bg><p:bgPr>${solidFillXml(bgc)}<a:effectLst/></p:bgPr></p:bg>`;
@@ -486,18 +355,41 @@ export function buildNativeSlide(slide, geom, mediaSeq) {
     if (el && el.id != null) elPptxId.set(String(el.id), spId);
   };
 
+  const hlinkXml = (el) => {
+    if (!el?.link) return '';
+    const href = String(el.link);
+    rid += 1;
+    const id = `rId${rid}`;
+    rels.push({
+      id,
+      type: `${REL_OFFICE}/hyperlink`,
+      target: href.replace(/&/g, '&amp;').replace(/"/g, '&quot;'),
+      targetMode: 'External',
+    });
+    const kind = linkTypeFromHref(href);
+    if (kind !== 'url') {
+      const idx = resolveSlideLinkIndex(href, 0, [slide]);
+      void idx;
+      return `<a:hlinkClick r:id="${id}" action="ppaction://hlinksldjump"/>`;
+    }
+    return `<a:hlinkClick r:id="${id}"/>`;
+  };
+
   const pushPic = (box, rEmbed, name, el, mediaLink) => {
     spId += 1;
     remember(el || box);
+    const link = mediaLink
+      ? `<a:hlinkClick r:id="${mediaLink.id}" action="ppaction://media"/>`
+      : hlinkXml(el || box);
     const nvMedia = mediaLink
-      ? `<p:cNvPr id="${spId}" name="${escXml(name)}"><a:hlinkClick r:id="${mediaLink.id}" action="ppaction://media"/></p:cNvPr>` +
+      ? `<p:cNvPr id="${spId}" name="${escXml(name)}">${link}</p:cNvPr>` +
         `<p:cNvPicPr/><p:nvPr><a:${mediaLink.kind}File r:link="${mediaLink.id}"/></p:nvPr>`
-      : `<p:cNvPr id="${spId}" name="${escXml(name)}"/><p:cNvPicPr><a:picLocks noChangeAspect="0"/></p:cNvPicPr><p:nvPr/>`;
+      : `<p:cNvPr id="${spId}" name="${escXml(name)}">${link}</p:cNvPr><p:cNvPicPr><a:picLocks noChangeAspect="0"/></p:cNvPicPr><p:nvPr/>`;
     tree +=
       '<p:pic>' +
       `<p:nvPicPr>${nvMedia}</p:nvPicPr>` +
       `<p:blipFill><a:blip r:embed="${rEmbed}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>` +
-      `<p:spPr>${xfrmXml(box, canvasW, canvasH, cx, cy)}${spPrGeom('rect')}</p:spPr>` +
+      `<p:spPr>${xfrmXml(box, canvasW, canvasH, cx, cy)}${spPrGeom('rect', box)}</p:spPr>` +
       '</p:pic>';
   };
 
@@ -508,8 +400,8 @@ export function buildNativeSlide(slide, geom, mediaSeq) {
     const fill = el.textBg ? solidFillXml(el.textBg) : '<a:noFill/>';
     tree +=
       '<p:sp>' +
-      nvSpPr(spId, name || 'Text', true) +
-      `<p:spPr>${xfrmXml(el, canvasW, canvasH, cx, cy)}${spPrGeom('rect')}${fill}<a:ln><a:noFill/></a:ln></p:spPr>` +
+      nvSpPr(spId, name || 'Text', true, hlinkXml(el)) +
+      `<p:spPr>${xfrmXml(el, canvasW, canvasH, cx, cy)}${spPrGeom('rect', el)}${fill}<a:ln><a:noFill/></a:ln></p:spPr>` +
       txBodyXml(html || el.text || '', el.cs, el.textColor, null) +
       '</p:sp>';
   };
@@ -519,22 +411,29 @@ export function buildNativeSlide(slide, geom, mediaSeq) {
     remember(el);
     const prst = shapePrst(el);
     const flip = prst === 'chevron' && el.shape === 'chevronLeft' ? { ...el, flipH: true } : el;
-    const noFill = el.fill === 'none' || el.fill === 'transparent' || el.fillOp === 0 || el.noFill;
-    const fillXml = noFill ? '<a:noFill/>' : solidFillXml(el.fill || '#3b82f6', el.fillOp);
+    const fillXml = shapeFillXml(el);
+    const meta = getShapeMeta(el.shape);
+    const pathGeom =
+      prst === 'rect' && el.shape && el.shape !== 'rect' && meta?.path
+        ? pathToCustGeomXml(meta.path)
+        : '';
+    const geom = pathGeom || spPrGeom(prst, el);
     const label = el.shapeHtml;
     const hasTx = !!(label && String(label).replace(/<[^>]+>/g, '').trim());
-    let tx = '';
+    let tx =
+      '<p:txBody><a:bodyPr wrap="square" lIns="91440" tIns="45720" rIns="91440" bIns="45720" rtlCol="0" anchor="ctr"/>' +
+      '<a:lstStyle/><a:p><a:endParaRPr lang="ru-RU"/></a:p></p:txBody>';
     if (hasTx) {
       const fs = shapeTextFontSizePx(el);
       const col = getShapeTextColor(el);
       const cs = `font-size:${fs}px;color:${col};text-align:center;font-weight:700;${el.shapeTextCss || ''}`;
-      tx = txBodyXml(label, cs, col, 'center');
+      tx = txBodyXml(label, cs, col, 'center', 'p', { anchor: 'ctr' });
     }
     tree +=
       '<p:sp>' +
-      nvSpPr(spId, el.shape || 'Shape', hasTx) +
-      `<p:spPr>${xfrmXml(flip, canvasW, canvasH, cx, cy)}${spPrGeom(prst)}${fillXml}${lnXml(el, canvasW, cx)}</p:spPr>` +
-      (tx || (hasTx ? '' : '')) +
+      nvSpPr(spId, el.shape || 'Shape', hasTx, hlinkXml(el)) +
+      `<p:spPr>${xfrmXml(flip, canvasW, canvasH, cx, cy)}${geom}${fillXml}${lnXml(el, canvasW, cx)}</p:spPr>` +
+      tx +
       '</p:sp>';
   };
 
@@ -543,29 +442,45 @@ export function buildNativeSlide(slide, geom, mediaSeq) {
     remember(el);
     const rows = el.rows || 1;
     const cols = el.cols || 1;
-    const colW = Math.max(1, Math.floor(pxToEmuOnSlide(el.w || cols * 80, canvasW, cx) / cols));
-    const rowH = Math.max(1, Math.floor(pxToEmuOnSlide(el.h || rows * 40, canvasH, cy) / rows));
+    const colPx = tableColWidthsPx(el, el.w || cols * 80);
+    const rowPx = tableRowHeightsPx(el, el.h || rows * 40, 12);
     const o = offExt(el, canvasW, canvasH, cx, cy);
     let grid = '';
-    for (let c = 0; c < cols; c++) grid += `<a:gridCol w="${colW}"/>`;
-    const ln = (side) =>
-      `<a:${side} w="6350">${solidFillXml(el.stroke || '#64748b')}</a:${side}>`;
+    for (let c = 0; c < cols; c++) {
+      grid += `<a:gridCol w="${Math.max(1, pxToEmuOnSlide(colPx[c] || 20, canvasW, cx))}"/>`;
+    }
+    const ln = (side, spec) => {
+      if (!spec || !(+spec.w > 0) || isNoneTableColor(spec.color)) {
+        return `<a:${side}><a:noFill/></a:${side}>`;
+      }
+      const wEmu = Math.max(1270, Math.round((+spec.w || 1) * 9525));
+      return `<a:${side} w="${wEmu}">${solidFillXml(spec.color)}</a:${side}>`;
+    };
     let trs = '';
     for (let r = 0; r < rows; r++) {
       let tcs = '';
       for (let c = 0; c < cols; c++) {
         const cell = getTableCell(el, r, c);
-        const bg = tableCellBg(el, r, c, cell) || el.fill || '#1e293b';
-        const html = cell.html || '';
+        const spanC = Math.max(1, cell.colspan || 1);
+        const spanR = Math.max(1, cell.rowspan || 1);
+        const mergeAttr = cell.hidden
+          ? spanC > 1 || c > 0
+            ? ' hMerge="1"'
+            : ' vMerge="1"'
+          : `${spanC > 1 ? ` gridSpan="${spanC}"` : ''}${spanR > 1 ? ` rowSpan="${spanR}"` : ''}`;
+        const bg = tableCellBg(el, r, c, cell);
+        const fillXml = !bg || bg === 'transparent' ? '<a:noFill/>' : solidFillXml(bg);
+        const html = cell.hidden ? '' : cell.html || '';
         const cs = `font-size:${el.fs || 14}px;color:${el.textColor || '#ffffff'};text-align:${cell.align || 'left'};`;
         const body = txBodyXml(html, cs, el.textColor || '#ffffff', cell.align || 'left', 'a');
         tcs +=
-          '<a:tc>' +
+          `<a:tc${mergeAttr}>` +
           body +
-          `<a:tcPr>${ln('lnL')}${ln('lnR')}${ln('lnT')}${ln('lnB')}${solidFillXml(bg)}</a:tcPr>` +
+          `<a:tcPr>${ln('lnL', resolveTableEdge(el, r, c, 'l'))}${ln('lnR', resolveTableEdge(el, r, c, 'r'))}${ln('lnT', resolveTableEdge(el, r, c, 't'))}${ln('lnB', resolveTableEdge(el, r, c, 'b'))}${fillXml}</a:tcPr>` +
           '</a:tc>';
       }
-      trs += `<a:tr h="${rowH}">${tcs}</a:tr>`;
+      const rh = Math.max(1, pxToEmuOnSlide(rowPx[r] || 14, canvasH, cy));
+      trs += `<a:tr h="${rh}">${tcs}</a:tr>`;
     }
     tree +=
       '<p:graphicFrame>' +
@@ -621,12 +536,34 @@ export function buildNativeSlide(slide, geom, mediaSeq) {
     if (el.type === 'inkhost') continue;
 
     if (el.type === 'text' || el.type === 'markdown' || el.type === 'code' || el.type === 'pagenum') {
-      pushText(el, el.html || el.text || '', el.type === 'code' ? 'Code' : 'Text');
+      if (el.type === 'code') {
+        const raw = el.codeRaw != null ? String(el.codeRaw) : String(el.text || '');
+        const codeHtml = raw
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .split(/\r?\n/)
+          .map((ln) => `<div>${ln || '<br>'}</div>`)
+          .join('');
+        const fs = Math.max(10, Math.min(28, +el.codeFs || 18));
+        const codeEl = {
+          ...el,
+          cs: `font-size:${fs}px;font-family:Consolas,"Courier New",monospace;white-space:pre-wrap;text-align:left;`,
+          textColor: el.textColor || '#e2e8f0',
+        };
+        pushText(codeEl, codeHtml, 'Code');
+      } else if (el.type === 'markdown') {
+        pushText(el, el.mdHtml || el.html || el.text || el.md || '', 'Markdown');
+      } else {
+        pushText(el, el.html || el.text || '', 'Text');
+      }
       continue;
     }
     if (el.type === 'formula') {
       if (el.formulaSvg) {
-        const ridF = addMedia(svgPart(el.formulaSvg.includes('<svg') ? el.formulaSvg : `<svg xmlns="http://www.w3.org/2000/svg">${el.formulaSvg}</svg>`));
+        const ridF = await addMedia(
+          svgPart(el.formulaSvg.includes('<svg') ? el.formulaSvg : `<svg xmlns="http://www.w3.org/2000/svg">${el.formulaSvg}</svg>`)
+        );
         if (ridF) {
           pushPic(el, ridF, 'Formula', el);
           continue;
@@ -637,13 +574,13 @@ export function buildNativeSlide(slide, geom, mediaSeq) {
     }
     if (el.type === 'image' && el.src) {
       const part = dataUrlToPart(el.src);
-      const ridI = part ? addMedia(part) : null;
+      const ridI = part ? await addMedia(part) : null;
       if (ridI) pushPic(el, ridI, 'Picture', el);
       continue;
     }
     if (el.type === 'graph' && el.graphImg) {
       const part = dataUrlToPart(el.graphImg);
-      const ridG = part ? addMedia(part) : null;
+      const ridG = part ? await addMedia(part) : null;
       if (ridG) pushPic(el, ridG, 'Graph', el);
       continue;
     }
@@ -651,7 +588,7 @@ export function buildNativeSlide(slide, geom, mediaSeq) {
       const ic = el.iconId ? getIconById(el.iconId) : null;
       if (ic) {
         const svg = buildIconSVG(ic, el.iconColor || el.textColor || '#6366f1', el.iconSw != null ? el.iconSw : 1.8, el.iconFillOp != null ? el.iconFillOp : 1, iconPathForRender(ic, el));
-        const ridIc = addMedia(svgPart(svg));
+        const ridIc = await addMedia(svgPart(svg));
         if (ridIc) {
           pushPic(el, ridIc, 'Icon', el);
           continue;
@@ -661,7 +598,7 @@ export function buildNativeSlide(slide, geom, mediaSeq) {
       continue;
     }
     if (el.type === 'svg' || el.svgContent) {
-      const ridS = addMedia(svgPart(el.svgContent || el.svg || ''));
+      const ridS = await addMedia(svgPart(el.svgContent || el.svg || ''));
       if (ridS) pushPic(el, ridS, 'SVG', el);
       continue;
     }
@@ -671,7 +608,7 @@ export function buildNativeSlide(slide, geom, mediaSeq) {
     }
     if (el.type === 'table') {
       if (el.showChart) {
-        const ridC = addMedia(svgPart(buildChartSvg(el)));
+        const ridC = await addMedia(svgPart(buildChartSvg(el)));
         if (ridC) {
           pushPic(el, ridC, 'Chart', el);
           continue;
@@ -683,7 +620,7 @@ export function buildNativeSlide(slide, geom, mediaSeq) {
     if (el.type === 'lineangle') {
       const built = buildLineAngleContent(el, slide.els || []);
       if (built && built.html) {
-        const ridA = addMedia(svgPart(built.html));
+        const ridA = await addMedia(svgPart(built.html));
         if (ridA) {
           pushPic({ ...el, x: built.x, y: built.y, w: built.w, h: built.h }, ridA, 'Angle', el);
         }
@@ -691,36 +628,51 @@ export function buildNativeSlide(slide, geom, mediaSeq) {
       continue;
     }
     if (el.type === 'lego') {
-      const ridL = addMedia(svgPart(buildLegoSvg(el)));
+      const ridL = await addMedia(svgPart(buildLegoSvg(el, slide.els)));
       if (ridL) {
         pushPic(el, ridL, 'LEGO', el);
         continue;
       }
     }
-    if (el.type === 'mediavideo' || el.type === 'mediaaudio' || el.type === 'applet' || el.type === 'htmlframe' || el.type === 'model3d') {
+    if (el.type === 'htmlframe') {
+      const src = el.hfSrc || el.html || '';
+      try {
+        const cnv = await captureHtmlFrameSnapshot(src, el.w || 400, el.h || 240);
+        const part = cnv ? dataUrlToPart(cnv.toDataURL('image/png')) : null;
+        const ridH = part ? await addMedia(part) : null;
+        if (ridH) {
+          pushPic(el, ridH, el.hfTitle || 'HTML', el);
+          continue;
+        }
+      } catch (e) {}
+      const poster = await resolveExportPoster(el, mediaPosterPart(el, '#1e293b', el.hfTitle || 'HTML'));
+      const posterRid = poster ? await addMedia(poster) : null;
+      if (posterRid) pushPic(el, posterRid, el.hfTitle || 'HTML', el);
+      continue;
+    }
+    if (el.type === 'mediavideo' || el.type === 'mediaaudio' || el.type === 'applet' || el.type === 'model3d') {
       const isVid = el.type === 'mediavideo';
       const isAud = el.type === 'mediaaudio';
       const labels = {
         mediavideo: el.mediaName || 'Video',
         mediaaudio: el.mediaName || 'Audio',
         applet: el.appletId || 'Applet',
-        htmlframe: el.hfTitle || el.hfSrc || 'HTML',
         model3d: el.objName || '3D',
       };
       const fills = {
         mediavideo: '#0f172a',
         mediaaudio: '#1e1b4b',
         applet: '#1e293b',
-        htmlframe: '#1e293b',
         model3d: '#334155',
       };
       if (isVid || isAud) {
         const label = labels[el.type];
-        const poster = mediaPosterPart(el, fills[el.type], label);
-        const posterRid = poster ? addMedia(poster) : null;
+        const poster = await resolveExportPoster(el, mediaPosterPart(el, fills[el.type], label));
+        const posterRid = poster ? await addMedia(poster) : null;
         const srcPart = el.mediaSrc ? dataUrlToPart(el.mediaSrc) : null;
         const kind = isVid ? 'video' : 'audio';
-        const mediaRid = srcPart && srcPart.ext !== 'bin' ? addMedia(srcPart, kind) : null;
+        const okExt = srcPart && /^(mp4|mov|m4a|mp3|wav)$/i.test(srcPart.ext);
+        const mediaRid = okExt ? await addMedia(srcPart, kind) : null;
         if (posterRid && mediaRid) {
           pushPic(el, posterRid, label, el, { id: mediaRid, kind });
           continue;
@@ -730,8 +682,8 @@ export function buildNativeSlide(slide, geom, mediaSeq) {
           continue;
         }
       } else {
-        const poster = mediaPosterPart(el, fills[el.type], labels[el.type]);
-        const posterRid = poster ? addMedia(poster) : null;
+        const poster = await resolveExportPoster(el, mediaPosterPart(el, fills[el.type], labels[el.type]));
+        const posterRid = poster ? await addMedia(poster) : null;
         if (posterRid) {
           pushPic(el, posterRid, labels[el.type], el);
           continue;
@@ -746,6 +698,10 @@ export function buildNativeSlide(slide, geom, mediaSeq) {
         sw: el.sw != null ? el.sw : 1.5,
         shapeHtml: labels[el.type],
       });
+      continue;
+    }
+    if (el.html || el.text) {
+      pushText(el, el.html || el.text, 'Text');
     }
   }
 
@@ -785,11 +741,13 @@ export function buildNativeSlide(slide, geom, mediaSeq) {
     `<a:chExt cx="${cx}" cy="${cy}"/>` +
     '</a:xfrm></p:grpSpPr>';
 
+  const timing = pptxTimingXml(slide, elPptxId, { canvasW, canvasH });
   const xml =
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
     '<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">' +
     `<p:cSld>${bgXml}<p:spTree>${nvGrp}${tree}</p:spTree></p:cSld>` +
     '<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>' +
+    timing +
     '</p:sld>';
 
   return { xml, rels, media };

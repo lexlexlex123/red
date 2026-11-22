@@ -6,7 +6,8 @@
   "description": "Слайды — презентационный редактор (Vite + React)",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && node scripts/copy-dist-assets.mjs",
+    "build": "vite build",
+    "copy-assets": "node scripts/copy-dist-assets.mjs",
     "preview": "vite preview --host 127.0.0.1 --port 8000",
     "start": "vite",
     "fonts": "powershell -NoProfile -ExecutionPolicy Bypass -File ./download-fonts.ps1 -NoPause",

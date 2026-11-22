@@ -54,7 +54,7 @@ function Item({ icon, label, warn, disabled, onClick }) {
   );
 }
 
-export default function CanvasCtxMenu({ menu, ru, onClose }) {
+export default function CanvasCtxMenu({ menu, ru, onClose, onRenameSection }) {
   const ref = useRef(null);
 
   useLayoutEffect(() => {
@@ -136,6 +136,43 @@ export default function CanvasCtxMenu({ menu, ru, onClose }) {
         onClick: () => run(() => editorApi.pasteSelected()),
       },
     ];
+  } else if (menu.kind === 'section') {
+    items = [
+      {
+        key: 'rename',
+        icon: ICO.group,
+        label: ru ? 'Переименовать раздел' : 'Rename section',
+        onClick: () =>
+          run(() => {
+            if (onRenameSection) onRenameSection(menu.i, menu.title);
+            else editorApi.renameSection(menu.i, menu.title);
+          }),
+      },
+      {
+        key: 'collapse',
+        icon: ICO.group,
+        label: menu.collapsed
+          ? ru
+            ? 'Развернуть раздел'
+            : 'Expand section'
+          : ru
+            ? 'Свернуть раздел'
+            : 'Collapse section',
+        onClick: () => run(() => editorApi.toggleSectionCollapsed(menu.i)),
+      },
+      {
+        key: 'add',
+        icon: ICO.add,
+        label: ru ? 'Новый слайд в разделе' : 'New slide in section',
+        onClick: () => run(() => editorApi.addSlide(menu.i + (menu.count || 1))),
+      },
+      {
+        key: 'remove',
+        icon: ICO.ungroup,
+        label: ru ? 'Убрать раздел' : 'Remove section',
+        onClick: () => run(() => editorApi.removeSection(menu.i)),
+      },
+    ];
   } else if (menu.kind === 'thumb') {
     const ids = menu.ids?.length ? menu.ids : [menu.i];
     const multi = ids.length > 1;
@@ -153,6 +190,20 @@ export default function CanvasCtxMenu({ menu, ru, onClose }) {
             icon: ICO.dup,
             label: Lthumb.dup,
             onClick: () => run(() => editorApi.dupSlide(menu.i)),
+          }
+        : null,
+      !multi
+        ? {
+            key: 'hide',
+            icon: ICO.copy,
+            label: usePresentationStore.getState().slides[menu.i]?.hidden
+              ? ru
+                ? 'Показать в показе'
+                : 'Show in slideshow'
+              : ru
+                ? 'Скрыть в показе'
+                : 'Hide in slideshow',
+            onClick: () => run(() => editorApi.toggleSlideHidden(menu.i)),
           }
         : null,
       {
@@ -177,6 +228,80 @@ export default function CanvasCtxMenu({ menu, ru, onClose }) {
         onClick: () => run(() => (multi ? editorApi.delSlides(ids) : editorApi.delSlide(menu.i))),
       },
     ].filter(Boolean);
+  } else if (menu.kind === 'table-cells') {
+    const canDelRow = (menu.rows || 1) > 1;
+    const canDelCol = (menu.cols || 1) > 1;
+    const canMerge = (menu.selCount || 1) >= 2;
+    items = [
+      {
+        key: 'row-above',
+        icon: ICO.add,
+        label: ru ? 'Строка сверху' : 'Row above',
+        onClick: () => run(() => editorApi.tableAddRow({ before: true })),
+      },
+      {
+        key: 'row-below',
+        icon: ICO.add,
+        label: ru ? 'Строка снизу' : 'Row below',
+        onClick: () => run(() => editorApi.tableAddRow({ after: true })),
+      },
+      {
+        key: 'col-left',
+        icon: ICO.add,
+        label: ru ? 'Столбец слева' : 'Column left',
+        onClick: () => run(() => editorApi.tableAddCol({ before: true })),
+      },
+      {
+        key: 'col-right',
+        icon: ICO.add,
+        label: ru ? 'Столбец справа' : 'Column right',
+        onClick: () => run(() => editorApi.tableAddCol({ after: true })),
+      },
+      { key: 'sep1', sep: true },
+      {
+        key: 'del-row',
+        icon: ICO.del,
+        label: ru ? 'Удалить строку' : 'Delete row',
+        warn: true,
+        disabled: !canDelRow,
+        onClick: () => run(() => editorApi.tableDelRow()),
+      },
+      {
+        key: 'del-col',
+        icon: ICO.del,
+        label: ru ? 'Удалить столбец' : 'Delete column',
+        warn: true,
+        disabled: !canDelCol,
+        onClick: () => run(() => editorApi.tableDelCol()),
+      },
+      { key: 'sep2', sep: true },
+      {
+        key: 'copy',
+        icon: ICO.copy,
+        label: ru ? 'Копировать' : 'Copy',
+        onClick: () => run(() => editorApi.copySelectedTableCells()),
+      },
+      {
+        key: 'paste',
+        icon: ICO.paste,
+        label: ru ? 'Вставить' : 'Paste',
+        onClick: () => run(() => editorApi.pasteIntoSelectedTableCells()),
+      },
+      {
+        key: 'merge',
+        icon: ICO.group,
+        label: ru ? 'Объединить' : 'Merge',
+        disabled: !canMerge,
+        onClick: () => run(() => editorApi.tableMergeCells()),
+      },
+      {
+        key: 'split',
+        icon: ICO.ungroup,
+        label: ru ? 'Разъединить' : 'Unmerge',
+        disabled: !menu.canSplit,
+        onClick: () => run(() => editorApi.tableSplitCells()),
+      },
+    ];
   } else {
     items = [
       menu.qrText
@@ -254,15 +379,26 @@ export default function CanvasCtxMenu({ menu, ru, onClose }) {
   return createPortal(
     <div
       ref={ref}
-      className="slide-ctx-menu"
+      className={`slide-ctx-menu${menu.kind === 'table-cells' ? ' is-compact' : ''}`}
       role="menu"
       style={{ left: menu.x, top: menu.y, visibility: 'hidden' }}
       onMouseDown={(e) => e.stopPropagation()}
       {...versionAttr('CanvasCtxMenu')}
     >
-      {items.map((it) => (
-        <Item key={it.key} icon={it.icon} label={it.label} warn={it.warn} disabled={it.disabled} onClick={it.onClick} />
-      ))}
+      {items.map((it) =>
+        it.sep ? (
+          <div key={it.key} className="slide-ctx-sep" role="separator" />
+        ) : (
+          <Item
+            key={it.key}
+            icon={it.icon}
+            label={it.label}
+            warn={it.warn}
+            disabled={it.disabled}
+            onClick={it.onClick}
+          />
+        )
+      )}
     </div>,
     document.body
   );
@@ -274,6 +410,10 @@ export function canPasteSlides() {
 
 export function canPasteElements() {
   return !!(usePresentationStore.getState().clipboard?.els?.length);
+}
+
+export function canPasteTableCells() {
+  return !!(editorApi._tableCellClipboard && String(editorApi._tableCellClipboard).length);
 }
 
 export function ctxGroupMenuState(elems, allEls) {

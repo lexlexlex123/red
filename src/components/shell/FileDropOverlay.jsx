@@ -43,12 +43,14 @@ export default function FileDropOverlay() {
     function onOver(e) {
       if (!hasFiles(e.dataTransfer)) return;
       e.preventDefault();
+      e.stopPropagation();
       e.dataTransfer.dropEffect = 'copy';
     }
 
     function onDrop(e) {
       if (!hasFiles(e.dataTransfer)) return;
       e.preventDefault();
+      e.stopPropagation();
       counter.current = 0;
       setVisible(false);
       const file = pickDroppedFile(e.dataTransfer.files);
@@ -58,15 +60,16 @@ export default function FileDropOverlay() {
       void editorApi.importDroppedFile(file);
     }
 
+    // Capture phase so the browser never navigates to file:// for .json drops.
     document.addEventListener('dragenter', onEnter);
     document.addEventListener('dragleave', onLeave);
-    document.addEventListener('dragover', onOver);
-    document.addEventListener('drop', onDrop);
+    document.addEventListener('dragover', onOver, true);
+    document.addEventListener('drop', onDrop, true);
     return () => {
       document.removeEventListener('dragenter', onEnter);
       document.removeEventListener('dragleave', onLeave);
-      document.removeEventListener('dragover', onOver);
-      document.removeEventListener('drop', onDrop);
+      document.removeEventListener('dragover', onOver, true);
+      document.removeEventListener('drop', onDrop, true);
     };
   }, [lang, ru]);
 

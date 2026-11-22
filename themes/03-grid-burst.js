@@ -4,6 +4,7 @@ window._THEME_03_GRID_BURST = {
 name:'Взрыв',nameEn:'Grid Burst',
     desc:'Радиальные лучи из точки, энергия',descEn:'Radial rays from focal point',
     titleSvg:(w,h,a1,a2)=>{
+      const m=Math.min(w,h);
       const cx=w*.78,cy=h*.28;
       let rays='';
       for(let i=0;i<18;i++){
@@ -17,15 +18,16 @@ name:'Взрыв',nameEn:'Grid Burst',
       return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
         <defs><filter id="rbf"><feGaussianBlur stdDeviation="20"/></filter></defs>
         ${rays}
-        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${h*.3}" fill="${a1}" opacity="0.06" filter="url(#rbf)"/>
-        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${h*.14}" fill="${a1}" opacity="0.08"/>
-        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${h*.06}" fill="${a1}" opacity="0.22"/>
-        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${h*.02}" fill="${a1}" opacity="0.8"/>
-        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${h*.22}" fill="none" stroke="${a1}" stroke-width="1" opacity="0.2"/>
-        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${h*.32}" fill="none" stroke="${a2}" stroke-width="0.8" opacity="0.12"/>
+        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${(m*.3).toFixed(1)}" fill="${a1}" opacity="0.06" filter="url(#rbf)"/>
+        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${(m*.14).toFixed(1)}" fill="${a1}" opacity="0.08"/>
+        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${(m*.06).toFixed(1)}" fill="${a1}" opacity="0.22"/>
+        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${(m*.02).toFixed(1)}" fill="${a1}" opacity="0.8"/>
+        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${(m*.22).toFixed(1)}" fill="none" stroke="${a1}" stroke-width="1" opacity="0.2"/>
+        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${(m*.32).toFixed(1)}" fill="none" stroke="${a2}" stroke-width="0.8" opacity="0.12"/>
       </svg>`;
     },
     contentSvg:(w,h,a1,a2)=>{
+      const m=Math.min(w,h);
       const cx=w*.88,cy=h*.5;
       let rays='';
       for(let i=0;i<12;i++){
@@ -36,9 +38,9 @@ name:'Взрыв',nameEn:'Grid Burst',
       return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
         <defs><filter id="rcf"><feGaussianBlur stdDeviation="14"/></filter></defs>
         ${rays}
-        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${h*.35}" fill="${a1}" opacity="0.05" filter="url(#rcf)"/>
-        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${h*.18}" fill="${a1}" opacity="0.07"/>
-        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${h*.06}" fill="${a1}" opacity="0.25"/>
+        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${(m*.35).toFixed(1)}" fill="${a1}" opacity="0.05" filter="url(#rcf)"/>
+        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${(m*.18).toFixed(1)}" fill="${a1}" opacity="0.07"/>
+        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${(m*.06).toFixed(1)}" fill="${a1}" opacity="0.25"/>
         <rect x="0" y="0" width="4" height="${h}" fill="${a1}" opacity="0.45"/>
         <rect x="7" y="${h*.08}" width="1.5" height="${h*.84}" fill="${a2}" opacity="0.22"/>
       </svg>`;

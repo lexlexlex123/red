@@ -15,7 +15,7 @@ import AnimatedIcon from '../canvas/AnimatedIcon.jsx';
 
 const PAGE = 72; // 12×6 like v7.1
 const ICON_NAV_KEY = 'sf_icon_nav';
-const ICON_SCHEME = { col: 0, row: 2 };
+const ICON_SCHEME = { col: 0, row: 4 };
 
 function loadIconNav() {
   try {

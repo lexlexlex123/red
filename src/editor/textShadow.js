@@ -1,5 +1,7 @@
 /** Text glyph shadow + text block shadow (legacy textShadow* / textBlockShadow*). */
 
+import { hasElShadow } from './elShadow.js';
+
 export function textShadowParams(el) {
   if (!el) return { ss: 0, sb: 0, sc: '#000000' };
   let ss = el.textShadowSize != null ? +el.textShadowSize : 0;
@@ -17,10 +19,7 @@ export function textShadowActive(el) {
   return !!(el.textShadowW && +el.textShadowW > 0);
 }
 
-/** CSS text-shadow string (ring of offsets ≈ legacy SVG filter look). */
-export function textShadowCss(el) {
-  if (!textShadowActive(el)) return undefined;
-  const { ss, sb, sc } = textShadowParams(el);
+function ringTextShadow(ss, sb, sc) {
   if (ss <= 0 && sb <= 0) return undefined;
   if (ss <= 0) return `0 0 ${sb}px ${sc}`;
   if (sb <= 0) {
@@ -39,6 +38,33 @@ export function textShadowCss(el) {
     );
   }
   return parts.join(', ');
+}
+
+/** Directional glyph shadow — same offset as filter drop-shadow on shapes. */
+function offsetTextShadow(ss, sb, sc) {
+  if (ss <= 0 && sb <= 0) return undefined;
+  return `${-ss}px ${ss}px ${Math.max(0, sb)}px ${sc}`;
+}
+
+/** CSS text-shadow: checkbox uses a directional drop, legacy sliders keep the ring. */
+export function textShadowCss(el) {
+  if (hasElShadow(el)) {
+    const ss = el.shadowSize != null ? +el.shadowSize : 3;
+    const sb = el.shadowBlur != null ? +el.shadowBlur : 4;
+    const sc = el.shadowColor || '#000000';
+    return offsetTextShadow(ss, sb, sc);
+  }
+  if (!textShadowActive(el)) return undefined;
+  const { ss, sb, sc } = textShadowParams(el);
+  return ringTextShadow(ss, sb, sc);
+}
+
+/** Outer block / glyph shadows paint outside the box and need overflow:visible. */
+export function textNeedsOverflowVisible(el) {
+  if (!el || (el.type !== 'text' && el.type !== 'markdown')) return false;
+  if (hasElShadow(el) || textShadowActive(el)) return true;
+  if (textBlockShadowActive(el) && !textBlockShadowParams(el).inset) return true;
+  return false;
 }
 
 export function textBlockShadowParams(el) {

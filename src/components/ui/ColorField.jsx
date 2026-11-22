@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { usePresentationStore } from '../../stores/presentationStore';
+import { useUiStore } from '../../stores/uiStore';
+import { editorApi } from '../../editor/editorApi';
 import {
   SCHEME_TINT_LEVELS,
   colorFieldDisplay,
@@ -48,7 +50,7 @@ function hex2hsv(hex) {
 }
 
 /** Photoshop-style HSV ring + triangle (ported from v7.1 js/03-boot.js). */
-function HsvWheel({ hex, onChange }) {
+export function HsvWheel({ hex, onChange }) {
   const cvRef = useRef(null);
   const state = useRef({ hue: 210, sat: 0.65, val: 0.9, drag: null });
   const ringCache = useRef(null);
@@ -323,13 +325,18 @@ export default function ColorField({
   embedded = false,
   /** Start with HSV wheel visible when embedded/open. */
   defaultWheelOpen = false,
+  stylePipette = false,
 }) {
   const appliedThemeIdx = usePresentationStore((s) => s.appliedThemeIdx);
+  const lang = useUiStore((s) => s.lang);
+  const stylePipetteTargets = useUiStore((s) => s.stylePipetteTargets);
+  const ru = lang !== 'en';
   const theme = getTheme(appliedThemeIdx);
   const [open, setOpen] = useState(!!embedded);
   const [wheelOpen, setWheelOpen] = useState(!!(embedded || defaultWheelOpen));
   const [draft, setDraft] = useState(colorFieldDisplay(value, schemeRef));
-  const [liveHex, setLiveHex] = useState(value && String(value).startsWith('#') ? value : '#3b82f6');
+  const valueStr = typeof value === 'string' ? value : '';
+  const [liveHex, setLiveHex] = useState(valueStr.startsWith('#') ? valueStr : '#3b82f6');
 
   useEffect(() => {
     if (embedded) setOpen(true);
@@ -337,7 +344,8 @@ export default function ColorField({
 
   useEffect(() => {
     setDraft(colorFieldDisplay(value, schemeRef));
-    if (value && String(value).startsWith('#')) setLiveHex(value);
+    const v = typeof value === 'string' ? value : '';
+    if (v.startsWith('#')) setLiveHex(v);
   }, [value, schemeRef]);
 
   const swatches = useMemo(() => {
@@ -447,19 +455,20 @@ export default function ColorField({
             )}
           </button>
         ) : null}
-        {typeof window !== 'undefined' && window.EyeDropper ? (
+        {stylePipette ? (
           <button
             type="button"
-            className="react-color-field-icon"
-            title="Пипетка"
-            onClick={async () => {
-              try {
-                const dropper = new window.EyeDropper();
-                const result = await dropper.open();
-                if (result?.sRGBHex) pickCustom(result.sRGBHex);
-              } catch (e) {
-                /* cancelled */
-              }
+            className={`react-color-field-icon${stylePipetteTargets ? ' is-active' : ''}`}
+            title={ru ? 'Снять стиль с объекта-образца' : 'Pick style from a sample object'}
+            aria-label={ru ? 'Пипетка стиля' : 'Style pipette'}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              stylePipetteTargets ? editorApi.cancelStylePipette() : editorApi.startStylePipette();
             }}
           >
             <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
@@ -479,7 +488,7 @@ export default function ColorField({
                   type="button"
                   className={`react-cp-cell${schemeRef && schemeRef.col === sw.col && schemeRef.row === sw.row ? ' sel' : ''}`}
                   style={{ background: sw.color }}
-                  title={`${sw.col + 1}${sw.row + 1} · ${sw.color}`}
+                  title={`${sw.col + 1}${sw.row + 1}`}
                   onMouseDown={(e) => {
                     e.preventDefault();
                     pickScheme(sw.color, { col: sw.col, row: sw.row });
@@ -504,6 +513,34 @@ export default function ColorField({
 
           {wheelOpen ? (
             <div className="react-cp-wheel-wrap">
+              {typeof window !== 'undefined' && typeof window.EyeDropper === 'function' ? (
+                <button
+                  type="button"
+                  className="react-cp-pixel-pipette"
+                  title={ru ? 'Пипетка пикселя (цвет с экрана)' : 'Pixel eyedropper (screen color)'}
+                  aria-label={ru ? 'Пипетка пикселя' : 'Pixel eyedropper'}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    try {
+                      const ed = new window.EyeDropper();
+                      const result = await ed.open();
+                      const hex = result?.sRGBHex;
+                      if (hex) pickCustom(hex);
+                    } catch (err) {
+                      // User cancelled or API unavailable — ignore.
+                    }
+                  }}
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true">
+                    <path d="M20.71 5.63l-2.34-2.34a1 1 0 0 0-1.41 0l-3.12 3.12-1.41-1.42-1.42 1.42 1.41 1.41-6.6 6.6A2 2 0 0 0 5 16v3h3a2 2 0 0 0 1.42-.59l6.6-6.6 1.41 1.42 1.42-1.42-1.42-1.41 3.12-3.12a1 1 0 0 0 0-1.65z" />
+                  </svg>
+                </button>
+              ) : null}
               <HsvWheel hex={solid} onChange={pickCustom} />
             </div>
           ) : null}

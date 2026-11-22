@@ -1,17 +1,37 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { usePresentationStore } from '../../stores/presentationStore';
 import { useUiStore } from '../../stores/uiStore';
+import { arLayoutKey, resolveDeckForAr } from '../../editor/arLayout.js';
 import { buildBasicShapeSVG, shapeOptsFromEl, shapeRxPx } from '../../shared/shapes.js';
 import { shapeNeedsOverflowVisible } from '../../shared/shapesCatalog.js';
 import { shapeBlurOverlayStyle, shapeBlurPx } from '../../editor/shapeBlur.js';
 import { shapeTextBoxStyle } from '../../editor/shapeText.js';
+import { formulaTagLabelOf } from '../../editor/formulaLayout.js';
 import { versionAttr } from '../../editor/versions.js';
+import { HsvWheel } from '../ui/ColorField.jsx';
 import { effectiveTrans, effectiveTransDur, enterClass, exitClass } from '../../editor/transitions.js';
-import { readGroupLink, resolveSlideLinkIndex } from '../../editor/links.js';
-import { animCssClass, animDuration, collectSlidePlaybackSteps, isEntranceAnim, isExitAnim, isLiveAnim } from '../../editor/anims.js';
+import { elHasInlineLink, readGroupLink, resolveSlideLinkIndex } from '../../editor/links.js';
+import {
+  animCssClass,
+  animDuration,
+  collectSlidePlaybackSteps,
+  isEntranceAnim,
+  isExitAnim,
+  isLiveAnim,
+  stepFromAnim,
+} from '../../editor/anims.js';
+import { isSlideHidden, nextVisibleSlideIndex, nextVisibleSlideLooped, visibleSlideIndices } from '../../editor/slideVisibility.js';
+import {
+  closePresenterWindow,
+  makePresenterState,
+  postPresenter,
+  subscribePresenter,
+} from '../../editor/presenterChannel.js';
+import { getLiveScreenByKey, isMultiScreenNow, openPresenterForShow } from '../../editor/displayScreens.js';
 import { resolveNavTargetSlideIndex } from '../../editor/slideTitles.js';
 import { isPulseFamilyAnim, pulseCssIteration, pulseIsInfinite, pulseWaitMs } from '../../editor/pulsePlay.js';
-import { hoverMotionStyle } from '../../editor/hoverFx.js';
+import { hoverMotionStyle, hoverTargetIdAt, opaqueElAt, isImgColorHoverPreset } from '../../editor/hoverFx.js';
 import { elBoxTransform } from '../../editor/elTransform.js';
 import { connectorPathFor, connectorDashArray, connectorMarkerUrl, connectorsMarkerDefsSvg, connectorLinecap, connectorsAnimStyleCss, connectorAnimStyle, startRideAnim, collectSlideRideSpecs, resolveConnectorStroke } from '../../editor/connectors.js';
 import { inkStrokeSvgMarkup } from '../../editor/inkRender.js';
@@ -20,14 +40,23 @@ import { hostedInkIdSet, inkHostInnerMarkup } from '../../editor/inkHost.js';
 import { getIconById, onIconsReady } from '../../editor/iconsLazy.js';
 import { iconAnimEnabled } from '../../editor/iconAnim.js';
 import AnimatedIcon from './AnimatedIcon.jsx';
-import { getTableCell, tableCellBg, tableCellRadiusStyle, tableColWidthsPx, tableRowHeightsPx } from '../../editor/tableCells.js';
+import { getTableCell, tableCellBg, tableCellFontStyle, tableCellRadiusStyle, tableColWidthsPx, tableRowHeightsPx } from '../../editor/tableCells.js';
+import { tableCellBorderStyle } from '../../editor/tableBorders.js';
 import { getTheme, resolveElTextColor, resolveSchemeColor } from '../../editor/themes.js';
 import { buildChartSvg, chartWrapStyle } from '../../editor/tableChart.js';
-import { parseFontFamily, parseCsNumber } from '../../editor/fonts.js';
-import { underlineBoxProps, dashDotWrapHtml } from '../../editor/textUnderline.js';
-import { imageRenderStyles, normImgFrame, imgBorderSvgMarkup } from '../../editor/imgStyles.js';
+import { DEFAULT_TEXT_FONT_FAMILY, elementFontFamily, parseCsNumber } from '../../editor/fonts.js';
+import { underlineBoxProps, prepareTextUnderlineHtml } from '../../editor/textUnderline.js';
+import { imageRenderStyles, normImgFrame, imgBorderSvgMarkup, imgRibbonTapeStyle, imgRibbonTapeMarkup, polaroidCaptionStyle } from '../../editor/imgStyles.js';
+import {
+  imageHasCrop,
+  imageShowsUncrop,
+  isUncropAnim,
+  isUncropHoverPreset,
+  uncropWindowStyles,
+} from '../../editor/imgUncrop.js';
 import { resolveMediaSrc } from '../../editor/mediaStore.js';
 import {
+  audioPlayerHostStyle,
   playMediaEl,
   stopMediaPool,
   shouldPlayAudioOnElClick,
@@ -35,57 +64,125 @@ import {
   openFullscreenVideo,
   isFullscreenVideo,
 } from '../../editor/mediaPlay.js';
+import ThemedAudioPlayer from './ThemedAudioPlayer.jsx';
 import {
   fireCameraAnim,
   fullSlideCam,
   cameraCssTransform,
+  applyCameraTransform,
 } from '../../editor/camera.js';
-import { buildHfSrcdoc, hfTitleFromSrc, isHttpUrl, HF_SANDBOX } from '../../editor/htmlFrame.js';
 import {
-  CODE_THEMES,
-  syntaxHighlight,
+  buildHfSrcdocClickThrough,
+  hfTitleFromSrc,
+  installHtmlFrameTransparentPointerListener,
+  isHttpUrl,
+  HF_SANDBOX,
+} from '../../editor/htmlFrame.js';
+import {
   codeBlockSurfaceStyle,
+  codeDisplayHtml,
+  codeGutterCss,
+  codeLineNumbersText,
 } from '../../editor/codeHighlight.js';
-import { elFilterCss } from '../../editor/elShadow.js';
+import { elFilterCss, elInsetShadowSvgMarkup, hasElShadow, isElShadowInset } from '../../editor/elShadow.js';
 import { buildLineAngleContent } from '../../editor/lineAngle.js';
 import { fireMotionAnim, isMotionAnim, clearMotionTransforms } from '../../editor/motionPlay.js';
+import {
+  animEasingCss,
+  moveToDelta,
+  orbitRadius,
+  pathEndDelta,
+  pathPtsOf,
+  samplePathFrames,
+} from '../../editor/motionGeom.js';
 import {
   fireRecolorAnim,
   isRecolorAnim,
   prepareRecolorEl,
+  recolorReactFilter,
   clearRecolorTransforms,
 } from '../../editor/recolorPlay.js';
 import { fireTypewriterAnim, isTypewriterAnim } from '../../editor/typewriterPlay.js';
+import { fireTransformAnim, isTransformAnim, snapshotTransformProps } from '../../editor/transformPlay.js';
 import { fireLangFadeAnim, isLangFadeAnim } from '../../editor/langFadePlay.js';
 import { fireSplitHalfAnim, isSplitHalfAnim, clearSplitHalf } from '../../editor/splitHalfPlay.js';
 import { fireCaptionSlideAnim, isCaptionSlideAnim } from '../../editor/captionSlidePlay.js';
-import { fireCosmosTitleAnim, isCosmosTitleAnim, clearCosmosTitle } from '../../editor/cosmosTitlePlay.js';
+import { fireCosmosTitleForEl, isCosmosTitleAnim, clearCosmosTitle } from '../../editor/cosmosTitlePlay.js';
 import { fireParticlesAnim, isParticlesAnim, clearParticles } from '../../editor/particlesPlay.js';
 import { fireInkDrawAnim, isInkDrawAnim, clearInkDraw } from '../../editor/inkDrawPlay.js';
-import { fireFloatAnim, isFloatAnim, clearFloat } from '../../editor/floatPlay.js';
+import {
+  fireFloatAnim,
+  isFloatAnim,
+  clearFloat,
+  floatAnimForRepeatCycle,
+  floatFramesForGroup,
+  floatWaitMsForPlayback,
+} from '../../editor/floatPlay.js';
 import {
   resetCounterGroupVals,
   setCounterGroupVal,
+  shouldStartTimerOnElClick,
+  slideTimersForMode,
+  startTimerElInRoot,
+  startTimersInRoot,
+  timerStartMode,
 } from '../../editor/applets.js';
 import {
   resolveAppletAnimRef,
 } from '../../editor/appletOnEnd.js';
-import { fireDanceAnim, isDanceAnim, clearDance } from '../../editor/dancePlay.js';
-import { fireSwingAnim, isSwingAnim, clearSwing } from '../../editor/swingPlay.js';
+import {
+  fireDanceAnim,
+  isDanceAnim,
+  clearDance,
+  danceAnimForRepeatCycle,
+  danceWaitMsForPlayback,
+} from '../../editor/dancePlay.js';
+import {
+  fireSwingAnim,
+  isSwingAnim,
+  clearSwing,
+  swingAnimForRepeatCycle,
+  swingWaitMsForPlayback,
+} from '../../editor/swingPlay.js';
 import Model3dView from './Model3dView.jsx';
 import AppletView from './AppletView.jsx';
 import DecorGlView from './DecorGlView.jsx';
 import DecorSvgHost from './DecorSvgHost.jsx';
 import { attachDecorGlCfg, decorUsesGl } from '../../editor/layouts.js';
 import { buildLegoSvg } from '../../editor/lego.js';
-import { textBgLayerStyle, textColorGradStyle } from '../../editor/textBg.js';
+import { hasTextBg, textBgLayerStyle, textColorGradStyle } from '../../editor/textBg.js';
 import { textBorderBoxStyle, textBorderSvgMarkup, needsTextBorderOverflow } from '../../editor/textBorder.js';
-import { textGlyphShadowStyle, textBlockShadowStyle } from '../../editor/textShadow.js';
+import { textGlyphShadowStyle, textBlockShadowStyle, textNeedsOverflowVisible } from '../../editor/textShadow.js';
 import { textPadCss } from '../../editor/textPad.js';
 import { textBorderRadiusCss } from '../../editor/textRadius.js';
+import { shapeTextWarpCss } from '../../editor/shapeText.js';
+import { textAlignSelf } from '../../editor/textAlign.js';
 import SlideBgImgLayer from './SlideBgImgLayer.jsx';
-import { morphMatchKey, morphEligible, lerpHexColor } from '../../editor/morphPlay.js';
+import { morphMatchKey, morphEligible, lerpHexColor, lerpMorphEl, morphGeomDirty } from '../../editor/morphPlay.js';
 import { slideSolidBg } from '../../editor/slideBgImg.js';
+import {
+  findClassificationApplet,
+  classificationMovableIds,
+  shuffleClassificationPositions,
+  checkClassification,
+  clampClassificationPos,
+  classificationGuideLines,
+  snapTranslateToClassGuides,
+  postClassificationBtnMode,
+  CLASSIFICATION_DEFAULTS,
+} from '../../editor/classificationApplet.js';
+import {
+  findImageSortApplet,
+  getImageSortMarkers,
+  imageSortOptionList,
+  shuffleImageSortOptions,
+  checkImageSort,
+  postImageSortBtnMode,
+  normalizeImageSortAnswer,
+  imageSortAnswerKey,
+  IMAGE_SORT_DEFAULTS,
+} from '../../editor/imageSortApplet.js';
+import ImageSortMarkersLayer from './ImageSortMarkersLayer.jsx';
 
 // Morph helper: plain text content comparison
 function morphPlainText(d) {
@@ -108,6 +205,7 @@ function isSpecialAnim(name) {
     isMotionAnim(name) ||
     isRecolorAnim(name) ||
     isTypewriterAnim(name) ||
+    isTransformAnim(name) ||
     isLangFadeAnim(name) ||
     isSplitHalfAnim(name) ||
     isCaptionSlideAnim(name) ||
@@ -116,29 +214,127 @@ function isSpecialAnim(name) {
     isInkDrawAnim(name) ||
     isFloatAnim(name) ||
     isDanceAnim(name) ||
-    isSwingAnim(name)
+    isSwingAnim(name) ||
+    isUncropAnim(name)
   );
 }
 
 function previewElIsInteractive(el, slide) {
   if (!el || el._isDecor) return false;
-  if (el.link) return true;
+  if (el.link || elHasInlineLink(el)) return true;
   if (el.hoverFx && el.hoverFx.enabled) return true;
-  if (el.type === 'applet' && (el.appletId === 'flip' || el.appletId === 'counter' || el.appletId === 'generator')) {
+  // Audio chrome owns clicks (play/pause/seek) — must not bubble as «click slide».
+  if (el.type === 'mediaaudio') return true;
+  if (
+    el.type === 'applet' &&
+    (el.appletId === 'flip' ||
+      el.appletId === 'counter' ||
+      el.appletId === 'classification' ||
+      el.appletId === 'imagesort' ||
+      // Timer with click-el can start on self-click when no other trigger is set.
+      (el.appletId === 'timer' && timerStartMode(el) === 'click-el'))
+  ) {
     return true;
   }
   if (el.type === 'mediavideo' && isFullscreenVideo(el)) return true;
   const anims = el.anims || [];
   if (anims.some((a) => a && (a.trigger === 'element' || a.trigger === 'nav' || a.isTrigger))) return true;
   const id = String(el.id);
-  return (slide?.els || []).some((o) =>
-    (o.anims || []).some((a) => {
+  return (slide?.els || []).some((o) => {
+    if (!o || o._isDecor) return false;
+    if (shouldPlayAudioOnElClick(o, id)) return true;
+    if (shouldStartTimerOnElClick(o, id)) return true;
+    return (o.anims || []).some((a) => {
       if (!a) return false;
-      if (String(a.triggerElId) === id) return true;
+      if (String(a.triggerElId) === id || String(a.preNavTriggerElId || '') === id) return true;
       if ((a.maTriggerElIds || []).map(String).includes(id)) return true;
       return false;
-    })
+    });
+  });
+}
+
+function PreviewImageBody({ el, showUncrop, uncropArmed, uncropDur, colorHover, hoverFilter }) {
+  const canvasW = usePresentationStore((s) => s.canvasW);
+  const canvasH = usePresentationStore((s) => s.canvasH);
+  const rs = imageRenderStyles(el, {
+    colorHover,
+    canvasW,
+    canvasH,
+    transition: el.hoverFx?.enabled ? `filter ${Math.max(0.05, +(el.hoverFx?.dur || 0.3))}s ease` : undefined,
+  });
+  const win = imageHasCrop(el) ? uncropWindowStyles(el, showUncrop, uncropArmed ? uncropDur : 0) : null;
+  const frame = normImgFrame(el.imgFrame);
+  const borderSvg = frame === 'none' ? imgBorderSvgMarkup(el) : '';
+  return (
+    <div
+      style={{
+        ...rs.box,
+        width: '100%',
+        height: '100%',
+        position: 'relative',
+        overflow: borderSvg || imageHasCrop(el) ? 'visible' : undefined,
+      }}
+      className={rs.frameClass}
+    >
+      {rs.borderFilterSvg ? (
+        <div
+          aria-hidden="true"
+          style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }}
+          dangerouslySetInnerHTML={{ __html: rs.borderFilterSvg }}
+        />
+      ) : null}
+      <div
+        style={{
+          ...rs.inner,
+          ...(win
+            ? win.inner
+            : // Polaroid: keep relative fill inside rs.box padding (same as editor/export).
+              // Absolute + inset + width/height 100% overflows the photo well.
+              frame === 'polaroid'
+              ? null
+              : {
+                  position: 'absolute',
+                  inset: 0,
+                }),
+          ...(hoverFilter
+            ? { filter: [rs.inner.filter, hoverFilter].filter(Boolean).join(' ') }
+            : null),
+        }}
+      >
+        <img alt="" src={el.src} style={{ ...rs.img, ...(win ? win.img : null), pointerEvents: showUncrop ? 'auto' : 'none' }} />
+      </div>
+      {borderSvg ? (
+        <div
+          aria-hidden="true"
+          style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 3 }}
+          dangerouslySetInnerHTML={{ __html: borderSvg }}
+        />
+      ) : null}
+      {frame === 'ribbon' ? (
+        <div
+          className="react-img-ribbon-bar"
+          style={imgRibbonTapeStyle()}
+          dangerouslySetInnerHTML={{ __html: imgRibbonTapeMarkup() }}
+        />
+      ) : null}
+      {frame === 'polaroid' && el.imgCaption ? (
+        <div className="react-img-polaroid-cap" style={polaroidCaptionStyle(el, canvasW, canvasH)}>
+          {el.imgCaption}
+        </div>
+      ) : null}
+    </div>
   );
+}
+
+function composeMotionTransform(el, motionTx, motionTy, extra) {
+  const parts = [];
+  const tx = +(motionTx || 0);
+  const ty = +(motionTy || 0);
+  if (tx || ty) parts.push(`translate(${tx}px, ${ty}px)`);
+  const base = elBoxTransform(el);
+  if (base) parts.push(base);
+  if (extra) parts.push(extra);
+  return parts.length ? parts.join(' ') : undefined;
 }
 
 function HoverWrap({
@@ -154,20 +350,56 @@ function HoverWrap({
   interactive,
   backdrop,
   zIndex,
+  recolorDone,
+  recolorPlaying,
+  uncropDone,
+  motionTx,
+  motionTy,
+  motionPlaying,
+  particles,
+  hovered: hoveredProp,
+  classMovable,
+  onClassPointerDown,
   children,
 }) {
-  const [hovered, setHovered] = useState(false);
   const hfxOn = !!(el.hoverFx && el.hoverFx.enabled);
+  const hovered = hfxOn && !!hoveredProp;
   const hfx = hfxOn ? hoverMotionStyle(el, el.hoverFx, hovered) : null;
+  const hideVis = !!hidden || !!particles;
+  const showUncrop = imageShowsUncrop(el, {
+    hovered,
+    preset: el.hoverFx?.preset,
+    uncropDone,
+  });
+  const uncropArmed =
+    imageHasCrop(el) && (isUncropHoverPreset(el.hoverFx?.preset) || uncropDone || showUncrop);
+  const uncropDur =
+    uncropDone && animDur
+      ? (+animDur || 400) / 1000
+      : el.hoverFx?.dur != null
+        ? +el.hoverFx.dur
+        : 0.3;
+  const mtx = +(motionTx || 0);
+  const mty = +(motionTy || 0);
+  // Motion offset is ONLY left/top via motionTx/Ty. Never put translate into transform —
+  // WAAPI transform fought React and often animated only the group leader.
+  const inMotion = !!motionPlaying;
+  const motionXf = elBoxTransform(el);
   // backdrop-filter dies under opacity animations — keep bg outside entrance anim only.
   const isExitCls =
     !!playing &&
     (playing.includes('fadeout') || playing.includes('slideout') || playing.includes('zoomout'));
   const splitAnim = !!(backdrop && playing && !isExitCls);
+  const frameChrome =
+    el.type === 'image' &&
+    (normImgFrame(el.imgFrame) === 'ribbon' || normImgFrame(el.imgFrame) === 'polaroid');
+  const hfxWrap = frameChrome && hfx ? { ...hfx, filter: undefined } : hfx;
   const style = {
     position: 'absolute',
-    left: el.x || 0,
-    top: el.y || 0,
+    left: (el.x || 0) + mtx,
+    top: (el.y || 0) + mty,
+    // Avoid CSS transitions fighting the rAF motion tween.
+    transition: inMotion ? 'none' : undefined,
     width: el.w || 100,
     height: el.h || 60,
     // Explicit z-index matching the element's stacking order in the slide data. Without this,
@@ -176,35 +408,86 @@ function HoverWrap({
     // since both create their own compositing surface. This pins the intended layering so
     // shadowed elements and HTML/code blocks always stack the same as in the editor.
     zIndex: zIndex != null ? zIndex : undefined,
-    opacity: hidden ? 0 : el.elOpacity != null ? el.elOpacity : 1,
-    filter: elFilterCss(el),
+    opacity: hideVis
+      ? 0
+      : readMorphFx(el.id)?.opacity != null
+        ? readMorphFx(el.id).opacity
+        : el.elOpacity != null
+          ? el.elOpacity
+          : 1,
+    filter:
+      readMorphFx(el.id)?.filter != null
+        ? readMorphFx(el.id).filter
+        : recolorReactFilter(elFilterCss(el), el.id, '#000000', { recolorDone, recolorPlaying }, el),
     overflow:
-      live || shapeNeedsOverflowVisible(el.shape) || needsTextBorderOverflow(el) ? 'visible' : 'hidden',
-    cursor: interactive ? 'pointer' : 'default',
-    outline: link ? '1px solid rgba(56,189,248,.35)' : undefined,
-    visibility: hidden ? 'hidden' : 'visible',
+      el.type === 'icon' ||
+      live ||
+      uncropArmed ||
+      imageHasCrop(el) ||
+      frameChrome ||
+      shapeNeedsOverflowVisible(el.shape, el) ||
+      needsTextBorderOverflow(el) ||
+      textNeedsOverflowVisible(el) ||
+      (el.type === 'text' && Array.isArray(el.shapePts) && el.shapePts.length >= 3)
+        ? 'visible'
+        : 'hidden',
+    cursor: classMovable ? 'grab' : el.type === 'model3d' ? 'grab' : interactive ? 'pointer' : 'default',
+    touchAction: classMovable || el.type === 'model3d' ? 'none' : undefined,
+    // Hover accent for show mode (inline <a> may also set --sf-link-hover on itself).
+    ...(el.linkHover || el.link
+      ? { ['--sf-link-hover']: el.linkHover || '#93c5fd' }
+      : elHasInlineLink(el)
+        ? { ['--sf-link-hover']: '#93c5fd' }
+        : null),
+    visibility: hideVis ? 'hidden' : 'visible',
     animationDuration: !splitAnim && animDur ? `${animDur}ms` : undefined,
     animationIterationCount: !splitAnim ? animIter || undefined : undefined,
     display: el.type === 'text' || el.type === 'formula' ? 'flex' : undefined,
     alignItems: el.type === 'text' || el.type === 'formula' ? justify : undefined,
-    transform: elBoxTransform(el),
-    ...hfx,
+    // The text background layer (`backdrop`, rendered as a sibling of `children` below, not
+    // nested inside it) relies on `border-radius: inherit` — needs the radius set here on
+    // its actual parent, or it just inherits nothing and renders square-cornered even though
+    // the text content div right next to it has the correct rounded corners.
+    borderRadius: el.type === 'text' ? textBorderRadiusCss(el) : undefined,
+    ...(el.type === 'graph' ? { borderRadius: el.graphRadius ?? 16 } : {}),
+    transform: motionXf,
+    // Keep authored rotate/flip under CSS entrance keyframes (see App.css --el-xf).
+    ...(motionXf ? { ['--el-xf']: motionXf } : null),
+    ...hfxWrap,
   };
-  if (hfx?.transform) style.transform = hfx.transform;
-  else style.transform = elBoxTransform(el);
-  if (hfx?.filter) style.filter = [elFilterCss(el), hfx.filter].filter(Boolean).join(' ');
-  if (hfx?.opacity != null && !hidden) style.opacity = hfx.opacity;
+  if (hfxWrap?.transform) {
+    style.transform = hfxWrap.transform;
+    style['--el-xf'] = hfxWrap.transform;
+  } else {
+    style.transform = motionXf;
+    if (motionXf) style['--el-xf'] = motionXf;
+  }
+  if (hfx?.filter && !frameChrome) {
+    const merged = [elFilterCss(el), hfx.filter].filter(Boolean).join(' ');
+    style.filter = recolorReactFilter(merged, el.id, '#000000', { recolorDone, recolorPlaying }, el);
+  }
+  if (hfx?.opacity != null && !hideVis) style.opacity = hfx.opacity;
+  if (showUncrop) style.zIndex = 24;
 
   let kids = children;
-  if (React.isValidElement(children) && hfx && (hfx.color || hfx.background || hfx.border)) {
+  if (el.type === 'image' && React.isValidElement(children)) {
     kids = React.cloneElement(children, {
-      style: {
-        ...(children.props.style || {}),
-        color: hfx.color || children.props.style?.color,
-        background: hfx.background || children.props.style?.background,
-        border: hfx.border || children.props.style?.border,
-      },
+      showUncrop,
+      uncropArmed,
+      uncropDur,
+      colorHover: hfxOn && hovered && isImgColorHoverPreset(el.hoverFx?.preset),
+      hoverFilter: frameChrome ? hfx?.filter : undefined,
     });
+  }
+  if (React.isValidElement(kids) && hfx && (hfx.color || hfx.background || hfx.border)) {
+    kids = React.cloneElement(kids, {
+        style: {
+          ...(kids.props.style || {}),
+          color: hfx.color || kids.props.style?.color,
+          background: hfx.background || kids.props.style?.background,
+          border: hfx.border || kids.props.style?.border,
+        },
+      });
   }
 
   const animInnerStyle = splitAnim
@@ -225,10 +508,17 @@ function HoverWrap({
   return (
     <div
       data-id={el.id}
-      className={`${!splitAnim && playing ? playing : ''}${hfxOn ? ' has-hover-fx' : ''}${el.textRole === 'toc' ? ' has-toc' : ''}`.trim() || undefined}
+      data-gid={el.groupId != null && el.groupId !== '' ? String(el.groupId) : undefined}
+      className={`react-el${!splitAnim && playing ? ` ${playing}` : ''}${hfxOn ? ' has-hover-fx' : ''}${el.textRole === 'toc' ? ' has-toc' : ''}${particles ? ' has-particles' : ''}`}
       style={style}
-      onMouseEnter={hfxOn ? () => setHovered(true) : undefined}
-      onMouseLeave={hfxOn ? () => setHovered(false) : undefined}
+      data-hfx-hit={hfxOn ? '1' : undefined}
+      onPointerDown={
+        classMovable
+          ? (e) => {
+              onClassPointerDown?.(e, el);
+            }
+          : undefined
+      }
       onClick={(e) => {
         const toc = e.target?.closest?.('[data-toc-slide]');
         if (toc) {
@@ -237,7 +527,35 @@ function HoverWrap({
           if (Number.isFinite(si)) onElClick?.(el, `#slide-${si + 1}`);
           return;
         }
+        // Inline hyperlink inside text / table cell — take precedence over object link.
+        const inlineA = e.target?.closest?.('a[href]');
+        if (inlineA && e.currentTarget.contains(inlineA)) {
+          e.preventDefault();
+          e.stopPropagation();
+          onElClick?.(el, inlineA.getAttribute('href') || null, {
+            linkt: inlineA.getAttribute('target') || '_blank',
+            inline: true,
+          });
+          return;
+        }
         if (el.type === 'applet') {
+          e.stopPropagation();
+          // Counters/flips handle their own iframe clicks; still forward so
+          // timer click-el / object triggers on applets can fire.
+          if (interactive) onElClick?.(el, link || null);
+          return;
+        }
+        // Audio chrome owns play/pause/seek — never bubble as slide click.
+        if (el.type === 'mediaaudio' || e.target?.closest?.('.react-el-audio,[data-audio-player],.react-themed-audio')) {
+          e.stopPropagation();
+          return;
+        }
+        // OBJ drag-rotate owns the gesture — never advance the slide.
+        if (el.type === 'model3d' || e.target?.closest?.('.react-el-model3d,[data-model3d-viewer]')) {
+          e.stopPropagation();
+          return;
+        }
+        if (classMovable) {
           e.stopPropagation();
           return;
         }
@@ -277,16 +595,209 @@ function requestElFullscreen(el) {
   if (!el) return Promise.reject(new Error('no el'));
   const req = el.requestFullscreen || el.webkitRequestFullscreen;
   if (!req) return Promise.reject(new Error('no fs'));
+  const key = useUiStore.getState().presShowScreenKey;
+  const live = key ? getLiveScreenByKey(key) : null;
+  if (live && el.requestFullscreen) {
+    return Promise.resolve(el.requestFullscreen({ screen: live })).catch(() => Promise.resolve(req.call(el)));
+  }
   return Promise.resolve(req.call(el));
 }
 
-function SlidePreview({ slide, canvasW, canvasH, onElClick, animState, stageRef, stageTransform, vpW, vpH }) {
+/** Copy the painted look onto a clone and kill CSS animations so they do not restart at 100%. */
+function freezeClonedStage(sourceRoot, cloneRoot) {
+  if (!sourceRoot || !cloneRoot) return;
+  const walk = (src, dst) => {
+    if (!src || !dst || src.nodeType !== 1 || dst.nodeType !== 1) return;
+    try {
+      const cs = getComputedStyle(src);
+      dst.style.opacity = cs.opacity;
+      dst.style.visibility = cs.visibility;
+      dst.style.animation = 'none';
+      dst.style.animationName = 'none';
+    } catch (e) {}
+    const sc = src.children;
+    const dc = dst.children;
+    const n = Math.min(sc.length, dc.length);
+    for (let i = 0; i < n; i++) walk(sc[i], dc[i]);
+  };
+  walk(sourceRoot, cloneRoot);
+}
+
+function paintedNodeOpacity(node) {
+  if (!node) return 1;
+  try {
+    const cs = getComputedStyle(node);
+    if (cs.visibility === 'hidden' || cs.visibility === 'collapse') return 0;
+    const op = parseFloat(cs.opacity);
+    return Number.isFinite(op) ? Math.min(1, Math.max(0, op)) : 1;
+  } catch (e) {
+    return 1;
+  }
+}
+
+/** Live morph opacity / blur so React re-renders keep the interpolated look. */
+const morphFxLive = new Map();
+
+function readMorphFx(id) {
+  if (id == null) return null;
+  return morphFxLive.get(String(id)) || null;
+}
+
+function writeMorphFx(id, patch) {
+  if (id == null) return;
+  const key = String(id);
+  morphFxLive.set(key, { ...(morphFxLive.get(key) || {}), ...patch });
+}
+
+function clearMorphFx(id) {
+  if (id == null) return;
+  morphFxLive.delete(String(id));
+}
+
+function morphElOpacity(d) {
+  if (!d) return 1;
+  if (d.type === 'image' && d.imgOpacity != null) return Math.max(0, Math.min(1, +d.imgOpacity));
+  return d.elOpacity != null ? Math.max(0, Math.min(1, +d.elOpacity)) : 1;
+}
+
+function morphLayerBlurPx(d) {
+  if (!d) return 0;
+  if (d.type === 'shape') return Math.max(0, +(d.shapeBlur || 0));
+  if (d.type === 'text' || d.type === 'markdown') return Math.max(0, +(d.textBgBlur || 0));
+  if (d.type === 'table') return Math.max(0, +(d.tableBgBlur || d.blur || 0));
+  return 0;
+}
+
+/**
+ * Chromium snaps `backdrop-filter` near 0. When either endpoint is clear, keep a fixed
+ * peak radius and fade overlay opacity instead — reads as a smooth frost in/out.
+ * When both sides have blur, lerp the radius (geometry pad stays at the peak).
+ */
+function morphLayerBlurPaint(fromB, toB, ease) {
+  const a = Math.max(0, +fromB || 0);
+  const b = Math.max(0, +toB || 0);
+  const cur = a + (b - a) * ease;
+  const peak = Math.max(a, b, 0.001);
+  const crossesZero = a < 0.01 || b < 0.01;
+  return {
+    cur,
+    peak,
+    crossesZero,
+    filterBlur: crossesZero ? peak : Math.max(cur, 0.001),
+    opacity: crossesZero ? Math.max(0, Math.min(1, cur / peak)) : 1,
+  };
+}
+
+/** CSS `filter: blur()` from the color-bar slider (images / icons / leftover table blur). */
+function morphCssBlurPx(d) {
+  if (!d) return 0;
+  if (d.type === 'shape' || d.type === 'text' || d.type === 'markdown') return 0;
+  if (d.type === 'table' && +(d.tableBgBlur || 0) > 0) return 0;
+  return Math.max(0, +(d.blur || 0));
+}
+
+function elWithMorphLayerBlur(el) {
+  const fx = readMorphFx(el?.id);
+  if (!el || fx?.layerBlur == null) return el;
+  // Geometry / mask pad must stay on the peak so the frost region doesn't jump each frame.
+  const peak = fx.layerBlurPeak != null ? fx.layerBlurPeak : fx.layerBlur;
+  if (el.type === 'shape') return { ...el, shapeBlur: peak };
+  if (el.type === 'text' || el.type === 'markdown') return { ...el, textBgBlur: peak };
+  if (el.type === 'table') return { ...el, tableBgBlur: peak };
+  return el;
+}
+
+function paintBackdropBlur(overlay, style, blurPx, opacity) {
+  if (!overlay) return;
+  if (style) {
+    overlay.style.position = style.position || 'absolute';
+    if (style.top != null) overlay.style.top = typeof style.top === 'number' ? `${style.top}px` : style.top;
+    if (style.left != null) overlay.style.left = typeof style.left === 'number' ? `${style.left}px` : style.left;
+    if (style.width != null) overlay.style.width = typeof style.width === 'number' ? `${style.width}px` : style.width;
+    if (style.height != null) overlay.style.height = typeof style.height === 'number' ? `${style.height}px` : style.height;
+    if (style.inset != null) overlay.style.inset = style.inset;
+    if (style.zIndex != null) overlay.style.zIndex = String(style.zIndex);
+    overlay.style.pointerEvents = 'none';
+    if (style.clipPath) overlay.style.clipPath = style.clipPath;
+    if (style.WebkitClipPath) overlay.style.webkitClipPath = style.WebkitClipPath;
+    if (style.maskImage) overlay.style.maskImage = style.maskImage;
+    if (style.WebkitMaskImage) overlay.style.webkitMaskImage = style.WebkitMaskImage;
+    if (style.maskSize) overlay.style.maskSize = style.maskSize;
+    if (style.WebkitMaskSize) overlay.style.webkitMaskSize = style.WebkitMaskSize;
+    if (style.maskRepeat) overlay.style.maskRepeat = style.maskRepeat;
+    if (style.WebkitMaskRepeat) overlay.style.webkitMaskRepeat = style.WebkitMaskRepeat;
+    if (style.borderRadius) overlay.style.borderRadius = style.borderRadius;
+    if (style.background) overlay.style.background = style.background;
+  }
+  const css = blurPx > 0.01 ? `blur(${blurPx}px)` : 'none';
+  overlay.style.backdropFilter = css;
+  overlay.style.webkitBackdropFilter = css;
+  if (opacity != null) overlay.style.opacity = String(Math.max(0, Math.min(1, +opacity)));
+}
+
+function ensureBlurOverlay(host, className) {
+  if (!host) return null;
+  let overlay =
+    host.querySelector(`:scope > .${className}`) ||
+    host.querySelector(':scope > [data-morph-blur="1"]') ||
+    [...host.children].find(
+      (c) => c.getAttribute('aria-hidden') === 'true' && !c.classList.contains('react-shape-text')
+    );
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.setAttribute('aria-hidden', 'true');
+    overlay.dataset.morphBlur = '1';
+    host.insertBefore(overlay, host.firstChild);
+  }
+  overlay.classList.add(className);
+  return overlay;
+}
+
+function SlidePreview({
+  slide,
+  slideKey = 0,
+  canvasW,
+  canvasH,
+  onElClick,
+  animState,
+  stageRef,
+  vpW,
+  vpH,
+  classLivePos,
+  classMovableIds,
+  onClassPointerDown,
+  imageSortChoices = null,
+  imageSortPickId = null,
+  imageSortHints = null,
+  onImageSortPick = null,
+  onImageSortSuppressNav = null,
+}) {
   const scale = Math.min((vpW || window.innerWidth) / canvasW, (vpH || window.innerHeight) / canvasH);
   const els = slide.els || [];
+  const [hfxHoverId, setHfxHoverId] = useState(null);
+
+  // Seed fit transform before paint. Do not put transform in React `style` — camera
+  // writes it on the DOM; React would overwrite and flash white.
+  useLayoutEffect(() => {
+    const node = stageRef?.current;
+    if (!node) return;
+    const ctl = node._camCtl;
+    // Only skip while a camera is mid-flight. A finished ctl used to keep
+    // `aborted===false` forever and blocked fit updates → stage stuck smaller
+    // than the outer wrapper (slide tucked in the top-left with black bars).
+    if (ctl && !ctl.aborted && !ctl.finished) {
+      ctl.fit = scale;
+      const cam = node._pvCamState || fullSlideCam(canvasW, canvasH);
+      applyCameraTransform(node, cam, scale, canvasW, canvasH);
+      return;
+    }
+    const cam = node._pvCamState || fullSlideCam(canvasW, canvasH);
+    applyCameraTransform(node, cam, scale, canvasW, canvasH);
+  }, [stageRef, canvasW, canvasH, scale, slideKey]);
 
   function wrap(el, node, backdrop) {
     const link = readGroupLink(el, els, 'link');
-    const st = animState?.[el.id];
+    const st = animState?.[el.id] ?? animState?.[String(el.id)];
     const hidden = st?.hidden;
     const playing = st?.cls;
     // Els are already in z-order (their array position IS the stacking order) — pin it as an
@@ -303,10 +814,15 @@ function SlidePreview({ slide, canvasW, canvasH, onElClick, animState, stageRef,
       playing && (playing.includes('pulse') || playing.includes('shake') || playing.includes('flash'))
         ? pulseCssIteration({ swingCount: st?.swingCount != null ? st.swingCount : 1 })
         : undefined;
+    const movable = !!(classMovableIds && classMovableIds.has(String(el.id)));
+    const livePos =
+      classLivePos && (classLivePos[String(el.id)] || classLivePos[el.id]);
+    const elDisp = livePos ? { ...el, x: livePos.x, y: livePos.y } : el;
     return (
       <HoverWrap
         key={el.id}
-        el={el}
+        el={elDisp}
+        hovered={hfxHoverId === String(el.id)}
         link={link}
         hidden={hidden}
         playing={playing}
@@ -314,10 +830,19 @@ function SlidePreview({ slide, canvasW, canvasH, onElClick, animState, stageRef,
         justify={justify}
         animDur={st?.dur}
         animIter={animIter}
-        interactive={previewElIsInteractive(el, slide) || !!link}
+        interactive={previewElIsInteractive(el, slide) || !!link || movable}
         onElClick={onElClick}
         backdrop={backdrop || null}
-        zIndex={zIndex}
+        zIndex={movable ? Math.max(zIndex, els.length + 2) : zIndex}
+        recolorDone={!!st?.recolorDone}
+        recolorPlaying={!!st?.recolorPlaying}
+        uncropDone={!!st?.uncropDone}
+        motionTx={st?.motionTx}
+        motionTy={st?.motionTy}
+        motionPlaying={!!st?.motionPlaying}
+        particles={!!st?.particles}
+        classMovable={movable}
+        onClassPointerDown={onClassPointerDown}
       >
         {node}
       </HoverWrap>
@@ -339,7 +864,7 @@ function SlidePreview({ slide, canvasW, canvasH, onElClick, animState, stageRef,
         style={{
           width: canvasW,
           height: canvasH,
-          transform: stageTransform || `scale(${scale})`,
+          // Never set transform from React — it clears fireCameraAnim's inline value.
           transformOrigin: 'top left',
           background: slideSolidBg(slide),
           overflow: 'hidden',
@@ -347,6 +872,12 @@ function SlidePreview({ slide, canvasW, canvasH, onElClick, animState, stageRef,
           left: 0,
           top: 0,
         }}
+        onMouseMove={(e) => {
+          const root = stageRef?.current || e.currentTarget;
+          const id = hoverTargetIdAt(els, root, e.clientX, e.clientY);
+          setHfxHoverId((prev) => (prev === id ? prev : id));
+        }}
+        onMouseLeave={() => setHfxHoverId(null)}
       >
       <SlideBgImgLayer slide={slide} canvasW={canvasW} canvasH={canvasH} />
       {(() => {
@@ -421,6 +952,11 @@ function SlidePreview({ slide, canvasW, canvasH, onElClick, animState, stageRef,
       {els.map((el) => {
         if (el.objHidden) return null;
         if (el.type === 'formula' && el.formulaSvg) {
+          const fAlign = ((el.cs || '').match(/text-align\s*:\s*([^;]+)/i) || [])[1]?.trim().toLowerCase();
+          const align = fAlign === 'center' || fAlign === 'right' ? fAlign : 'left';
+          const justify =
+            align === 'right' ? 'flex-end' : align === 'center' ? 'center' : 'flex-start';
+          const tagLabel = formulaTagLabelOf(el.formulaRaw || el.html || '');
           return wrap(
             el,
             <div
@@ -432,41 +968,71 @@ function SlidePreview({ slide, canvasW, canvasH, onElClick, animState, stageRef,
                 boxSizing: 'border-box',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
+                gap: 8,
               }}
-              dangerouslySetInnerHTML={{ __html: el.formulaSvg }}
-            />
+            >
+              <div
+                style={{
+                  flex: '1 1 auto',
+                  minWidth: 0,
+                  height: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: justify,
+                }}
+                dangerouslySetInnerHTML={{ __html: el.formulaSvg }}
+              />
+              {tagLabel ? (
+                <div
+                  style={{
+                    flex: '0 0 auto',
+                    fontFamily: 'Cambria, MathJax_NonItalic, serif',
+                    fontSize: '0.85em',
+                    lineHeight: 1,
+                  }}
+                >
+                  {tagLabel}
+                </div>
+              ) : null}
+            </div>
           );
         }
         if (el.type === 'text' || el.type === 'formula') {
           const css = el.cs || '';
           const fs = (css.match(/font-size\s*:\s*([\d.]+)px/i) || [])[1];
-          const align =
-            (css.match(/text-align\s*:\s*([^;]+)/i) || [])[1] ||
-            (el.type === 'formula' ? 'center' : 'left');
+          const align = (css.match(/text-align\s*:\s*([^;]+)/i) || [])[1] || 'left';
           const weight = (css.match(/font-weight\s*:\s*([^;]+)/i) || [])[1];
           const fontStyle = (css.match(/font-style\s*:\s*([^;]+)/i) || [])[1];
-          const family = parseFontFamily(css) || 'Georgia, serif';
+          const family = elementFontFamily(
+            el,
+            el.type === 'formula' ? 'Cambria, MathJax_NonItalic, serif' : DEFAULT_TEXT_FONT_FAMILY
+          );
           const lineH = parseCsNumber(css, 'line-height');
           const letterSp = parseCsNumber(css, 'letter-spacing');
           const textTransform = (css.match(/text-transform\s*:\s*([^;]+)/i) || [])[1];
           const htmlRaw = el.html != null && el.html !== '' ? el.html : String(el.text || '');
-          const bgLayer = el.type === 'text' ? textBgLayerStyle(el) : null;
+          const bgLayer = el.type === 'text' ? textBgLayerStyle(elWithMorphLayerBlur(el)) : null;
           const colorGrad = el.type === 'text' && el.textRole !== 'toc' ? textColorGradStyle(el) : null;
           const borderSvg = el.type === 'text' ? textBorderSvgMarkup(el) : '';
           const borderBox = el.type === 'text' ? textBorderBoxStyle(el) : null;
           const glyphSh = el.type === 'text' ? textGlyphShadowStyle(el) : null;
           const blockSh = el.type === 'text' ? textBlockShadowStyle(el) : null;
+          const warpCss = el.type === 'text' ? shapeTextWarpCss(el) : null;
           const hasList =
             el.type === 'text' &&
             (/(data-list-bullet|data-list-num)/i.test(htmlRaw) || el.bulletIconId);
           const valign = el.valign || (el.type === 'formula' ? 'middle' : 'top');
           const justify =
             valign === 'middle' ? 'center' : valign === 'bottom' ? 'flex-end' : 'flex-start';
-          const ulBox = el.type === 'text' ? underlineBoxProps(css) : { style: {}, className: '' };
-          // Whole-box dash-dot is drawn via inline [data-ul="dash-dot"] spans (see textUnderline),
-          // so wrap the text runs here — a block-level background would span the whole box width.
-          const html = ulBox.kind === 'underline dash-dot' ? dashDotWrapHtml(htmlRaw) : htmlRaw;
+          const ulPrep =
+            el.type === 'text'
+              ? prepareTextUnderlineHtml(htmlRaw, css)
+              : { html: htmlRaw, paintBoxUnderline: false };
+          const html = ulPrep.html;
+          const ulBox =
+            el.type === 'text'
+              ? underlineBoxProps(css, { paintBoxUnderline: ulPrep.paintBoxUnderline })
+              : { style: {}, className: '' };
           return wrap(
             el,
             <div
@@ -492,7 +1058,9 @@ function SlidePreview({ slide, canvasW, canvasH, onElClick, animState, stageRef,
                 boxSizing: 'border-box',
                 border: borderBox?.border,
                 borderRadius: el.type === 'text' ? textBorderRadiusCss(el) : undefined,
-                overflow: needsTextBorderOverflow(el) ? 'visible' : undefined,
+                overflow: needsTextBorderOverflow(el) || textNeedsOverflowVisible(el) || warpCss ? 'visible' : undefined,
+                transformOrigin: warpCss ? '0 0' : undefined,
+                transform: warpCss || undefined,
                 ...(hasList ? { ['--rt-bullet-gap']: `${el.bulletGap != null ? el.bulletGap : 10}px` } : {}),
                 ...(blockSh || {}),
                 ...(ulBox.style || {}),
@@ -509,7 +1077,10 @@ function SlidePreview({ slide, canvasW, canvasH, onElClick, animState, stageRef,
                 style={{
                   position: 'relative',
                   zIndex: 1,
-                  width: '100%',
+                  width: 'fit-content',
+                  maxWidth: '100%',
+                  minWidth: 0,
+                  alignSelf: textAlignSelf(align),
                   color: colorGrad ? undefined : el.textColor || '#fff',
                   ...(colorGrad || {}),
                   ...(glyphSh || {}),
@@ -521,25 +1092,7 @@ function SlidePreview({ slide, canvasW, canvasH, onElClick, animState, stageRef,
           );
         }
         if (el.type === 'image' && el.src) {
-          const rs = imageRenderStyles(el);
-          const frame = normImgFrame(el.imgFrame);
-          const borderSvg = frame === 'none' ? imgBorderSvgMarkup(el) : '';
-          return wrap(
-            el,
-            <div style={{ ...rs.box, width: '100%', height: '100%', position: 'relative', overflow: borderSvg ? 'visible' : undefined }} className={rs.frameClass}>
-              <div style={{ ...rs.inner, position: 'absolute', inset: frame === 'polaroid' ? '8px 8px 28px' : frame === 'ribbon' ? '0 0 18px' : 0 }}>
-                <img alt="" src={el.src} style={rs.img} />
-              </div>
-              {borderSvg ? (
-                <div
-                  aria-hidden="true"
-                  style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 3 }}
-                  dangerouslySetInnerHTML={{ __html: borderSvg }}
-                />
-              ) : null}
-              {frame === 'ribbon' ? <div className="react-img-ribbon-bar" /> : null}
-            </div>
-          );
+          return wrap(el, <PreviewImageBody el={el} />);
         }
         if (el.type === 'pagenum') {
           return wrap(
@@ -551,8 +1104,28 @@ function SlidePreview({ slide, canvasW, canvasH, onElClick, animState, stageRef,
           );
         }
         if (el.type === 'shape') {
+          const shapeEl = elWithMorphLayerBlur(el);
+          const fx = readMorphFx(el.id);
           const sb = shapeBlurPx(el);
-          const blurStyle = sb > 0 ? shapeBlurOverlayStyle(el) : null;
+          const peak =
+            fx?.layerBlurPeak != null
+              ? fx.layerBlurPeak
+              : fx?.layerBlur != null
+                ? fx.layerBlur
+                : sb;
+          const morphingBlur = fx?.layerBlur != null;
+          const blurStyle =
+            peak > 0 || morphingBlur
+              ? shapeBlurOverlayStyle({ ...shapeEl, shapeBlur: Math.max(peak, 0.001) })
+              : null;
+          if (blurStyle && morphingBlur) {
+            const op = fx.layerBlurOpacity != null ? fx.layerBlurOpacity : 1;
+            const filterBlur =
+              fx.layerBlurFilter != null ? fx.layerBlurFilter : Math.max(peak, 0.001);
+            blurStyle.opacity = op;
+            blurStyle.backdropFilter = filterBlur > 0.01 ? `blur(${filterBlur}px)` : 'none';
+            blurStyle.WebkitBackdropFilter = blurStyle.backdropFilter;
+          }
           return wrap(
             el,
             <div
@@ -560,22 +1133,35 @@ function SlidePreview({ slide, canvasW, canvasH, onElClick, animState, stageRef,
                 width: '100%',
                 height: '100%',
                 position: 'relative',
-                overflow: sb > 0 || shapeNeedsOverflowVisible(el.shape) ? 'visible' : undefined,
+                overflow:
+                  peak > 0 || morphingBlur || shapeNeedsOverflowVisible(el.shape, el)
+                    ? 'visible'
+                    : undefined,
               }}
             >
-              {blurStyle ? <div aria-hidden="true" style={blurStyle} /> : null}
+              {blurStyle ? (
+                <div className="react-shape-blur-overlay" aria-hidden="true" style={blurStyle} />
+              ) : null}
               <div
                 style={{ position: 'relative', zIndex: 1, width: '100%', height: '100%' }}
                 dangerouslySetInnerHTML={{
                   __html: buildBasicShapeSVG(el.shape || 'rect', shapeOptsFromEl(el)),
                 }}
               />
+              {hasElShadow(el) && isElShadowInset(el) ? (
+                <div
+                  className="react-shape-inset-shadow"
+                  aria-hidden="true"
+                  style={{ position: 'absolute', inset: 0, zIndex: 2, pointerEvents: 'none' }}
+                  dangerouslySetInnerHTML={{ __html: elInsetShadowSvgMarkup(el) }}
+                />
+              ) : null}
               {el.shapeHtml ? (
                 <div className="react-shape-text" style={shapeTextBoxStyle(el)}>
                   <div
                     style={{
                       width: '100%',
-                      textAlign: 'center',
+                      textAlign: 'inherit',
                       minHeight: 0,
                       lineHeight: 1.15,
                       margin: 0,
@@ -667,21 +1253,20 @@ function SlidePreview({ slide, canvasW, canvasH, onElClick, animState, stageRef,
         if (el.type === 'mediaaudio') {
           const src = resolveMediaSrc(el);
           const vol = el.maVolume != null ? +el.maVolume : 1;
+          const themeIdx = usePresentationStore.getState().appliedThemeIdx;
+          const host = audioPlayerHostStyle(themeIdx, { width: '100%', height: '100%' });
           return wrap(
             el,
-            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#1e293b' }}>
-              {src ? (
-                <audio
-                  src={src}
-                  controls
-                  loop={!!el.maLoop}
-                  autoPlay={el.maStart === 'auto'}
-                  ref={(node) => {
-                    if (node) node.volume = Math.max(0, Math.min(1, vol));
-                  }}
-                  style={{ width: '90%' }}
-                />
-              ) : null}
+            <div className="react-el-audio" style={host}>
+              <ThemedAudioPlayer
+                elId={el.id}
+                src={src}
+                themeOrIdx={themeIdx}
+                volume={vol}
+                loop={!!el.maLoop}
+                autoPlay={el.maStart === 'auto'}
+                isolatePointer
+              />
             </div>
           );
         }
@@ -725,7 +1310,7 @@ function SlidePreview({ slide, canvasW, canvasH, onElClick, animState, stageRef,
                   allowFullScreen
                   scrolling={el.hfScroll ? 'auto' : 'no'}
                   src={url ? src : undefined}
-                  srcDoc={url ? undefined : buildHfSrcdoc(src)}
+                  srcDoc={url ? undefined : buildHfSrcdocClickThrough(src)}
                   style={{ pointerEvents: 'auto' }}
                 />
               </div>
@@ -733,7 +1318,7 @@ function SlidePreview({ slide, canvasW, canvasH, onElClick, animState, stageRef,
           );
         }
         if (el.type === 'markdown') {
-          const bgLayer = textBgLayerStyle(el);
+          const bgLayer = textBgLayerStyle(elWithMorphLayerBlur(el));
           const radius = textBorderRadiusCss(el);
           const borderBox = textBorderBoxStyle(el);
           const borderSvg = textBorderSvgMarkup(el);
@@ -773,17 +1358,24 @@ function SlidePreview({ slide, canvasW, canvasH, onElClick, animState, stageRef,
         }
         if (el.type === 'code') {
           const surface = codeBlockSurfaceStyle(el);
-          const T = CODE_THEMES[el.codeTheme || 'dark'] || CODE_THEMES.dark;
-          const html =
-            el.codeHtml || syntaxHighlight(el.codeRaw || '', el.codeLang || 'js', el.codeTheme || 'dark');
+          const html = codeDisplayHtml(el);
           return wrap(
             el,
             <div style={{ width: '100%', height: '100%', overflow: 'hidden' }}>
               <div style={surface}>
-                <div style={{ fontSize: 9, color: T.cmt, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.8 }}>
-                  {el.codeLang || 'code'}
-                </div>
-                <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: html }} />
+                {el.codeLineNums ? (
+                  <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+                    <pre style={codeGutterCss(el)} aria-hidden="true">
+                      {codeLineNumbersText(el.codeRaw)}
+                    </pre>
+                    <pre
+                      style={{ margin: 0, whiteSpace: 'pre-wrap', flex: 1, minWidth: 0 }}
+                      dangerouslySetInnerHTML={{ __html: html }}
+                    />
+                  </div>
+                ) : (
+                  <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: html }} />
+                )}
               </div>
             </div>
           );
@@ -794,7 +1386,7 @@ function SlidePreview({ slide, canvasW, canvasH, onElClick, animState, stageRef,
           if (ic) {
             return wrap(
               el,
-              <div style={{ width: '100%', height: '100%', boxSizing: 'border-box' }}>
+              <div className="react-el-icon" style={{ width: '100%', height: '100%', boxSizing: 'border-box', overflow: 'visible' }}>
                 <AnimatedIcon
                   ic={ic}
                   color={color}
@@ -836,19 +1428,15 @@ function SlidePreview({ slide, canvasW, canvasH, onElClick, animState, stageRef,
           const rows = el.rows || 3;
           const cols = el.cols || 3;
           const rx = +(el.rx || 0);
-          const blur = +(el.tableBgBlur || 0);
-          const bw = el.borderW != null ? +el.borderW : 1;
+          const blur = +(elWithMorphLayerBlur(el).tableBgBlur || 0);
           const theme = getTheme(usePresentationStore.getState().appliedThemeIdx);
-          const bc =
-            (!el.borderColor || el.borderColor === 'transparent') && !el.borderColorScheme
-              ? 'transparent'
-              : resolveSchemeColor(el.borderColorScheme, theme) || el.borderColor || el.stroke || 'transparent';
           const textColor = resolveElTextColor(el, theme);
           const cws = tableColWidthsPx(el, el.w || 100);
           const rhs = tableRowHeightsPx(el, el.h || 60);
           return wrap(
             el,
             <div
+              className="react-el-table"
               style={{
                 width: '100%',
                 height: '100%',
@@ -881,7 +1469,7 @@ function SlidePreview({ slide, canvasW, canvasH, onElClick, animState, stageRef,
                   color: textColor,
                   background: 'transparent',
                   fontSize: el.fs || 15,
-                  fontFamily: el.ff || undefined,
+                  fontFamily: el.ff || DEFAULT_TEXT_FONT_FAMILY,
                   tableLayout: 'fixed',
                 }}
               >
@@ -898,8 +1486,6 @@ function SlidePreview({ slide, canvasW, canvasH, onElClick, animState, stageRef,
                         if (cell.hidden) return null;
                         const cs = cell.colspan || 1;
                         const rs = cell.rowspan || 1;
-                        const isLastC = c + cs - 1 >= cols - 1;
-                        const isLastR = r + rs - 1 >= rows - 1;
                         const rad = tableCellRadiusStyle(el, r, c, cs, rs);
                         const isH = r === 0 && el.headerRow !== false;
                         const cellTc =
@@ -914,16 +1500,13 @@ function SlidePreview({ slide, canvasW, canvasH, onElClick, animState, stageRef,
                             rowSpan={rs > 1 ? rs : undefined}
                             style={{
                               background: tableCellBg(el, r, c, cell, theme),
-                              borderTop: `${bw}px solid ${bc}`,
-                              borderLeft: `${bw}px solid ${bc}`,
-                              borderRight: isLastC ? `${bw}px solid ${bc}` : undefined,
-                              borderBottom: isLastR ? `${bw}px solid ${bc}` : undefined,
-                              padding: '5px 9px',
+                              ...tableCellBorderStyle(el, r, c, cell, theme),
+                              padding: '3px 8px',
                               verticalAlign: cell.valign || 'middle',
                               textAlign: cell.align || 'left',
-                              fontWeight: isH ? 700 : 400,
+                              ...tableCellFontStyle(el, r, c, cell),
                               fontSize: cell.fs || undefined,
-                              fontFamily: cell.ff || undefined,
+                              fontFamily: cell.ff || el.ff || DEFAULT_TEXT_FONT_FAMILY,
                               color: cellTc || undefined,
                               ...rad,
                             }}
@@ -985,13 +1568,16 @@ function SlidePreview({ slide, canvasW, canvasH, onElClick, animState, stageRef,
           return wrap(
             el,
             <div
+              className="react-el-model3d"
+              data-model3d-viewer="1"
               style={{
                 width: '100%',
                 height: '100%',
                 background: el.objBgCleared ? 'transparent' : el.objBg || '#0f172a',
+                touchAction: 'none',
               }}
             >
-              <Model3dView el={el} />
+              <Model3dView key={`m3d-${el.id}-${slideKey}`} el={el} interactive slideKey={slideKey} />
             </div>
           );
         }
@@ -1000,32 +1586,462 @@ function SlidePreview({ slide, canvasW, canvasH, onElClick, animState, stageRef,
             el,
             <div
               style={{ width: '100%', height: '100%', overflow: 'visible' }}
-              dangerouslySetInnerHTML={{ __html: buildLegoSvg(el) }}
+              dangerouslySetInnerHTML={{ __html: buildLegoSvg(el, slide.els) }}
             />
           );
         }
         if (el.type === 'graph') {
+          const graphBlur = el.graphTheme === 'blur';
+          const graphTransparent =
+            el.graphTheme === 'transparent' || graphBlur || el.graphKind === 'chem';
+          const graphBg = graphTransparent
+            ? 'transparent'
+            : el.graphBg || (el.graphDark === false ? '#ffffff' : '#16161e');
+          const paths = Array.isArray(el.graphPaths) ? el.graphPaths : [];
+          const animateCurve = !!(el.graphAnimate && el.graphAxesImg && paths.length);
+          const animDur = Math.max(0.4, Math.min(12, +(el.graphAnimDur ?? 1.8) || 1.8));
+          const holdSec = 1;
+          const eraseSec = 0.28;
+          const animTotal = animDur + holdSec + eraseSec;
+          const pDraw = Math.max(1, Math.min(90, (animDur / animTotal) * 100));
+          const pHold = Math.max(pDraw + 1, Math.min(99, ((animDur + holdSec) / animTotal) * 100));
+          const kfName = `rgstroke_pv_${String(el.id).replace(/[^\w-]/g, '_')}`;
+          const imgFit = { width: '100%', height: '100%', objectFit: 'fill', display: 'block' };
           return wrap(
             el,
-            el.graphImg ? (
-              <img
-                src={el.graphImg}
-                alt=""
-                style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
-              />
-            ) : (
-              <div style={{ padding: 8, fontSize: 12, color: '#94a3b8' }}>{el.graphLatex || 'graph'}</div>
-            )
+            <div
+              style={{
+                width: '100%',
+                height: '100%',
+                overflow: 'hidden',
+                borderRadius: el.graphRadius ?? 16,
+                background: graphBg,
+                ...(graphBlur
+                  ? { backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)' }
+                  : null),
+              }}
+            >
+              {animateCurve ? (
+                <style>{`@keyframes ${kfName}{0%{stroke-dashoffset:1}${pDraw}%{stroke-dashoffset:0}${pHold}%{stroke-dashoffset:0}100%{stroke-dashoffset:1}}`}</style>
+              ) : null}
+              {el.graphImg ? (
+                animateCurve ? (
+                  <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+                    <img src={el.graphAxesImg} alt="" style={{ ...imgFit, position: 'absolute', inset: 0 }} />
+                    <svg
+                      className="react-graph-curves"
+                      viewBox={`0 0 ${el.graphPathW || 800} ${el.graphPathH || 560}`}
+                      preserveAspectRatio="none"
+                      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+                    >
+                      {paths.map((p, i) => (
+                        <path
+                          key={i}
+                          className="react-graph-stroke-draw"
+                          d={p.d}
+                          fill="none"
+                          stroke={p.color || el.graphColor || '#6366f1'}
+                          strokeWidth={p.width ?? el.graphLineWidth ?? 2.5}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          pathLength="1"
+                          style={{
+                            animationName: kfName,
+                            animationDuration: `${animTotal}s`,
+                            ['--graph-anim-total']: `${animTotal}s`,
+                          }}
+                        />
+                      ))}
+                    </svg>
+                  </div>
+                ) : (
+                  <img src={el.graphImg} alt="" style={imgFit} />
+                )
+              ) : (
+                <div style={{ padding: 8, fontSize: 12, color: '#94a3b8' }}>{el.graphLatex || 'graph'}</div>
+              )}
+            </div>
           );
         }
         return null;
       })}
+      <ImageSortMarkersLayer
+        slide={slide}
+        canvasW={canvasW}
+        canvasH={canvasH}
+        mode="preview"
+        choices={imageSortChoices}
+        pickId={imageSortPickId}
+        resultHints={imageSortHints}
+        onPickMarker={onImageSortPick}
+        onSuppressNav={onImageSortSuppressNav}
+      />
     </div>
     </div>
   );
 }
 
+const DRAW_COLOR = '#ef4444';
+const DRAW_WIDTH = 11;
+const DRAW_COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#a855f7', '#111827', '#f8fafc'];
+const DRAW_WIDTHS = [5, 11, 18, 24];
+const BRUSH_PREF_KEY = 'sf_pres_brush';
+
+function brushFeel(baseW) {
+  const w = Math.max(5, Math.min(24, +baseW || DRAW_WIDTH));
+  const t = (w - 5) / 19;
+  const lerp = (a, b) => a + (b - a) * t;
+  return {
+    // Always Chaikin at least once — thin strokes looked faceted without it.
+    chaikin: t < 0.35 ? 2 : 3,
+    smoothWin: Math.max(4, Math.round(lerp(5, 10))),
+    smoothPasses: Math.max(3, Math.round(lerp(3, 6))),
+    smoothSpacing: lerp(1.05, 1.9),
+    leashPx: lerp(5.5, 22),
+    minDistPx: lerp(0.4, 1.1),
+    widthWin: lerp(14, 42),
+    widthSmooth: Math.max(3, Math.round(lerp(3.2, 12))),
+    widthPasses: t < 0.35 ? 2 : 4,
+    paintSpacing: Math.max(0.55, w * (t < 0.3 ? 0.09 : 0.13)),
+  };
+}
+
+function nearestDrawWidth(w) {
+  const n = +w;
+  if (!Number.isFinite(n)) return DRAW_WIDTH;
+  let best = DRAW_WIDTHS[1];
+  let d = Infinity;
+  for (const x of DRAW_WIDTHS) {
+    const dd = Math.abs(x - n);
+    if (dd < d) {
+      d = dd;
+      best = x;
+    }
+  }
+  return best;
+}
+
+function loadBrushPref() {
+  try {
+    const o = JSON.parse(typeof localStorage !== 'undefined' ? localStorage.getItem(BRUSH_PREF_KEY) || '' : '');
+    const color =
+      typeof o.color === 'string' && /^#([0-9a-fA-F]{6})$/.test(o.color) ? o.color : DRAW_COLOR;
+    return { color, width: nearestDrawWidth(o.width) };
+  } catch (e) {
+    return { color: DRAW_COLOR, width: DRAW_WIDTH };
+  }
+}
+
+function saveBrushPref(color, width) {
+  try {
+    localStorage.setItem(BRUSH_PREF_KEY, JSON.stringify({ color, width }));
+  } catch (e) {}
+}
+
+function appendBrushPoint(pts, p, minDist) {
+  const now = typeof performance !== 'undefined' ? performance.now() : 0;
+  const last = pts[pts.length - 1];
+  if (!last) {
+    pts.push({ x: p.x, y: p.y, t: now });
+    return;
+  }
+  if (Math.hypot(p.x - last.x, p.y - last.y) < minDist) return;
+  pts.push({ x: p.x, y: p.y, t: now });
+}
+
+function pullFollow(stroke, p, leash) {
+  if (!stroke.follow) {
+    stroke.follow = { x: p.x, y: p.y };
+    return stroke.follow;
+  }
+  const dx = p.x - stroke.follow.x;
+  const dy = p.y - stroke.follow.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist <= 1e-6) return stroke.follow;
+  if (dist > leash) {
+    const keep = leash / dist;
+    stroke.follow = { x: p.x - dx * keep, y: p.y - dy * keep };
+  } else {
+    stroke.follow = { x: stroke.follow.x + dx * 0.18, y: stroke.follow.y + dy * 0.18 };
+  }
+  return stroke.follow;
+}
+
+function cssPoints(pts, W, H) {
+  const out = [];
+  for (let i = 0; i < pts.length; i++) {
+    out.push({ x: pts[i].x * W, y: pts[i].y * H, t: pts[i].t || 0 });
+  }
+  return out;
+}
+
+
+
+
+function chaikinOnce(pts) {
+  const n = pts.length;
+  if (n < 3) return pts;
+  const next = [pts[0]];
+  for (let i = 0; i < n - 1; i++) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    next.push({
+      x: a.x * 0.75 + b.x * 0.25,
+      y: a.y * 0.75 + b.y * 0.25,
+      t: a.t,
+    });
+    next.push({
+      x: a.x * 0.25 + b.x * 0.75,
+      y: a.y * 0.25 + b.y * 0.75,
+      t: b.t,
+    });
+  }
+  next.push(pts[n - 1]);
+  return next;
+}
+
+function resamplePx(pts, spacing) {
+  const n = pts.length;
+  if (!n) return [];
+  if (n === 1) return [{ x: pts[0].x, y: pts[0].y, t: pts[0].t || 0 }];
+  const gap = Math.max(0.7, spacing);
+  const out = [{ x: pts[0].x, y: pts[0].y, t: pts[0].t || 0 }];
+  let acc = 0;
+  for (let i = 1; i < n; i++) {
+    const a = pts[i - 1];
+    const b = pts[i];
+    const seg = Math.hypot(b.x - a.x, b.y - a.y);
+    if (seg < 1e-6) continue;
+    let d = gap - acc;
+    while (d <= seg) {
+      const u = d / seg;
+      out.push({
+        x: a.x + (b.x - a.x) * u,
+        y: a.y + (b.y - a.y) * u,
+        t: (a.t || 0) * (1 - u) + (b.t || 0) * u,
+      });
+      d += gap;
+    }
+    acc = seg - (d - gap);
+    if (acc < 0) acc = 0;
+  }
+  const last = pts[n - 1];
+  const prev = out[out.length - 1];
+  if (!prev || Math.hypot(last.x - prev.x, last.y - prev.y) > 0.4) {
+    out.push({ x: last.x, y: last.y, t: last.t || 0 });
+  }
+  return out;
+}
+
+function photoshopSmooth(pts, feel) {
+  const spacing = feel?.smoothSpacing || 2.6;
+  const halfWin = feel?.smoothWin || 6;
+  const passes = feel?.smoothPasses || 4;
+  let out = resamplePx(pts, spacing);
+  if (out.length < 3) return out;
+  for (let pass = 0; pass < passes; pass++) {
+    const next = [out[0]];
+    for (let i = 1; i < out.length - 1; i++) {
+      let sx = 0;
+      let sy = 0;
+      let wsum = 0;
+      for (let k = -halfWin; k <= halfWin; k++) {
+        const j = Math.max(0, Math.min(out.length - 1, i + k));
+        const w = 1 - Math.abs(k) / (halfWin + 0.01);
+        sx += out[j].x * w;
+        sy += out[j].y * w;
+        wsum += w;
+      }
+      next.push({ x: sx / wsum, y: sy / wsum, t: out[i].t });
+    }
+    next.push(out[out.length - 1]);
+    out = next;
+  }
+  return out;
+}
+
+function angleDelta(a, b) {
+  let d = b - a;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return d;
+}
+
+function ribbonHalfWidths(px, baseW, feel) {
+  const n = px.length;
+  // Straight ≈ 55% radius, bends swell toward full — visible, but not sausage-linked.
+  const fat = Math.max(1.2, (baseW || DRAW_WIDTH) * 0.5);
+  const body = fat * 0.55;
+  if (n < 2) return new Array(n).fill(fat);
+  if (n < 3) return new Array(n).fill(fat);
+  const acc = new Array(n);
+  const head = new Array(n).fill(0);
+  acc[0] = 0;
+  for (let i = 1; i < n; i++) {
+    acc[i] = acc[i - 1] + Math.hypot(px[i].x - px[i - 1].x, px[i].y - px[i - 1].y);
+    head[i] = Math.atan2(px[i].y - px[i - 1].y, px[i].x - px[i - 1].x);
+  }
+  head[0] = head[1];
+  for (let i = 1; i < n; i++) head[i] = head[i - 1] + angleDelta(head[i - 1], head[i]);
+  const win = Math.max(16, (feel?.widthWin || 42) * 0.75);
+  const raw = new Array(n);
+  for (let i = 0; i < n; i++) {
+    let local = 0;
+    if (i > 0 && i < n - 1) {
+      // Only stronger corners count (ignore tiny jitter).
+      const turn = Math.abs(angleDelta(head[i], head[i + 1]));
+      local = turn < 0.22 ? 0 : Math.min(1, (turn - 0.22) / (Math.PI * 0.45));
+    }
+    let i0 = i;
+    let i1 = i;
+    while (i0 > 0 && acc[i] - acc[i0] < win * 0.5) i0--;
+    while (i1 < n - 1 && acc[i1] - acc[i] < win * 0.5) i1++;
+    const ds = Math.max(3, acc[i1] - acc[i0]);
+    const windowed = Math.min(1, Math.abs(head[i1] - head[i0]) / ds / 0.055);
+    const k = Math.min(1, Math.max(local * 0.85, windowed));
+    const ease = k * k * (3 - 2 * k);
+    raw[i] = body + (fat - body) * ease;
+  }
+  // Moderate arc-length blur: smooth ramps, keep bend contrast.
+  let cur = raw;
+  const blurR = Math.max(10, fat * 1.8);
+  for (let pass = 0; pass < 2; pass++) {
+    const next = new Array(n);
+    for (let i = 0; i < n; i++) {
+      let s = 0;
+      let w = 0;
+      for (let j = i; j >= 0 && acc[i] - acc[j] <= blurR; j--) {
+        const d = acc[i] - acc[j];
+        const kk = 1 - d / (blurR + 0.01);
+        s += cur[j] * kk;
+        w += kk;
+      }
+      for (let j = i + 1; j < n && acc[j] - acc[i] <= blurR; j++) {
+        const d = acc[j] - acc[i];
+        const kk = 1 - d / (blurR + 0.01);
+        s += cur[j] * kk;
+        w += kk;
+      }
+      next[i] = s / Math.max(1e-6, w);
+    }
+    cur = next;
+  }
+  if (n > 1) {
+    cur[0] = cur[1];
+    cur[n - 1] = cur[n - 2];
+  }
+  return cur;
+}
+
+function paintRibbon(ctx, px, half, color) {
+  const n = px.length;
+  ctx.fillStyle = color;
+  if (!n) return;
+  if (n === 1) {
+    ctx.beginPath();
+    ctx.arc(px[0].x, px[0].y, half[0], 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+  const nx = new Array(n);
+  const ny = new Array(n);
+  let pnx = 0;
+  let pny = -1;
+  for (let i = 0; i < n; i++) {
+    let tx;
+    let ty;
+    if (i === 0) {
+      tx = px[1].x - px[0].x;
+      ty = px[1].y - px[0].y;
+    } else if (i === n - 1) {
+      tx = px[n - 1].x - px[n - 2].x;
+      ty = px[n - 1].y - px[n - 2].y;
+    } else {
+      tx = px[i + 1].x - px[i - 1].x;
+      ty = px[i + 1].y - px[i - 1].y;
+    }
+    const len = Math.hypot(tx, ty) || 1;
+    let x = -ty / len;
+    let y = tx / len;
+    if (x * pnx + y * pny < 0) {
+      x = -x;
+      y = -y;
+    }
+    pnx = x;
+    pny = y;
+    nx[i] = x;
+    ny[i] = y;
+  }
+  for (let i = 0; i < n; i++) {
+    ctx.beginPath();
+    ctx.arc(px[i].x, px[i].y, half[i], 0, Math.PI * 2);
+    ctx.fill();
+    if (i === n - 1) break;
+    const l0x = px[i].x + nx[i] * half[i];
+    const l0y = px[i].y + ny[i] * half[i];
+    const r0x = px[i].x - nx[i] * half[i];
+    const r0y = px[i].y - ny[i] * half[i];
+    const l1x = px[i + 1].x + nx[i + 1] * half[i + 1];
+    const l1y = px[i + 1].y + ny[i + 1] * half[i + 1];
+    const r1x = px[i + 1].x - nx[i + 1] * half[i + 1];
+    const r1y = px[i + 1].y - ny[i + 1] * half[i + 1];
+    ctx.beginPath();
+    ctx.moveTo(l0x, l0y);
+    ctx.lineTo(l1x, l1y);
+    ctx.lineTo(r1x, r1y);
+    ctx.lineTo(r0x, r0y);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+function paintPtsStroke(ctx, pts, w, h, stroke) {
+  if (!pts || !pts.length) return;
+  const baseW = stroke.w || DRAW_WIDTH;
+  const feel = brushFeel(baseW);
+  let px = cssPoints(pts, w, h);
+  for (let i = 0; i < feel.chaikin; i++) {
+    if (px.length > 2) px = chaikinOnce(px);
+  }
+  px = photoshopSmooth(px, feel);
+  px = resamplePx(px, feel.paintSpacing);
+  paintRibbon(ctx, px, ribbonHalfWidths(px, baseW, feel), stroke.color || DRAW_COLOR);
+}
+
+function paintOneStroke(ctx, stroke, w, h, tip) {
+  const raw = stroke.pts;
+  if (!raw || !raw.length) return;
+  paintPtsStroke(ctx, tip ? raw.concat(tip) : raw, w, h, stroke);
+}
+
+function paintInkStrokes(ctx, strokes, w, h) {
+  for (const s of strokes || []) paintOneStroke(ctx, s, w, h, null);
+}
+
+function eraseInkAt(strokes, p, stageW, stageH) {
+  const next = [];
+  for (const s of strokes || []) {
+    const rad = Math.max(18, (s.w || DRAW_WIDTH) * 0.7 + 12);
+    const rX = rad / Math.max(1, stageW);
+    const rY = rad / Math.max(1, stageH);
+    let cur = [];
+    for (const q of s.pts) {
+      const dx = (q.x - p.x) / rX;
+      const dy = (q.y - p.y) / rY;
+      if (dx * dx + dy * dy <= 1) {
+        if (cur.length > 1) next.push({ ...s, pts: cur });
+        cur = [];
+      } else {
+        cur.push(q);
+      }
+    }
+    if (cur.length > 1) next.push({ ...s, pts: cur });
+  }
+  return next;
+}
+
 export default function PreviewOverlay() {
+  useEffect(() => installHtmlFrameTransparentPointerListener(), []);
   const open = useUiStore((s) => s.previewOpen);
   const from = useUiStore((s) => s.previewFrom);
   const closePreview = useUiStore((s) => s.closePreview);
@@ -1034,13 +2050,32 @@ export default function PreviewOverlay() {
   const presShowFooter = useUiStore((s) => s.presShowFooter);
   const presShowSideNav = useUiStore((s) => s.presShowSideNav);
   const presShowEsc = useUiStore((s) => s.presShowEsc);
+  const presShowBrush = useUiStore((s) => s.presShowBrush);
   const lang = useUiStore((s) => s.lang);
   const ruHud = lang !== 'en';
-  const slides = usePresentationStore((s) => s.slides);
-  const canvasW = usePresentationStore((s) => s.canvasW);
-  const canvasH = usePresentationStore((s) => s.canvasH);
+  const storeSlides = usePresentationStore((s) => s.slides);
+  const storeCanvasW = usePresentationStore((s) => s.canvasW);
+  const storeCanvasH = usePresentationStore((s) => s.canvasH);
+  const storeAr = usePresentationStore((s) => s.ar);
   const globalTrans = usePresentationStore((s) => s.globalTrans);
   const globalTransDur = usePresentationStore((s) => s.globalTransDur);
+  const appliedThemeIdx = usePresentationStore((s) => s.appliedThemeIdx);
+  const [vp, setVp] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }));
+  // Phone rotate during preview: prefer authored layout for that orientation
+  const previewDeck = useMemo(() => {
+    const want = vp.h > vp.w + 8 ? '9:16' : '16:9';
+    const resolved = resolveDeckForAr(storeSlides, storeCanvasW, storeCanvasH, storeAr, want);
+    if (resolved) return resolved;
+    return {
+      slides: storeSlides,
+      canvasW: storeCanvasW,
+      canvasH: storeCanvasH,
+      key: arLayoutKey(storeCanvasW, storeCanvasH, storeAr),
+    };
+  }, [storeSlides, storeCanvasW, storeCanvasH, storeAr, vp.w, vp.h]);
+  const slides = previewDeck.slides;
+  const canvasW = previewDeck.canvasW;
+  const canvasH = previewDeck.canvasH;
   const [idx, setIdx] = useState(from);
   const [animKey, setAnimKey] = useState(0);
   const [animClass, setAnimClass] = useState('');
@@ -1049,11 +2084,9 @@ export default function PreviewOverlay() {
   const [pvShift, setPvShift] = useState({ x: 0, y: 0 });
   const [animState, setAnimState] = useState({});
   const [iconsTick, setIconsTick] = useState(0);
+  // Tick so draw overlay can resync; never passed into React transform style.
   const [camTransform, setCamTransform] = useState(null);
-  const [vp, setVp] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }));
   const [black, setBlack] = useState(false);
-  const [morphing, setMorphing] = useState(false);
-  const [morphFromIdx, setMorphFromIdx] = useState(-1);
   const morphPairsRef = useRef([]);
   const busy = useRef(false);
   const overlayRef = useRef(null);
@@ -1067,17 +2100,298 @@ export default function PreviewOverlay() {
   const shuffleHistRef = useRef([]);
   const stepsRef = useRef([]);
   const stepIRef = useRef(0);
+  const autoStartAnimTimerRef = useRef(null);
   const stageRef = useRef(null);
   const swipeRef = useRef(null);
   const camAbortRef = useRef(null);
   const rideCancelRef = useRef([]);
   const cumMotionRef = useRef({});
+  /** Bumped on each motion start / repeat reset so stale WAAPI onfinish cannot re-bake offsets. */
+  const motionGenRef = useRef({});
+  /**
+   * Intended end offset for an in-flight moveTo/pathTo/orbitTo tween.
+   * If the next bundle starts a hair early (rAF vs setTimeout), we commit this into
+   * cumMotionRef so the chain/repeat does not resume from a half-finished position.
+   */
+  const pendingMotionEndRef = useRef({});
+  /** Bumped on every slide enter so late settleMotion from a previous visit cannot re-bake. */
+  const slidePlayGenRef = useRef(0);
+  /** Slide passed to the latest initSlideAnims — playBundle must not use stale slides[idx]. */
+  const animSlideRef = useRef(null);
+  /** Always-current preview deck slides (avoids stale closures in deferred auto-start). */
+  const slidesRef = useRef(slides);
+  slidesRef.current = slides;
   const mediaPoolRef = useRef([]);
   const fsVideoCloseRef = useRef(null);
   /** slideIdx → Set(elId) hidden by exit / nav-trigger (persist across return). */
   const hiddenElsRef = useRef({});
+  const startedAtRef = useRef(0);
+  const blackRef = useRef(false);
+  const goToRef = useRef(() => {});
+  const goNextRef = useRef(() => {});
+  const goPrevRef = useRef(() => {});
+  /** Space / → / presenter «Далее»: same path as show keyboard (timers → triggers → goNext). */
+  const runShowNextRef = useRef(() => {});
+  /** Same side-effects as a blank-slide click: click-slide timers / audios. */
+  const fireClickSlideTriggersRef = useRef(() => {});
+  /** Returns true when this click/key only armed click-slide timers (no advance yet). */
+  const armClickSlideTimersOnlyRef = useRef(() => false);
+  /** Play on-slide builds without leaving the slide (used when arming click-slide timers). */
+  const playNextAnimStepRef = useRef(() => false);
+  /** Timer elIds already started by a prior click-slide arm on the current slide. */
+  const clickSlideTimersArmedRef = useRef(new Set());
+  /** Repeat blocks the user skipped mid-run (click jumps past the whole block). */
+  const skippedRepeatRef = useRef(new Set());
+  const closePreviewRef = useRef(closePreview);
+  const [drawTool, setDrawTool] = useState(null);
+  const [hasInk, setHasInk] = useState(false);
+  const [drawColor, setDrawColor] = useState(() => loadBrushPref().color);
+  const [drawWidth, setDrawWidth] = useState(() => loadBrushPref().width);
+  const [colorWheelOpen, setColorWheelOpen] = useState(false);
+  const [classLivePos, setClassLivePos] = useState(null);
+  const [classResult, setClassResult] = useState(null);
+  const classDragRef = useRef(null);
+  const classLivePosRef = useRef(null);
+  const classReplayRef = useRef(false);
+  classLivePosRef.current = classLivePos;
+  const [imageSortChoices, setImageSortChoices] = useState({});
+  const [imageSortPickId, setImageSortPickId] = useState(null);
+  const [imageSortOptions, setImageSortOptions] = useState([]);
+  const [imageSortHints, setImageSortHints] = useState(null);
+  const [imageSortResult, setImageSortResult] = useState(null);
+  const imageSortChoicesRef = useRef({});
+  const imageSortReplayRef = useRef(false);
+  /** Ignore the click that follows a pin pointerdown (would otherwise advance the slide). */
+  const imageSortSuppressNavRef = useRef(0);
+  imageSortChoicesRef.current = imageSortChoices;
+
+  const suppressImageSortNav = () => {
+    imageSortSuppressNavRef.current = Date.now() + 450;
+  };
+  const drawToolRef = useRef(null);
+  const drawStrokesRef = useRef({});
+  const drawingRef = useRef(null);
+  const drawPointerIdRef = useRef(null);
+  const drawCanvasRef = useRef(null);
+  const bakeCanvasRef = useRef(null);
+  const brushCurRef = useRef(null);
+  const drawBoxRef = useRef({ w: 0, h: 0, dpr: 1 });
+  drawToolRef.current = drawTool;
+
+  function brushCursorSizePx() {
+    if (drawTool === 'erase') return Math.max(22, drawWidth * 0.7 + 14);
+    return Math.max(4, drawWidth);
+  }
+
+  function moveBrushCursor(clientX, clientY) {
+    const node = brushCurRef.current;
+    if (!node || !drawTool) return;
+    node.classList.remove('is-hidden');
+    node.style.transform = `translate(${clientX}px, ${clientY}px) translate(-50%, -50%)`;
+  }
+
+  function hideBrushCursor() {
+    const node = brushCurRef.current;
+    if (!node) return;
+    node.classList.add('is-hidden');
+  }
 
   useEffect(() => onIconsReady(() => setIconsTick((t) => t + 1)), []);
+
+  function fitDrawCanvas(canvas, r, dpr) {
+    if (!canvas) return false;
+    canvas.style.left = `${r.left}px`;
+    canvas.style.top = `${r.top}px`;
+    canvas.style.width = `${r.width}px`;
+    canvas.style.height = `${r.height}px`;
+    const w = Math.max(1, Math.round(r.width * dpr));
+    const h = Math.max(1, Math.round(r.height * dpr));
+    if (canvas.width === w && canvas.height === h) return false;
+    canvas.width = w;
+    canvas.height = h;
+    return true;
+  }
+
+  function layoutDrawCanvases() {
+    const stage = stageRef.current;
+    const live = drawCanvasRef.current;
+    const bake = bakeCanvasRef.current;
+    if (!stage || !live || !bake) return null;
+    const r = stage.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    fitDrawCanvas(live, r, dpr);
+    fitDrawCanvas(bake, r, dpr);
+    drawBoxRef.current = { w: r.width, h: r.height, dpr };
+    return r;
+  }
+
+  function clearCanvas(canvas) {
+    if (!canvas) return;
+    const { w, h, dpr } = drawBoxRef.current;
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+  }
+
+  function redrawBake() {
+    const r = layoutDrawCanvases();
+    const bake = bakeCanvasRef.current;
+    if (!r || !bake) return;
+    const { w, h, dpr } = drawBoxRef.current;
+    const ctx = bake.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const live = drawingRef.current && !drawingRef.current.erase ? drawingRef.current : null;
+    const list = drawStrokesRef.current[idxRef.current] || [];
+    paintInkStrokes(ctx, live ? list.filter((s) => s !== live) : list, w, h);
+  }
+
+  function redrawLive() {
+    const liveCv = drawCanvasRef.current;
+    if (!liveCv) return;
+    if (!drawBoxRef.current.w) layoutDrawCanvases();
+    const { w, h, dpr } = drawBoxRef.current;
+    const ctx = liveCv.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const live = drawingRef.current && !drawingRef.current.erase ? drawingRef.current : null;
+    if (!live) return;
+    paintOneStroke(ctx, live, w, h, live.tip);
+  }
+
+  function commitLiveToBake() {
+    const live = drawingRef.current && !drawingRef.current.erase ? drawingRef.current : null;
+    const bake = bakeCanvasRef.current;
+    if (live && bake) {
+      if (!drawBoxRef.current.w) layoutDrawCanvases();
+      const { w, h, dpr } = drawBoxRef.current;
+      const ctx = bake.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      paintOneStroke(ctx, live, w, h, null);
+    }
+    clearCanvas(drawCanvasRef.current);
+  }
+
+  function syncDrawCanvas() {
+    redrawBake();
+    const liveCv = drawCanvasRef.current;
+    if (liveCv) clearCanvas(liveCv);
+  }
+
+  function recountInk() {
+    let n = 0;
+    for (const list of Object.values(drawStrokesRef.current)) n += list?.length || 0;
+    setHasInk(n > 0);
+  }
+
+  function slidePointFromEvent(e) {
+    const stage = stageRef.current;
+    if (!stage) return null;
+    const r = stage.getBoundingClientRect();
+    if (r.width < 4 || r.height < 4) return null;
+    return {
+      x: (e.clientX - r.left) / r.width,
+      y: (e.clientY - r.top) / r.height,
+    };
+  }
+
+  function applyErase(p) {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const r = stage.getBoundingClientRect();
+    const i = idxRef.current;
+    const next = eraseInkAt(drawStrokesRef.current[i] || [], p, r.width, r.height);
+    drawStrokesRef.current[i] = next;
+    if (!next.length && drawToolRef.current === 'erase') setDrawTool('brush');
+    recountInk();
+    syncDrawCanvas();
+  }
+
+  function setBrushColor(color) {
+    setDrawColor(color);
+    saveBrushPref(color, drawWidth);
+  }
+
+  function setBrushWidth(width) {
+    setDrawWidth(width);
+    saveBrushPref(drawColor, width);
+  }
+
+  useEffect(() => {
+    if (drawTool !== 'brush') setColorWheelOpen(false);
+  }, [drawTool]);
+
+  useEffect(() => {
+    if (!colorWheelOpen) return undefined;
+    const onDoc = (e) => {
+      const t = e.target;
+      if (t?.closest?.('.preview-draw-color-wheel') || t?.closest?.('.preview-draw-c-custom')) return;
+      setColorWheelOpen(false);
+    };
+    document.addEventListener('pointerdown', onDoc, true);
+    return () => document.removeEventListener('pointerdown', onDoc, true);
+  }, [colorWheelOpen]);
+
+  function clearAllDrawings() {
+    drawStrokesRef.current = {};
+    drawingRef.current = null;
+    setHasInk(false);
+    syncDrawCanvas();
+  }
+
+  /** Drop presentation ink tool + any stuck pointer capture / body cursor. */
+  function endPresentationDrawing() {
+    const live = drawCanvasRef.current;
+    const pid = drawPointerIdRef.current;
+    if (live && pid != null) {
+      try {
+        live.releasePointerCapture(pid);
+      } catch (err) {}
+    }
+    drawPointerIdRef.current = null;
+    const stroke = drawingRef.current;
+    if (stroke?.raf) cancelAnimationFrame(stroke.raf);
+    if (stroke?.pauseT) clearTimeout(stroke.pauseT);
+    drawingRef.current = null;
+    setDrawTool(null);
+    setColorWheelOpen(false);
+    hideBrushCursor();
+    try {
+      document.body.style.cursor = '';
+    } catch (err) {}
+    // Editor draw mode blocks element hits (is-drawing). Leaving the show must restore clicks.
+    try {
+      const st = usePresentationStore.getState();
+      if (st.drawTool && st.drawTool !== 'cursor') st.setDrawTool('cursor');
+    } catch (err) {}
+  }
+
+  useEffect(() => {
+    if (!open) {
+      endPresentationDrawing();
+      drawStrokesRef.current = {};
+      setHasInk(false);
+      return undefined;
+    }
+    // Don't leave the editor brush armed under the slideshow (body cursor:none / no hit-targets).
+    try {
+      const st = usePresentationStore.getState();
+      if (st.drawTool && st.drawTool !== 'cursor') st.setDrawTool('cursor');
+    } catch (err) {}
+    return undefined;
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    syncDrawCanvas();
+    const onResize = () => syncDrawCanvas();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [open, idx, vp.w, vp.h, camTransform, animKey]);
+
+  useEffect(() => {
+    if (!presShowBrush) setDrawTool(null);
+  }, [presShowBrush]);
 
   function clearMediaPool() {
     stopMediaPool(mediaPoolRef.current);
@@ -1149,8 +2463,8 @@ export default function PreviewOverlay() {
       const fromShadowOn = !!(fromData?.shadow === true || fromData?.shadow === 'true');
       const toShadowOn = !!(toData?.shadow === true || toData?.shadow === 'true');
       const parts = [];
-      const fromBlur = +(fromData?.blur || 0);
-      const toBlur = +(toData?.blur || 0);
+      const fromBlur = morphCssBlurPx(fromData);
+      const toBlur = morphCssBlurPx(toData);
       const curBlur = fromBlur + (toBlur - fromBlur) * ease;
       if (curBlur > 0.01) parts.push(`blur(${curBlur}px)`);
       if (fromShadowOn || toShadowOn) {
@@ -1167,7 +2481,156 @@ export default function PreviewOverlay() {
           parts.push(`drop-shadow(0 ${curSize}px ${Math.max(0, curBlurS)}px ${color})`);
         }
       }
-      domEl.style.filter = parts.length ? parts.join(' ') : '';
+      const filterCss = parts.length ? parts.join(' ') : '';
+      writeMorphFx(toData?.id, { filter: filterCss });
+      domEl.style.filter = filterCss;
+    } catch (e) {}
+  }
+
+  function applyMorphOpacity(domEl, fromData, toData, ease) {
+    try {
+      const a = morphElOpacity(fromData);
+      const b = morphElOpacity(toData);
+      const cur = a + (b - a) * ease;
+      writeMorphFx(toData?.id, { opacity: cur });
+      domEl.style.opacity = String(cur);
+      if (toData?.type === 'image') {
+        const img = domEl.querySelector('img');
+        if (!img) return;
+        const frame = toData.imgFrame || fromData?.imgFrame;
+        if (frame === 'ribbon' || frame === 'polaroid') return;
+        img.style.opacity = String(cur);
+      }
+    } catch (e) {}
+  }
+
+  function resetMorphOpacity(domEl, toData) {
+    try {
+      const op = morphElOpacity(toData);
+      writeMorphFx(toData?.id, { opacity: op });
+      domEl.style.opacity = String(op);
+      if (toData?.type === 'image') {
+        const img = domEl.querySelector('img');
+        const frame = toData.imgFrame;
+        if (img && frame !== 'ribbon' && frame !== 'polaroid') img.style.opacity = String(op);
+      }
+    } catch (e) {}
+  }
+
+  function applyMorphLayerBlur(domEl, fromData, toData, ease) {
+    try {
+      const type = toData?.type;
+      const fromB = morphLayerBlurPx(fromData);
+      const toB = morphLayerBlurPx(toData);
+      if (fromB < 0.01 && toB < 0.01) return;
+      const paint = morphLayerBlurPaint(fromB, toB, ease);
+      writeMorphFx(toData?.id, {
+        layerBlur: paint.cur,
+        layerBlurPeak: paint.peak,
+        layerBlurOpacity: paint.opacity,
+        layerBlurFilter: paint.filterBlur,
+      });
+      if (type === 'shape') {
+        const host =
+          domEl.querySelector('.react-shape-blur-overlay')?.parentElement ||
+          [...domEl.children].find((c) => c.querySelector?.('svg')) ||
+          domEl.querySelector(':scope > div');
+        if (!host) return;
+        const synth = lerpMorphEl(fromData, toData, ease);
+        // Keep mask/clip pad on the peak so the frost box doesn't shrink each frame.
+        synth.shapeBlur = Math.max(paint.peak, 0.001);
+        const style = shapeBlurOverlayStyle(synth);
+        const overlay = ensureBlurOverlay(host, 'react-shape-blur-overlay');
+        if (!style) {
+          paintBackdropBlur(overlay, null, 0, 0);
+          return;
+        }
+        paintBackdropBlur(overlay, style, paint.filterBlur, paint.opacity);
+        return;
+      }
+      if (type === 'text') {
+        // Text bg layer may also carry solid/gradient fill — only opacity-fade when blur-only,
+        // otherwise lerp the filter radius so the fill doesn't ghost-fade.
+        const blurOnly = !toData?.textBg && !toData?.textBgGrad && !fromData?.textBg && !fromData?.textBgGrad;
+        const synth = {
+          ...toData,
+          textBgBlur: Math.max(blurOnly ? paint.peak : paint.cur, 0.001),
+        };
+        const style = textBgLayerStyle(synth) || {
+          position: 'absolute',
+          inset: 0,
+          pointerEvents: 'none',
+          zIndex: 0,
+        };
+        const overlay = ensureBlurOverlay(domEl, 'react-text-bg-layer');
+        paintBackdropBlur(
+          overlay,
+          style,
+          blurOnly ? paint.filterBlur : Math.max(paint.cur, 0.001),
+          blurOnly ? paint.opacity : 1
+        );
+        return;
+      }
+      if (type === 'markdown') {
+        const host = domEl.querySelector('.react-el-md');
+        if (!host) return;
+        const blurOnly = !toData?.textBg && !toData?.textBgGrad && !fromData?.textBg && !fromData?.textBgGrad;
+        const synth = {
+          ...toData,
+          textBgBlur: Math.max(blurOnly ? paint.peak : paint.cur, 0.001),
+        };
+        const style = textBgLayerStyle(synth) || {
+          position: 'absolute',
+          inset: 0,
+          pointerEvents: 'none',
+          zIndex: 0,
+        };
+        const overlay = ensureBlurOverlay(host, 'react-text-bg-layer');
+        paintBackdropBlur(
+          overlay,
+          style,
+          blurOnly ? paint.filterBlur : Math.max(paint.cur, 0.001),
+          blurOnly ? paint.opacity : 1
+        );
+        return;
+      }
+      if (type === 'table') {
+        const host = domEl.querySelector(':scope > div');
+        if (!host) return;
+        const overlay = ensureBlurOverlay(host, 'react-table-blur-overlay');
+        overlay.style.position = 'absolute';
+        overlay.style.inset = '0';
+        overlay.style.pointerEvents = 'none';
+        paintBackdropBlur(overlay, null, paint.filterBlur, paint.opacity);
+      }
+    } catch (e) {}
+  }
+
+  function resetMorphLayerBlur(domEl, toData) {
+    try {
+      const toB = morphLayerBlurPx(toData);
+      applyMorphLayerBlur(domEl, toData, toData, 1);
+      if (toData?.type === 'shape') {
+        const overlay =
+          domEl.querySelector('.react-shape-blur-overlay') ||
+          domEl.querySelector('[data-morph-blur="1"]');
+        if (toB <= 0.01) {
+          overlay?.remove();
+        } else if (overlay) {
+          // Restore real radius (not peak) and full opacity for the settled slide.
+          const style = shapeBlurOverlayStyle(toData);
+          paintBackdropBlur(overlay, style, toB, 1);
+        }
+      }
+      if (toData?.type === 'text' && !hasTextBg(toData)) {
+        domEl.querySelector('[data-morph-blur="1"]')?.remove();
+      }
+      if (toData?.type === 'markdown' && !hasTextBg(toData)) {
+        domEl.querySelector('.react-el-md [data-morph-blur="1"]')?.remove();
+      }
+      if (toData?.type === 'table' && !(+(toData.tableBgBlur || 0) > 0)) {
+        domEl.querySelector('[data-morph-blur="1"]')?.remove();
+      }
     } catch (e) {}
   }
 
@@ -1193,12 +2656,15 @@ export default function PreviewOverlay() {
         const fillChanged = fromFill && toFill && fromFill !== toFill;
         const strokeChanged = fromStroke && toStroke && fromStroke !== toStroke;
         const rxChanged = fromRx !== toRx;
-        if (fillChanged || strokeChanged || rxChanged) {
+        const geomChanged = morphGeomDirty(fromData, toData);
+        if (fillChanged || strokeChanged || rxChanged || geomChanged) {
           const svg = domEl.querySelector('svg');
           if (svg) {
             const curFill = fillChanged ? lerpHexColor(fromFill, toFill, ease) : null;
             const curStroke = strokeChanged ? lerpHexColor(fromStroke, toStroke, ease) : null;
-            const curRx = rxChanged ? fromRx + (toRx - fromRx) * ease : toRx;
+            const synth = lerpMorphEl(fromData, toData, ease);
+            synth.fill = curFill || toData.fill;
+            synth.stroke = curStroke || toData.stroke;
             // Fast path: a plain rect (the common rounded-rectangle case, including gradient
             // fills which just add a sibling <defs>) is one or two <rect> nodes — update
             // their attributes IN PLACE instead of tearing down and rebuilding the whole SVG
@@ -1211,8 +2677,9 @@ export default function PreviewOverlay() {
             const otherEls = svgChildren.filter(
               (c) => !['rect', 'defs'].includes(c.tagName?.toLowerCase())
             );
-            if (rectEls.length > 0 && otherEls.length === 0) {
-              const rxAttr = shapeRxPx(curRx, toData.w, toData.h);
+            const plainRect = !geomChanged && rectEls.length > 0 && otherEls.length === 0;
+            if (plainRect) {
+              const rxAttr = shapeRxPx(synth.rx, toData.w, toData.h);
               rectEls.forEach((rectEl) => {
                 rectEl.setAttribute('rx', rxAttr);
                 rectEl.setAttribute('ry', rxAttr);
@@ -1220,14 +2687,13 @@ export default function PreviewOverlay() {
                 if (curStroke) rectEl.setAttribute('stroke', curStroke);
               });
             } else if (svg.parentNode) {
-              const synth = {
-                ...toData,
-                fill: curFill || toData.fill,
-                stroke: curStroke || toData.stroke,
-                rx: curRx,
-              };
-              svg.parentNode.innerHTML = buildBasicShapeSVG(toData.shape || 'rect', shapeOptsFromEl(synth));
+              svg.parentNode.innerHTML = buildBasicShapeSVG(toData.shape || fromData.shape || 'rect', shapeOptsFromEl(synth));
             }
+          }
+          const shapeText = domEl.querySelector('.react-shape-text');
+          if (shapeText && geomChanged) {
+            const box = shapeTextBoxStyle(lerpMorphEl(fromData, toData, ease));
+            Object.assign(shapeText.style, box);
           }
         }
       }
@@ -1250,6 +2716,8 @@ export default function PreviewOverlay() {
         if (svg && svg.parentNode) {
           svg.parentNode.innerHTML = buildBasicShapeSVG(toData.shape || 'rect', shapeOptsFromEl(toData));
         }
+        const shapeText = domEl.querySelector('.react-shape-text');
+        if (shapeText) Object.assign(shapeText.style, shapeTextBoxStyle(toData));
       }
     } catch (e) {}
   }
@@ -1305,7 +2773,7 @@ export default function PreviewOverlay() {
   function morphTextOrigin(d) {
     const css = d?.cs || '';
     const alignRaw = (css.match(/text-align\s*:\s*([^;]+)/i) || [])[1];
-    const align = (alignRaw || (d?.type === 'formula' ? 'center' : 'left')).trim();
+    const align = (alignRaw || 'left').trim();
     const valign = d?.valign || (d?.type === 'formula' ? 'middle' : 'top');
     const xPct = align === 'center' ? '50%' : align === 'right' || align === 'end' ? '100%' : '0%';
     const yPct = valign === 'middle' ? '50%' : valign === 'bottom' ? '100%' : '0%';
@@ -1326,24 +2794,29 @@ export default function PreviewOverlay() {
       const dflt = toData?.type === 'formula' ? 40 : 36;
       const fromFs = morphFontSizePx(fromData) ?? dflt;
       const toFs = morphFontSizePx(toData) ?? dflt;
-      if (!fromFs || !toFs || fromFs === toFs) return;
       const holder = el.querySelector('.react-el-text');
       if (!holder) return;
-      const scale0 = fromFs / toFs;
-      const curScale = scale0 + (1 - scale0) * ease;
-      holder.style.transformOrigin = morphTextOrigin(toData);
-      holder.style.transform = Math.abs(curScale - 1) > 0.001 ? `scale(${curScale})` : '';
+      const synth = lerpMorphEl(fromData, toData, ease);
+      const warp = toData.type === 'text' ? shapeTextWarpCss(synth) : null;
+      const sizeChanged = fromFs && toFs && fromFs !== toFs;
+      const scale0 = sizeChanged ? fromFs / toFs : 1;
+      const curScale = sizeChanged ? scale0 + (1 - scale0) * ease : 1;
+      const parts = [];
+      if (warp) parts.push(warp);
+      if (Math.abs(curScale - 1) > 0.001) parts.push(`scale(${curScale})`);
+      holder.style.transformOrigin = warp ? '0 0' : morphTextOrigin(toData);
+      holder.style.transform = parts.join(' ');
     } catch (e) {}
   }
 
-  /** Undo the temporary scale left by applyMorphTextSize — the correct rest state is none. */
-  function resetMorphTextSize(el) {
+  /** Undo the temporary scale left by applyMorphTextSize — keep the destination warp. */
+  function resetMorphTextSize(el, toData) {
     try {
       const holder = el.querySelector('.react-el-text');
-      if (holder) {
-        holder.style.transform = '';
-        holder.style.transformOrigin = '';
-      }
+      if (!holder) return;
+      const warp = toData?.type === 'text' ? shapeTextWarpCss(toData) : null;
+      holder.style.transform = warp || '';
+      holder.style.transformOrigin = warp ? '0 0' : '';
     } catch (e) {}
   }
 
@@ -1356,9 +2829,72 @@ export default function PreviewOverlay() {
 
   function groupMembers(el, slide) {
     if (!el) return [];
-    if (!el.groupId || !slide?.els) return [el];
-    const members = slide.els.filter((x) => x && x.groupId === el.groupId);
-    return members.length > 1 ? members : [el];
+    const pick = (lead, s) => {
+      if (!lead || lead.groupId == null || lead.groupId === '' || !s?.els) return null;
+      const gid = String(lead.groupId);
+      const members = s.els.filter(
+        (x) => x && !x._isDecor && x.groupId != null && x.groupId !== '' && String(x.groupId) === gid
+      );
+      return members.length > 1 ? members : null;
+    };
+    let out = pick(el, slide);
+    if (out) return out;
+    // Deferred playBundle can still hold a stale slides[idx] after goTo — recover from store.
+    const storeSlide = usePresentationStore.getState().slides[idxRef.current];
+    const storeEl =
+      (storeSlide?.els || []).find((e) => e && String(e.id) === String(el.id)) || el;
+    out = pick(storeEl, storeSlide);
+    if (out) return out;
+    out = pick(storeEl, slidesRef.current[idxRef.current]);
+    if (out) return out;
+    // Last resort: stage DOM already has data-gid on every member.
+    const gid =
+      storeEl?.groupId != null && storeEl.groupId !== ''
+        ? String(storeEl.groupId)
+        : el.groupId != null && el.groupId !== ''
+          ? String(el.groupId)
+          : '';
+    if (gid && stageRef.current) {
+      const nodes = [
+        ...stageRef.current.querySelectorAll(`[data-gid="${CSS.escape(gid)}"]`),
+      ];
+      if (nodes.length > 1) {
+        const pool = [
+          ...(slide?.els || []),
+          ...(storeSlide?.els || []),
+          ...(slidesRef.current[idxRef.current]?.els || []),
+        ];
+        const byId = new Map();
+        pool.forEach((e) => {
+          if (e?.id != null && !byId.has(String(e.id))) byId.set(String(e.id), e);
+        });
+        const fromDom = nodes
+          .map((n) => {
+            const id = n.getAttribute('data-id');
+            if (id == null || id === '') return null;
+            return byId.get(String(id)) || { id, groupId: gid };
+          })
+          .filter(Boolean);
+        if (fromDom.length > 1) return fromDom;
+      }
+    }
+    return [el];
+  }
+
+  /** Snap every slide el back to authored box (clears baked moveTo left/top). */
+  function resetAuthoredElBoxes(slide) {
+    const root = stageRef.current;
+    if (!root || !slide) return;
+    (slide.els || []).forEach((d) => {
+      if (!d || d._isDecor || d.id == null) return;
+      const node = findStageEl(d.id);
+      if (!node) return;
+      cancelDomAnims(node);
+      node.style.left = `${d.x || 0}px`;
+      node.style.top = `${d.y || 0}px`;
+      node.style.transform = elBoxTransform(d) || '';
+      node.style.transition = '';
+    });
   }
 
   function markGroupHidden(slideIdx, el, slide) {
@@ -1391,7 +2927,9 @@ export default function PreviewOverlay() {
       if (!useUiStore.getState().previewOpen) return;
       if (idxRef.current !== slideIdx) return;
       markGroupHidden(slideIdx, el, slide);
-      hideElsNow(groupMembers(el, slide).map((m) => String(m.id)));
+      flushSync(() => {
+        hideElsNow(groupMembers(el, slide).map((m) => String(m.id)));
+      });
       clearAutoTimer();
       goTo(si);
     }, Math.max(0, waitMs || 0));
@@ -1433,9 +2971,61 @@ export default function PreviewOverlay() {
     }
   }
 
+  /**
+   * Always measure the live overlay/window — never trust a closed-over `vp` from an
+   * earlier render. A busy-timer refit after moveTo/group anim used to re-apply the
+   * pre-fullscreen scale while the outer box was already full-size → slide tucked
+   * top-left with black bars.
+   */
+  function viewportSize() {
+    const node = overlayRef.current;
+    if (node && node.clientWidth > 2 && node.clientHeight > 2) {
+      return { w: node.clientWidth, h: node.clientHeight };
+    }
+    if (typeof document !== 'undefined' && document.fullscreenElement) {
+      const fs = document.fullscreenElement;
+      if (fs.clientWidth > 2 && fs.clientHeight > 2) {
+        return { w: fs.clientWidth, h: fs.clientHeight };
+      }
+    }
+    return {
+      w: window.innerWidth || vp.w || 1,
+      h: window.innerHeight || vp.h || 1,
+    };
+  }
+
+  function fitScale() {
+    const { w, h } = viewportSize();
+    return Math.min(w / canvasW, h / canvasH);
+  }
+
+  function bumpCamTick(el) {
+    const node = el || stageRef.current;
+    if (node) setCamTransform(node.style.transform || '');
+  }
+
+  /**
+   * Keep stage CSS scale in sync with the outer fit box.
+   * When they drift (skip mid-enter zoom, fullscreen resize, abort camera with a
+   * stale fit), the slide sits top-left at a partial scale with black bars.
+   */
+  function refitStage(cam) {
+    const el = stageRef.current;
+    if (!el) return;
+    const { w, h } = viewportSize();
+    // Keep React `vp` / outer box size aligned with what we just measured.
+    if (Math.abs((vp.w || 0) - w) > 1 || Math.abs((vp.h || 0) - h) > 1) {
+      setVp({ w, h });
+    }
+    const state = cam || el._pvCamState || fullSlideCam(canvasW, canvasH);
+    applyCameraTransform(el, state, Math.min(w / canvasW, h / canvasH), canvasW, canvasH);
+    bumpCamTick(el);
+  }
+
   /** Instantly finish in-progress transition / camera / anim wait (2nd keypress). */
   function skipBusy() {
-    if (!busy.current) return false;
+    // Camera may still be flying after the bundle busy timer cleared — treat that as busy too.
+    if (!busy.current && !camAbortRef.current) return false;
     clearBusyTimer();
     if (camAbortRef.current) {
       try {
@@ -1454,19 +3044,41 @@ export default function PreviewOverlay() {
     try {
       overlayRef.current?.querySelectorAll('.pv-exit-snapshot').forEach((n) => n.remove());
     } catch (e) {}
-    if (stageRef.current) {
-      setCamTransform(stageRef.current.style.transform);
-    }
+    // abort({ finish }) rewrites transform with the fit captured at camera start —
+    // always re-fit to the current viewport after clearing busy/enter anim.
+    refitStage();
     return true;
   }
 
-  function fitScale() {
-    const w = vp.w || window.innerWidth;
-    const h = vp.h || window.innerHeight;
-    return Math.min(w / canvasW, h / canvasH);
+  function startStageCamera(el, cam, animOpts = {}) {
+    if (!el || !cam) return null;
+    const userDone = animOpts.onDone;
+    return fireCameraAnim(el, cam, {
+      W: canvasW,
+      H: canvasH,
+      fitScale: fitScale(),
+      ...animOpts,
+      onDone: () => {
+        camAbortRef.current = null;
+        // Viewport may have changed during the flight — re-fit with current scale.
+        if (el._pvCamState) {
+          applyCameraTransform(el, el._pvCamState, fitScale(), canvasW, canvasH);
+        }
+        bumpCamTick(el);
+        userDone?.();
+      },
+    });
   }
 
-  function initSlideAnims(slide) {
+  /**
+   * @param {object} slide
+   * @param {{ autoStartAfter?: number }} [opts]
+   *   autoStartAfter — ms to wait before auto-firing the first camera/bundle.
+   *   Must cover the slide enter transition: starting a camera while `.pv-enter-zoom`
+   *   (scale 0.86→1) is still running makes the zoom look like it begins from a
+   *   shrunk screen; click-advance works because the enter anim has already finished.
+   */
+  function initSlideAnims(slide, opts = {}) {
     if (camAbortRef.current) {
       camAbortRef.current.abort();
       camAbortRef.current = null;
@@ -1474,7 +3086,13 @@ export default function PreviewOverlay() {
     clearBusyTimer();
     busy.current = false;
     cumMotionRef.current = {};
+    motionGenRef.current = {};
+    pendingMotionEndRef.current = {};
+    skippedRepeatRef.current = new Set();
+    slidePlayGenRef.current += 1;
+    clickSlideTimersArmedRef.current = new Set();
     clearStageFx(stageRef.current);
+    animSlideRef.current = slide || null;
     stepsRef.current = collectSlidePlaybackSteps(slide);
     stepIRef.current = 0;
     const state = {};
@@ -1492,19 +3110,22 @@ export default function PreviewOverlay() {
         (a) => a && (a.name === 'cosmosTitle' || a.name === 'captionSlide')
       );
       if (hasEntrance || hasCosmosOrCaption) {
-        state[el.id] = { hidden: true };
-        if (hasCosmosOrCaption && el.groupId) {
-          (slide.els || []).forEach((m) => {
-            if (m && m.groupId === el.groupId) state[m.id] = { hidden: true };
-          });
-        }
+        // Entrance on any member hides the whole group until playback reveals them together.
+        groupMembers(el, slide).forEach((m) => {
+          if (m?.id != null) state[m.id] = { hidden: true };
+        });
       }
     });
-    setAnimState(state);
+    // Full replace — drop any leftover motionTx/Ty from a previous visit so a
+    // returning group moveTo starts every member from the authored box again.
+    flushSync(() => setAnimState(state));
+    // After React commits the cleared offsets, snap any leftover inline left/top.
+    requestAnimationFrame(() => resetAuthoredElBoxes(slide));
     const fit = fitScale();
-    setCamTransform(cameraCssTransform(fullSlideCam(canvasW, canvasH), fit, canvasW, canvasH));
     if (stageRef.current) {
-      stageRef.current._pvCamState = fullSlideCam(canvasW, canvasH);
+      stageRef.current._pvCamInited = true;
+      applyCameraTransform(stageRef.current, fullSlideCam(canvasW, canvasH), fit, canvasW, canvasH);
+      bumpCamTick(stageRef.current);
       // Prepare non-invert recolor silhouettes
       (slide?.els || []).forEach((d) => {
         if (!d || d._isDecor) return;
@@ -1512,15 +3133,196 @@ export default function PreviewOverlay() {
         if (node) prepareRecolorEl(node, d);
       });
     }
+    // Kick off the slide's own first step if it doesn't need a click to start —
+    // a camera move, or a bundle whose trigger is "auto" ("after previous"; there's no
+    // previous step on a fresh slide, so its "previous" is the slide appearing). Without
+    // this, nothing ever called playNextAnimStep() until the *next* navigation action, so
+    // every animation effectively behaved like "on click" regardless of its own trigger.
+    const first = stepsRef.current[0];
+    if (first && (first.kind === 'camera' || (first.kind === 'bundle' && first.auto))) {
+      // Cancel any not-yet-fired auto-start from a previous call — initSlideAnims can run
+      // twice in a row for the same slide (e.g. React StrictMode double-invoking the mount
+      // effect in dev), and without this both scheduled calls would fire, each resetting
+      // stepIRef back to 0 and independently kicking off playNextAnimStep(): the animation
+      // would visibly restart partway through and play twice.
+      if (autoStartAnimTimerRef.current) {
+        clearTimeout(autoStartAnimTimerRef.current);
+        autoStartAnimTimerRef.current = null;
+      }
+      const wait = Math.max(30, Math.round(+opts.autoStartAfter || 30));
+      autoStartAnimTimerRef.current = setTimeout(() => {
+        autoStartAnimTimerRef.current = null;
+        if (idxRef.current !== slideIdx) return;
+        // User already click-advanced — don't fire the deferred auto start.
+        if (stepIRef.current !== 0) return;
+        // Re-sync full-slide camera + fit so we don't inherit a mid-enter scale.
+        const el = stageRef.current;
+        if (el) {
+          el._pvCamInited = true;
+          applyCameraTransform(el, fullSlideCam(canvasW, canvasH), fitScale(), canvasW, canvasH);
+          bumpCamTick(el);
+        }
+        // Ref — not playNextAnimStep from this render (stale slides[idx] after goTo).
+        playNextAnimStepRef.current();
+      }, wait);
+    }
+  }
+
+  function cancelDomAnims(el) {
+    if (!el || typeof el.getAnimations !== 'function') return;
+    try {
+      el.getAnimations().forEach((a) => {
+        try {
+          a.cancel();
+        } catch (_) {
+          /* ignore */
+        }
+      });
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  /** Bake unfinished moveTo ends into cum so the next step/repeat does not drift. */
+  function commitPendingMotion(onlyIds) {
+    const pending = pendingMotionEndRef.current;
+    const ids = onlyIds
+      ? onlyIds.map(String).filter((id) => pending[id])
+      : Object.keys(pending);
+    if (!ids.length) return;
+    const patch = {};
+    ids.forEach((elId) => {
+      const p = pending[elId];
+      if (!p) return;
+      cumMotionRef.current[elId] = { tx: +p.tx || 0, ty: +p.ty || 0 };
+      patch[elId] = {
+        motionTx: +p.tx || 0,
+        motionTy: +p.ty || 0,
+        motionPlaying: false,
+      };
+      delete pending[elId];
+    });
+    if (!Object.keys(patch).length) return;
+    setAnimState((s) => {
+      const next = { ...s };
+      Object.keys(patch).forEach((elId) => {
+        next[elId] = { ...(s[elId] || {}), hidden: false, ...patch[elId] };
+      });
+      return next;
+    });
+  }
+
+  function resetMotionForRepeatCycle(bundle) {
+    const ids = new Set();
+    const liveIds = new Set();
+    const rid = bundle?.repeatId;
+    const slide =
+      animSlideRef.current || slidesRef.current[idxRef.current] || slides[idx] || {};
+    const collect = (step) => {
+      if (!step?.elId) return;
+      const elData = (slide.els || []).find((e) => e && String(e.id) === String(step.elId));
+      const members = groupMembers(elData || { id: step.elId }, slide);
+      if (isMotionAnim(step.name)) {
+        members.forEach((m) => {
+          if (m?.id != null) ids.add(String(m.id));
+        });
+      }
+      if (isFloatAnim(step.name) || isDanceAnim(step.name) || isSwingAnim(step.name)) {
+        members.forEach((m) => {
+          if (m?.id != null) liveIds.add(String(m.id));
+        });
+      }
+    };
+    (bundle?.items || []).forEach(collect);
+    // Whole repeat body (pause may lead the cycle — still reset later moveTos).
+    if (rid) {
+      (stepsRef.current || []).forEach((b) => {
+        if (!b || b.repeatId !== rid) return;
+        (b.items || []).forEach(collect);
+      });
+    }
+    liveIds.forEach((elId) => {
+      const el = findStageEl(elId);
+      if (!el) return;
+      clearFloat(el);
+      clearDance(el);
+      clearSwing(el);
+      cancelDomAnims(el);
+    });
+    if (!ids.size) return;
+    const resetPatch = {};
+    ids.forEach((elId) => {
+      // Drop unfinished ends — cycle restarts from authored origin, not mid-move.
+      delete pendingMotionEndRef.current[elId];
+      // Invalidate in-flight settles from the previous cycle before they bake left/top.
+      motionGenRef.current[elId] = (motionGenRef.current[elId] || 0) + 1;
+      cumMotionRef.current[elId] = { tx: 0, ty: 0 };
+      const elData = (slide.els || []).find((e) => e && String(e.id) === String(elId));
+      const el = findStageEl(elId);
+      if (el) {
+        cancelDomAnims(el);
+        if (elData) {
+          el.style.left = `${elData.x || 0}px`;
+          el.style.top = `${elData.y || 0}px`;
+          el.style.transform = elBoxTransform(elData) || '';
+        }
+        el.style.transition = '';
+      }
+      resetPatch[elId] = true;
+    });
+    setAnimState((s) => {
+      const next = { ...s };
+      Object.keys(resetPatch).forEach((elId) => {
+        next[elId] = {
+          ...(s[elId] || {}),
+          hidden: false,
+          motionTx: 0,
+          motionTy: 0,
+          motionPlaying: false,
+        };
+      });
+      return next;
+    });
   }
 
   function playBundle(bundle) {
     const items = bundle.items || [];
     if (!items.length) return 0;
-    const slide = slides[idx] || {};
+    // Prefer the slide initSlideAnims collected steps from. slides[idx] is wrong when
+    // this function is invoked from a deferred auto-start that closed over the previous render.
+    const slide =
+      animSlideRef.current || slidesRef.current[idxRef.current] || slides[idx] || {};
     const hiddenSet = hiddenElsRef.current[idxRef.current] || new Set();
     let maxWait = 0;
+    const inRepeat = !!(
+      bundle.repeatId ||
+      bundle.repeatCycleStart ||
+      bundle.repeatInfinite ||
+      items.some((it) => it && (it.repeatId || it.repeatCycleStart || it.repeatInfinite))
+    );
+    // Start of a repeat cycle → snap motion els back to authored origin (loop from start).
+    if (bundle.repeatCycleStart || items.some((it) => it && it.repeatCycleStart)) {
+      resetMotionForRepeatCycle(bundle);
+    }
     items.forEach((step) => {
+      if (step.kind === 'camera') {
+        const el = stageRef.current;
+        if (el) {
+          if (camAbortRef.current) {
+            try {
+              camAbortRef.current.abort();
+            } catch (e) {}
+            camAbortRef.current = null;
+          }
+          camAbortRef.current = startStageCamera(el, step.cam, {
+            delay: step.delay || 0,
+            duration: step.dur,
+          });
+        }
+        const wait = (step.delay || 0) + (step.dur || 1200);
+        if (wait > maxWait) maxWait = wait;
+        return;
+      }
       if (step.elId && hiddenSet.has(String(step.elId))) return;
       if (step.pause || step.name === 'pause') {
         const wait = Math.max(0, (step.delay || 0) + (step.dur || 0));
@@ -1529,13 +3331,250 @@ export default function PreviewOverlay() {
       }
 
       if (isSpecialAnim(step.name)) {
+        const elDataRaw =
+          (slide.els || []).find((e) => e && String(e.id) === String(step.elId)) || null;
+        const elData = elDataRaw
+          ? { ...elDataRaw }
+          : { id: step.elId, rot: step.rot || 0 };
+
+        // Motion must not bail on a missing leader node — after slide switch the stage
+        // remounts and siblings can appear a frame later than the anim auto-start.
+        if (isMotionAnim(step.name)) {
+          const members = groupMembers(elDataRaw || elData, slide);
+          const slideIdx = idxRef.current;
+          const playGen = slidePlayGenRef.current;
+          const dur = Math.max(50, +(step.dur || 600));
+          const delay = Math.max(0, +(step.delay || 0));
+          // rAF tween + setTimeout chain in repeat: leave slack so the next auto
+          // step does not cut the move short mid-flight.
+          const theoreticalWait = delay + dur + 64;
+          if (theoreticalWait > maxWait) maxWait = theoreticalWait;
+
+          const memberIds = members
+            .filter((m) => m?.id != null)
+            .map((m) => String(m.id));
+          // Kill in-flight tweens first, then bake their intended ends into cum so a
+          // Repeat/auto chain never resumes from a half-finished offset.
+          memberIds.forEach((id) => {
+            motionGenRef.current[id] = (motionGenRef.current[id] || 0) + 1;
+          });
+          commitPendingMotion(memberIds);
+
+          const starts = [];
+          const startPatch = {};
+          members.forEach((member) => {
+            if (member?.id == null) return;
+            const memberId = String(member.id);
+            const prev = cumMotionRef.current[memberId] || { tx: 0, ty: 0 };
+            const tx0 = +prev.tx || 0;
+            const ty0 = +prev.ty || 0;
+            starts.push({ member, memberId, tx0, ty0 });
+            startPatch[memberId] = {
+              hidden: false,
+              motionTx: tx0,
+              motionTy: ty0,
+              motionPlaying: true,
+              cls: undefined,
+            };
+            // Gen already bumped above; keep the same token for this tween.
+          });
+          if (!starts.length) return;
+
+          // rotate / mirror still need WAAPI on each node (no left/top delta).
+          if (step.name === 'rotate' || step.name === 'mirror') {
+            setAnimState((s) => {
+              const next = { ...s };
+              Object.keys(startPatch).forEach((id) => {
+                next[id] = { ...(s[id] || {}), ...startPatch[id] };
+              });
+              return next;
+            });
+            const motionOpts = {
+              name: step.name,
+              dur: step.dur,
+              delay: step.delay,
+              rotateDir: step.rotateDir,
+              rotateDeg: step.rotateDeg,
+              mirrorAxis: step.mirrorAxis,
+              easing: step.easing,
+            };
+            let left = starts.length;
+            starts.forEach(({ member, memberId, tx0, ty0 }) => {
+              const gen = motionGenRef.current[memberId];
+              const dom = findStageEl(member.id);
+              if (!dom) {
+                left -= 1;
+                return;
+              }
+              cancelDomAnims(dom);
+              fireMotionAnim(
+                dom,
+                { rot: step.rot || member.rot || 0 },
+                motionOpts,
+                tx0,
+                ty0,
+                () => {
+                  if (slidePlayGenRef.current !== playGen) return;
+                  if (idxRef.current !== slideIdx) return;
+                  if (motionGenRef.current[memberId] !== gen) return;
+                  left -= 1;
+                  if (left > 0) return;
+                  setAnimState((s) => {
+                    const next = { ...s };
+                    starts.forEach((st) => {
+                      const prior = next[st.memberId] || {};
+                      next[st.memberId] = {
+                        ...prior,
+                        motionTx: st.tx0,
+                        motionTy: st.ty0,
+                        motionPlaying: false,
+                      };
+                    });
+                    return next;
+                  });
+                }
+              );
+            });
+            return;
+          }
+
+          // moveTo / pathTo / orbitTo: tween motionTx/Ty for EVERY group member in one
+          // setState per frame — no WAAPI transform (that only moved the leader).
+          const offsetAt = (t) => {
+            if (step.name === 'pathTo' || (step.name === 'moveTo' && step.pathPts?.length)) {
+              const frames = samplePathFrames(pathPtsOf(step), Math.max(24, Math.round(dur / 20)));
+              if (!frames.length) return pathEndDelta(step);
+              const idxF = Math.min(frames.length - 1, Math.round(t * (frames.length - 1)));
+              const p = frames[idxF] || frames[frames.length - 1];
+              return { tx: p.x || 0, ty: p.y || 0 };
+            }
+            if (step.name === 'orbitTo') {
+              const dir = (step.orbitDir || 'cw') === 'cw' ? 1 : -1;
+              const totalDeg = (step.orbitDeg != null ? step.orbitDeg : 360) * dir;
+              const ocx = step.orbitCx || 0;
+              const ocy = step.orbitCy || 0;
+              const r = Math.sqrt(ocx * ocx + ocy * ocy) || orbitRadius(step) || 120;
+              const startAngle = Math.atan2(-ocy, -ocx);
+              const ang = startAngle + ((totalDeg * Math.PI) / 180) * t;
+              return {
+                tx: ocx + r * Math.cos(ang),
+                ty: ocy + r * Math.sin(ang),
+              };
+            }
+            const d = moveToDelta(step);
+            return { tx: d.tx * t, ty: d.ty * t };
+          };
+          const endDelta = offsetAt(1);
+          starts.forEach((st) => {
+            pendingMotionEndRef.current[st.memberId] = {
+              tx: st.tx0 + endDelta.tx,
+              ty: st.ty0 + endDelta.ty,
+            };
+          });
+
+          setAnimState((s) => {
+            const next = { ...s };
+            Object.keys(startPatch).forEach((id) => {
+              next[id] = { ...(s[id] || {}), ...startPatch[id] };
+            });
+            return next;
+          });
+
+          const easeName = animEasingCss(step.easing);
+          const ease = (t) => {
+            if (easeName === 'ease-in') return t * t;
+            if (easeName === 'ease-out') return 1 - (1 - t) * (1 - t);
+            if (easeName === 'ease-in-out') {
+              return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+            }
+            return t;
+          };
+
+          const gens = {};
+          starts.forEach((st) => {
+            gens[st.memberId] = motionGenRef.current[st.memberId];
+          });
+          const stillCurrent = () =>
+            slidePlayGenRef.current === playGen &&
+            idxRef.current === slideIdx &&
+            starts.every((st) => motionGenRef.current[st.memberId] === gens[st.memberId]);
+
+          const settleTween = () => {
+            starts.forEach((st) => {
+              const endTx = st.tx0 + endDelta.tx;
+              const endTy = st.ty0 + endDelta.ty;
+              cumMotionRef.current[st.memberId] = { tx: endTx, ty: endTy };
+              delete pendingMotionEndRef.current[st.memberId];
+            });
+            setAnimState((s) => {
+              const next = { ...s };
+              starts.forEach((st) => {
+                const prior = next[st.memberId] || {};
+                const stayHidden = !!prior.particles || !!prior.hidden;
+                next[st.memberId] = {
+                  ...prior,
+                  hidden: stayHidden,
+                  motionTx: st.tx0 + endDelta.tx,
+                  motionTy: st.ty0 + endDelta.ty,
+                  motionPlaying: false,
+                };
+              });
+              return next;
+            });
+            requestAnimationFrame(() => refitStage());
+          };
+
+          const runTween = () => {
+            if (!stillCurrent()) {
+              // Superseded before start — keep pending end for the next starter to commit.
+              return;
+            }
+            const t0 = performance.now();
+            const tick = (now) => {
+              if (!stillCurrent()) return;
+              const raw = Math.min(1, (now - t0) / dur);
+              const e = ease(raw);
+              const off = offsetAt(e);
+              setAnimState((s) => {
+                const next = { ...s };
+                starts.forEach((st) => {
+                  const prior = next[st.memberId] || {};
+                  next[st.memberId] = {
+                    ...prior,
+                    hidden: false,
+                    motionTx: st.tx0 + off.tx,
+                    motionTy: st.ty0 + off.ty,
+                    motionPlaying: true,
+                  };
+                });
+                return next;
+              });
+              if (raw < 1) {
+                requestAnimationFrame(tick);
+                return;
+              }
+              settleTween();
+            };
+            // Start this frame (no extra outer rAF) so delay+dur matches the busy timer.
+            tick(t0);
+          };
+          if (delay > 0) setTimeout(runTween, delay);
+          else runTween();
+          return;
+        }
+
         const el = findStageEl(step.elId);
         if (!el) return;
         const keepHidden =
           isCosmosTitleAnim(step.name) ||
           isCaptionSlideAnim(step.name) ||
           isParticlesAnim(step.name);
-        revealEl(step.elId, { live: !keepHidden, cls: null, hidden: keepHidden });
+        revealEl(step.elId, {
+          live: !keepHidden,
+          cls: null,
+          hidden: keepHidden,
+          particles: isParticlesAnim(step.name),
+        });
         if (!keepHidden) {
           el.style.visibility = 'visible';
           el.style.opacity = '';
@@ -1545,47 +3584,78 @@ export default function PreviewOverlay() {
         }
         el.style.overflow = 'visible';
 
-        const elData =
-          (slide.els || []).find((e) => e && String(e.id) === String(step.elId)) || {
-            id: step.elId,
-            type: el.dataset?.type,
-            x: parseFloat(el.style.left) || 0,
-            y: parseFloat(el.style.top) || 0,
-            w: parseFloat(el.style.width) || el.offsetWidth,
-            h: parseFloat(el.style.height) || el.offsetHeight,
-            rot: step.rot || 0,
-          };
+        // Enrich elData from live DOM when the store stub was minimal.
+        if (elData.x == null) {
+          elData.x = parseFloat(el.style.left) || 0;
+          elData.y = parseFloat(el.style.top) || 0;
+          elData.w = parseFloat(el.style.width) || el.offsetWidth;
+          elData.h = parseFloat(el.style.height) || el.offsetHeight;
+          elData.type = el.dataset?.type;
+        }
 
         if (isFloatAnim(step.name)) {
-          const result = fireFloatAnim(el, elData, {
+          const members = groupMembers(elData, slide);
+          const raw = {
             name: 'float',
             dur: step.dur,
             delay: step.delay,
             swingCount: step.swingCount,
+          };
+          const anim = inRepeat ? floatAnimForRepeatCycle(raw) : raw;
+          const frames =
+            members.length > 1 ? floatFramesForGroup(members, elData.groupId) : undefined;
+          members.forEach((m) => {
+            const dom = findStageEl(m.id) || (String(m.id) === String(step.elId) ? el : null);
+            if (!dom) return;
+            revealEl(m.id, { live: true, cls: null, hidden: false });
+            fireFloatAnim(dom, m, anim, {
+              frames,
+              groupMembers: members,
+              groupId: elData.groupId,
+            });
           });
-          if (result.waitMs > maxWait) maxWait = result.waitMs;
+          const wait = floatWaitMsForPlayback(raw, { inRepeat });
+          if (wait > maxWait) maxWait = wait;
           return;
         }
         if (isDanceAnim(step.name)) {
-          const result = fireDanceAnim(el, elData, {
+          const members = groupMembers(elData, slide);
+          const raw = {
             name: 'dance',
             dur: step.dur,
             delay: step.delay,
             swingCount: step.swingCount,
+          };
+          const anim = inRepeat ? danceAnimForRepeatCycle(raw) : raw;
+          members.forEach((m) => {
+            const dom = findStageEl(m.id) || (String(m.id) === String(step.elId) ? el : null);
+            if (!dom) return;
+            revealEl(m.id, { live: true, cls: null, hidden: false });
+            fireDanceAnim(dom, m, anim);
           });
-          if (result.waitMs > maxWait) maxWait = result.waitMs;
+          const wait = danceWaitMsForPlayback(raw, { inRepeat });
+          if (wait > maxWait) maxWait = wait;
           return;
         }
         if (isSwingAnim(step.name)) {
-          const result = fireSwingAnim(el, elData, {
+          const members = groupMembers(elData, slide);
+          const raw = {
             name: 'swing',
             dur: step.dur,
             delay: step.delay,
             swingCount: step.swingCount,
             swingOx: step.swingOx,
             swingOy: step.swingOy,
+          };
+          const anim = inRepeat ? swingAnimForRepeatCycle(raw) : raw;
+          members.forEach((m) => {
+            const dom = findStageEl(m.id) || (String(m.id) === String(step.elId) ? el : null);
+            if (!dom) return;
+            revealEl(m.id, { live: true, cls: null, hidden: false });
+            fireSwingAnim(dom, m, anim);
           });
-          if (result.waitMs > maxWait) maxWait = result.waitMs;
+          const wait = swingWaitMsForPlayback(raw, { inRepeat });
+          if (wait > maxWait) maxWait = wait;
           return;
         }
         if (isInkDrawAnim(step.name)) {
@@ -1600,6 +3670,8 @@ export default function PreviewOverlay() {
           return;
         }
         if (isParticlesAnim(step.name)) {
+          const elId = step.elId;
+          const slideIdx = idxRef.current;
           const result = fireParticlesAnim(el, elData, {
             name: 'particles',
             dur: step.dur,
@@ -1611,19 +3683,38 @@ export default function PreviewOverlay() {
             ptRot: step.ptRot,
             ptSpread: step.ptSpread,
             swingCount: step.swingCount,
+          }, {
+            onDone: () => {
+              if (idxRef.current !== slideIdx) return;
+              markGroupHidden(slideIdx, elData, slide);
+              setAnimState((prev) => ({
+                ...prev,
+                [elId]: {
+                  ...(prev[elId] || {}),
+                  hidden: true,
+                  particles: false,
+                  live: false,
+                },
+              }));
+            },
           });
           if (result.waitMs > maxWait) maxWait = result.waitMs;
           return;
         }
         if (isCosmosTitleAnim(step.name)) {
-          const result = fireCosmosTitleAnim(
-            el,
+          hideElsNow(groupMembers(elData, slide).map((m) => String(m.id)));
+          const result = fireCosmosTitleForEl(
             elData,
+            slide,
             { name: 'cosmosTitle', dur: step.dur, delay: step.delay },
             {
               hideAfter: true,
-              onHide: () => revealEl(step.elId, { hidden: true, live: false }),
-            }
+              onHide: (ids) => {
+                hideElsNow(ids);
+                markGroupHidden(idxRef.current, elData, slide);
+              },
+            },
+            (id) => findStageEl(id)
           );
           if (result.waitMs > maxWait) maxWait = result.waitMs;
           return;
@@ -1688,84 +3779,241 @@ export default function PreviewOverlay() {
           if (result.waitMs > maxWait) maxWait = result.waitMs;
           return;
         }
+        if (isTransformAnim(step.name)) {
+          const from = step.from || snapshotTransformProps(elData);
+          const to = step.to || from;
+          const result = fireTransformAnim(
+            el,
+            from,
+            to,
+            {
+              name: 'transform',
+              dur: step.dur,
+              delay: step.delay,
+              easing: step.easing,
+            },
+            { theme: getTheme(usePresentationStore.getState().appliedThemeIdx) }
+          );
+          if (result.waitMs > maxWait) maxWait = result.waitMs;
+          return;
+        }
         if (isRecolorAnim(step.name)) {
-          const wait = fireRecolorAnim(el, elData, {
-            name: 'recolor',
-            dur: step.dur,
-            delay: step.delay,
-            recolorColor: step.recolorColor,
-            recolorInvert: step.recolorInvert,
-          });
+          const elId = step.elId;
+          const slideIdx = idxRef.current;
+          const wait = fireRecolorAnim(
+            el,
+            elData,
+            {
+              name: 'recolor',
+              dur: step.dur,
+              delay: step.delay,
+              recolorColor: step.recolorColor,
+              recolorInvert: step.recolorInvert,
+            },
+            {
+              onStart: () => {
+                if (idxRef.current !== slideIdx) return;
+                setAnimState((prev) => ({
+                  ...prev,
+                  [elId]: { ...(prev[elId] || {}), recolorPlaying: true, recolorDone: false },
+                }));
+              },
+              onDone: (info) => {
+                if (idxRef.current !== slideIdx) return;
+                setAnimState((prev) => ({
+                  ...prev,
+                  [elId]: {
+                    ...(prev[elId] || {}),
+                    recolorPlaying: false,
+                    recolorDone: !!info?.toColor,
+                  },
+                }));
+              },
+            }
+          );
           if (wait > maxWait) maxWait = wait;
           return;
         }
-        if (isMotionAnim(step.name)) {
-          const prev = cumMotionRef.current[step.elId] || { tx: 0, ty: 0 };
-          const result = fireMotionAnim(
-            el,
-            { rot: step.rot || elData.rot || 0 },
-            {
-              name: step.name,
-              dur: step.dur,
-              delay: step.delay,
-              tx: step.tx,
-              ty: step.ty,
-              orbitR: step.orbitR,
-              orbitDir: step.orbitDir,
-              orbitDeg: step.orbitDeg,
-              orbitCx: step.orbitCx,
-              orbitCy: step.orbitCy,
-              rotateDir: step.rotateDir,
-              rotateDeg: step.rotateDeg,
-              mirrorAxis: step.mirrorAxis,
-            },
-            prev.tx,
-            prev.ty
-          );
-          cumMotionRef.current[step.elId] = { tx: result.endTx, ty: result.endTy };
-          if (result.waitMs > maxWait) maxWait = result.waitMs;
+        if (isUncropAnim(step.name)) {
+          const elId = step.elId;
+          const waitU = (step.delay || 0) + (step.dur || 400);
+          const apply = () => {
+            setAnimState((prev) => {
+              const revealing = !prev[elId]?.uncropDone;
+              return {
+                ...prev,
+                [elId]: {
+                  ...(prev[elId] || {}),
+                  hidden: false,
+                  uncrop: revealing,
+                  uncropDone: revealing,
+                  dur: step.dur || 400,
+                },
+              };
+            });
+          };
+          if (step.delay > 0) setTimeout(apply, step.delay);
+          else apply();
+          if (waitU > maxWait) maxWait = waitU;
+          return;
         }
         return;
       }
 
       const live =
         isLiveAnim(step.name) || (isPulseFamilyAnim(step.name) && pulseIsInfinite(step));
+      // Outside a repeat, live/infinite anims don't block the timeline (wait 0).
+      // Inside a repeat they must occupy their authored duration so the cycle can
+      // finish and restart cleanly.
       const wait = live
-        ? 0
+        ? inRepeat
+          ? Math.max(0, (step.delay || 0) + (step.dur || 600))
+          : 0
         : isPulseFamilyAnim(step.name)
           ? pulseWaitMs(step)
           : (step.delay || 0) + (step.dur || 600);
       if (wait > maxWait) maxWait = wait;
+      const elData =
+        (slide.els || []).find((e) => e && String(e.id) === String(step.elId)) || { id: step.elId };
+      const members = groupMembers(elData, slide);
       const apply = () => {
-        setAnimState((prev) => ({
-          ...prev,
-          [step.elId]: {
-            hidden: false,
-            cls: animCssClass(step.name),
-            dur: step.dur,
-            live,
-            swingCount: isPulseFamilyAnim(step.name)
-              ? step.swingCount != null
-                ? step.swingCount
-                : 1
-              : undefined,
-          },
-        }));
+        setAnimState((prev) => {
+          const next = { ...prev };
+          members.forEach((m) => {
+            if (!m?.id) return;
+            const prior = next[m.id] || {};
+            next[m.id] = {
+              ...prior,
+              hidden: false,
+              cls: animCssClass(step.name),
+              dur: step.dur,
+              live,
+              // Keep baked post-moveTo offset (applied via left/top when !motionPlaying).
+              motionTx: prior.motionTx,
+              motionTy: prior.motionTy,
+              motionPlaying: false,
+              swingCount: isPulseFamilyAnim(step.name)
+                ? step.swingCount != null
+                  ? step.swingCount
+                  : 1
+                : undefined,
+            };
+          });
+          return next;
+        });
       };
       if (step.delay > 0) setTimeout(apply, step.delay);
       else apply();
       if (!live && isExitAnim(step.name)) {
-        const elData = (slide.els || []).find((e) => e && String(e.id) === String(step.elId));
         window.setTimeout(() => {
           if (idxRef.current !== idx) return;
-          markGroupHidden(idx, elData || { id: step.elId }, slide);
-          hideElsNow(
-            groupMembers(elData || { id: step.elId }, slide).map((m) => String(m.id))
-          );
+          markGroupHidden(idx, elData, slide);
+          hideElsNow(members.map((m) => String(m.id)));
         }, wait);
       }
     });
     return maxWait;
+  }
+
+  /** Last camera payload inside a playback step (top-level or bundle item). */
+  function cameraItemFromStep(step) {
+    if (!step) return null;
+    if (step.kind === 'camera' && step.cam) return step;
+    if (step.kind === 'bundle') {
+      const items = step.items || [];
+      for (let k = items.length - 1; k >= 0; k--) {
+        const it = items[k];
+        if (it?.kind === 'camera' && it.cam) return it;
+      }
+    }
+    return null;
+  }
+
+  /** Camera view after all camera steps with index < beforeIdx (else full slide). */
+  function cameraStateBefore(beforeIdx) {
+    const steps = stepsRef.current || [];
+    let target = fullSlideCam(canvasW, canvasH);
+    for (let j = 0; j < beforeIdx; j++) {
+      const camStep = cameraItemFromStep(steps[j]);
+      if (!camStep?.cam) continue;
+      const c = camStep.cam;
+      target = {
+        cx: +c.cx,
+        cy: +c.cy,
+        w: +c.w || canvasW,
+        h: +c.h || canvasH,
+        rot: +c.rot || 0,
+        duration: c.duration != null ? +c.duration : camStep.dur || 600,
+      };
+    }
+    return target;
+  }
+
+  function runCameraTo(targetCam, dur) {
+    const el = stageRef.current;
+    if (!el) return false;
+    busy.current = true;
+    if (camAbortRef.current) {
+      try {
+        camAbortRef.current.abort();
+      } catch (e) {}
+      camAbortRef.current = null;
+    }
+    camAbortRef.current = startStageCamera(el, targetCam, {
+      delay: 0,
+      duration: Math.max(200, +(dur || 600)),
+      onDone: () => {
+        busy.current = false;
+      },
+    });
+    return true;
+  }
+
+  /** Undo last played step; reverse camera to the prior view. */
+  function playPrevAnimStep() {
+    const steps = stepsRef.current;
+    const i = stepIRef.current;
+    // Cameras live inside bundles — treat any in-flight camera as reversible.
+    if (i <= 0 && !camAbortRef.current) return false;
+
+    if (autoStartAnimTimerRef.current) {
+      clearTimeout(autoStartAnimTimerRef.current);
+      autoStartAnimTimerRef.current = null;
+    }
+
+    // Mid-flight camera → snap back to where this step started.
+    if (camAbortRef.current) {
+      try {
+        camAbortRef.current.abort({ revert: true });
+      } catch (e) {
+        try {
+          camAbortRef.current.abort();
+        } catch (e2) {}
+      }
+      camAbortRef.current = null;
+      busy.current = false;
+      clearBusyTimer();
+      stepIRef.current = Math.max(0, i - 1);
+      bumpCamTick(stageRef.current);
+      return true;
+    }
+
+    if (busy.current) skipBusy();
+
+    const undoIdx = stepIRef.current - 1;
+    if (undoIdx < 0) return false;
+    const undone = steps[undoIdx];
+    stepIRef.current = undoIdx;
+
+    const camStep = cameraItemFromStep(undone);
+    if (camStep) {
+      const target = cameraStateBefore(undoIdx);
+      const dur = camStep.dur || camStep.cam?.duration || 600;
+      return runCameraTo(target, dur);
+    }
+
+    // Non-camera: index rewound; camera view unchanged.
+    return true;
   }
 
   function playNextAnimStep() {
@@ -1783,19 +4031,17 @@ export default function PreviewOverlay() {
         const el = stageRef.current;
         if (!el) return true;
         busy.current = true;
-        if (camAbortRef.current) camAbortRef.current.abort();
-        let watching = true;
-        camAbortRef.current = fireCameraAnim(el, step.cam, {
-          W: canvasW,
-          H: canvasH,
-          fitScale: fitScale(),
+        if (camAbortRef.current) {
+          try {
+            camAbortRef.current.abort();
+          } catch (e) {}
+          camAbortRef.current = null;
+        }
+        camAbortRef.current = startStageCamera(el, step.cam, {
           delay: step.delay || 0,
           duration: step.dur,
           onDone: () => {
-            watching = false;
             busy.current = false;
-            camAbortRef.current = null;
-            setCamTransform(el.style.transform);
             const next = steps[stepIRef.current];
             if (next && next.kind === 'bundle' && next.auto) {
               busy.current = true;
@@ -1808,25 +4054,46 @@ export default function PreviewOverlay() {
             }
           },
         });
-        const watch = () => {
-          if (!watching || !el) return;
-          setCamTransform(el.style.transform);
-          requestAnimationFrame(watch);
-        };
-        requestAnimationFrame(watch);
         return true;
       }
 
       if (step.kind === 'bundle') {
-        const wait = playBundle(step);
         busy.current = true;
+        const wait = playBundle(step);
         clearBusyTimer();
+        const slideIdxAtPlay = idxRef.current;
         busyTimerRef.current = setTimeout(() => {
           busyTimerRef.current = null;
           busy.current = false;
+          // Long transform / enter can leave stage scale behind the outer fit box.
+          refitStage();
+          if (idxRef.current !== slideIdxAtPlay) return;
           const next = steps[stepIRef.current];
           if (next && next.kind === 'bundle' && next.auto) {
             runFrom(stepIRef.current);
+            return;
+          }
+          // Infinite repeat: only after the *last* step of this cycle (not mid-cycle).
+          if (
+            step.repeatInfinite &&
+            step.repeatId &&
+            !skippedRepeatRef.current.has(step.repeatId)
+          ) {
+            const moreInCycle =
+              next && next.kind === 'bundle' && next.repeatId === step.repeatId;
+            if (!moreInCycle) {
+              const start = steps.findIndex(
+                (b) =>
+                  b &&
+                  b.kind === 'bundle' &&
+                  b.repeatId === step.repeatId &&
+                  b.repeatCycleStart
+              );
+              if (start >= 0) {
+                stepIRef.current = start;
+                runFrom(start);
+              }
+            }
           }
         }, Math.max(50, wait));
         return true;
@@ -1846,6 +4113,185 @@ export default function PreviewOverlay() {
     idxRef.current = idx;
   }, [idx]);
 
+  const classSlide = open ? slides[idx] || {} : null;
+  const classAppletForSlide = classSlide ? findClassificationApplet(classSlide) : null;
+  const classIdsKey = classAppletForSlide
+    ? `${classAppletForSlide.classLayout || '2col'}|${
+        Array.isArray(classAppletForSlide.classZones)
+          ? classAppletForSlide.classZones.join(';')
+          : `${classAppletForSlide.classLeftIds || ''}|${classAppletForSlide.classRightIds || ''}`
+      }`
+    : '';
+
+  // Classification: reshuffle listed elements each time the slide is shown.
+  useEffect(() => {
+    if (!open) {
+      setClassLivePos(null);
+      setClassResult(null);
+      return;
+    }
+    const s = slides[idx] || {};
+    const applet = findClassificationApplet(s);
+    if (!applet) {
+      setClassLivePos(null);
+      setClassResult(null);
+      return;
+    }
+    const movable = classificationMovableIds(applet, s.els || []);
+    setClassLivePos(shuffleClassificationPositions(s.els || [], movable, canvasW, canvasH));
+    setClassResult(null);
+    classReplayRef.current = false;
+    window.setTimeout(() => {
+      postClassificationBtnMode(stageRef.current, applet, 'check');
+    }, 80);
+    // Only on enter / orientation / id-list change — not every slides identity tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, idx, canvasW, canvasH, classIdsKey]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onMsg = (e) => {
+      const type = e?.data?.type;
+      if (type !== 'classificationCheck' && type !== 'classificationReplay') return;
+      const s = slides[idxRef.current] || {};
+      const applet = findClassificationApplet(s);
+      if (!applet) return;
+
+      if (type === 'classificationReplay' || classReplayRef.current) {
+        const movable = classificationMovableIds(applet, s.els || []);
+        setClassLivePos(shuffleClassificationPositions(s.els || [], movable, canvasW, canvasH));
+        setClassResult(null);
+        classReplayRef.current = false;
+        postClassificationBtnMode(stageRef.current, applet, 'check');
+        return;
+      }
+
+      const ok = checkClassification(applet, s.els || [], classLivePosRef.current, canvasW, canvasH);
+      const text = ok
+        ? applet.classOkText || CLASSIFICATION_DEFAULTS.classOkText
+        : applet.classFailText || CLASSIFICATION_DEFAULTS.classFailText;
+      setClassResult({ ok, text });
+      if (ok) {
+        classReplayRef.current = true;
+        postClassificationBtnMode(
+          stageRef.current,
+          applet,
+          'replay',
+          applet.classReplayLabel || CLASSIFICATION_DEFAULTS.classReplayLabel,
+        );
+      } else {
+        classReplayRef.current = false;
+        postClassificationBtnMode(stageRef.current, applet, 'check');
+      }
+      window.clearTimeout(onMsg._t);
+      onMsg._t = window.setTimeout(() => setClassResult(null), 2200);
+    };
+    window.addEventListener('message', onMsg);
+    return () => {
+      window.removeEventListener('message', onMsg);
+      window.clearTimeout(onMsg._t);
+    };
+  }, [open, slides, canvasW, canvasH]);
+
+  const imageSortSlide = open ? slides[idx] || {} : null;
+  const imageSortAppletForSlide = imageSortSlide ? findImageSortApplet(imageSortSlide) : null;
+  const imageSortKey = imageSortAppletForSlide
+    ? `${imageSortAppletForSlide.id}|${getImageSortMarkers(imageSortAppletForSlide)
+        .map((m) => `${m.id}:${m.answer}`)
+        .join(';')}`
+    : '';
+
+  // Image-sort: reset choices when entering the slide / markers change.
+  useEffect(() => {
+    if (!open) {
+      setImageSortChoices({});
+      setImageSortPickId(null);
+      setImageSortOptions([]);
+      setImageSortHints(null);
+      setImageSortResult(null);
+      imageSortReplayRef.current = false;
+      return;
+    }
+    const s = slides[idx] || {};
+    const applet = findImageSortApplet(s);
+    if (!applet) {
+      setImageSortChoices({});
+      setImageSortPickId(null);
+      setImageSortOptions([]);
+      setImageSortHints(null);
+      setImageSortResult(null);
+      imageSortReplayRef.current = false;
+      return;
+    }
+    setImageSortChoices({});
+    setImageSortPickId(null);
+    setImageSortOptions([]);
+    setImageSortHints(null);
+    setImageSortResult(null);
+    imageSortReplayRef.current = false;
+    window.setTimeout(() => {
+      postImageSortBtnMode(stageRef.current, applet, 'check');
+    }, 80);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, idx, canvasW, canvasH, imageSortKey]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onMsg = (e) => {
+      const type = e?.data?.type;
+      if (type !== 'imageSortCheck' && type !== 'imageSortReplay') return;
+      const s = slides[idxRef.current] || {};
+      const applet = findImageSortApplet(s);
+      if (!applet) return;
+
+      if (type === 'imageSortReplay' || imageSortReplayRef.current) {
+        setImageSortChoices({});
+        setImageSortPickId(null);
+        setImageSortOptions([]);
+        setImageSortHints(null);
+        setImageSortResult(null);
+        imageSortReplayRef.current = false;
+        postImageSortBtnMode(stageRef.current, applet, 'check');
+        return;
+      }
+
+      const choices = imageSortChoicesRef.current || {};
+      const ok = checkImageSort(applet, choices);
+      const markers = getImageSortMarkers(applet);
+      const hints = {};
+      markers.forEach((m) => {
+        const want = imageSortAnswerKey(m.answer);
+        if (!want) return;
+        const got = imageSortAnswerKey(choices[m.id]);
+        hints[m.id] = got && got === want ? 'ok' : 'bad';
+      });
+      setImageSortHints(hints);
+      const text = ok
+        ? applet.sortOkText || IMAGE_SORT_DEFAULTS.sortOkText
+        : applet.sortFailText || IMAGE_SORT_DEFAULTS.sortFailText;
+      setImageSortResult({ ok, text });
+      if (ok) {
+        imageSortReplayRef.current = true;
+        postImageSortBtnMode(
+          stageRef.current,
+          applet,
+          'replay',
+          applet.sortReplayLabel || IMAGE_SORT_DEFAULTS.sortReplayLabel
+        );
+      } else {
+        imageSortReplayRef.current = false;
+        postImageSortBtnMode(stageRef.current, applet, 'check');
+      }
+      window.clearTimeout(onMsg._t);
+      onMsg._t = window.setTimeout(() => setImageSortResult(null), 2200);
+    };
+    window.addEventListener('message', onMsg);
+    return () => {
+      window.removeEventListener('message', onMsg);
+      window.clearTimeout(onMsg._t);
+    };
+  }, [open, slides]);
+
   useEffect(() => {
     if (!open) return undefined;
     document.body.classList.add('preview-mode');
@@ -1864,7 +4310,9 @@ export default function PreviewOverlay() {
         closePreview();
       }
     };
-    const armFs = () => {
+    const armFs = (e) => {
+      // Clicks on the audio chrome are for play/pause/seek — don't steal them for fullscreen.
+      if (e?.target?.closest?.('.react-el-audio,[data-audio-player],.react-themed-audio')) return;
       const node = overlayRef.current;
       if (!node || cancelled) return;
       node.removeEventListener('pointerdown', armFs, true);
@@ -1952,11 +4400,22 @@ export default function PreviewOverlay() {
 
   useEffect(() => {
     if (!open || !stageRef.current) return;
-    stageRef.current._pvCamState = fullSlideCam(canvasW, canvasH);
+    const el = stageRef.current;
     const fit = fitScale();
-    const t = cameraCssTransform(fullSlideCam(canvasW, canvasH), fit, canvasW, canvasH);
-    stageRef.current.style.transform = t;
-    setCamTransform(t);
+    const ctl = el._camCtl;
+    if (ctl && !ctl.aborted && !ctl.finished) ctl.fit = fit;
+    // Preserve resting/in-flight camera; only refresh fit so outer box and stage
+    // scale stay matched after fullscreen / resize (avoids top-left shrink).
+    // New slide remounts the stage node (no _pvCamState) → full frame.
+    el._pvCamInited = true;
+    applyCameraTransform(
+      el,
+      el._pvCamState || fullSlideCam(canvasW, canvasH),
+      fit,
+      canvasW,
+      canvasH
+    );
+    bumpCamTick(el);
   }, [animKey, open, canvasW, canvasH, vp.w, vp.h]);
 
   useEffect(() => {
@@ -1965,6 +4424,8 @@ export default function PreviewOverlay() {
       clearAutoTimer();
       clearStageFx(stageRef.current);
       cumMotionRef.current = {};
+      motionGenRef.current = {};
+      pendingMotionEndRef.current = {};
       return undefined;
     }
     const slide = slides[idx];
@@ -1982,6 +4443,23 @@ export default function PreviewOverlay() {
     clearAutoTimer();
     const fromSlide = slides[idxRef.current] || {};
     const toSlide = list[dest] || {};
+    // Under black screen: switch slide silently so the audience overlay never flickers.
+    if (blackRef.current) {
+      if (busy.current) skipBusy();
+      document.querySelectorAll('.pv-exit-snapshot').forEach((n) => {
+        try {
+          n.remove();
+        } catch (e) {}
+      });
+      idxRef.current = dest;
+      setDur(0);
+      setPvDir(1);
+      setAnimClass('');
+      setIdx(dest);
+      setAnimKey((k) => k + 1);
+      initSlideAnims(toSlide);
+      return;
+    }
     const gTrans = usePresentationStore.getState().globalTrans;
     const gDur = usePresentationStore.getState().globalTransDur;
     const trans = effectiveTrans(toSlide, gTrans);
@@ -2030,6 +4508,8 @@ export default function PreviewOverlay() {
         if (!fd || fd._isDecor || fd.type === 'pagenum' || usedFrom.has(fd.id)) return;
         const node = findStageEl(fd.id);
         if (!node) return;
+        const painted = paintedNodeOpacity(node);
+        if (painted <= 0.01) return;
         try {
           const clone = node.cloneNode(true);
           clone.removeAttribute('data-id');
@@ -2041,10 +4521,12 @@ export default function PreviewOverlay() {
           clone.style.height = (fd.h || 60) + 'px';
           clone.style.transformOrigin = 'center center';
           clone.style.transform = elBoxTransform(fd) || '';
-          clone.style.opacity = String(fd.elOpacity != null ? fd.elOpacity : 1);
+          clone.style.animation = 'none';
+          clone.style.animationName = 'none';
+          clone.style.opacity = String(painted);
           clone.style.pointerEvents = 'none';
           clone.style.transition = 'none';
-          exitSnapshots.push({ clone, fromData: fd });
+          exitSnapshots.push({ clone, fromData: { ...fd, elOpacity: painted } });
         } catch (e) {}
       });
 
@@ -2061,8 +4543,24 @@ export default function PreviewOverlay() {
       if (pairs.length > 0 || exitSnapshots.length > 0 || enterIds.size > 0) {
         // Save pairs for animation
         morphPairsRef.current = pairs;
+        pairs.forEach((p) => {
+          const fromB = morphLayerBlurPx(p.fromData);
+          const toB = morphLayerBlurPx(p.toData);
+          const fromCss = morphCssBlurPx(p.fromData);
+          // Seed at ease≈0; for 0→N nudge slightly so React mounts the frost overlay.
+          const seedEase = fromB < 0.01 && toB > 0.01 ? 0.001 / Math.max(toB, 0.001) : 0;
+          const paint = morphLayerBlurPaint(fromB, toB, seedEase);
+          writeMorphFx(p.toId, {
+            opacity: morphElOpacity(p.fromData),
+            layerBlur: paint.cur,
+            layerBlurPeak: paint.peak,
+            layerBlurOpacity: paint.opacity,
+            layerBlurFilter: paint.filterBlur,
+            filter: fromCss > 0.01 ? `blur(${fromCss}px)` : '',
+          });
+        });
         
-        // Update state - React will render toSlide
+        // Update state - React will render toSlide (opacity/blur already snapped via morphFxLive)
         idxRef.current = dest;
         setDur(ms);
         setIdx(dest);
@@ -2094,7 +4592,6 @@ export default function PreviewOverlay() {
 
           if (domPairs.length > 0 || enterPairs.length > 0 || exitSnapshots.length > 0) {
             busy.current = true;
-            setMorphing(true);
 
             // Snap elements to look like the FROM box (position/size/rotation/color/shadow/
             // font-size), then animate every property toward the TO state below.
@@ -2122,6 +4619,8 @@ export default function PreviewOverlay() {
               applyMorphFilter(el, fromData, toData, 0);
               applyMorphColor(el, fromData, toData, 0);
               applyMorphTextSize(el, fromData, toData, 0);
+              applyMorphOpacity(el, fromData, toData, 0);
+              applyMorphLayerBlur(el, fromData, toData, 0);
             });
             enterPairs.forEach(({ el }) => {
               el.style.opacity = '0';
@@ -2144,6 +4643,8 @@ export default function PreviewOverlay() {
                 applyMorphFilter(el, fromData, toData, ease);
                 applyMorphColor(el, fromData, toData, ease);
                 applyMorphTextSize(el, fromData, toData, ease);
+                applyMorphOpacity(el, fromData, toData, ease);
+                applyMorphLayerBlur(el, fromData, toData, ease);
               });
 
               enterPairs.forEach(({ el, toData }) => {
@@ -2179,7 +4680,10 @@ export default function PreviewOverlay() {
                   el.style.transformOrigin = '';
                   el.style.filter = elFilterCss(toData) || '';
                   resetMorphColor(el, toData);
-                  resetMorphTextSize(el);
+                  resetMorphTextSize(el, toData);
+                  resetMorphOpacity(el, toData);
+                  resetMorphLayerBlur(el, toData);
+                  clearMorphFx(toData?.id);
                 });
                 enterPairs.forEach(({ el, toData }) => {
                   if (!el) return;
@@ -2189,7 +4693,6 @@ export default function PreviewOverlay() {
                   try { clone.remove(); } catch (e) {}
                 });
                 busy.current = false;
-                setMorphing(false);
                 morphPairsRef.current = [];
               }
             }
@@ -2197,7 +4700,7 @@ export default function PreviewOverlay() {
             requestAnimationFrame(frame);
           } else {
             // No DOM elements found, fall back to normal transition
-            setMorphing(false);
+            pairs.forEach((p) => clearMorphFx(p.toId));
             setAnimKey((k) => k + 1);
             initSlideAnims(toSlide);
           }
@@ -2227,6 +4730,7 @@ export default function PreviewOverlay() {
     if (trans !== 'none' && ms > 0 && stageRef.current && overlayRef.current) {
       try {
         const clone = stageRef.current.cloneNode(true);
+        freezeClonedStage(stageRef.current, clone);
         const wrap = document.createElement('div');
         wrap.className = `pv-exit-snapshot ${exitClass(trans)}`;
         wrap.style.position = 'absolute';
@@ -2252,7 +4756,11 @@ export default function PreviewOverlay() {
     setPvShift({ x: shiftXPx, y: shiftYPx });
     setIdx(dest);
     setAnimKey((k) => k + 1);
-    initSlideAnims(toSlide);
+    // Wait out the slide enter transition before auto camera/bundle — otherwise the
+    // camera starts while the wrap is still scaled down (e.g. zoom enter 0.86→1).
+    initSlideAnims(toSlide, {
+      autoStartAfter: trans !== 'none' && ms > 0 ? ms + 40 : 30,
+    });
 
     if (trans !== 'none' && ms > 0) {
       setAnimClass(enterClass(trans));
@@ -2265,41 +4773,155 @@ export default function PreviewOverlay() {
         if (exitSnap) {
           try { exitSnap.remove(); } catch (e) {}
         }
+        // Enter zoom/scale lives on the wrap; once it ends, re-assert stage fit
+        // so a mid-transition skip/resize cannot leave a partial scale behind.
+        refitStage(fullSlideCam(canvasW, canvasH));
       }, ms);
     } else if (exitSnap) {
       try { exitSnap.remove(); } catch (e) {}
     }
   };
 
-  const goNext = () => {
-    // If a transition is still mid-flight, cut it short AND still advance right away —
-    // previously this just snapped the current transition to its end state and stopped,
-    // requiring a second click/keypress to actually move to the next slide.
-    if (busy.current) {
-      skipBusy();
-    }
-    if (playNextAnimStep()) return;
+  /** Resolve next slide index for advance (shuffle / loop / linear). */
+  function resolveNextSlideIndex() {
     const list = usePresentationStore.getState().slides;
     const i = idxRef.current;
     const shuffle = useUiStore.getState().presShuffle;
     const loop = useUiStore.getState().presLoop;
     if (shuffle) {
-      const available = list.map((_, j) => j).filter((j) => j !== i);
-      if (!available.length) return;
+      const available = list.map((_, j) => j).filter((j) => j !== i && !isSlideHidden(list[j]));
+      if (!available.length) return -1;
       const next = available[Math.floor(Math.random() * available.length)];
       shuffleHistRef.current.push(next);
-      goTo(next);
+      return next;
+    }
+    return loop ? nextVisibleSlideLooped(list, i, 1) : nextVisibleSlideIndex(list, i, 1);
+  }
+
+  /**
+   * Timer / applet nav must change slides even while a long transform (or enter
+   * transition) still holds `busy`. Click-advance keeps skip-then-return; timers
+   * must not stick at 0:00 with a half-scaled stage.
+   */
+  function forceGoNextSlide() {
+    if (autoStartAnimTimerRef.current) {
+      clearTimeout(autoStartAnimTimerRef.current);
+      autoStartAnimTimerRef.current = null;
+    }
+    skipBusy();
+    refitStage(fullSlideCam(canvasW, canvasH));
+    stepIRef.current = (stepsRef.current || []).length;
+    const i = idxRef.current;
+    const next = resolveNextSlideIndex();
+    if (next < 0 || next === i) {
+      if (stepIRef.current >= (stepsRef.current || []).length) closePreview();
       return;
     }
-    if (i >= list.length - 1) {
-      if (loop) {
-        goTo(0);
-        return;
+    goTo(next);
+  }
+
+  function stepRepeatId(step) {
+    if (!step) return null;
+    if (step.repeatId) return step.repeatId;
+    const hit = (step.items || []).find((it) => it && it.repeatId);
+    return hit?.repeatId || null;
+  }
+
+  function stepRepeatInfinite(step) {
+    if (!step) return false;
+    if (step.repeatInfinite) return true;
+    return (step.items || []).some((it) => it && it.repeatInfinite);
+  }
+
+  /** True when playback is already inside a Repeat (not merely about to start one). */
+  function findActiveRepeatId() {
+    const steps = stepsRef.current || [];
+    const i = stepIRef.current;
+    const prev = i > 0 ? steps[i - 1] : null;
+    const rid = stepRepeatId(prev);
+    if (!rid || skippedRepeatRef.current.has(rid)) return null;
+    if (busy.current || camAbortRef.current) return rid;
+    const next = steps[i];
+    if (stepRepeatId(next) === rid) return rid;
+    if (stepRepeatInfinite(prev)) return rid;
+    return null;
+  }
+
+  /** Jump past every remaining step of this Repeat; do not cut one iteration short mid-click. */
+  function skipEntireRepeat(rid) {
+    if (!rid) return;
+    skippedRepeatRef.current.add(rid);
+    clearBusyTimer();
+    if (camAbortRef.current) {
+      try {
+        camAbortRef.current.abort({ finish: true });
+      } catch (e) {
+        try {
+          camAbortRef.current.abort();
+        } catch (e2) {}
       }
+      camAbortRef.current = null;
+    }
+    busy.current = false;
+    slidePlayGenRef.current += 1;
+    commitPendingMotion();
+    const steps = stepsRef.current || [];
+    let i = stepIRef.current;
+    while (i < steps.length && stepRepeatId(steps[i]) === rid) i += 1;
+    stepIRef.current = i;
+    refitStage();
+  }
+
+  /** Advance builds; if mid-Repeat, skip the whole block instead of the next iteration step. */
+  function advanceAnimsOrSkipRepeat() {
+    const rid = findActiveRepeatId();
+    if (rid) {
+      skipEntireRepeat(rid);
+      return playNextAnimStep();
+    }
+    if (busy.current || camAbortRef.current) skipBusy();
+    return playNextAnimStep();
+  }
+
+  const goNext = () => {
+    if (autoStartAnimTimerRef.current) {
+      clearTimeout(autoStartAnimTimerRef.current);
+      autoStartAnimTimerRef.current = null;
+    }
+    // Mid-Repeat: skip the entire block (not the current iteration only).
+    // Otherwise finish busy work then play the next build.
+    if (advanceAnimsOrSkipRepeat()) return;
+    const i = idxRef.current;
+    const loop = useUiStore.getState().presLoop;
+    const next = resolveNextSlideIndex();
+    if (next < 0 || (next === i && !loop)) {
       if (stepIRef.current >= stepsRef.current.length) closePreview();
       return;
     }
-    goTo(i + 1);
+    goTo(next);
+  };
+
+  /** Play one or more anims the same way as click-advance (recolor/motion/typewriter/…). */
+  const playTriggeredAnims = (hits, slideIdx, list) => {
+    const items = [];
+    let navAfter = null;
+    hits.forEach(({ o, a, ai }) => {
+      const step = stepFromAnim(o, a, ai != null ? ai : (o.anims || []).indexOf(a));
+      if (step) items.push(step);
+      const dur = animDuration(a, 600);
+      const delay = Math.max(0, +(a.delay || 0));
+      const wait = dur + delay + 80;
+      if (a.trigger === 'nav' && a.navTarget != null) {
+        const si = resolveNavTargetSlideIndex(a.navTarget, list);
+        if (si != null) {
+          if (!navAfter || wait > navAfter.wait) navAfter = { wait, o, a };
+        }
+      }
+    });
+    if (items.length) playBundle({ items });
+    if (navAfter) {
+      scheduleNavAfterAnim(slideIdx, navAfter.o, navAfter.a, navAfter.wait);
+    }
   };
 
   const fireAppletAnimRef = (ref, appletElId, appletVal) => {
@@ -2325,27 +4947,7 @@ export default function PreviewOverlay() {
     const o = (slide.els || []).find((e) => e && String(e.id) === String(elId));
     const a = o && o.anims && o.anims[ai];
     if (!o || !a) return;
-    const dur = animDuration(a, 600);
-    const delay = Math.max(0, +(a.delay || 0));
-    const wait = dur + delay + 80;
-    setAnimState((prev) => ({
-      ...prev,
-      [o.id]: {
-        hidden: false,
-        cls: animCssClass(a.name),
-        dur,
-        live: isLiveAnim(a.name),
-      },
-    }));
-    if (a.trigger === 'nav' && a.navTarget != null) {
-      scheduleNavAfterAnim(slideIdx, o, a, wait);
-    } else if (isExitAnim(a.name)) {
-      window.setTimeout(() => {
-        if (idxRef.current !== slideIdx) return;
-        markGroupHidden(slideIdx, o, slide);
-        hideElsNow(groupMembers(o, slide).map((m) => String(m.id)));
-      }, wait);
-    }
+    playTriggeredAnims([{ o, a, ai }], slideIdx, list);
   };
 
   const fireElementTriggers = (el) => {
@@ -2356,51 +4958,27 @@ export default function PreviewOverlay() {
     const id = String(el.id);
     const hits = [];
     (slide?.els || []).forEach((o) => {
-      (o.anims || []).forEach((a) => {
+      (o.anims || []).forEach((a, ai) => {
         if (!a) return;
-        if (String(a.triggerElId) === id) hits.push({ o, a });
-        else if ((a.maTriggerElIds || []).map(String).includes(id)) hits.push({ o, a });
-        else if (o === el && (a.trigger === 'element' || a.trigger === 'nav')) hits.push({ o, a });
+        if (String(a.triggerElId) === id || String(a.preNavTriggerElId || '') === id) {
+          hits.push({ o, a, ai });
+        } else if ((a.maTriggerElIds || []).map(String).includes(id)) hits.push({ o, a, ai });
+        else if (o === el && (a.trigger === 'element' || a.trigger === 'nav')) hits.push({ o, a, ai });
       });
     });
     if (!hits.length) return false;
-    let navAfter = null;
-    hits.forEach(({ o, a }) => {
-      const dur = animDuration(a, 600);
-      const delay = Math.max(0, +(a.delay || 0));
-      const wait = dur + delay + 80;
-      setAnimState((prev) => ({
-        ...prev,
-        [o.id]: {
-          hidden: false,
-          cls: animCssClass(a.name),
-          dur,
-          live: isLiveAnim(a.name),
-        },
-      }));
-      if (a.trigger === 'nav' && a.navTarget != null) {
-        const si = resolveNavTargetSlideIndex(a.navTarget, list);
-        if (si != null) {
-          if (!navAfter || wait > navAfter.wait) navAfter = { si, wait, o, a };
-        }
-      } else if (isExitAnim(a.name)) {
-        window.setTimeout(() => {
-          if (idxRef.current !== slideIdx) return;
-          markGroupHidden(slideIdx, o, slide);
-          hideElsNow(groupMembers(o, slide).map((m) => String(m.id)));
-        }, wait);
-      }
-    });
-    if (navAfter) {
-      scheduleNavAfterAnim(slideIdx, navAfter.o, navAfter.a, navAfter.wait);
-    }
+    playTriggeredAnims(hits, slideIdx, list);
     return true;
   };
 
   const goPrev = () => {
-    if (busy.current) {
-      skipBusy();
+    if (autoStartAnimTimerRef.current) {
+      clearTimeout(autoStartAnimTimerRef.current);
+      autoStartAnimTimerRef.current = null;
     }
+    // Click-trigger cameras: ←/↑ rewind the last camera (or mid-flight reverse) before
+    // leaving the slide — same idea as stepping back through builds.
+    if (playPrevAnimStep()) return;
     const list = usePresentationStore.getState().slides;
     const i = idxRef.current;
     const shuffle = useUiStore.getState().presShuffle;
@@ -2409,9 +4987,124 @@ export default function PreviewOverlay() {
       goTo(shuffleHistRef.current[shuffleHistRef.current.length - 1]);
       return;
     }
-    if (i <= 0) return;
-    goTo(i - 1);
+    const prev = nextVisibleSlideIndex(list, i, -1);
+    if (prev < 0) return;
+    goTo(prev);
   };
+
+  goToRef.current = goTo;
+  const fireClickSlideTriggers = () => {
+    const list = usePresentationStore.getState().slides;
+    const els = list[idxRef.current]?.els || [];
+    slideAudiosForMode(els, 'click-slide').forEach((a) =>
+      playMediaEl(a, { audioPool: mediaPoolRef.current })
+    );
+    slideTimersForMode(els, 'click-slide').forEach((t) => {
+      startTimerElInRoot(stageRef.current, t.id);
+      clickSlideTimersArmedRef.current.add(String(t.id));
+    });
+  };
+  /**
+   * First click/key with pending click-slide timers: arm them and return true
+   * (caller must NOT advance). Later clicks while timers already run → false → advance.
+   */
+  const armClickSlideTimersOnly = () => {
+    const list = usePresentationStore.getState().slides;
+    const els = list[idxRef.current]?.els || [];
+    const timers = slideTimersForMode(els, 'click-slide');
+    if (!timers.length) return false;
+    const pending = timers.filter((t) => !clickSlideTimersArmedRef.current.has(String(t.id)));
+    if (!pending.length) return false;
+    pending.forEach((t) => {
+      startTimerElInRoot(stageRef.current, t.id);
+      clickSlideTimersArmedRef.current.add(String(t.id));
+    });
+    // Fallback scan by data-tm-start (covers nested hosts / missing data-id).
+    startTimersInRoot(stageRef.current, { mode: 'click-slide' });
+    // Still fire click-slide audio on the arming click.
+    slideAudiosForMode(els, 'click-slide').forEach((a) =>
+      playMediaEl(a, { audioPool: mediaPoolRef.current })
+    );
+    return true;
+  };
+  fireClickSlideTriggersRef.current = fireClickSlideTriggers;
+  armClickSlideTimersOnlyRef.current = armClickSlideTimersOnly;
+  playNextAnimStepRef.current = playNextAnimStep;
+  goNextRef.current = goNext;
+  goPrevRef.current = goPrev;
+  runShowNextRef.current = () => {
+    if (autoStartAnimTimerRef.current) {
+      clearTimeout(autoStartAnimTimerRef.current);
+      autoStartAnimTimerRef.current = null;
+    }
+    // First press with a click-slide timer: arm timer and stay on slide.
+    // Mid-Repeat: do not skip the block on that same press.
+    // Used by show ←/Space and by presenter «Далее» / Space.
+    if (armClickSlideTimersOnly()) {
+      if (!findActiveRepeatId()) playNextAnimStep();
+      return;
+    }
+    fireClickSlideTriggers();
+    goNext();
+  };
+  closePreviewRef.current = closePreview;
+  blackRef.current = black;
+
+  useEffect(() => {
+    if (!open) return undefined;
+    if (!startedAtRef.current) startedAtRef.current = Date.now();
+    return () => {
+      startedAtRef.current = 0;
+      postPresenter({ t: 'bye' });
+      closePresenterWindow();
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const shuffle = useUiStore.getState().presShuffle;
+    const loop = useUiStore.getState().presLoop;
+    const list = slides;
+    const i = idx;
+    const next = shuffle
+      ? -1
+      : loop
+        ? nextVisibleSlideLooped(list, i, 1)
+        : nextVisibleSlideIndex(list, i, 1);
+    const vis = visibleSlideIndices(list);
+    const visPos = vis.indexOf(i);
+    const payload = makePresenterState({
+      idx: i,
+      nextIdx: next === i ? -1 : next,
+      notes: list[i]?.notes || '',
+      title: usePresentationStore.getState().title || '',
+      n: list.length,
+      visPos: visPos >= 0 ? visPos + 1 : i + 1,
+      visN: vis.length || list.length,
+      startedAt: startedAtRef.current,
+      black,
+      shuffle,
+      live: true,
+    });
+    const send = () => postPresenter(payload);
+    send();
+    return subscribePresenter((msg) => {
+      if (!msg || typeof msg !== 'object') return;
+      if (msg.t === 'hello') send();
+      if (msg.t !== 'cmd') return;
+      if (msg.cmd === 'next') runShowNextRef.current();
+      else if (msg.cmd === 'prev') goPrevRef.current();
+      else if (msg.cmd === 'exit') closePreviewRef.current();
+      else if (msg.cmd === 'black') setBlack((v) => !v);
+      else if (msg.cmd === 'goto' && msg.idx != null) goToRef.current(msg.idx | 0);
+      else if (msg.cmd === 'notes') {
+        const i = msg.idx != null ? msg.idx | 0 : idxRef.current;
+        try {
+          usePresentationStore.getState().patchSlide(i, { notes: String(msg.text || '') });
+        } catch (e) {}
+      }
+    });
+  }, [open, idx, black, slides, presShuffle, presLoop]);
 
   useEffect(() => {
     clearAutoTimer();
@@ -2425,7 +5118,7 @@ export default function PreviewOverlay() {
       const i = idxRef.current;
       const shuffle = useUiStore.getState().presShuffle;
       if (shuffle) {
-        const available = list.map((_, j) => j).filter((j) => j !== i);
+        const available = list.map((_, j) => j).filter((j) => j !== i && !isSlideHidden(list[j]));
         if (available.length) {
           const next = available[Math.floor(Math.random() * available.length)];
           shuffleHistRef.current.push(next);
@@ -2433,11 +5126,8 @@ export default function PreviewOverlay() {
         }
         return;
       }
-      if (i >= list.length - 1) {
-        goTo(0);
-        return;
-      }
-      goTo(i + 1);
+      const next = nextVisibleSlideLooped(list, i, 1);
+      goTo(next);
     }, sec * 1000);
     return () => clearAutoTimer();
   }, [open, idx, animKey, slides]);
@@ -2455,10 +5145,13 @@ export default function PreviewOverlay() {
       if (!d) return;
       if (d.type === 'timerNav') {
         if (d.mode === 'next') {
-          goNext();
+          forceGoNextSlide();
           return;
         }
         if (d.mode === 'slide') {
+          skipBusy();
+          refitStage(fullSlideCam(canvasW, canvasH));
+          stepIRef.current = (stepsRef.current || []).length;
           goTo(Math.max(0, Math.min(slides.length - 1, +d.slide || 0)));
         }
         return;
@@ -2502,11 +5195,14 @@ export default function PreviewOverlay() {
     const onKey = (e) => {
       if (e.key === 'Escape' || e.key === 'F5') {
         e.preventDefault();
+        e.stopPropagation();
+        endPresentationDrawing();
         closePreview();
         return;
       }
       if (e.code === 'KeyB') {
         e.preventDefault();
+        e.stopPropagation();
         setBlack((v) => !v);
         return;
       }
@@ -2518,6 +5214,18 @@ export default function PreviewOverlay() {
       if (e.code === 'KeyS') {
         e.preventDefault();
         useUiStore.getState().togglePresShuffle();
+        return;
+      }
+      if (e.code === 'KeyP') {
+        e.preventDefault();
+        if (!isMultiScreenNow()) return;
+        const w = openPresenterForShow(useUiStore.getState().presShowScreenKey);
+        if (!w) {
+          useUiStore.getState().showToast(
+            ruHud ? 'Разрешите всплывающие окна для окна докладчика' : 'Allow pop-ups for the presenter window',
+            'warn'
+          );
+        }
         return;
       }
       if (/^[0-9]$/.test(e.key)) {
@@ -2547,11 +5255,17 @@ export default function PreviewOverlay() {
       }
       if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ' || e.key === 'PageDown') {
         e.preventDefault();
-        goNext();
+        // Ignore key-repeat: holding Space used to skipBusy+chain into the next slide
+        // while the stage was still at a camera zoom (looked like going past the slide).
+        if (e.repeat) return;
+        // Always call through refs — the effect closure otherwise keeps a stale goNext/goPrev
+        // (click uses the fresh render path, which is why only keyboard looked broken).
+        runShowNextRef.current();
       }
       if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') {
         e.preventDefault();
-        goPrev();
+        if (e.repeat) return;
+        goPrevRef.current();
       }
     };
     window.addEventListener('keydown', onKey, true);
@@ -2566,6 +5280,72 @@ export default function PreviewOverlay() {
 
   if (!open) return null;
   const slide = slides[idx] || slides[0];
+  const classApplet = findClassificationApplet(slide);
+  const classMovableIds = classApplet
+    ? classificationMovableIds(classApplet, slide?.els || [])
+    : null;
+  const classGuides = classApplet ? classificationGuideLines(classApplet, canvasW, canvasH) : [];
+
+  function onClassPointerDown(e, el) {
+    if (!classMovableIds || !classMovableIds.has(String(el.id))) return;
+    if (e.button != null && e.button !== 0) return;
+    const stage = stageRef.current;
+    if (!stage) return;
+    // Transparent image pixels → drag the opaque movable object behind.
+    const hit =
+      opaqueElAt(slide?.els || [], stage, e.clientX, e.clientY, { ids: classMovableIds }) || null;
+    if (!hit) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const dragEl = hit;
+    const rect = stage.getBoundingClientRect();
+    if (!(rect.width > 0) || !(rect.height > 0)) return;
+    const scaleX = canvasW / rect.width;
+    const scaleY = canvasH / rect.height;
+    const idKey = String(dragEl.id);
+    const cur =
+      classLivePosRef.current?.[idKey] ||
+      classLivePosRef.current?.[dragEl.id] ||
+      { x: +dragEl.x || 0, y: +dragEl.y || 0 };
+    const guideSnap = classGuides;
+    classDragRef.current = {
+      id: idKey,
+      ox: cur.x,
+      oy: cur.y,
+      w: +dragEl.w || 80,
+      h: +dragEl.h || 60,
+      sx: e.clientX,
+      sy: e.clientY,
+      scaleX,
+      scaleY,
+    };
+    const move = (ev) => {
+      const d = classDragRef.current;
+      if (!d) return;
+      let nx = d.ox + (ev.clientX - d.sx) * d.scaleX;
+      let ny = d.oy + (ev.clientY - d.sy) * d.scaleY;
+      if (guideSnap.length) {
+        const sn = snapTranslateToClassGuides(nx, ny, d.w, d.h, guideSnap);
+        nx = sn.x;
+        ny = sn.y;
+      }
+      const clamped = clampClassificationPos(nx, ny, d.w, d.h, canvasW, canvasH);
+      setClassLivePos((prev) => ({
+        ...(prev || {}),
+        [d.id]: clamped,
+      }));
+    };
+    const up = () => {
+      classDragRef.current = null;
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  }
+
   const animProgress = stepsRef.current.length
     ? ` · ${Math.min(stepIRef.current, stepsRef.current.length)}/${stepsRef.current.length}`
     : '';
@@ -2576,28 +5356,69 @@ export default function PreviewOverlay() {
       ref={overlayRef}
       className="preview-overlay"
       {...versionAttr('PreviewOverlay')}
-      onClick={() => {
+      onClick={(e) => {
+        if (drawTool) return;
         if (black) {
           setBlack(false);
           return;
         }
-        const els = slide?.els || [];
-        slideAudiosForMode(els, 'click-slide').forEach((a) =>
-          playMediaEl(a, { audioPool: mediaPoolRef.current })
-        );
+        // Clicks on the audio chrome / OBJ viewer must never count as slide/anim advance.
+        if (e?.target?.closest?.('.react-el-audio,[data-audio-player],.react-themed-audio')) return;
+        if (e?.target?.closest?.('.react-el-model3d,[data-model3d-viewer],.react-model3d-interactive')) return;
+        if (e?.target?.closest?.('.react-imagesort-pin,.preview-imagesort-pick,[data-imagesort-layer]')) return;
+        if (imageSortSuppressNavRef.current > Date.now()) return;
+        if (imageSortPickId) return;
+        // First click with a click-slide timer: arm timer, never leave the slide.
+        // Mid-Repeat: do not skip the block on that same click — timer wins.
+        if (armClickSlideTimersOnly()) {
+          if (autoStartAnimTimerRef.current) {
+            clearTimeout(autoStartAnimTimerRef.current);
+            autoStartAnimTimerRef.current = null;
+          }
+          if (!findActiveRepeatId()) playNextAnimStep();
+          return;
+        }
+        fireClickSlideTriggers();
         if (clickNav) goNext();
-        else playNextAnimStep();
+        else {
+          if (autoStartAnimTimerRef.current) {
+            clearTimeout(autoStartAnimTimerRef.current);
+            autoStartAnimTimerRef.current = null;
+          }
+          advanceAnimsOrSkipRepeat();
+        }
       }}
       onTouchStart={(e) => {
+        if (drawTool) return;
+        // Finger on OBJ → rotate, not swipe slides.
+        if (e?.target?.closest?.('.react-el-model3d,[data-model3d-viewer],.react-model3d-interactive')) {
+          swipeRef.current = null;
+          return;
+        }
+        if (e?.target?.closest?.('.react-imagesort-pin,.preview-imagesort-pick,[data-imagesort-layer]')) {
+          swipeRef.current = null;
+          suppressImageSortNav();
+          return;
+        }
+        if (imageSortPickId) {
+          swipeRef.current = null;
+          return;
+        }
         const t = e.changedTouches?.[0] || e.touches?.[0];
         if (!t) return;
         swipeRef.current = { x: t.clientX, y: t.clientY };
       }}
       onTouchEnd={(e) => {
+        if (drawTool) return;
+        if (imageSortPickId || imageSortSuppressNavRef.current > Date.now()) {
+          swipeRef.current = null;
+          return;
+        }
         const start = swipeRef.current;
         swipeRef.current = null;
+        if (!start) return;
         const t = e.changedTouches?.[0];
-        if (!start || !t) return;
+        if (!t) return;
         const dx = t.clientX - start.x;
         const dy = t.clientY - start.y;
         if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
@@ -2619,22 +5440,51 @@ export default function PreviewOverlay() {
       >
         <SlidePreview
           slide={slide}
+          slideKey={idx}
           canvasW={canvasW}
           canvasH={canvasH}
           animState={animState}
           stageRef={stageRef}
-          stageTransform={camTransform}
           vpW={vp.w}
           vpH={vp.h}
-          onElClick={(_el, link) => {
-            // Nav/exit triggers own the click — don't also follow el.link (that skipped the anim).
-            if (fireElementTriggers(_el)) return;
+          classLivePos={classLivePos}
+          classMovableIds={classMovableIds}
+          onClassPointerDown={onClassPointerDown}
+          imageSortChoices={imageSortChoices}
+          imageSortPickId={imageSortPickId}
+          imageSortHints={imageSortHints}
+          onImageSortSuppressNav={suppressImageSortNav}
+          onImageSortPick={(markerId) => {
+            suppressImageSortNav();
+            const applet = findImageSortApplet(slide);
+            if (!applet) return;
+            const opts = shuffleImageSortOptions(imageSortOptionList(applet));
+            if (!opts.length) {
+              useUiStore.getState().showToast(
+                ruHud ? 'Задайте ответы меткам в панели свойств' : 'Set marker answers in the properties panel',
+                'warn'
+              );
+              return;
+            }
+            setImageSortPickId(String(markerId));
+            setImageSortOptions(opts);
+          }}
+          onElClick={(_el, link, meta) => {
+            // Audio handled inside ThemedAudioPlayer; HoverWrap already stops slide advance.
+            if (_el?.type === 'mediaaudio') return;
+            // OBJ owns drag-rotate — don't treat click as nav.
+            if (_el?.type === 'model3d') return;
             const els = slide?.els || [];
             els.forEach((a) => {
               if (shouldPlayAudioOnElClick(a, _el.id)) {
                 playMediaEl(a, { audioPool: mediaPoolRef.current });
               }
+              if (shouldStartTimerOnElClick(a, _el.id)) {
+                startTimerElInRoot(stageRef.current, a.id);
+              }
             });
+            // Inline text/table links skip element-trigger steal.
+            if (!meta?.inline && fireElementTriggers(_el)) return;
             if (isFullscreenVideo(_el)) {
               openFsForEl(_el);
               return;
@@ -2656,7 +5506,7 @@ export default function PreviewOverlay() {
               if (si != null) goTo(si);
               return;
             }
-            const tgt = _el.linkt || '_blank';
+            const tgt = meta?.linkt || _el.linkt || '_blank';
             try {
               window.open(link, tgt, 'noopener,noreferrer');
             } catch (e) {}
@@ -2667,6 +5517,73 @@ export default function PreviewOverlay() {
       {jumpHint ? (
         <div className="preview-jump-hint on" aria-hidden="true">
           {jumpHint}
+        </div>
+      ) : null}
+      {classResult ? (
+        <div
+          className={`preview-class-result${classResult.ok ? ' is-ok' : ' is-fail'}`}
+          role="status"
+          aria-live="polite"
+        >
+          {classResult.text}
+        </div>
+      ) : null}
+      {imageSortResult ? (
+        <div
+          className={`preview-class-result${imageSortResult.ok ? ' is-ok' : ' is-fail'}`}
+          role="status"
+          aria-live="polite"
+        >
+          {imageSortResult.text}
+        </div>
+      ) : null}
+      {imageSortPickId ? (
+        <div
+          className={`preview-imagesort-pick${getTheme(appliedThemeIdx)?.dark === false ? ' is-scheme-light' : ' is-scheme-dark'}`}
+          role="dialog"
+          aria-modal="true"
+          aria-label={ruHud ? 'Выбор названия' : 'Choose a label'}
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <div className="preview-imagesort-pick-card">
+            <button
+              type="button"
+              className="preview-imagesort-back"
+              onClick={(e) => {
+                e.stopPropagation();
+                setImageSortPickId(null);
+                setImageSortOptions([]);
+              }}
+            >
+              {ruHud ? 'назад' : 'back'}
+            </button>
+            <div className="preview-imagesort-options" role="listbox">
+              {imageSortOptions.map((opt) => (
+                <button
+                  key={imageSortAnswerKey(opt) || opt}
+                  type="button"
+                  className="preview-imagesort-option"
+                  role="option"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    suppressImageSortNav();
+                    const mid = String(imageSortPickId);
+                    setImageSortChoices((prev) => ({ ...(prev || {}), [mid]: opt }));
+                    setImageSortPickId(null);
+                    setImageSortOptions([]);
+                    setImageSortHints(null);
+                    setImageSortResult(null);
+                    imageSortReplayRef.current = false;
+                    const applet = findImageSortApplet(slide);
+                    if (applet) postImageSortBtnMode(stageRef.current, applet, 'check');
+                  }}
+                >
+                  {normalizeImageSortAnswer(opt)}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       ) : null}
       {presShowSideNav ? (
@@ -2705,6 +5622,266 @@ export default function PreviewOverlay() {
           </button>
         </>
       ) : null}
+      {presShowBrush ? (
+        <div className="preview-draw-tools" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            className={`preview-nav${drawTool === 'brush' ? ' on' : ''}`}
+            style={
+              drawTool === 'brush'
+                ? {
+                    background: drawColor,
+                    color: drawColor === '#f8fafc' || drawColor === '#eab308' ? '#111827' : '#fff',
+                    borderColor: 'rgba(255,255,255,0.55)',
+                  }
+                : undefined
+            }
+            aria-label={ruHud ? 'Кисть' : 'Brush'}
+            aria-pressed={drawTool === 'brush'}
+            onClick={(e) => {
+              e.stopPropagation();
+              setDrawTool((t) => {
+                if (t === 'brush') {
+                  clearAllDrawings();
+                  return null;
+                }
+                return 'brush';
+              });
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M20.2 3.8a2.4 2.4 0 010 3.4l-1.2 1.2-3.4-3.4 1.2-1.2a2.4 2.4 0 013.4 0z" />
+              <path d="M14.8 5.8l3.4 3.4-1.5.7-2.6-2.6.7-1.5z" />
+              <path d="M13.2 8.1L4.6 16.7c-1.1 1.1-1.8 3.3-2.3 4.8 1.7-.3 4-.9 5.2-2.1l8.6-8.6-2.9-2.7z" />
+              <path d="M3.2 21.1c1.1-1.8 2.3-3.1 3.6-3.8-.5 1.3-1.4 2.7-2.6 4-.5.5-1.3.3-1-.2z" />
+            </svg>
+          </button>
+          {hasInk ? (
+            <button
+              type="button"
+              className={`preview-nav${drawTool === 'erase' ? ' on' : ''}`}
+              aria-label={ruHud ? 'Ластик' : 'Eraser'}
+              aria-pressed={drawTool === 'erase'}
+              onClick={(e) => {
+                e.stopPropagation();
+                setDrawTool((t) => (t === 'erase' ? 'brush' : 'erase'));
+              }}
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M16.1 3.7l4.2 4.2a2 2 0 010 2.8l-8.5 8.5H7.4l-4.2-4.2a2 2 0 010-2.8l8.5-8.5a2 2 0 012.8 0z" />
+                <path d="M7.5 20.5h12" stroke="currentColor" strokeWidth="2" fill="none" />
+              </svg>
+            </button>
+          ) : null}
+          {drawTool === 'brush' ? (
+            <div className="preview-draw-opts" role="group" aria-label={ruHud ? 'Кисть' : 'Brush'}>
+              <div className="preview-draw-widths">
+                {DRAW_WIDTHS.map((w) => (
+                  <button
+                    key={w}
+                    type="button"
+                    className={`preview-draw-w${drawWidth === w ? ' on' : ''}`}
+                    aria-label={ruHud ? `Толщина ${w}` : `Width ${w}`}
+                    aria-pressed={drawWidth === w}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setBrushWidth(w);
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 6 + DRAW_WIDTHS.indexOf(w) * 5,
+                        height: 6 + DRAW_WIDTHS.indexOf(w) * 5,
+                      }}
+                    />
+                  </button>
+                ))}
+              </div>
+              <div className="preview-draw-colors">
+                {DRAW_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    className={`preview-draw-c${drawColor === c ? ' on' : ''}`}
+                    style={{ background: c }}
+                    aria-label={c}
+                    aria-pressed={drawColor === c}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setColorWheelOpen(false);
+                      setBrushColor(c);
+                    }}
+                  />
+                ))}
+                <button
+                  type="button"
+                  className={`preview-draw-c-custom${colorWheelOpen || !DRAW_COLORS.includes(drawColor) ? ' on' : ''}`}
+                  title={ruHud ? 'Свой цвет' : 'Custom color'}
+                  aria-label={ruHud ? 'Свой цвет' : 'Custom color'}
+                  aria-pressed={colorWheelOpen}
+                  style={
+                    !DRAW_COLORS.includes(drawColor)
+                      ? { background: drawColor, boxShadow: `inset 0 0 0 2px ${drawColor}` }
+                      : undefined
+                  }
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setColorWheelOpen((v) => !v);
+                  }}
+                />
+              </div>
+              {colorWheelOpen ? (
+                <div
+                  className="preview-draw-color-wheel"
+                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                >
+                  <HsvWheel
+                    hex={/^#[0-9a-fA-F]{6}$/i.test(drawColor) ? drawColor : '#3b82f6'}
+                    onChange={(hex) => setBrushColor(hex)}
+                  />
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      <canvas ref={bakeCanvasRef} className="preview-draw-layer" aria-hidden />
+      {drawTool ? (
+        <div
+          ref={brushCurRef}
+          className={`preview-brush-cursor is-hidden${drawTool === 'erase' ? ' is-erase' : ''}`}
+          style={{
+            width: brushCursorSizePx(),
+            height: brushCursorSizePx(),
+            borderColor:
+              drawTool === 'brush' && drawColor && drawColor !== '#f8fafc'
+                ? drawColor
+                : undefined,
+          }}
+          aria-hidden
+        />
+      ) : null}
+      <canvas
+        ref={drawCanvasRef}
+        className={`preview-draw-layer${drawTool ? ' is-active' : ''}${drawTool === 'erase' ? ' is-erase' : ''}`}
+        onPointerDown={(e) => {
+          if (!drawTool) return;
+          e.stopPropagation();
+          e.preventDefault();
+          moveBrushCursor(e.clientX, e.clientY);
+          try {
+            e.currentTarget.setPointerCapture(e.pointerId);
+            drawPointerIdRef.current = e.pointerId;
+          } catch (err) {}
+          const p = slidePointFromEvent(e);
+          if (!p) return;
+          if (drawTool === 'erase') {
+            drawingRef.current = { erase: true };
+            applyErase(p);
+            return;
+          }
+          const stroke = {
+            pts: [{ x: p.x, y: p.y, t: performance.now() }],
+            w: drawWidth,
+            color: drawColor,
+            follow: { x: p.x, y: p.y },
+          };
+          const i = idxRef.current;
+          const list = drawStrokesRef.current[i] || [];
+          list.push(stroke);
+          drawStrokesRef.current[i] = list;
+          drawingRef.current = stroke;
+          if (!hasInk) setHasInk(true);
+          clearCanvas(drawCanvasRef.current);
+          redrawLive();
+        }}
+        onPointerMove={(e) => {
+          if (drawTool) moveBrushCursor(e.clientX, e.clientY);
+          if (!drawingRef.current) return;
+          e.stopPropagation();
+          const p = slidePointFromEvent(e);
+          if (!p) return;
+          if (drawingRef.current.erase) {
+            applyErase(p);
+            return;
+          }
+          const stroke = drawingRef.current;
+          const stage = stageRef.current?.getBoundingClientRect();
+          const feel = brushFeel(stroke.w);
+          const minDist = stage ? feel.minDistPx / Math.max(stage.width, stage.height) : 0.0006;
+          const leash = stage ? feel.leashPx / Math.max(stage.width, stage.height) : 0.005;
+          const follow = pullFollow(stroke, p, leash);
+          appendBrushPoint(stroke.pts, follow, minDist);
+          stroke.tip = { x: follow.x, y: follow.y, t: performance.now() };
+          if (stroke.raf) return;
+          stroke.raf = requestAnimationFrame(() => {
+            if (drawingRef.current !== stroke) return;
+            stroke.raf = 0;
+            redrawLive();
+          });
+        }}
+        onPointerEnter={(e) => {
+          if (drawTool) moveBrushCursor(e.clientX, e.clientY);
+        }}
+        onPointerLeave={() => {
+          if (!drawingRef.current) hideBrushCursor();
+        }}
+        onPointerUp={(e) => {
+          const stroke = drawingRef.current;
+          if (stroke?.raf) cancelAnimationFrame(stroke.raf);
+          if (stroke?.pauseT) clearTimeout(stroke.pauseT);
+          try {
+            e.currentTarget.releasePointerCapture?.(e.pointerId);
+          } catch (err) {}
+          drawPointerIdRef.current = null;
+          if (stroke && !stroke.erase) {
+            const p = slidePointFromEvent(e);
+            const last = stroke.pts[stroke.pts.length - 1];
+            const prev = stroke.pts[stroke.pts.length - 2] || last;
+            if (p && last && prev) {
+              const tx = last.x - prev.x;
+              const ty = last.y - prev.y;
+              const len = Math.hypot(tx, ty);
+              if (len > 1e-6) {
+                const along = ((p.x - last.x) * tx + (p.y - last.y) * ty) / len;
+                if (along > 0) {
+                  appendBrushPoint(
+                    stroke.pts,
+                    { x: last.x + (tx / len) * along, y: last.y + (ty / len) * along },
+                    0,
+                  );
+                }
+              }
+            } else if (stroke.tip) {
+              appendBrushPoint(stroke.pts, stroke.tip, 0);
+            }
+            stroke.tip = null;
+            commitLiveToBake();
+            drawingRef.current = null;
+          } else {
+            drawingRef.current = null;
+          }
+          if (drawTool) e.stopPropagation();
+        }}
+        onPointerCancel={(e) => {
+          const stroke = drawingRef.current;
+          if (stroke?.raf) cancelAnimationFrame(stroke.raf);
+          if (stroke?.pauseT) clearTimeout(stroke.pauseT);
+          try {
+            e.currentTarget.releasePointerCapture?.(e.pointerId);
+          } catch (err) {}
+          drawPointerIdRef.current = null;
+          if (stroke && !stroke.erase) {
+            stroke.tip = null;
+            commitLiveToBake();
+            drawingRef.current = null;
+          } else {
+            drawingRef.current = null;
+          }
+        }}
+        onClick={(e) => e.stopPropagation()}
+      />
       {presShowFooter || presShowEsc ? (
         <div
           className="preview-hud"
@@ -2721,6 +5898,7 @@ export default function PreviewOverlay() {
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
+                endPresentationDrawing();
                 closePreview();
               }}
             >

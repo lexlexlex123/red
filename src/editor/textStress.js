@@ -210,8 +210,10 @@ export function htmlHasStress(html) {
 
 /** CSS for stress marks (legacy `.ec [data-stress]`). */
 export const TEXT_STRESS_CSS = `
-.react-el-text [data-stress]{position:relative}
-.react-el-text [data-stress]::after{
+.react-el-text [data-stress],
+.react-el-table [data-stress]{position:relative}
+.react-el-text [data-stress]::after,
+.react-el-table [data-stress]::after{
   content:'\\00B4';
   position:absolute;left:50%;top:-0.06em;transform:translateX(-50%);
   font-family:'Times New Roman','Liberation Serif',serif;
@@ -219,7 +221,11 @@ export const TEXT_STRESS_CSS = `
   color:inherit;-webkit-text-fill-color:currentColor;-webkit-text-stroke:0;
   pointer-events:none;user-select:none;z-index:2
 }
-.react-el-text [data-stress][data-stress-case="upper"]::after{top:calc(-0.06em - 4px)}
-.react-el-text [data-stress][data-stress-case="lower"]::after{top:-0.06em}
-.react-el-text:has([data-stress]){overflow:visible!important}
+.react-el-text [data-stress][data-stress-case="upper"]::after,
+.react-el-table [data-stress][data-stress-case="upper"]::after{top:calc(-0.06em - 4px)}
+.react-el-text [data-stress][data-stress-case="lower"]::after,
+.react-el-table [data-stress][data-stress-case="lower"]::after{top:-0.06em}
+.react-el-text:has([data-stress]),
+.react-el-table:has([data-stress]),
+.react-el-table :is(td,th):has([data-stress]){overflow:visible!important}
 `.trim();

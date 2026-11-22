@@ -22,23 +22,44 @@ if ($root === false) {
   echo json_encode(['error' => 'root missing'], JSON_UNESCAPED_UNICODE);
   exit;
 }
+// Normalize for Synology / symlink realpath comparisons.
+$root = rtrim(str_replace('\\', '/', $root), '/');
 
 $rel = isset($_GET['path']) ? (string)$_GET['path'] : '';
 $rel = str_replace(["\0", '\\'], '', $rel);
 $rel = trim(str_replace('..', '', $rel), '/');
 
 $dir = $rel === '' ? $root : realpath($root . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $rel));
-if ($dir === false || strpos($dir, $root) !== 0 || !is_dir($dir)) {
+if ($dir === false) {
+  http_response_code(404);
+  echo json_encode(['error' => 'not found', 'path' => $rel], JSON_UNESCAPED_UNICODE);
+  exit;
+}
+$dir = rtrim(str_replace('\\', '/', $dir), '/');
+$underRoot = ($dir === $root) || (strpos($dir . '/', $root . '/') === 0);
+if (!$underRoot || !is_dir($dir)) {
   http_response_code(404);
   echo json_encode(['error' => 'not found', 'path' => $rel], JSON_UNESCAPED_UNICODE);
   exit;
 }
 
-$skip = ['list.php' => 1, 'get.php' => 1, 'index.json' => 1, '.htaccess' => 1, '.' => 1, '..' => 1];
+$skip = [
+  'list.php' => 1,
+  'get.php' => 1,
+  'index.json' => 1,
+  '.htaccess' => 1,
+  '.' => 1,
+  '..' => 1,
+  // Synology DSM junk
+  '@eaDir' => 1,
+  '@tmp' => 1,
+  '@sharebin' => 1,
+  '#recycle' => 1,
+];
 $items = [];
 
 foreach (scandir($dir) as $name) {
-  if (isset($skip[$name]) || $name === '' || $name[0] === '.') continue;
+  if (isset($skip[$name]) || $name === '' || $name[0] === '.' || $name[0] === '@' || $name[0] === '#') continue;
   $full = $dir . DIRECTORY_SEPARATOR . $name;
   if (is_dir($full)) {
     $items[] = ['type' => 'folder', 'name' => $name, 'id' => $name];

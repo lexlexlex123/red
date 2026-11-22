@@ -11,11 +11,40 @@
   <meta name="apple-mobile-web-app-title" content="Слайды" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="icon" href="/icon-192.png" type="image/png" sizes="192x192" />
+  <link rel="icon" href="/icon-512.png" type="image/png" sizes="512x512" />
   <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
-  <link rel="apple-touch-icon" href="/icon-192.png" />
+  <link rel="apple-touch-icon" href="/icon-192.png" sizes="192x192" />
+  <link rel="apple-touch-icon" href="/icon-512.png" sizes="512x512" />
+  <style>
+    html, body, #root { margin: 0; min-height: 100%; background: #2b2d31; }
+    .boot-static {
+      position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+      background: #2b2d31; color: #9aa3b2; font: 14px/1.4 system-ui, sans-serif;
+    }
+    .boot-static strong { color: #e2e8f0; font-weight: 600; }
+  </style>
 </head>
 <body>
-  <div id="root"></div>
+  <div id="root">
+    <div class="boot-static" aria-busy="true"><strong>Слайды</strong>&nbsp;· загрузка…</div>
+  </div>
   <script type="module" src="/src/main.jsx"></script>
+  <script>
+    (function () {
+      var k = 'sf-boot-retry';
+      setTimeout(function () {
+        if (window.__sfAppReady) return;
+        var root = document.getElementById('root');
+        if (root && root.childElementCount) return;
+        if (sessionStorage.getItem(k)) return;
+        sessionStorage.setItem(k, '1');
+        var go = function () { location.reload(); };
+        if (!navigator.serviceWorker) return go();
+        navigator.serviceWorker.getRegistrations().then(function (regs) {
+          return Promise.all(regs.map(function (r) { return r.unregister(); }));
+        }).then(go).catch(go);
+      }, 10000);
+    })();
+  </script>
 </body>
 </html>

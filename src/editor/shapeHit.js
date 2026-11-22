@@ -1,32 +1,12 @@
 /** Shape pointer hit-areas (legacy _shapeClipPath / _applyShapeClipPath). */
 
-import { shapeRxPx } from '../shared/shapes.js';
+import {
+  shapeRxPx,
+  ringPath,
+  roundedPolygonPath,
+  shapeOutlinePathD,
+} from '../shared/shapes.js';
 import { getShapeMeta } from '../shared/shapesCatalog.js';
-
-function trapPath(x, y, w, h, trapTop, trapBot) {
-  const tl = Math.max(0, Math.min(w * 0.49, trapTop * w));
-  const tr = Math.max(0, Math.min(w * 0.49, trapTop * w));
-  const bl = Math.max(0, Math.min(w * 0.49, trapBot * w));
-  const br = Math.max(0, Math.min(w * 0.49, trapBot * w));
-  return `M ${x + tl},${y} L ${x + w - tr},${y} L ${x + w - br},${y + h} L ${x + bl},${y + h} Z`;
-}
-
-function pathToPolygon(pathStr, w, h, m) {
-  const ew = Math.max(1, w - m * 2);
-  const eh = Math.max(1, h - m * 2);
-  const sx = ew / 90;
-  const sy = eh / 90;
-  const pts = [];
-  const re = /[ML]\s*(-?[\d.]+)[,\s]+(-?[\d.]+)/g;
-  let match;
-  while ((match = re.exec(pathStr)) !== null) {
-    const px = Math.round((+match[1] - 5) * sx + m);
-    const py = Math.round((+match[2] - 5) * sy + m);
-    pts.push(`${px}px ${py}px`);
-  }
-  if (pts.length >= 3) return `polygon(${pts.join(', ')})`;
-  return null;
-}
 
 /** Scale SVG path coords from viewBox 0..100 to element px. */
 function scalePath100(d, w, h) {
@@ -37,6 +17,13 @@ function scalePath100(d, w, h) {
     isX = !isX;
     return out.toFixed(2);
   });
+}
+
+function curveHasPaintedFill(el) {
+  if (!el) return false;
+  const f = el.fill;
+  if (!f || f === 'none' || f === 'transparent') return false;
+  return true;
 }
 
 function curveStrokeAndFill(el, w, h) {
@@ -52,6 +39,9 @@ function curveStrokeAndFill(el, w, h) {
       const c2y = cp.cp1y != null ? cp.cp1y : cp.y;
       strokeD += ` C ${(c1x * w).toFixed(1)} ${(c1y * h).toFixed(1)} ${(c2x * w).toFixed(1)} ${(c2y * h).toFixed(1)} ${(cp.x * w).toFixed(1)} ${(cp.y * h).toFixed(1)}`;
     }
+    // Open curves: stroke hit only. Closing the path for fill hit steals clicks
+    // from lines that cross the imaginary chord / enclosed region.
+    if (!curveHasPaintedFill(el)) return { strokeD, fillD: null };
     const last = cpts[cpts.length - 1];
     const first = cpts[0];
     const fc1x =
@@ -78,9 +68,10 @@ function curveStrokeAndFill(el, w, h) {
         : first.cp2y != null
           ? first.y * 2 - first.cp2y
           : first.y + (last.y - first.y) * 0.33;
-    const fillD =
-      strokeD +
-      ` C ${(fc1x * w).toFixed(1)} ${(fc1y * h).toFixed(1)} ${(fc2x * w).toFixed(1)} ${(fc2y * h).toFixed(1)} ${(first.x * w).toFixed(1)} ${(first.y * h).toFixed(1)} Z`;
+    if (el.curveClosed) {
+      strokeD += ` C ${(fc1x * w).toFixed(1)} ${(fc1y * h).toFixed(1)} ${(fc2x * w).toFixed(1)} ${(fc2y * h).toFixed(1)} ${(first.x * w).toFixed(1)} ${(first.y * h).toFixed(1)}`;
+    }
+    const fillD = `${strokeD} Z`;
     return { strokeD, fillD };
   }
   const strokeD = scalePath100('M 10 70 C 10 20 45 20 50 50 C 55 80 90 20 90 30', w, h);
@@ -102,18 +93,37 @@ export function shapeClipPath(el) {
   // Match SVG stroke centering: geometry inset by sw/2 (not full sw).
   const m = sw > 0 ? sw / 2 : 0;
 
+  if (Array.isArray(el.shapePts) && el.shapePts.length >= 3) {
+    const pts = el.shapePts.map((p) => ({
+      x: (+p.x || 0) * w,
+      y: (+p.y || 0) * h,
+    }));
+    const rx = shapeRxPx(el.rx, w, h);
+    // Match SVG fill: custom nodes still honor corner radius.
+    if (rx > 0) {
+      const d = roundedPolygonPath(pts, rx);
+      return d ? `path('${d}')` : null;
+    }
+    return `polygon(${pts.map((p) => `${p.x.toFixed(1)}px ${p.y.toFixed(1)}px`).join(', ')})`;
+  }
+
   if (special === 'rect' || id === 'rect' || id === 'roundrect') {
     const rx = shapeRxPx(el.rx, w, h);
     if (rx > 0) return `inset(${m}px round ${rx}px)`;
     return `inset(${m}px)`;
   }
+  if (special === 'noSymbol' || id === 'noSymbol') {
+    const orx = (w - m * 2) / 2;
+    const ory = (h - m * 2) / 2;
+    return `path(evenodd, '${ringPath(w / 2, h / 2, orx, ory, el.ringInner)}')`;
+  }
   if (special === 'ellipse' || id === 'circle' || id === 'ellipse') {
     const mode = el.arcMode || 'full';
     if (mode === 'full') return `ellipse(${(w - m * 2) / 2}px ${(h - m * 2) / 2}px at 50% 50%)`;
     const a1 = el.arcStart != null ? +el.arcStart : 0;
-    const a2 = el.arcEnd != null ? +el.arcEnd : 360;
-    const rx = (w - m * 2) / 2;
-    const ry = (h - m * 2) / 2;
+    const a2 = el.arcEnd != null ? +el.arcEnd : 270;
+    const erx = (w - m * 2) / 2;
+    const ery = (h - m * 2) / 2;
     const cx = w / 2;
     const cy = h / 2;
     const pts = [];
@@ -122,105 +132,16 @@ export function shapeClipPath(el) {
     const steps = Math.max(12, Math.ceil(diff / 5));
     for (let i = 0; i <= steps; i++) {
       const ang = ((a1 + (diff * i) / steps - 90) * Math.PI) / 180;
-      pts.push(`${(cx + rx * Math.cos(ang)).toFixed(1)}px ${(cy + ry * Math.sin(ang)).toFixed(1)}px`);
+      pts.push(`${(cx + erx * Math.cos(ang)).toFixed(1)}px ${(cy + ery * Math.sin(ang)).toFixed(1)}px`);
     }
     if (mode === 'sector') pts.push(`${cx}px ${cy}px`);
     return `polygon(${pts.join(', ')})`;
   }
   if (special === 'callout') return 'none';
-  if (special === 'cloud') {
-    const raw =
-      'M 25 70 Q 5 70 5 55 Q 5 40 20 38 Q 18 20 35 18 Q 42 5 58 12 Q 70 5 80 15 Q 95 15 95 32 Q 98 50 88 58 Q 90 70 75 70 Z';
-    return `path('${scalePath100(raw, w, h)}')`;
-  }
-  if (special === 'triangle') {
-    return `polygon(${w / 2}px ${m}px, ${w - m}px ${h - m}px, ${m}px ${h - m}px)`;
-  }
-  if (special === 'diamond' || id === 'diamond') {
-    return `polygon(${w / 2}px ${m}px, ${w - m}px ${h / 2}px, ${w / 2}px ${h - m}px, ${m}px ${h / 2}px)`;
-  }
-  if (special === 'hexagon' || id === 'hexagon') {
-    const sides = 6;
-    const cx = w / 2;
-    const cy = h / 2;
-    const rx = (w - m * 2) / 2;
-    const ry = (h - m * 2) / 2;
-    const pts = [];
-    for (let i = 0; i < sides; i++) {
-      const a = (i / sides) * Math.PI * 2 - Math.PI / 2;
-      pts.push(`${(cx + rx * Math.cos(a)).toFixed(1)}px ${(cy + ry * Math.sin(a)).toFixed(1)}px`);
-    }
-    return `polygon(${pts.join(', ')})`;
-  }
-  if (special === 'trapezoid') {
-    const tTop = el.trapTop != null ? +el.trapTop : 0.15;
-    const tBot = el.trapBot != null ? +el.trapBot : 0.0;
-    return `path('${trapPath(m, m, w - m * 2, h - m * 2, tTop, tBot)}')`;
-  }
-  if (special === 'polygon') {
-    const sides = Math.max(3, Math.min(16, +(el.polySides || el.sides || 3)));
-    const cx = w / 2;
-    const cy = h / 2;
-    const rx = (w - m * 2) / 2;
-    const ry = (h - m * 2) / 2;
-    const pts = [];
-    for (let i = 0; i < sides; i++) {
-      const a = (i / sides) * Math.PI * 2 - Math.PI / 2;
-      pts.push(`${(cx + rx * Math.cos(a)).toFixed(1)}px ${(cy + ry * Math.sin(a)).toFixed(1)}px`);
-    }
-    return `polygon(${pts.join(', ')})`;
-  }
-  if (special === 'star') {
-    const nRays = Math.max(4, Math.min(32, +(el.starRays || 5)));
-    const innerR = Math.max(0.1, Math.min(0.9, +(el.starInner != null ? el.starInner : 0.45)));
-    const srx = (w - m * 2) / 2;
-    const sry = (h - m * 2) / 2;
-    const pts = [];
-    for (let i = 0; i < nRays * 2; i++) {
-      const ang = (i / (nRays * 2)) * Math.PI * 2 - Math.PI / 2;
-      const r = i % 2 === 0 ? 1 : innerR;
-      pts.push(`${(w / 2 + srx * r * Math.cos(ang)).toFixed(1)}px ${(h / 2 + sry * r * Math.sin(ang)).toFixed(1)}px`);
-    }
-    return `polygon(${pts.join(', ')})`;
-  }
-  if (special === 'parallelogram') {
-    const ew = w - m * 2;
-    const eh = h - m * 2;
-    const skew = Math.max(-45, Math.min(45, +(el.paraSkew != null ? el.paraSkew : 20)));
-    const off = Math.round((eh / 2) * Math.tan((skew * Math.PI) / 180));
-    return `polygon(${m + off}px ${m}px, ${m + ew}px ${m}px, ${m + ew - off}px ${m + eh}px, ${m}px ${m + eh}px)`;
-  }
-  if (special === 'chevron') {
-    const ew = w - m * 2;
-    const eh = h - m * 2;
-    const csk = Math.max(0, Math.min(45, el.chevSkew != null ? +el.chevSkew : 25));
-    const cin = Math.max(0, Math.min(45, el.chevInner != null ? +el.chevInner : csk));
-    const tip = Math.round((ew * csk) / 100);
-    const ind = Math.round((ew * cin) / 100);
-    const mid = m + Math.round(eh / 2);
-    const isL = id === 'chevronLeft';
-    const pts = isL
-      ? [
-          { x: m + ew, y: m },
-          { x: m + tip, y: m },
-          { x: m, y: mid },
-          { x: m + tip, y: m + eh },
-          { x: m + ew, y: m + eh },
-          { x: m + ew - ind, y: mid },
-        ]
-      : [
-          { x: m, y: m },
-          { x: m + ew - tip, y: m },
-          { x: m + ew, y: mid },
-          { x: m + ew - tip, y: m + eh },
-          { x: m, y: m + eh },
-          { x: m + ind, y: mid },
-        ];
-    return `polygon(${pts.map((p) => `${p.x}px ${p.y}px`).join(', ')})`;
-  }
-  if (meta?.path) {
-    return pathToPolygon(meta.path, w, h, m) || 'none';
-  }
+
+  // Triangle / polygon (hex by default) / star / arrow / catalog / cloud — same path as SVG, with rx.
+  const outline = shapeOutlinePathD(el, { sw: m > 0 ? (el.sw === undefined ? 2 : +el.sw) : 0, w, h });
+  if (outline) return `path('${outline}')`;
   return 'none';
 }
 

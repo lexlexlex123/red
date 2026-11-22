@@ -30,14 +30,90 @@ export const BULLET_ICON_PRESETS = [
   { id: '32', label: '⌂' },
 ];
 
-function flattenBlocks(html) {
+/**
+ * contentEditable often stores paragraphs as sibling <div>/<p>, with empty lines as
+ * <div><br></div>. Naïve </div><div> → <br> plus an inner <br> triples blank lines and
+ * breaks list toggle (2nd click adds markers instead of removing them).
+ */
+function flattenBlocksRegex(html) {
+  // Use \b after p/div so SVG <path> / </path> are not treated as <p> / </p>.
   return String(html || '')
-    .replace(/<\/div>\s*<div[^>]*>/gi, '<br>')
-    .replace(/<\/p>\s*<p[^>]*>/gi, '<br>')
-    .replace(/^\s*<(?:div|p)[^>]*>/i, '')
-    .replace(/<\/(?:div|p)>\s*$/i, '')
-    .replace(/<(?:div|p)[^>]*>/gi, '<br>')
-    .replace(/<\/(?:div|p)>/gi, '');
+    .replace(/<(div|p)\b[^>]*>\s*<br\s*\/?>\s*<\/\1>/gi, '<br>')
+    .replace(/<\/div\s*>\s*<div\b[^>]*>/gi, '<br>')
+    .replace(/<\/p\s*>\s*<p\b[^>]*>/gi, '<br>')
+    .replace(/^\s*<(?:div|p)\b[^>]*>/i, '')
+    .replace(/<\/(?:div|p)\s*>\s*$/i, '')
+    .replace(/<(?:div|p)\b[^>]*>/gi, '<br>')
+    .replace(/<\/(?:div|p)\s*>/gi, '')
+    .replace(/(?:<br\s*\/?>\s*){3,}/gi, '<br><br>');
+}
+
+function isBlockEl(n) {
+  return n && n.nodeType === 1 && /^(DIV|P)$/i.test(n.tagName);
+}
+
+function isEmptyCeLine(block) {
+  const kids = [...(block?.childNodes || [])];
+  return (
+    !kids.length ||
+    kids.every(
+      (n) =>
+        (n.nodeType === 1 && n.nodeName === 'BR') ||
+        (n.nodeType === 3 && !String(n.textContent || '').trim())
+    )
+  );
+}
+
+function unwrapSingleBlockWrappers(root) {
+  while (root.childNodes.length === 1 && isBlockEl(root.firstChild)) {
+    const only = root.firstChild;
+    // Keep <div><br></div> as a block so it serializes to one empty line, not "<br>".
+    if (isEmptyCeLine(only)) break;
+    const kids = [...only.childNodes];
+    const nestedBlocks =
+      kids.length > 0 &&
+      kids.every((n) => isBlockEl(n) || (n.nodeType === 3 && !String(n.textContent || '').trim()));
+    // Nested sibling blocks: unwrap outer only.
+    if (nestedBlocks) {
+      while (only.firstChild) root.insertBefore(only.firstChild, only);
+      only.remove();
+      continue;
+    }
+    // Single wrapper around inline content: unwrap.
+    while (only.firstChild) root.insertBefore(only.firstChild, only);
+    only.remove();
+  }
+}
+
+function serializeBlockInner(block) {
+  // Chrome empty line: <div><br></div> or <div><br><br></div> → one empty line.
+  if (isEmptyCeLine(block)) return '';
+  // Nested blocks inside a paragraph → recurse.
+  if ([...block.childNodes].some(isBlockEl)) {
+    return flattenBlocks(block.innerHTML);
+  }
+  return block.innerHTML;
+}
+
+function flattenBlocksDom(html) {
+  const wrap = document.createElement('div');
+  wrap.innerHTML = String(html || '');
+  unwrapSingleBlockWrappers(wrap);
+  const nodes = [...wrap.childNodes];
+  const meaningful = nodes.filter(
+    (n) => !(n.nodeType === 3 && !String(n.textContent || '').trim())
+  );
+  const allBlocks = meaningful.length > 0 && meaningful.every(isBlockEl);
+  if (allBlocks) {
+    return meaningful.map(serializeBlockInner).join('<br>');
+  }
+  // Already flat (or mixed): strip leftover block tags without inventing extra breaks.
+  return flattenBlocksRegex(wrap.innerHTML);
+}
+
+function flattenBlocks(html) {
+  if (typeof document !== 'undefined') return flattenBlocksDom(html);
+  return flattenBlocksRegex(html);
 }
 
 /** contentEditable often drops <br> inside the marker span, which splits the tag on the next edit. */
@@ -53,7 +129,8 @@ function sanitizeMarkerNode(m) {
       n.remove();
       return;
     }
-    if (n.nodeType === 1 && n.tagName !== 'SVG') m.after(n);
+    // SVGElement.tagName is "svg" (lowercase); HTML uses "DIV". Keep the icon inside the marker.
+    if (n.nodeType === 1 && !/^svg$/i.test(n.tagName || '')) m.after(n);
   });
 }
 
@@ -102,7 +179,7 @@ function stripMarker(line) {
       marks.forEach((n) => n.remove());
     }
     [...wrap.childNodes].forEach((n) => {
-      if (n.nodeType === 1 && n.tagName === 'SVG') n.remove();
+      if (n.nodeType === 1 && /^svg$/i.test(n.tagName || '')) n.remove();
       else if (n.nodeType === 3 && !String(n.textContent || '').trim()) n.remove();
     });
     return wrap.innerHTML.replace(/^(&nbsp;|\s)+/i, '');
@@ -225,13 +302,77 @@ function lineNumStyle(line) {
   return detectNumStyleFromText(tm ? tm[1] : '');
 }
 
-function numMarker(n, style = 'decimal') {
+export function numMarker(n, style = 'decimal') {
   return `<span data-list-num data-num-style="${style}" contenteditable="false" style="${NUM_MARKER_STYLE}">${formatListNum(n, style)}</span>`;
 }
 
 function lineIndexFromHtmlPrefix(html) {
   const lines = splitLines(html);
   return Math.max(0, lines.length - 1);
+}
+
+/** Top-level block paragraphs under a CE root (Chrome uses sibling <div>s). */
+function topLevelBlocks(root) {
+  if (!root) return [];
+  const blocks = [...root.childNodes].filter(isBlockEl);
+  const hasInline =
+    [...root.childNodes].some(
+      (n) =>
+        (n.nodeType === 3 && String(n.textContent || '').trim()) ||
+        (n.nodeType === 1 && !isBlockEl(n) && n.nodeName !== 'BR')
+    ) || [...root.childNodes].some((n) => n.nodeName === 'BR');
+  // Prefer block mode only when the root is purely block-based (no loose <br>/text).
+  if (!blocks.length || hasInline) return [];
+  return blocks;
+}
+
+function lineIndexInLiveRoot(root, node, offset) {
+  if (!root || !node) return 0;
+  const blocks = topLevelBlocks(root);
+  if (blocks.length) {
+    let el = node.nodeType === 1 ? node : node.parentElement;
+    while (el && el !== root && el.parentElement !== root) el = el.parentElement;
+    if (el && el.parentElement === root && isBlockEl(el)) {
+      const i = blocks.indexOf(el);
+      return i >= 0 ? i : 0;
+    }
+    // Offset into root pointing at a child block.
+    if (node === root) {
+      const child = root.childNodes[Math.min(offset, root.childNodes.length)] || root.childNodes[offset - 1];
+      if (child && isBlockEl(child)) {
+        const i = blocks.indexOf(child);
+        return i >= 0 ? i : Math.max(0, blocks.length - 1);
+      }
+      if (offset >= root.childNodes.length) return Math.max(0, blocks.length - 1);
+    }
+    return 0;
+  }
+  try {
+    const r = document.createRange();
+    r.setStart(root, 0);
+    if (node === root) r.setEnd(root, Math.max(0, Math.min(offset, root.childNodes.length)));
+    else r.setEnd(node, offset);
+    const wrap = document.createElement('div');
+    wrap.appendChild(r.cloneContents());
+    return lineIndexFromHtmlPrefix(wrap.innerHTML);
+  } catch {
+    return 0;
+  }
+}
+
+/** Paragraph index of a node inside a text body / contentEditable root. */
+export function lineIndexOfNode(root, node) {
+  if (!root || !node || !root.contains(node)) return 0;
+  return lineIndexInLiveRoot(root, node, 0);
+}
+
+function lineBulletAttrs(line) {
+  const s = String(line || '');
+  const iconId = (s.match(/data-icon-id="([^"]*)"/i) || [])[1];
+  const color = (s.match(/data-icon-color="([^"]*)"/i) || [])[1];
+  const swRaw = (s.match(/data-icon-sw="([^"]*)"/i) || [])[1];
+  const sw = swRaw != null && swRaw !== '' && Number.isFinite(+swRaw) ? +swRaw : undefined;
+  return { iconId, color, sw };
 }
 
 /**
@@ -247,22 +388,12 @@ export function targetedLineIndices(root) {
   const focus = sel.focusNode;
   if (!anchor || (!root.contains(anchor) && !(focus && root.contains(focus)))) return null;
 
-  const idxAt = (node, offset) => {
-    if (!node || !root.contains(node)) return 0;
-    try {
-      const r = document.createRange();
-      r.setStart(root, 0);
-      r.setEnd(node, offset);
-      const wrap = document.createElement('div');
-      wrap.appendChild(r.cloneContents());
-      return lineIndexFromHtmlPrefix(wrap.innerHTML);
-    } catch {
-      return 0;
-    }
-  };
-
-  const a = idxAt(sel.anchorNode, sel.anchorOffset);
-  const b = idxAt(sel.focusNode, sel.focusOffset);
+  const a = lineIndexInLiveRoot(root, sel.anchorNode, sel.anchorOffset);
+  const b = lineIndexInLiveRoot(
+    root,
+    sel.focusNode || sel.anchorNode,
+    sel.focusNode ? sel.focusOffset : sel.anchorOffset
+  );
   const lo = Math.min(a, b);
   const hi = Math.max(a, b);
   const out = [];
@@ -375,12 +506,35 @@ export function htmlNumListStyle(html) {
 /**
  * Re-stamp existing bullet markers with new icon/color (keeps list structure).
  * Always outline-only (fillOp 0) — list markers never use fill.
+ * @param {string} html
+ * @param {{ iconId?: string, color?: string, sw?: number, mode?: 'all'|'icon'|'color' }} [opts]
+ * @param {number[]|null} [lineIndices] targeted paragraphs; null / empty = all bulleted lines
  */
-export function reapplyBulletMarkers(html, opts = {}) {
-  const stamp = { ...opts, fillOp: 0 };
+export function reapplyBulletMarkers(html, opts = {}, lineIndices = null) {
+  const mode = opts.mode === 'icon' || opts.mode === 'color' ? opts.mode : 'all';
   const lines = splitLines(html);
-  const next = lines.map((line) => {
+  const targetSet =
+    lineIndices && lineIndices.length
+      ? new Set(lineIndices.filter((i) => i >= 0 && i < lines.length))
+      : null;
+  const next = lines.map((line, i) => {
     if (!BULLET_RE.test(line)) return line;
+    if (targetSet && !targetSet.has(i)) return line;
+    const prev = lineBulletAttrs(line);
+    const stamp = {
+      iconId:
+        mode === 'color'
+          ? prev.iconId || opts.iconId || DEFAULT_BULLET_ICON_ID
+          : opts.iconId != null && opts.iconId !== ''
+            ? String(opts.iconId)
+            : prev.iconId || DEFAULT_BULLET_ICON_ID,
+      color:
+        mode === 'icon'
+          ? prev.color || opts.color || 'currentColor'
+          : opts.color || prev.color || 'currentColor',
+      sw: opts.sw != null ? opts.sw : prev.sw != null ? prev.sw : 1.8,
+      fillOp: 0,
+    };
     const stripped = stripMarker(line);
     return bulletMarker(stamp) + stripped.replace(/^\s+/, '');
   });
@@ -390,12 +544,15 @@ export function reapplyBulletMarkers(html, opts = {}) {
 /**
  * Update bullet markers in a live contentEditable root (v7.1 style — no strip/rebuild).
  * Collapses duplicate markers on the same line. Returns resulting HTML or null.
+ * @param {HTMLElement} root
+ * @param {{ iconId?: string, color?: string, sw?: number, mode?: 'all'|'icon'|'color' }} [opts]
+ * @param {number[]|null} [lineIndices]
  */
-export function updateLiveBulletMarkers(root, opts = {}) {
+export function updateLiveBulletMarkers(root, opts = {}, lineIndices = null) {
   if (!root || typeof document === 'undefined') return null;
-  const iconId = opts.iconId != null ? String(opts.iconId) : '';
-  const color = opts.color || 'currentColor';
-  const sw = opts.sw != null ? opts.sw : 1.8;
+  const mode = opts.mode === 'icon' || opts.mode === 'color' ? opts.mode : 'all';
+  const targetSet =
+    lineIndices && lineIndices.length ? new Set(lineIndices.filter((i) => i >= 0)) : null;
   const fillOp = 0;
   const marks = [...root.querySelectorAll('span[data-list-bullet]')];
   if (!marks.length) return null;
@@ -408,7 +565,7 @@ export function updateLiveBulletMarkers(root, opts = {}) {
       sib = sib.nextSibling;
       gone.remove();
     }
-    while (sib && sib.nodeType === 1 && sib.tagName === 'SVG') {
+    while (sib && sib.nodeType === 1 && /^svg$/i.test(sib.tagName || '')) {
       const gone = sib;
       sib = sib.nextSibling;
       gone.remove();
@@ -419,7 +576,26 @@ export function updateLiveBulletMarkers(root, opts = {}) {
   });
 
   root.querySelectorAll('span[data-list-bullet]').forEach((sp) => {
-    const id = iconId || sp.getAttribute('data-icon-id') || DEFAULT_BULLET_ICON_ID;
+    if (targetSet) {
+      const lineIdx = lineIndexOfNode(root, sp);
+      if (!targetSet.has(lineIdx)) return;
+    }
+    const prevId = sp.getAttribute('data-icon-id') || DEFAULT_BULLET_ICON_ID;
+    const prevColor = sp.getAttribute('data-icon-color') || 'currentColor';
+    const prevSw = sp.getAttribute('data-icon-sw');
+    const id =
+      mode === 'color'
+        ? prevId
+        : opts.iconId != null && opts.iconId !== ''
+          ? String(opts.iconId)
+          : prevId;
+    const color = mode === 'icon' ? prevColor : opts.color || prevColor || 'currentColor';
+    const sw =
+      opts.sw != null
+        ? opts.sw
+        : prevSw != null && prevSw !== '' && Number.isFinite(+prevSw)
+          ? +prevSw
+          : 1.8;
     sp.setAttribute('data-icon-id', id);
     sp.setAttribute('data-icon-color', color);
     sp.setAttribute('data-icon-sw', String(sw));

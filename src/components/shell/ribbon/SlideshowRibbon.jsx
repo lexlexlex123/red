@@ -6,6 +6,7 @@ import { versionAttr } from '../../../editor/versions.js';
 import RibbonGroup from './RibbonGroup.jsx';
 import RibbonButton from './RibbonButton.jsx';
 import Toggle from '../../ui/Toggle.jsx';
+import DisplayPicker from '../DisplayPicker.jsx';
 
 export default function SlideshowRibbon() {
   const lang = useUiStore((s) => s.lang);
@@ -17,6 +18,7 @@ export default function SlideshowRibbon() {
   const presShowFooter = useUiStore((s) => s.presShowFooter);
   const presShowSideNav = useUiStore((s) => s.presShowSideNav);
   const presShowEsc = useUiStore((s) => s.presShowEsc);
+  const presShowBrush = useUiStore((s) => s.presShowBrush);
 
   const autoOn = slideAuto > 0;
   const delay = autoOn ? Math.max(1, Math.min(60, slideAuto)) : presAutoDelay;
@@ -75,6 +77,7 @@ export default function SlideshowRibbon() {
         />
       </RibbonGroup>
       <RibbonGroup label={ru ? 'Отображение' : 'Display'}>
+        <DisplayPicker compact />
         <RibbonButton
           label={ru ? 'Футер' : 'Footer'}
           title={ru ? 'Номер слайда при показе' : 'Slide number during preview'}
@@ -95,6 +98,13 @@ export default function SlideshowRibbon() {
           icon="escx"
           on={presShowEsc}
           onClick={() => useUiStore.getState().togglePresShowEsc()}
+        />
+        <RibbonButton
+          label={ru ? 'Кисть' : 'Brush'}
+          title={ru ? 'Кисть для рисования при показе' : 'Drawing brush during preview'}
+          icon="brush"
+          on={presShowBrush}
+          onClick={() => useUiStore.getState().togglePresShowBrush()}
         />
       </RibbonGroup>
     </>

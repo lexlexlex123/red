@@ -1,5 +1,8 @@
 /** Lightweight code highlighting — ported from js/11-elements.js. */
 
+import { getTheme } from './themes.js';
+import { usePresentationStore } from '../stores/presentationStore.js';
+
 export const CODE_THEMES = {
   dark: {
     bg: '#0d1117',
@@ -282,15 +285,55 @@ export function syntaxHighlight(code, lang, theme = 'dark') {
   return h;
 }
 
-export function codeBlockThemeId(el, fallback = 'dark') {
-  if (el?.codeTheme) return el.codeTheme;
-  return fallback;
+/** Virtual id that follows the slide design theme (not editor chrome). */
+export const CODE_THEME_SYSTEM = 'system';
+
+export const CODE_THEME_CHOICES = [CODE_THEME_SYSTEM, ...Object.keys(CODE_THEMES)];
+
+export function codeThemeLabel(id, ru) {
+  if (id === CODE_THEME_SYSTEM) return ru ? 'Системная' : 'System';
+  return id;
 }
 
-export function codeBlockSurfaceStyle(el, themeId) {
-  const th = codeBlockThemeId(el, themeId);
+/** Whether the current presentation design theme is light (`theme.dark === false`). */
+export function isSlideThemeLight(opts = {}) {
+  if (opts.slideLight != null) return !!opts.slideLight;
+  // legacy alias from earlier chrome-based wiring
+  if (opts.uiLight != null) return !!opts.uiLight;
+  if (opts.theme && typeof opts.theme === 'object') return opts.theme.dark === false;
+  try {
+    const theme =
+      opts.themeIdx != null
+        ? getTheme(opts.themeIdx)
+        : getTheme(usePresentationStore.getState().appliedThemeIdx);
+    return !!(theme && theme.dark === false);
+  } catch (e) {}
+  return false;
+}
+
+/** Resolve stored theme id (`system` / dark / light / …) to a CODE_THEMES key. */
+export function resolveCodeThemeId(themeId, opts = {}) {
+  const raw = themeId || CODE_THEME_SYSTEM;
+  if (raw === CODE_THEME_SYSTEM) {
+    return isSlideThemeLight(opts) ? 'light' : 'dark';
+  }
+  return CODE_THEMES[raw] ? raw : 'dark';
+}
+
+export function codeBlockThemeId(el, fallback = CODE_THEME_SYSTEM) {
+  if (el?.codeTheme) return el.codeTheme;
+  return fallback || CODE_THEME_SYSTEM;
+}
+
+export function codeBlockSurfaceStyle(el, themeIdOrOpts, maybeOpts) {
+  const opts =
+    themeIdOrOpts && typeof themeIdOrOpts === 'object' && !Array.isArray(themeIdOrOpts)
+      ? themeIdOrOpts
+      : { ...(maybeOpts || {}), themeId: themeIdOrOpts };
+  const stored = opts.themeId || codeBlockThemeId(el);
+  const th = resolveCodeThemeId(stored, opts);
   const T = CODE_THEMES[th] || CODE_THEMES.dark;
-  const fs = el?.codeFs || 14;
+  const fs = el?.codeFs != null ? +el.codeFs : 18;
   const glass = !!el?.codeGlass;
   let bg = T.bg;
   if (glass) bg = th === 'light' ? 'rgba(248,249,250,0.58)' : 'rgba(13,17,23,0.58)';
@@ -302,7 +345,7 @@ export function codeBlockSurfaceStyle(el, themeId) {
     fontFamily: "'JetBrains Mono', ui-monospace, Consolas, monospace",
     fontSize: `${fs}px`,
     lineHeight: 1.6,
-    padding: '14px 16px',
+    padding: el?.codeLineNums ? '14px 16px 14px 10px' : '14px 16px',
     boxSizing: 'border-box',
     background: bg,
     color: T.text,
@@ -312,14 +355,68 @@ export function codeBlockSurfaceStyle(el, themeId) {
   };
 }
 
-export function ensureCodeHtml(el, themeFallback = 'dark') {
-  const theme = codeBlockThemeId(el, themeFallback);
+export function codeLineCount(raw) {
+  return Math.max(1, String(raw ?? '').split('\n').length);
+}
+
+export function codeLineNumbersText(raw) {
+  const n = codeLineCount(raw);
+  let out = '';
+  for (let i = 1; i <= n; i++) out += (i > 1 ? '\n' : '') + i;
+  return out;
+}
+
+export function ensureCodeHtml(el, themeFallback = CODE_THEME_SYSTEM, opts = {}) {
+  const stored = codeBlockThemeId(el, themeFallback);
+  const theme = resolveCodeThemeId(stored, opts);
   const lang = normalizeCodeLang(el?.codeLang || 'js');
   const raw = el?.codeRaw != null ? String(el.codeRaw) : '';
   return {
     codeLang: lang,
-    codeTheme: theme,
+    codeTheme: stored === CODE_THEME_SYSTEM || stored === 'system' ? CODE_THEME_SYSTEM : theme,
     codeHtml: syntaxHighlight(raw, lang, theme),
     codeBg: (CODE_THEMES[theme] || CODE_THEMES.dark).bg,
   };
+}
+
+/** Highlighted HTML for display; always re-resolves `system` against current UI. */
+export function codeDisplayHtml(el, opts = {}) {
+  const stored = codeBlockThemeId(el);
+  const theme = resolveCodeThemeId(stored, opts);
+  const lang = normalizeCodeLang(el?.codeLang || 'js');
+  const raw = el?.codeRaw != null ? String(el.codeRaw) : '';
+  if (stored === CODE_THEME_SYSTEM || !el?.codeHtml) {
+    return syntaxHighlight(raw, lang, theme);
+  }
+  return el.codeHtml;
+}
+
+export function codeGutterCss(el, opts = {}) {
+  const th = resolveCodeThemeId(codeBlockThemeId(el), opts);
+  const T = CODE_THEMES[th] || CODE_THEMES.dark;
+  return {
+    flex: '0 0 auto',
+    margin: 0,
+    padding: '0 10px 0 0',
+    textAlign: 'right',
+    color: T.cmt,
+    userSelect: 'none',
+    whiteSpace: 'pre',
+    lineHeight: 1.6,
+    fontFamily: 'inherit',
+    fontSize: 'inherit',
+  };
+}
+
+/** Standalone HTML body for a code element (surface children). */
+export function codeBlockInnerHtml(el, opts = {}) {
+  const html = codeDisplayHtml(el, opts);
+  const pre = `<pre style="margin:0;white-space:pre-wrap;flex:1;min-width:0">${html}</pre>`;
+  if (!el?.codeLineNums) return pre;
+  const gutter = codeGutterCss(el, opts);
+  const gStyle = Object.entries(gutter)
+    .filter(([, v]) => v != null && v !== '')
+    .map(([k, v]) => `${k.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`)}:${v}`)
+    .join(';');
+  return `<div style="display:flex;align-items:flex-start"><pre style="${gStyle}" aria-hidden="true">${codeLineNumbersText(el.codeRaw)}</pre>${pre}</div>`;
 }

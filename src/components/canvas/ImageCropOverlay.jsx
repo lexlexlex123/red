@@ -2,12 +2,22 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { usePresentationStore } from '../../stores/presentationStore';
 import { useUiStore } from '../../stores/uiStore';
 import { useHistoryStore } from '../../stores/historyStore';
+import { getCropFullBox } from '../../editor/imgStyles.js';
 
-const MAX = 40;
-const MIN_VISIBLE = 20;
+const MAX = 90;
+// Keep this matching the Math.max(0.1, ...) floor on wFrac/hFrac in commitCrop and
+// imgStyles.js — if this were lower, the crop preview could show a sliver smaller than
+// what the floor there actually allows once applied, so the applied result would visibly
+// jump larger than what was being dragged.
+const MIN_VISIBLE = 10;
 
 function clampSide(v) {
-  return Math.max(0, Math.min(MAX, Math.round(Number(v) || 0)));
+  // Round to one decimal place, not a whole percent: at strong crops (now possible up to
+  // 90% per side) the visible fraction (wFrac/hFrac) gets small, and the image position
+  // formula in imgStyles.js divides by that fraction — so a whole-percent rounding error
+  // that's negligible at a mild crop turns into a visibly-off scale/position once the
+  // divisor shrinks. One decimal cuts the worst case by 10x.
+  return Math.max(0, Math.min(MAX, Math.round(Number(v) * 10 || 0) / 10));
 }
 
 /**
@@ -40,42 +50,68 @@ export default function ImageCropOverlay({ el }) {
     cancelledRef.current = false;
   }, [el.id, cropModeElId]);
 
+  // Turn the current draft L/T/R/B percentages into a box anchored to the visible region,
+  // instead of just storing the crop percentages and letting the box stretch to show the
+  // cropped-in area scaled back up to full size.
+  //
+  // Computed relative to the *full* (pre-crop) box — reconstructed from the element's
+  // current box + its existing crop percentages, see getCropFullBox — rather than the
+  // element's live x/y/w/h directly. Reopening crop on an already-cropped image starts from
+  // that same full box (SlideCanvas.jsx renders the picture at full size while crop mode is
+  // open, for exactly this reason), so committing must be based on the same reference or a
+  // second crop pass would derive an incorrect, doubly-shrunk box.
+  //
+  // The L/T/R/B percentages themselves are kept as-is, *not* reset to 0: the image
+  // positioning formula in imgStyles.js (the `hasCrop` block) expresses the image's
+  // size/offset purely as percentages of the full box, so storing exactly the percentages
+  // that were used to derive the new box keeps that formula landing on the same pixels,
+  // now filling the new box edge-to-edge instead of stretching the whole picture into it.
+  const commitCrop = useCallback(
+    (d) => {
+      const full = getCropFullBox(el);
+      const wFrac = Math.max(0.1, 1 - d.L / 100 - d.R / 100);
+      const hFrac = Math.max(0.1, 1 - d.T / 100 - d.B / 100);
+      usePresentationStore.getState().patchElement(el.id, {
+        x: full.x + full.w * (d.L / 100),
+        y: full.y + full.h * (d.T / 100),
+        w: Math.max(4, full.w * wFrac),
+        h: Math.max(4, full.h * hFrac),
+        imgCropL: d.L,
+        imgCropT: d.T,
+        imgCropR: d.R,
+        imgCropB: d.B,
+      });
+    },
+    [el.id, el.w, el.h, el.x, el.y, el.imgCropL, el.imgCropT, el.imgCropR, el.imgCropB]
+  );
+
   // Save crop when component unmounts (e.g., clicking outside, selecting different element)
   // unless the user explicitly cancelled or already applied
   const draftRef = useRef(draft);
   draftRef.current = draft;
+  const commitCropRef = useRef(commitCrop);
+  commitCropRef.current = commitCrop;
   useEffect(() => {
     return () => {
       if (!cancelledRef.current && !appliedRef.current) {
         const d = draftRef.current;
-        // Only save if there are actual changes
+        // Only commit if there are actual changes
         if (d.L !== el.imgCropL || d.T !== el.imgCropT || d.R !== el.imgCropR || d.B !== el.imgCropB) {
           useHistoryStore.getState().push();
-          usePresentationStore.getState().patchElement(el.id, {
-            imgCropL: d.L,
-            imgCropT: d.T,
-            imgCropR: d.R,
-            imgCropB: d.B,
-            imgFit: d.L || d.T || d.R || d.B ? 'cover' : el.imgFit || 'contain',
-          });
+          commitCropRef.current(d);
         }
       }
     };
-  }, [el.id, el.imgCropL, el.imgCropT, el.imgCropR, el.imgCropB, el.imgFit]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [el.id]);
 
   const apply = useCallback(() => {
     appliedRef.current = true;
     useHistoryStore.getState().push();
-    usePresentationStore.getState().patchElement(el.id, {
-      imgCropL: draft.L,
-      imgCropT: draft.T,
-      imgCropR: draft.R,
-      imgCropB: draft.B,
-      imgFit: draft.L || draft.T || draft.R || draft.B ? 'cover' : el.imgFit || 'contain',
-    });
+    commitCrop(draft);
     setCropModeElId(null);
     useUiStore.getState().showToast(ru ? 'Обрезка применена' : 'Crop applied', 'ok');
-  }, [draft, el.id, el.imgFit, ru, setCropModeElId]);
+  }, [draft, commitCrop, ru, setCropModeElId]);
 
   const cancel = useCallback(() => {
     cancelledRef.current = true;
@@ -96,18 +132,56 @@ export default function ImageCropOverlay({ el }) {
     return () => window.removeEventListener('keydown', onKey, true);
   }, [apply, cancel]);
 
+  // Accumulate every transform (rotation, flip, and the canvas's own zoom scale, applied by
+  // various ancestors) between `node` and the document root into a single matrix mapping
+  // the element's own untransformed layout coordinates to screen pixels.
+  function elementToScreenMatrix(node) {
+    let matrix = new DOMMatrix();
+    let cur = node;
+    while (cur && cur.nodeType === 1 && cur !== document.body) {
+      const cs = getComputedStyle(cur);
+      if (cs.transform && cs.transform !== 'none') {
+        try {
+          matrix = new DOMMatrix(cs.transform).multiply(matrix);
+        } catch (err) {
+          /* ignore unparsable transform */
+        }
+      }
+      cur = cur.parentElement;
+    }
+    return matrix;
+  }
+
   function startDrag(sides, e) {
     e.preventDefault();
     e.stopPropagation();
     const box = e.currentTarget.closest('.react-img-crop-root');
     if (!box) return;
-    const r = box.getBoundingClientRect();
+    // The overlay itself carries no rotation — it's an inset:0 child of the rotated image
+    // wrapper (.react-el). box.getBoundingClientRect() on a rotated element returns the
+    // axis-aligned *screen* bounding box, which is larger than (and a different aspect
+    // ratio from) the image's own box, and mouse deltas in screen space no longer line up
+    // with the image's own left/right/top/bottom once it's rotated. Use the rotated
+    // wrapper's own untransformed layout size plus the full accumulated transform up to the
+    // screen (rotation, flip, and the canvas's zoom level together) to convert screen-pixel
+    // drag deltas back into the image's own local percentage space correctly regardless of
+    // rotation or zoom.
+    const rotEl = box.closest('.react-el') || box;
+    const w = rotEl.offsetWidth || box.getBoundingClientRect().width;
+    const h = rotEl.offsetHeight || box.getBoundingClientRect().height;
+    let inv = null;
+    try {
+      inv = elementToScreenMatrix(rotEl).inverse();
+    } catch (err) {
+      inv = null;
+    }
     dragRef.current = {
       sides,
       x0: e.clientX,
       y0: e.clientY,
-      w: r.width,
-      h: r.height,
+      w,
+      h,
+      inv,
       start: { ...draft },
       pan: sides === 'pan',
     };
@@ -117,8 +191,14 @@ export default function ImageCropOverlay({ el }) {
   function onMove(e) {
     const d = dragRef.current;
     if (!d) return;
-    const dxPct = ((e.clientX - d.x0) / d.w) * 100;
-    const dyPct = ((e.clientY - d.y0) / d.h) * 100;
+    const dxScreen = e.clientX - d.x0;
+    const dyScreen = e.clientY - d.y0;
+    // Apply only the linear (rotation+scale) part of the inverse transform to this delta —
+    // translation doesn't apply to a delta between two points, only to absolute positions.
+    const dxLocal = d.inv ? d.inv.a * dxScreen + d.inv.c * dyScreen : dxScreen;
+    const dyLocal = d.inv ? d.inv.b * dxScreen + d.inv.d * dyScreen : dyScreen;
+    const dxPct = (dxLocal / d.w) * 100;
+    const dyPct = (dyLocal / d.h) * 100;
     const next = { ...d.start };
     if (d.pan) {
       let L = d.start.L + dxPct;

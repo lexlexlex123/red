@@ -22,6 +22,33 @@ export function normalizeMoonPhase(v) {
   return Math.max(-1, Math.min(1, n / 100));
 }
 
+/** Inner / outer radius of the ring (noSymbol). Keep a visible band and hole. */
+export function normalizeRingInner(v) {
+  if (v == null || v === '') return 0.5;
+  const n = +v;
+  if (!Number.isFinite(n)) return 0.5;
+  return Math.max(0.12, Math.min(0.88, n));
+}
+
+/** Even-odd annulus: outer CW, inner CCW so the hole stays transparent. */
+export function ringPath(cx, cy, rx, ry, inner) {
+  const orx = Math.max(0.5, +rx || 0.5);
+  const ory = Math.max(0.5, +ry || 0.5);
+  const ir = normalizeRingInner(inner);
+  const irx = Math.max(0.5, orx * ir);
+  const iry = Math.max(0.5, ory * ir);
+  const ox = cx + orx;
+  const ix = cx + irx;
+  return (
+    `M ${ox.toFixed(2)} ${cy.toFixed(2)} ` +
+    `A ${orx.toFixed(2)} ${ory.toFixed(2)} 0 1 1 ${(cx - orx).toFixed(2)} ${cy.toFixed(2)} ` +
+    `A ${orx.toFixed(2)} ${ory.toFixed(2)} 0 1 1 ${ox.toFixed(2)} ${cy.toFixed(2)} Z ` +
+    `M ${ix.toFixed(2)} ${cy.toFixed(2)} ` +
+    `A ${irx.toFixed(2)} ${iry.toFixed(2)} 0 1 0 ${(cx - irx).toFixed(2)} ${cy.toFixed(2)} ` +
+    `A ${irx.toFixed(2)} ${iry.toFixed(2)} 0 1 0 ${ix.toFixed(2)} ${cy.toFixed(2)} Z`
+  );
+}
+
 function makeBezierClose(cpts, w, h) {
   const last = cpts[cpts.length - 1];
   const first = cpts[0];
@@ -50,6 +77,116 @@ function makeBezierClose(cpts, w, h) {
         ? first.y * 2 - first.cp2y
         : first.y + (last.y - first.y) * 0.33;
   return ` C ${(fc1x * w).toFixed(2)} ${(fc1y * h).toFixed(2)} ${(fc2x * w).toFixed(2)} ${(fc2y * h).toFixed(2)} ${(first.x * w).toFixed(2)} ${(first.y * h).toFixed(2)} Z`;
+}
+
+function curveNodeWidth(cpts, i, base) {
+  const pt = cpts[i];
+  if (pt && pt.sw != null && Number.isFinite(+pt.sw)) return +pt.sw;
+  let prev = -1;
+  for (let j = i - 1; j >= 0; j--) {
+    if (cpts[j] && cpts[j].sw != null) {
+      prev = j;
+      break;
+    }
+  }
+  let next = -1;
+  for (let j = i + 1; j < cpts.length; j++) {
+    if (cpts[j] && cpts[j].sw != null) {
+      next = j;
+      break;
+    }
+  }
+  const prevW = prev >= 0 ? +cpts[prev].sw : base;
+  const nextW = next >= 0 ? +cpts[next].sw : base;
+  const prevI = prev >= 0 ? prev : 0;
+  const nextI = next >= 0 ? next : cpts.length - 1;
+  if (nextI === prevI) return prevW;
+  const t = (i - prevI) / (nextI - prevI);
+  return prevW + (nextW - prevW) * t;
+}
+
+/** True when node widths differ from each other (needs segmented taper stroke). */
+function curveHasVariableWidth(cpts, baseSw) {
+  if (!cpts || cpts.length < 2) return false;
+  let first = null;
+  for (let i = 0; i < cpts.length; i++) {
+    const w = curveNodeWidth(cpts, i, baseSw);
+    if (first == null) first = w;
+    else if (Math.abs(w - first) > 0.05) return true;
+  }
+  return false;
+}
+
+/** Short round strokes so thickness can change from node to node. */
+function curveVariableStroke(cpts, w, h, baseSw, closed, color) {
+  if (!cpts || cpts.length < 2) return '';
+  const samples = [];
+  const segCount = closed ? cpts.length : cpts.length - 1;
+  for (let i = 0; i < segCount; i++) {
+    const a = cpts[i];
+    const b = cpts[(i + 1) % cpts.length];
+    const p0 = { x: a.x * w, y: a.y * h };
+    const p1 = {
+      x: (a.cp2x != null ? a.cp2x : a.x) * w,
+      y: (a.cp2y != null ? a.cp2y : a.y) * h,
+    };
+    const p2 = {
+      x: (b.cp1x != null ? b.cp1x : b.x) * w,
+      y: (b.cp1y != null ? b.cp1y : b.y) * h,
+    };
+    const p3 = { x: b.x * w, y: b.y * h };
+    const chord = Math.hypot(p3.x - p0.x, p3.y - p0.y);
+    const bend =
+      Math.hypot(p1.x - p0.x, p1.y - p0.y) + Math.hypot(p2.x - p3.x, p2.y - p3.y);
+    const steps = Math.max(24, Math.min(96, Math.ceil((chord + bend) / 6)));
+    const swA = curveNodeWidth(cpts, i, baseSw);
+    const swB = curveNodeWidth(cpts, (i + 1) % cpts.length, baseSw);
+    const start = samples.length ? 1 : 0;
+    for (let s = start; s <= steps; s++) {
+      const t = s / steps;
+      const u = 1 - t;
+      samples.push({
+        x: u * u * u * p0.x + 3 * u * u * t * p1.x + 3 * u * t * t * p2.x + t * t * t * p3.x,
+        y: u * u * u * p0.y + 3 * u * u * t * p1.y + 3 * u * t * t * p2.y + t * t * t * p3.y,
+        sw: swA + (swB - swA) * t,
+      });
+    }
+  }
+  let out = '';
+  for (let i = 1; i < samples.length; i++) {
+    const a = samples[i - 1];
+    const b = samples[i];
+    const sw = Math.max(0.4, (a.sw + b.sw) / 2);
+    out += `<line x1="${a.x.toFixed(2)}" y1="${a.y.toFixed(2)}" x2="${b.x.toFixed(2)}" y2="${b.y.toFixed(2)}" stroke="${color}" stroke-width="${sw.toFixed(2)}" stroke-linecap="round" stroke-linejoin="round"/>`;
+  }
+  return out;
+}
+
+export const CURVE_FILL_PATTERNS = ['solid', 'lines', 'hatch', 'dots'];
+
+/** SVG pattern paint for curve fill (drawing-panel styles). */
+function curveFillPatternPaint(pat, color, uid) {
+  const col = color || '#64748b';
+  const id = `cfp-${String(uid || 'x').replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+  if (pat === 'lines') {
+    return {
+      defs: `<pattern id="${id}" patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(45)"><line x1="0" y1="1" x2="8" y2="1" stroke="${col}" stroke-width="2"/></pattern>`,
+      paint: `url(#${id})`,
+    };
+  }
+  if (pat === 'hatch') {
+    return {
+      defs: `<pattern id="${id}" patternUnits="userSpaceOnUse" width="10" height="10" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="10" stroke="${col}" stroke-width="2"/><line x1="0" y1="0" x2="10" y2="0" stroke="${col}" stroke-width="2"/></pattern>`,
+      paint: `url(#${id})`,
+    };
+  }
+  if (pat === 'dots') {
+    return {
+      defs: `<pattern id="${id}" patternUnits="userSpaceOnUse" width="10" height="10"><circle cx="2.5" cy="2.5" r="1.6" fill="${col}"/></pattern>`,
+      paint: `url(#${id})`,
+    };
+  }
+  return { defs: '', paint: col };
 }
 
 function curvePathsFromPoints(cpts, w, h, closed) {
@@ -167,9 +304,11 @@ function lineMarkerDefHtml(id, type, color, atStart) {
   let mw = '3.0';
   let mh = '3.0';
   if (type === 'arrow') {
+    // Near the triangle base, with a small overlap onto the stroke so no hairline
+    // gap shows at the join (tip still points outward past the path endpoint).
     mw = '3.1';
     mh = '3.5';
-    refX = atStart ? '0.217' : '2.771';
+    refX = atStart ? '2.55' : '0.22';
     refY = '1.6';
     const pathEnd =
       'M2.555,1.475 L2.555,1.475 Q2.771,1.600 2.555,1.725 L0.217,3.075 Q0.000,3.200 0.000,2.950 L0.000,0.250 Q0.000,0.000 0.217,0.125 Z';
@@ -177,18 +316,50 @@ function lineMarkerDefHtml(id, type, color, atStart) {
       'M0.216,1.475 L0.216,1.475 Q0.000,1.600 0.216,1.725 L2.554,3.075 Q2.771,3.200 2.771,2.950 L2.771,0.250 Q2.771,0.000 2.554,0.125 Z';
     inner = `<path d="${atStart ? pathStart : pathEnd}" fill="${col}" stroke="none"/>`;
   } else if (type === 'square') {
+    // Centered on the path tip (same as connectors) — do not reuse arrow edge-anchoring.
+    refX = '1.5';
     inner = `<rect x="0" y="0" width="3" height="3" rx="0.5" ry="0.5" fill="${col}" stroke="none"/>`;
   } else if (type === 'circle') {
+    refX = '1.5';
     inner = `<circle cx="1.5" cy="1.5" r="1.3" fill="${col}" stroke="none"/>`;
   } else if (type === 'bar') {
+    refX = '1.5';
     inner = `<path d="M1.5,0.2 L1.5,2.8" stroke="${col}" stroke-width="1" stroke-linecap="round" fill="none"/>`;
   } else if (type === 'cross') {
+    // Cross must sit on the tip center; edge refX made it grow from the stroke rim.
     orient = '0';
+    refX = '1.5';
     inner =
       `<path d="M0.3,0.3 L2.7,2.7" stroke="${col}" stroke-width="1" stroke-linecap="round" fill="none"/>` +
       `<path d="M2.7,0.3 L0.3,2.7" stroke="${col}" stroke-width="1" stroke-linecap="round" fill="none"/>`;
   } else return '';
   return `<marker id="${id}" markerUnits="strokeWidth" orient="${orient}" markerWidth="${mw}" markerHeight="${mh}" refX="${refX}" refY="${refY}" fill="${col}" stroke="${col}">${inner}</marker>`;
+}
+
+/** Short oriented stubs so end markers can ride a variable-width stroke. */
+function curveMarkerTipPaths(cpts, w, h) {
+  if (!cpts || cpts.length < 2) return null;
+  const n = cpts.length;
+  const p0 = { x: cpts[0].x * w, y: cpts[0].y * h };
+  const t0x = (cpts[0].cp2x != null ? cpts[0].cp2x : cpts[1].x) * w;
+  const t0y = (cpts[0].cp2y != null ? cpts[0].cp2y : cpts[1].y) * h;
+  const pN = { x: cpts[n - 1].x * w, y: cpts[n - 1].y * h };
+  const tNx = (cpts[n - 1].cp1x != null ? cpts[n - 1].cp1x : cpts[n - 2].x) * w;
+  const tNy = (cpts[n - 1].cp1y != null ? cpts[n - 1].cp1y : cpts[n - 2].y) * h;
+  // Keep stubs tiny so only the marker shows; stroke-opacity 0 avoids a double tip.
+  const nudge = (from, to) => {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const s = Math.min(2, len * 0.08);
+    return { x: from.x + (dx / len) * s, y: from.y + (dy / len) * s };
+  };
+  const a1 = nudge(p0, { x: t0x, y: t0y });
+  const b0 = nudge(pN, { x: tNx, y: tNy });
+  return {
+    startD: `M ${p0.x.toFixed(2)} ${p0.y.toFixed(2)} L ${a1.x.toFixed(2)} ${a1.y.toFixed(2)}`,
+    endD: `M ${b0.x.toFixed(2)} ${b0.y.toFixed(2)} L ${pN.x.toFixed(2)} ${pN.y.toFixed(2)}`,
+  };
 }
 
 function lineMarkerAttrs(opts, color) {
@@ -252,7 +423,34 @@ export function lineGeomMarkSvg(opts, strokeColor, sw, W = 100, H = 100) {
   return html;
 }
 
+function fillImgPatternDef(opts, uid, W, H) {
+  if (!opts.fillImg) return '';
+  const id = `sfi_${String(uid || 'x').replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+  const w = Math.max(1, +opts.fillImgW || W);
+  const h = Math.max(1, +opts.fillImgH || H);
+  const x = opts.fillImgX != null ? +opts.fillImgX : (W - w) / 2;
+  const y = opts.fillImgY != null ? +opts.fillImgY : (H - h) / 2;
+  const rot = +opts.fillImgRot || 0;
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  const href = String(opts.fillImg).replace(/"/g, '&quot;');
+  const tf = rot ? ` transform="rotate(${rot} ${cx.toFixed(2)} ${cy.toFixed(2)})"` : '';
+  // Tile must overhang the shape: a pattern sized exactly to W×H shows a dark 1px seam
+  // on anti-aliased / rotated edges. Bleed the image a hair so path AA samples opaque pixels.
+  const tilePad = 4;
+  const imgPad = 2;
+  return (
+    `<pattern id="${id}" patternUnits="userSpaceOnUse" x="${-tilePad}" y="${-tilePad}" width="${W + tilePad * 2}" height="${H + tilePad * 2}">` +
+    `<image href="${href}" xlink:href="${href}" x="${(x - imgPad).toFixed(2)}" y="${(y - imgPad).toFixed(2)}" width="${(w + imgPad * 2).toFixed(2)}" height="${(h + imgPad * 2).toFixed(2)}" preserveAspectRatio="none"${tf}/>` +
+    `</pattern>`
+  );
+}
+
 function fillPaint(opts, uid) {
+  if (opts.fillImg) {
+    const id = `sfi_${String(uid || 'x').replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+    return { fill: `url(#${id})`, defId: null, fillImg: true };
+  }
   if (opts.fill === 'none' || opts.noFill) return { fill: 'none', defId: null };
   if (opts.fillGrad && opts.fillGrad2) {
     const id = `sg_${uid || 'x'}`;
@@ -287,7 +485,8 @@ function wrapSvg(inner, defs = '', w = 100, h = 100) {
 }
 
 /** 7.1 `_roundedPolygonPath` — cubic corner rounding in element pixels. */
-function roundedPolygonPath(pts, rx) {
+/** Round sharp polygon corners (px radius). Used by SVG fill and CSS clip-path. */
+export function roundedPolygonPath(pts, rx) {
   const n = pts.length;
   if (n < 3 || rx <= 0) {
     return pts.map((p, i) => `${i === 0 ? 'M ' : 'L '}${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' ') + ' Z';
@@ -484,7 +683,8 @@ function roundedMixedPath(pathStr, rx) {
   return out.join(' ');
 }
 
-function scaleCatalogPath(pathStr, w, h, margin) {
+/** Scale catalog path coords (5..95 box in 0..100) to element px. Shared with hit clip. */
+export function scaleCatalogPath(pathStr, w, h, margin) {
   const ew = Math.max(1, w - margin * 2);
   const eh = Math.max(1, h - margin * 2);
   const sx = ew / 90;
@@ -541,11 +741,24 @@ function polygonPts(W, H, m, sides) {
   return pts;
 }
 
+/** Top/bottom inset as fraction of width (0–0.49). Default top 0.15 so it reads as a trapezoid. */
+export function normalizeTrapTop(v) {
+  if (v == null || v === '') return 0.15;
+  const n = +v;
+  return Math.max(0, Math.min(0.49, Number.isFinite(n) ? n : 0.15));
+}
+
+export function normalizeTrapBot(v) {
+  if (v == null || v === '') return 0;
+  const n = +v;
+  return Math.max(0, Math.min(0.49, Number.isFinite(n) ? n : 0));
+}
+
 function trapezoidPts(W, H, m, trapTop, trapBot) {
   const ew = Math.max(1, W - m * 2);
   const eh = Math.max(1, H - m * 2);
-  const t = Math.max(0, Math.min(0.49, +trapTop || 0));
-  const b = Math.max(0, Math.min(0.49, +trapBot || 0));
+  const t = normalizeTrapTop(trapTop);
+  const b = normalizeTrapBot(trapBot);
   const tl = Math.min(ew * 0.49, t * ew);
   const bl = Math.min(ew * 0.49, b * ew);
   return [
@@ -556,11 +769,30 @@ function trapezoidPts(W, H, m, trapTop, trapBot) {
   ];
 }
 
+/** Horizontal offset for parallelogram lean; `skewDeg` is the side angle from vertical. */
+export function parallelogramOff(eh, ew, skewDeg) {
+  const sk = Math.max(-45, Math.min(45, Number.isFinite(+skewDeg) ? +skewDeg : 20));
+  const off = Math.abs(eh * Math.tan((sk * Math.PI) / 180));
+  return Math.max(0, Math.min(Math.max(0, ew - 1), off));
+}
+
 function parallelogramPts(W, H, m, skewPct) {
   const ew = Math.max(1, W - m * 2);
   const eh = Math.max(1, H - m * 2);
-  const sk = Math.max(-45, Math.min(45, +skewPct || 20));
-  const off = Math.round((eh / 2) * Math.tan((sk * Math.PI) / 180));
+  const raw = skewPct != null && skewPct !== '' ? +skewPct : 20;
+  const sk = Math.max(-45, Math.min(45, Number.isFinite(raw) ? raw : 20));
+  // Keep all corners inside the box for both lean directions.
+  // Positive: top shifts right. Negative: top shifts left (bottom shifts right).
+  // `paraSkew` is the side angle from vertical (not half-height atan).
+  const off = Math.round(parallelogramOff(eh, ew, sk));
+  if (sk < 0) {
+    return [
+      { x: m, y: m },
+      { x: m + ew - off, y: m },
+      { x: m + ew, y: m + eh },
+      { x: m + off, y: m + eh },
+    ];
+  }
   return [
     { x: m + off, y: m },
     { x: m + ew, y: m },
@@ -594,6 +826,94 @@ function chevronPts(id, W, H, m, skewPct, innerPct) {
     { x: m + ew - tip, y: m + eh },
     { x: m, y: m + eh },
     { x: m + ind, y: mid },
+  ];
+}
+
+/** Head length as % of the main axis (10–70). Matches catalog arrows at ~35. */
+export function normalizeArrowHead(headPct) {
+  const n = headPct != null && headPct !== '' ? +headPct : 35;
+  return Math.max(10, Math.min(70, Number.isFinite(n) ? n : 35));
+}
+
+/**
+ * Block-arrow polygon. `arrowHead` = tip triangle length along the shaft axis (%).
+ * Shaft thickness stays ~30% of the cross axis (catalog look).
+ */
+export function arrowPts(id, W, H, m, headPct) {
+  const ew = Math.max(1, W - m * 2);
+  const eh = Math.max(1, H - m * 2);
+  const head = normalizeArrowHead(headPct) / 100;
+  const shaftT = 0.3;
+  if (id === 'arrowUp' || id === 'arrowDown') {
+    const sx0 = m + ew * (0.5 - shaftT / 2);
+    const sx1 = m + ew * (0.5 + shaftT / 2);
+    const midX = m + ew / 2;
+    if (id === 'arrowUp') {
+      const neckY = m + eh * head;
+      return [
+        { x: sx0, y: m + eh },
+        { x: sx0, y: neckY },
+        { x: m, y: neckY },
+        { x: midX, y: m },
+        { x: m + ew, y: neckY },
+        { x: sx1, y: neckY },
+        { x: sx1, y: m + eh },
+      ];
+    }
+    const neckY = m + eh * (1 - head);
+    return [
+      { x: sx0, y: m },
+      { x: sx0, y: neckY },
+      { x: m, y: neckY },
+      { x: midX, y: m + eh },
+      { x: m + ew, y: neckY },
+      { x: sx1, y: neckY },
+      { x: sx1, y: m },
+    ];
+  }
+  const sy0 = m + eh * (0.5 - shaftT / 2);
+  const sy1 = m + eh * (0.5 + shaftT / 2);
+  const midY = m + eh / 2;
+  if (id === 'arrowLeft') {
+    const neckX = m + ew * head;
+    return [
+      { x: m + ew, y: sy0 },
+      { x: neckX, y: sy0 },
+      { x: neckX, y: m },
+      { x: m, y: midY },
+      { x: neckX, y: m + eh },
+      { x: neckX, y: sy1 },
+      { x: m + ew, y: sy1 },
+    ];
+  }
+  if (id === 'arrowDouble') {
+    // Cap each head so the shaft never collapses.
+    const h = Math.min(head, 0.4);
+    const leftNeck = m + ew * h;
+    const rightNeck = m + ew * (1 - h);
+    return [
+      { x: m, y: midY },
+      { x: leftNeck, y: m },
+      { x: leftNeck, y: sy0 },
+      { x: rightNeck, y: sy0 },
+      { x: rightNeck, y: m },
+      { x: m + ew, y: midY },
+      { x: rightNeck, y: m + eh },
+      { x: rightNeck, y: sy1 },
+      { x: leftNeck, y: sy1 },
+      { x: leftNeck, y: m + eh },
+    ];
+  }
+  // arrow (right)
+  const neckX = m + ew * (1 - head);
+  return [
+    { x: m, y: sy0 },
+    { x: neckX, y: sy0 },
+    { x: neckX, y: m },
+    { x: m + ew, y: midY },
+    { x: neckX, y: m + eh },
+    { x: neckX, y: sy1 },
+    { x: m, y: sy1 },
   ];
 }
 
@@ -643,10 +963,78 @@ function gearPathPx(W, H, m, nTeeth, toothDepth) {
   return `M ${pts.join(' L ')} Z ${hole}`;
 }
 
+function customPtsPath(opts, W, H, rx) {
+  const raw = opts?.shapePts;
+  if (!Array.isArray(raw) || raw.length < 3) return null;
+  const pts = raw.map((p) => ({
+    x: (+p.x || 0) * W,
+    y: (+p.y || 0) * H,
+  }));
+  return ptsToPath(pts, rx);
+}
+
+/**
+ * Normalized 0..1 corner vertices for node editing (no rounding).
+ * Empty when the shape has no corners (circle / ellipse / line / specials).
+ */
+export function shapeCornerPtsNorm(id, opts = {}) {
+  const meta = getShapeMeta(id);
+  const special = meta?.special || id;
+  if (
+    special === 'ellipse' ||
+    id === 'circle' ||
+    id === 'ellipse' ||
+    special === 'line' ||
+    id === 'line' ||
+    special === 'curve' ||
+    special === 'cloud' ||
+    special === 'moon' ||
+    special === 'gear' ||
+    special === 'callout' ||
+    special === 'noSymbol' ||
+    id === 'noSymbol'
+  ) {
+    return [];
+  }
+  if (meta?.noFill && special !== 'rect') return [];
+  const W = 100;
+  const H = 100;
+  if (special === 'rect' || id === 'rect' || id === 'roundrect') {
+    return [
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 1, y: 1 },
+      { x: 0, y: 1 },
+    ];
+  }
+  const path = resolvePath(id, meta, opts, W, H, 0, 0);
+  if (!path) return [];
+  const pts = extractPolygonPts(path);
+  if (pts.length < 3) return [];
+  return pts.map((p) => ({
+    x: Math.round((p.x / W) * 10000) / 10000,
+    y: Math.round((p.y / H) * 10000) / 10000,
+  }));
+}
+
 function resolvePath(id, meta, opts, W, H, m, rx) {
+  const custom = customPtsPath(opts, W, H, rx);
+  if (custom) return custom;
   const special = meta?.special || id;
   if (special === 'rect' || special === 'ellipse' || id === 'circle') return null;
   if (special === 'triangle' || id === 'triangle') return ptsToPath(polygonPts(W, H, m, 3), rx);
+  if (special === 'hexagon' || id === 'hexagon') return ptsToPath(polygonPts(W, H, m, 6), rx);
+  if (special === 'diamond' || id === 'diamond') {
+    return ptsToPath(
+      [
+        { x: W / 2, y: m },
+        { x: W - m, y: H / 2 },
+        { x: W / 2, y: H - m },
+        { x: m, y: H / 2 },
+      ],
+      rx
+    );
+  }
   if (special === 'polygon') {
     const sides = opts.polySides != null ? opts.polySides : opts.sides != null ? opts.sides : meta?.sides || 6;
     return ptsToPath(polygonPts(W, H, m, sides), rx);
@@ -666,6 +1054,7 @@ function resolvePath(id, meta, opts, W, H, m, rx) {
   if (special === 'callout' || special === 'curve' || special === 'moon' || special === 'gear' || special === 'cloud') return null;
   if (special === 'trapezoid') return ptsToPath(trapezoidPts(W, H, m, opts.trapTop, opts.trapBot), rx);
   if (special === 'chevron') return ptsToPath(chevronPts(id, W, H, m, opts.chevSkew, opts.chevInner), rx);
+  if (special === 'arrow') return ptsToPath(arrowPts(id, W, H, m, opts.arrowHead), rx);
   if (meta?.path) {
     const scaled = scaleCatalogPath(meta.path, W, H, m);
     return rx > 0 ? applyCornerRx(scaled, rx) : scaled;
@@ -683,6 +1072,51 @@ export function shapeRxPx(rxPct, w, h) {
   const pct = Math.max(0, Math.min(100, +(rxPct != null ? rxPct : 0) || 0));
   const halfMin = Math.min(Math.max(1, +w || 100), Math.max(1, +h || 100)) / 2;
   return (pct / 100) * halfMin;
+}
+
+/**
+ * Fill silhouette path `d` matching buildBasicShapeSVG (includes corner rx).
+ * Used by CSS clip-path for image fills so triangle/polygon/hex/… round like the SVG.
+ * @param {object} el
+ * @param {{ sw?: number, w?: number, h?: number } } [override]
+ * @returns {string|null}
+ */
+export function shapeOutlinePathD(el, override = {}) {
+  if (!el) return null;
+  const id = el.shape || el.shapeId || 'rect';
+  const meta = getShapeMeta(id);
+  const special = meta?.special || id;
+  if (
+    special === 'rect' ||
+    id === 'rect' ||
+    id === 'roundrect' ||
+    special === 'ellipse' ||
+    id === 'circle' ||
+    id === 'ellipse' ||
+    special === 'line' ||
+    id === 'line' ||
+    special === 'callout' ||
+    special === 'curve' ||
+    special === 'moon' ||
+    special === 'gear' ||
+    special === 'noSymbol' ||
+    id === 'noSymbol'
+  ) {
+    return null;
+  }
+  const W = Math.max(1, +(override.w != null ? override.w : el.w) || 100);
+  const H = Math.max(1, +(override.h != null ? override.h : el.h) || 100);
+  const sw =
+    override.sw != null
+      ? +override.sw
+      : el.sw === undefined
+        ? 2
+        : +el.sw;
+  const m = sw > 0 ? sw / 2 : 0;
+  const rxPx = shapeRxPx(el.rx, W, H);
+  const opts = { ...shapeOptsFromEl(el), w: W, h: H };
+  if (override.sw != null) opts.strokeWidth = sw;
+  return resolvePath(id, meta, opts, W, H, m, rxPx) || null;
 }
 
 /**
@@ -705,13 +1139,15 @@ export function buildBasicShapeSVG(id, opts = {}) {
   const dash = strokeDashAttrs(style, sw || 2);
   /** `opts.rx` is percent of min(w,h)/2 (0–100); convert to px for drawing. */
   const rxPx = shapeRxPx(opts.rx, W, H);
-  const margin = !isComplex && sw > 0 ? sw / 2 : 0;
+  // Selection rings pass noStrokeInset so a screen-thin stroke is not inset by sw/2.
+  const margin = opts.noStrokeInset ? 0 : !isComplex && sw > 0 ? sw / 2 : 0;
   const op =
     opts.fillOp != null && opts.fillOp < 1 && opts.fillOp >= 0
       ? ` fill-opacity="${opts.fillOp}"`
       : '';
   const { fill, defId } = fillPaint(opts, opts.uid || id);
-  const defs = gradDef(opts, defId);
+  const imgPat = fillImgPatternDef(opts, opts.uid || id, W, H);
+  const defs = `${imgPat ? `<defs>${imgPat}</defs>` : ''}${gradDef(opts, defId)}`;
   const hasStroke = stroke && stroke !== 'none' && sw > 0;
   const strokeAttr =
     hasStroke && !isComplex && !isDouble
@@ -729,13 +1165,23 @@ export function buildBasicShapeSVG(id, opts = {}) {
     const cy = H / 2;
     const erx = ew / 2;
     const ery = eh / 2;
-    const a1 = opts.arcStart != null ? +opts.arcStart : 0;
-    const a2 = opts.arcEnd != null ? +opts.arcEnd : 360;
     const mode = opts.arcMode || 'full';
-    const isArc = mode !== 'full' && Math.abs(a2 - a1) < 360;
-    if (isArc) {
-      const dArc = arcPath(cx, cy, W / 2, H / 2, a1, a2, mode, margin, rxPx);
-      return wrap(`<path d="${dArc}" fill="${fill}"${op} ${strokeAttr}/>`);
+    const a1 = opts.arcStart != null ? +opts.arcStart : 0;
+    const a2 = opts.arcEnd != null ? +opts.arcEnd : mode === 'full' ? 360 : 270;
+    if (mode !== 'full') {
+      // 0°…0° (or any equal angles) → invisible; 0°…360° → full ellipse.
+      if (+a1 === +a2) {
+        return wrap(
+          `<ellipse cx="${cx}" cy="${cy}" rx="${erx}" ry="${ery}" fill="none" stroke="none" opacity="0"/>`
+        );
+      }
+      const rawSpan = +a2 - +a1;
+      const span = ((rawSpan % 360) + 360) % 360;
+      const fullTurn = Math.abs(rawSpan) >= 360 || span === 0;
+      if (!fullTurn) {
+        const dArc = arcPath(cx, cy, W / 2, H / 2, a1, a2, mode, margin, rxPx);
+        return wrap(`<path d="${dArc}" fill="${fill}"${op} ${strokeAttr}/>`);
+      }
     }
     if (hasStroke && isDouble) {
       return wrap(
@@ -828,27 +1274,87 @@ export function buildBasicShapeSVG(id, opts = {}) {
         `<path d="${fallback}" fill="none" stroke="${lineStroke}" stroke-width="${lineSw}"${dash} stroke-linecap="round"/>`
       );
     }
-    const hasFillCurve = !noFill && fill && fill !== 'none' && fill !== 'transparent';
-    if (hasFillCurve && sw > 0) {
+    // Curves stay stroke-first (catalog noFill), but an explicit fill color still paints.
+    const rawFill = opts.fill;
+    const hasFillCurve = !!(rawFill && rawFill !== 'none' && rawFill !== 'transparent');
+    const fillPat = CURVE_FILL_PATTERNS.includes(opts.fillPattern) ? opts.fillPattern : 'solid';
+    const fillPainted = hasFillCurve
+      ? curveFillPatternPaint(fillPat, rawFill, opts.uid)
+      : { defs: '', paint: 'none' };
+    const solidStroke = !isDouble && !isComplex && (!style || style === 'solid');
+    // End markers on open curves — same as line: solid / dashed / dotted (not wave/zigzag/double).
+    const mk =
+      !closed && !isDouble && !isComplex ? lineMarkerAttrs(opts, lineStroke) : { defs: '', attrs: '' };
+    const mkDefs = `${fillPainted.defs}${mk.defs ? mk.defs : ''}`;
+    const mkDefsWrap = mkDefs ? `<defs>${mkDefs}</defs>` : '';
+    const cap = mk.attrs ? 'butt' : 'round';
+    // Uniform thickness → real cubic path (smooth). Segmented stroke when node widths differ.
+    // Markers used to disable taper; keep taper and hang markers on tiny tip stubs instead.
+    const wantsVariable = solidStroke && curveHasVariableWidth(cpts, lineSw);
+    const variableStroke = wantsVariable
+      ? curveVariableStroke(cpts, W, H, lineSw, closed, lineStroke)
+      : '';
+    const tipPaths = wantsVariable && mk.attrs ? curveMarkerTipPaths(cpts, W, H) : null;
+    const fromMk = opts.lineFromMarker || 'none';
+    const toMk = opts.lineToMarker || 'none';
+    const uidSafe = String(opts.uid || 'ln').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const tipMarkerHtml =
+      tipPaths && mk.defs
+        ? (() => {
+            const sw0 = Math.max(0.5, curveNodeWidth(cpts, 0, lineSw));
+            const swN = Math.max(0.5, curveNodeWidth(cpts, cpts.length - 1, lineSw));
+            const startAttr =
+              fromMk !== 'none' ? ` marker-start="url(#lm_${uidSafe}_f)"` : '';
+            const endAttr = toMk !== 'none' ? ` marker-end="url(#lm_${uidSafe}_t)"` : '';
+            return (
+              (startAttr
+                ? `<path d="${tipPaths.startD}" fill="none" stroke="${lineStroke}" stroke-width="${sw0}" stroke-opacity="0" stroke-linecap="butt"${startAttr}/>`
+                : '') +
+              (endAttr
+                ? `<path d="${tipPaths.endD}" fill="none" stroke="${lineStroke}" stroke-width="${swN}" stroke-opacity="0" stroke-linecap="butt"${endAttr}/>`
+                : '')
+            );
+          })()
+        : '';
+    const fillPath = hasFillCurve
+      ? `<path d="${paths.fillD}" fill="${fillPainted.paint}"${op} stroke="none"/>`
+      : '';
+    if (hasFillCurve && variableStroke) {
       return wrap(
-        `<path d="${paths.fillD}" fill="${fill}"${op} stroke="none"/>` +
-          `<path d="${paths.strokeD}" fill="none" ${strokeAttr} stroke-linecap="round" stroke-linejoin="round"/>`
+        `${mkDefsWrap}${fillPath}${variableStroke}${tipMarkerHtml}`,
+        defs || ''
       );
     }
-    if (hasFillCurve) return wrap(`<path d="${paths.fillD}" fill="${fill}"${op} stroke="none"/>`);
+    if (variableStroke) return wrap(`${mkDefsWrap}${variableStroke}${tipMarkerHtml}`);
+    const curveSw = Math.max(0.5, curveNodeWidth(cpts, 0, lineSw));
+    if (hasFillCurve && curveSw > 0) {
+      return wrap(
+        `${mkDefsWrap}${fillPath}` +
+          `<path d="${paths.strokeD}" fill="none" stroke="${lineStroke}" stroke-width="${curveSw}"${dash} stroke-linecap="${cap}" stroke-linejoin="round"${mk.attrs}/>`
+      );
+    }
+    if (hasFillCurve) return wrap(`${mkDefsWrap}${fillPath}`);
     return wrap(
-      `<path d="${paths.strokeD}" fill="none" stroke="${lineStroke}" stroke-width="${lineSw}"${dash} stroke-linecap="round" stroke-linejoin="round"/>`
+      `${mkDefsWrap}<path d="${paths.strokeD}" fill="none" stroke="${lineStroke}" stroke-width="${curveSw}"${dash} stroke-linecap="${cap}" stroke-linejoin="round"${mk.attrs}/>`
     );
   }
 
   if (id === 'noSymbol' || meta?.special === 'noSymbol') {
-    const s = Math.min(W, H) / 100;
-    const nsw = 13 * s;
-    return wrap(
-      `<circle cx="${W / 2}" cy="${H / 2}" r="${42 * s}" fill="none" stroke="${lineStroke}" stroke-width="${nsw}"/>` +
-        `<line x1="${80 * (W / 100)}" y1="${8 * (H / 100)}" x2="${20 * (W / 100)}" y2="${92 * (H / 100)}" stroke="${lineStroke}" stroke-width="${nsw}" stroke-linecap="butt"/>`,
-      ''
-    );
+    const dRing = ringPath(W / 2, H / 2, ew / 2, eh / 2, opts.ringInner);
+    if (hasStroke && isDouble) {
+      const gapFill = fill === 'transparent' || fill === 'none' ? '#ffffff' : fill;
+      return wrap(
+        `<path d="${dRing}" fill="${fill}"${op} fill-rule="evenodd" stroke="${stroke}" stroke-width="${sw * 3}"/>` +
+          `<path d="${dRing}" fill="none" fill-rule="evenodd" stroke="${gapFill}" stroke-width="${sw * 1.4}"/>`
+      );
+    }
+    if (hasStroke && isComplex) {
+      return wrap(
+        `<path d="${dRing}" fill="${fill}"${op} fill-rule="evenodd" stroke="none"/>` +
+          `<path d="${complexOutlinePath(style, 8, W, H)}" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"/>`
+      );
+    }
+    return wrap(`<path d="${dRing}" fill="${fill}"${op} fill-rule="evenodd" ${strokeAttr}/>`);
   }
 
   if (id === 'line' || (noFill && meta?.path === 'M 5 50 L 95 50')) {
@@ -968,7 +1474,9 @@ export function shapeOptsFromEl(el) {
     paraSkew: el.paraSkew,
     chevSkew: el.chevSkew,
     chevInner: el.chevInner,
+    arrowHead: el.arrowHead,
     moonPhase: el.moonPhase,
+    ringInner: el.ringInner,
     gearTeeth: el.gearTeeth,
     gearDepth: el.gearDepth,
     arcMode: el.arcMode || 'full',
@@ -982,6 +1490,8 @@ export function shapeOptsFromEl(el) {
     calloutForm: el.calloutForm,
     curvePoints: el.curvePoints,
     curveClosed: el.curveClosed,
+    fillPattern: el.fillPattern || 'solid',
+    shapePts: Array.isArray(el.shapePts) && el.shapePts.length >= 3 ? el.shapePts : null,
     cloudSeed: el.cloudSeed,
     cloudForm: el.cloudForm,
     cloudCircles: el.cloudCircles,
@@ -993,6 +1503,12 @@ export function shapeOptsFromEl(el) {
     lineFromMarker: el.lineFromMarker || 'none',
     lineToMarker: el.lineToMarker || 'none',
     lineMark: el.lineMark || 'none',
+    fillImg: el.fillImg && el.fillImgShow !== false ? el.fillImg : null,
+    fillImgX: el.fillImgX,
+    fillImgY: el.fillImgY,
+    fillImgW: el.fillImgW,
+    fillImgH: el.fillImgH,
+    fillImgRot: el.fillImgRot,
     uid: el.id,
   };
 }

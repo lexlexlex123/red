@@ -5,6 +5,9 @@ import { versionAttr } from '../../editor/versions.js';
 import {
   getStoredImportBase,
   setStoredImportBase,
+  getStoredImportRelPath,
+  setStoredImportRelPath,
+  normalizeImportRelPath,
   listCatalogDir,
   prettyCatalogName,
   joinUrl,
@@ -58,7 +61,7 @@ export default function ImportModal() {
   const stored0 = getStoredImportBase();
   const [baseDraft, setBaseDraft] = useState(stored0);
   const [base, setBase] = useState(stored0);
-  const [relPath, setRelPath] = useState('');
+  const [relPath, setRelPath] = useState(() => getStoredImportRelPath(stored0));
   const [items, setItems] = useState([]);
   const [thumbs, setThumbs] = useState({});
   const [loading, setLoading] = useState(false);
@@ -67,8 +70,11 @@ export default function ImportModal() {
   const [busy, setBusy] = useState(false);
   const [view, setView] = useState(readViewMode);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [reloadTok, setReloadTok] = useState(0);
   const gridRef = useRef(null);
+  const baseInputRef = useRef(null);
   const thumbGen = useRef(0);
+  const restoreWalkRef = useRef(true);
 
   const loadDir = useCallback(
     async (path, catalogBase) => {
@@ -81,6 +87,7 @@ export default function ImportModal() {
       setStatus(ru ? `Читаю ${joinUrl(b, path)}` : `Reading ${joinUrl(b, path)}`);
       try {
         const list = await listCatalogDir(b, path);
+        restoreWalkRef.current = false;
         setItems(list);
         setStatus(
           list.length
@@ -92,6 +99,12 @@ export default function ImportModal() {
               : 'Empty folder'
         );
       } catch (err) {
+        if (path && restoreWalkRef.current) {
+          const parts = String(path).replace(/\/$/, '').split('/').filter(Boolean);
+          parts.pop();
+          setRelPath(parts.length ? `${parts.join('/')}/` : '');
+          return;
+        }
         setItems([]);
         setStatus(String(err.message || err));
         setStatusErr(true);
@@ -106,17 +119,23 @@ export default function ImportModal() {
   useEffect(() => {
     if (!open) return;
     const stored = getStoredImportBase();
+    restoreWalkRef.current = true;
     setBase(stored);
     setBaseDraft(stored);
-    setRelPath('');
+    setRelPath(getStoredImportRelPath(stored));
     setHelpOpen(false);
     setView(readViewMode());
   }, [open]);
 
   useEffect(() => {
     if (!open) return;
+    setStoredImportRelPath(base, relPath);
+  }, [open, base, relPath]);
+
+  useEffect(() => {
+    if (!open) return;
     void loadDir(relPath, base);
-  }, [open, relPath, base, loadDir]);
+  }, [open, relPath, base, reloadTok, loadDir]);
 
   useEffect(() => {
     if (!open || loading || helpOpen || view === 'list' || busy) return undefined;
@@ -186,11 +205,36 @@ export default function ImportModal() {
 
   if (!open) return null;
 
+  const persistFolder = (path = relPath, catalogBase = base) => {
+    setStoredImportRelPath(catalogBase, path);
+  };
+
+  const handleClose = () => {
+    persistFolder();
+    close();
+  };
+
   const applyBase = () => {
-    const next = setStoredImportBase(baseDraft);
-    setBase(next);
+    // Read the live input value — controlled state can lag one keystroke behind
+    // (IME / autofill), which made «Изменить» re-apply the previous URL.
+    const typed =
+      (baseInputRef.current && typeof baseInputRef.current.value === 'string'
+        ? baseInputRef.current.value
+        : baseDraft) || '';
+    const next = setStoredImportBase(typed);
+    restoreWalkRef.current = false;
+    setHelpOpen(false);
+    setStatusErr(false);
     setBaseDraft(next);
+    if (baseInputRef.current && baseInputRef.current.value !== next) {
+      baseInputRef.current.value = next;
+    }
     setRelPath('');
+    setStoredImportRelPath(next, '');
+    // Always bump reload even when sanitized URL equals current base
+    // (retry after fixing PHP / changing only trailing slash / scheme).
+    setBase(next);
+    setReloadTok((n) => n + 1);
   };
 
   const crumbs = (() => {
@@ -214,6 +258,7 @@ export default function ImportModal() {
   }
 
   const goDepth = (depth) => {
+    restoreWalkRef.current = false;
     const all = relPath.replace(/\/$/, '').split('/').filter(Boolean);
     setRelPath(depth <= 0 ? '' : `${all.slice(0, depth).join('/')}/`);
   };
@@ -235,15 +280,19 @@ export default function ImportModal() {
   const onItem = async (it) => {
     if (!it || busy) return;
     if (it.type === 'folder') {
+      restoreWalkRef.current = false;
       const id = String(it.id || it.name || '').replace(/^\/+|\/+$/g, '');
-      setRelPath(`${relPath}${id}/`);
+      const next = normalizeImportRelPath(`${relPath}${id}/`);
+      persistFolder(next);
+      setRelPath(next);
       return;
     }
+    persistFolder();
     setBusy(true);
     try {
       const abs = joinUrl(base, `${relPath}${String(it.file || '').replace(/^\//, '')}`);
       const ok = await editorApi.importPresentationFromUrl(abs);
-      if (ok) close();
+      if (ok) handleClose();
     } finally {
       setBusy(false);
     }
@@ -255,7 +304,7 @@ export default function ImportModal() {
     );
     if (!file || busy) return;
     setBusy(true);
-    close();
+    handleClose();
     try {
       await editorApi.importDroppedFile(file);
     } finally {
@@ -266,7 +315,7 @@ export default function ImportModal() {
   const listMode = view === 'list';
 
   return (
-    <div className="settings-backdrop" onClick={close} role="presentation">
+    <div className="settings-backdrop" onClick={handleClose} role="presentation">
       <div
         className="settings-modal ig-modal"
         role="dialog"
@@ -290,12 +339,18 @@ export default function ImportModal() {
 
         <div className="ig-toolbar">
           <input
-            type="url"
+            ref={baseInputRef}
+            type="text"
+            inputMode="url"
+            autoComplete="off"
             spellCheck={false}
             value={baseDraft}
             onChange={(e) => setBaseDraft(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') applyBase();
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                applyBase();
+              }
             }}
             placeholder={DEFAULT_IMPORT_BASE}
             aria-label={ru ? 'URL каталога' : 'Catalog URL'}
@@ -349,14 +404,20 @@ export default function ImportModal() {
                 {ru ? (
                   <>
                     Залейте в <code>prezi/</code> на сайте файлы <code>list.php</code> и{' '}
-                    <code>get.php</code> из проекта. На HTTPS-сайте в корень (рядом с{' '}
-                    <code>index.html</code>) также нужен <code>prezi-proxy.php</code>.
+                    <code>get.php</code> из проекта. Каталог по умолчанию:{' '}
+                    <code>{DEFAULT_IMPORT_BASE}</code> (для pyabc.ru нужен именно HTTP — HTTPS не
+                    отдаёт презентации). На Synology: Web Station + PHP. Если редактор открыт по
+                    HTTPS, а каталог по HTTP — нужен <code>prezi-proxy.php</code> рядом с{' '}
+                    <code>index.html</code>.
                   </>
                 ) : (
                   <>
                     Upload <code>list.php</code> and <code>get.php</code> into the site{' '}
-                    <code>prezi/</code> folder. On HTTPS also put <code>prezi-proxy.php</code>{' '}
-                    next to <code>index.html</code>.
+                    <code>prezi/</code> folder. Default catalog:{' '}
+                    <code>{DEFAULT_IMPORT_BASE}</code> (pyabc.ru needs HTTP — HTTPS does not serve
+                    presentations). On Synology enable Web Station + PHP. If the editor is HTTPS
+                    and the catalog is HTTP, put <code>prezi-proxy.php</code> next to{' '}
+                    <code>index.html</code>.
                   </>
                 )}
               </span>
@@ -409,7 +470,7 @@ export default function ImportModal() {
         </div>
 
         <div className="ig-footer">
-          <button type="button" className="ig-mbtn" onClick={close}>
+          <button type="button" className="ig-mbtn" onClick={handleClose}>
             {ru ? 'Закрыть' : 'Close'}
           </button>
           <div className="ig-view-toggle" role="group" aria-label={ru ? 'Вид' : 'View'}>

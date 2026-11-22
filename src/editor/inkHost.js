@@ -3,6 +3,7 @@
  */
 
 import { strokeBBox, fillBBox, isInkFill } from './inkSelect.js';
+import { inkSelHaloPath, inkSelHaloWidth } from './inkSelect.js';
 
 export function inkItemBBox(item) {
   if (!item) return null;
@@ -250,6 +251,33 @@ export function inkHostInnerMarkup(slide, host, strokeMarkupFn, fillsMarkupFn) {
   stack.forEach((x) => {
     if (x.kind === 'fill') html += fillsMarkupFn([x.item]) || '';
     else html += strokeMarkupFn(x.item) || '';
+  });
+  return html;
+}
+
+/**
+ * Invisible hit-test paths for a host's strokes/fills — a click-through corridor around the
+ * actual stroke geometry (or the fill's own outline) instead of the host's whole rectangular
+ * bounding box. The visible markup (inkHostInnerMarkup) stays purely decorative/inert; this
+ * is what the host div's inner SVG should render *on top* with pointer-events enabled, so a
+ * click on the transparent gap inside the bounding box falls through to whatever is behind
+ * the drawing instead of always grabbing the whole rectangle.
+ */
+export function inkHostHitMarkup(slide, host) {
+  if (!slide || !host) return '';
+  const idSet = new Set((host.inkIds || []).map(String));
+  const cursor = host.locked ? 'default' : 'move';
+  let html = '';
+  (slide.inkFills || []).forEach((f) => {
+    if (!f || !idSet.has(String(f.id)) || !f.d) return;
+    html += `<path d="${f.d}" fill="#000" opacity="0" style="pointer-events:fill;cursor:${cursor}"/>`;
+  });
+  (slide.ink || []).forEach((s) => {
+    if (!s || !idSet.has(String(s.id))) return;
+    const d = inkSelHaloPath(s);
+    if (!d) return;
+    const sw = inkSelHaloWidth(s);
+    html += `<path d="${d}" fill="none" stroke="#000" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" opacity="0" style="pointer-events:stroke;cursor:${cursor}"/>`;
   });
   return html;
 }

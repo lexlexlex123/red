@@ -113,35 +113,156 @@ function _arcPath(cx, cy, rx, ry, a1, a2, mode, m, cornerR) {
     +` L ${eS.lax.toFixed(2)} ${eS.lay.toFixed(2)} Z`;
 }
 
+// ─── Moon ─────────────────────────────────────────────────────────────
+// phase ∈ [-1,1]: 0 ≈ half, ±1 ≈ full (sign = which side is filled).
+// Terminator at cx + phase*rx — adj handle uses the same.
+// cornerR: round only the two sharp cusps (tips), leave the arcs intact.
 
-
-
-// Build moon SVG using clipPath: outer circle minus offset inner circle
-// phase: 0=full circle, 0.5=half, 1=thin crescent right, -1=thin crescent left, wraps
-// Returns an SVG string (not path), or path string for clip-path use
-
-// Build trapezoid path from top-inset and bottom-inset parameters
-// trapTop: inset from each side at top (0=full width, 0.5=triangle)
-// trapBot: inset from each side at bottom
-function _trapPath(x, y, w, h, trapTop, trapBot, rx) {
-  const tl = Math.max(0, Math.min(w*0.49, trapTop * w));  // top-left x offset
-  const tr = Math.max(0, Math.min(w*0.49, trapTop * w));  // top-right x offset  
-  const bl = Math.max(0, Math.min(w*0.49, trapBot * w));
-  const br = Math.max(0, Math.min(w*0.49, trapBot * w));
-  const pts = [
-    {x: x+tl,   y: y},
-    {x: x+w-tr, y: y},
-    {x: x+w-br, y: y+h},
-    {x: x+bl,   y: y+h},
-  ];
-  if (rx > 0) return _roundedPolygonPath(pts, rx);
-  return `M ${pts[0].x},${pts[0].y} L ${pts[1].x},${pts[1].y} L ${pts[2].x},${pts[2].y} L ${pts[3].x},${pts[3].y} Z`;
+function _moonFullEllipse(cx, cy, rx, ry) {
+  const f = (v) => v.toFixed(2);
+  return (
+    `M ${f(cx + rx)},${f(cy)}` +
+    ` A ${f(rx)} ${f(ry)} 0 1 0 ${f(cx - rx)},${f(cy)}` +
+    ` A ${f(rx)} ${f(ry)} 0 1 0 ${f(cx + rx)},${f(cy)} Z`
+  );
 }
-function _moonPath(cx, cy, rx, ry, phase, cornerR) {
-  const p = Math.max(-1, Math.min(1, phase));
-  const absP = Math.abs(p);
 
-  const fe = `M ${(cx+rx).toFixed(2)},${cy.toFixed(2)} A ${rx.toFixed(2)} ${ry.toFixed(2)} 0 1 0 ${(cx-rx).toFixed(2)},${cy.toFixed(2)} A ${rx.toFixed(2)} ${ry.toFixed(2)} 0 1 0 ${(cx+rx).toFixed(2)},${cy.toFixed(2)} Z`;
+/** Sample an axis-aligned ellipse arc the same way SVG A large/sweep does. */
+function _sampleEllArc(cx, cy, rx, ry, x1, y1, x2, y2, large, sweep, n) {
+  const t1 = Math.atan2((y1 - cy) / ry, (x1 - cx) / rx);
+  const t2 = Math.atan2((y2 - cy) / ry, (x2 - cx) / rx);
+  let delta = t2 - t1;
+  if (sweep) {
+    while (delta < 0) delta += 2 * Math.PI;
+    while (delta > 2 * Math.PI) delta -= 2 * Math.PI;
+  } else {
+    while (delta > 0) delta -= 2 * Math.PI;
+    while (delta < -2 * Math.PI) delta += 2 * Math.PI;
+  }
+  const abs = Math.abs(delta);
+  if (!large && abs > Math.PI) delta += delta > 0 ? -2 * Math.PI : 2 * Math.PI;
+  if (large && abs < Math.PI) delta += delta > 0 ? 2 * Math.PI : -2 * Math.PI;
+  const pts = [];
+  const steps = Math.max(4, n | 0);
+  for (let i = 0; i <= steps; i++) {
+    const t = t1 + (delta * i) / steps;
+    pts.push({ x: cx + rx * Math.cos(t), y: cy + ry * Math.sin(t) });
+  }
+  return pts;
+}
+
+/**
+ * Round only cusp tips: walk ~cornerR along each edge from the cusp,
+ * replace the sharp tip with a cubic; keep the rest of the outline.
+ */
+function _filletCusps(pts, cornerR, cuspIdx) {
+  const n = pts.length;
+  const cr = Math.max(0, +cornerR || 0);
+  if (n < 6 || cr < 0.5) {
+    return pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' ') + ' Z';
+  }
+
+  // For each cusp, find indices roughly `cr` along the polyline both ways
+  function walk(from, dir, dist) {
+    let left = dist;
+    let i = from;
+    for (let step = 0; step < n - 2; step++) {
+      const j = (i + dir + n) % n;
+      const seg = Math.hypot(pts[j].x - pts[i].x, pts[j].y - pts[i].y);
+      if (seg >= left || seg < 1e-6) {
+        const t = seg < 1e-6 ? 0 : left / seg;
+        return {
+          idx: j,
+          pt: {
+            x: pts[i].x + (pts[j].x - pts[i].x) * t,
+            y: pts[i].y + (pts[j].y - pts[i].y) * t,
+          },
+        };
+      }
+      left -= seg;
+      i = j;
+    }
+    return { idx: (from + dir + n) % n, pt: pts[(from + dir + n) % n] };
+  }
+
+  const fillets = new Map(); // cuspIndex -> { a, b, cp1, cp2, skipFrom, skipTo }
+  for (const ci of cuspIdx || []) {
+    const curr = pts[ci];
+    const back = walk(ci, -1, cr);
+    const fwd = walk(ci, +1, cr);
+    const e1x = back.pt.x - curr.x;
+    const e1y = back.pt.y - curr.y;
+    const e2x = fwd.pt.x - curr.x;
+    const e2y = fwd.pt.y - curr.y;
+    const len1 = Math.hypot(e1x, e1y);
+    const len2 = Math.hypot(e2x, e2y);
+    if (len1 < 0.5 || len2 < 0.5) continue;
+    const u1x = e1x / len1;
+    const u1y = e1y / len1;
+    const u2x = e2x / len2;
+    const u2y = e2y / len2;
+    const cosA = Math.max(-1, Math.min(1, u1x * u2x + u1y * u2y));
+    const halfAngle = Math.acos(cosA) / 2;
+    // Keep the cut local to the tip (not a chord across the moon)
+    const r = Math.min(cr, len1 * 0.45, len2 * 0.45);
+    if (r < 0.5) continue;
+    const k = Math.max((4 / 3) * Math.tan(halfAngle / 2), 0.35);
+    const p1x = curr.x + u1x * r;
+    const p1y = curr.y + u1y * r;
+    const p2x = curr.x + u2x * r;
+    const p2y = curr.y + u2y * r;
+    fillets.set(ci, {
+      p1x,
+      p1y,
+      p2x,
+      p2y,
+      cp1x: p1x - u1x * r * k,
+      cp1y: p1y - u1y * r * k,
+      cp2x: p2x - u2x * r * k,
+      cp2y: p2y - u2y * r * k,
+      // drop polyline verts strictly between back and fwd (around the cusp)
+      from: back.idx,
+      to: fwd.idx,
+    });
+  }
+
+  if (fillets.size === 0) {
+    return pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' ') + ' Z';
+  }
+
+  // Skip verts from (from, to) exclusive; emit cubic when leaving `from`
+  const skip = new Set();
+  const emitAfter = new Map(); // fromIdx -> fillet
+  for (const f of fillets.values()) {
+    emitAfter.set(f.from, f);
+    let i = f.from;
+    for (let step = 0; step < n; step++) {
+      i = (i + 1) % n;
+      if (i === f.to) break;
+      skip.add(i);
+    }
+  }
+
+  let d = '';
+  let started = false;
+  for (let i = 0; i < n; i++) {
+    if (skip.has(i)) continue;
+    const pt = pts[i];
+    d += started ? `L ${pt.x.toFixed(2)} ${pt.y.toFixed(2)} ` : `M ${pt.x.toFixed(2)} ${pt.y.toFixed(2)} `;
+    started = true;
+    const f = emitAfter.get(i);
+    if (f) {
+      d += `L ${f.p1x.toFixed(2)} ${f.p1y.toFixed(2)} `;
+      d += `C ${f.cp1x.toFixed(2)} ${f.cp1y.toFixed(2)} ${f.cp2x.toFixed(2)} ${f.cp2y.toFixed(2)} ${f.p2x.toFixed(2)} ${f.p2y.toFixed(2)} `;
+    }
+  }
+  return d + 'Z';
+}
+
+function _moonPath(cx, cy, rx, ry, phase, cornerR) {
+  const p = Math.max(-1, Math.min(1, +phase || 0));
+  const absP = Math.abs(p);
+  const fe = _moonFullEllipse(cx, cy, rx, ry);
   if (absP >= 0.98) return fe;
 
   const sign = p > 0 ? 1 : -1;
@@ -153,23 +274,50 @@ function _moonPath(cx, cy, rx, ry, phase, cornerR) {
 
   const outerSweep = sign > 0 ? 0 : 1;
   const innerSweep = 1 - outerSweep;
-  const f = v => v.toFixed(2);
+  const f = (v) => v.toFixed(2);
+  const cr = Math.max(0, +cornerR || 0);
 
-  return `M ${f(ix)},${f(cy-iy)} A ${f(rx)} ${f(ry)} 0 1 ${outerSweep} ${f(ix)},${f(cy+iy)} A ${f(rx)} ${f(ry)} 0 0 ${innerSweep} ${f(ix)},${f(cy-iy)} Z`;
+  if (cr < 0.5) {
+    return (
+      `M ${f(ix)},${f(cy - iy)}` +
+      ` A ${f(rx)} ${f(ry)} 0 1 ${outerSweep} ${f(ix)},${f(cy + iy)}` +
+      ` A ${f(rx)} ${f(ry)} 0 0 ${innerSweep} ${f(ix)},${f(cy - iy)} Z`
+    );
+  }
+
+  // Sample the same arcs as the crisp path, then round only the two tips.
+  // Cap tip radius so we soften cusps without chopping the crescent.
+  const tipR = Math.min(cr, Math.min(rx, ry) * 0.22);
+  if (tipR < 0.5) {
+    return (
+      `M ${f(ix)},${f(cy - iy)}` +
+      ` A ${f(rx)} ${f(ry)} 0 1 ${outerSweep} ${f(ix)},${f(cy + iy)}` +
+      ` A ${f(rx)} ${f(ry)} 0 0 ${innerSweep} ${f(ix)},${f(cy - iy)} Z`
+    );
+  }
+  const topX = ix;
+  const topY = cy - iy;
+  const botX = ix;
+  const botY = cy + iy;
+  const nOut = 32;
+  const nIn = 24;
+  const outer = _sampleEllArc(cx, cy, rx, ry, topX, topY, botX, botY, 1, outerSweep, nOut);
+  const inner = _sampleEllArc(cx, cy, rx, ry, botX, botY, topX, topY, 0, innerSweep, nIn);
+  const pts = outer.concat(inner.slice(1, -1)); // drop duplicate bot + closing top
+  return _filletCusps(pts, tipR, [0, outer.length - 1]);
 }
 
 function _moonSVG(cx, cy, rx, ry, phase, cornerR, fAttr, sAttr, extra, shadow, uid) {
   const p = Math.max(-1, Math.min(1, phase));
-  const moonPath = _moonPath(cx, cy, rx, ry, p, cornerR);
-  return `<path d="${moonPath}" ${fAttr} ${sAttr} ${extra} ${shadow}/>`;
+  const d = _moonPath(cx, cy, rx, ry, p, cornerR);
+  return `<path d="${d}" ${fAttr} ${sAttr} ${extra} ${shadow}/>`;
 }
 
 function _moonClipPath(cx, cy, rx, ry, phase) {
   const p = Math.max(-1, Math.min(1, phase));
-  const moonPath = _moonPath(cx, cy, rx, ry, p, 0);
-  return `path('${moonPath}')`;
+  const d = _moonPath(cx, cy, rx, ry, p, 0);
+  return `path('${d}')`;
 }
-
 
 // Build gear path: nTeeth teeth with straight radial sides and arc top/bottom
 function _gearPath(cx, cy, erx, ery, nTeeth, toothDepth) {
@@ -203,18 +351,11 @@ function _gearPath(cx, cy, erx, ery, nTeeth, toothDepth) {
     if (i === 0) d += `M ${igSx.toFixed(2)} ${igSy.toFixed(2)} `;
     else         d += `L ${igSx.toFixed(2)} ${igSy.toFixed(2)} `;
 
-    // Inner arc (gap)
     d += `A ${innerRx.toFixed(2)} ${innerRy.toFixed(2)} 0 0 1 ${igEx.toFixed(2)} ${igEy.toFixed(2)} `;
-    // Straight line up (left side of tooth) - ends before top-left corner
     d += `L ${ogLx.toFixed(2)} ${ogLy.toFixed(2)} `;
-    // Rounded top-left corner: Q from ogL through ogL to ogL1
-    // (short arc to da position gives the rounding feel)
     d += `A ${outerRx.toFixed(2)} ${outerRy.toFixed(2)} 0 0 1 ${ogL1x.toFixed(2)} ${ogL1y.toFixed(2)} `;
-    // Outer arc (tooth top)
     d += `A ${outerRx.toFixed(2)} ${outerRy.toFixed(2)} 0 0 1 ${ogR1x.toFixed(2)} ${ogR1y.toFixed(2)} `;
-    // Rounded top-right corner
     d += `A ${outerRx.toFixed(2)} ${outerRy.toFixed(2)} 0 0 1 ${ogRx.toFixed(2)} ${ogRy.toFixed(2)} `;
-    // Straight line down (right side of tooth)
     d += `L ${irRx.toFixed(2)} ${irRy.toFixed(2)} `;
   }
   d += 'Z';

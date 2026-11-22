@@ -97,7 +97,7 @@ export function applyResize(start, handle, screenDx, screenDy, opts = {}) {
   const sh = Math.max(1, start.h || 60);
   const hx = handle.dx;
   const hy = handle.dy;
-  const min = opts.min != null ? opts.min : 24;
+  const min = opts.min != null ? opts.min : 1;
 
   let nw = hx !== 0 ? Math.max(min, sw + hx * localDx) : sw;
   let nh = hy !== 0 ? Math.max(min, sh + hy * localDy) : sh;
@@ -119,12 +119,15 @@ export function applyResize(start, handle, screenDx, screenDy, opts = {}) {
     }
   }
 
+  // Keep sub-pixel boxes so zoomed resize does not jump by whole canvas pixels.
+  const q = (n) => Math.round(n * 100) / 100;
+
   if (Math.abs(rotDeg) < 0.001) {
     let x = sl;
     let y = st;
     if (hx < 0) x = sl + sw - nw;
     if (hy < 0) y = st + sh - nh;
-    return { x: Math.round(x), y: Math.round(y), w: Math.round(nw), h: Math.round(nh) };
+    return { x: q(x), y: q(y), w: q(nw), h: q(nh) };
   }
 
   // Dragging left → ax=1 (right edge fixed). Same for top.
@@ -141,10 +144,43 @@ export function applyResize(start, handle, screenDx, screenDy, opts = {}) {
   const newCx = fixSx - fcx2 * cosR + fcy2 * sinR;
   const newCy = fixSy - fcx2 * sinR - fcy2 * cosR;
   return {
-    x: Math.round(newCx - nw / 2),
-    y: Math.round(newCy - nh / 2),
-    w: Math.round(nw),
-    h: Math.round(nh),
+    x: q(newCx - nw / 2),
+    y: q(newCy - nh / 2),
+    w: q(nw),
+    h: q(nh),
+  };
+}
+
+/** Restore an image's original aspect ratio after axis-aligned snapping (no unexpected grow). */
+export function preserveResizeAspect(start, resized, handle, min = 1) {
+  const startW = Math.max(1, start.w || 100);
+  const startH = Math.max(1, start.h || 60);
+  const ratio = startW / startH;
+  const hx = handle?.dx || 0;
+  const hy = handle?.dy || 0;
+  const q = (n) => Math.round(n * 100) / 100;
+  let w;
+  let h;
+  if (hx !== 0 && hy !== 0) {
+    // Corner: follow the axis the user moved more, keep ratio (don't max-inflate)
+    const sx = resized.w / startW;
+    const sy = resized.h / startH;
+    const scale = Math.max(min / startW, min / startH, Math.abs(sx - 1) >= Math.abs(sy - 1) ? sx : sy);
+    w = q(startW * scale);
+    h = q(startH * scale);
+  } else if (hx !== 0) {
+    w = Math.max(min, q(resized.w));
+    h = Math.max(min, q(w / ratio));
+  } else {
+    h = Math.max(min, q(resized.h));
+    w = Math.max(min, q(h * ratio));
+  }
+  return {
+    ...resized,
+    x: q(hx < 0 ? start.x + startW - w : start.x),
+    y: q(hy < 0 ? start.y + startH - h : start.y),
+    w,
+    h,
   };
 }
 
@@ -163,8 +199,8 @@ export function elRotCorners(el) {
   ];
 }
 
-function nearMidEdgeHandle(el, canvasX, canvasY) {
-  const R = 14;
+function nearMidEdgeHandle(el, canvasX, canvasY, scale) {
+  const R = 14 / scale;
   const x = el.x || 0;
   const y = el.y || 0;
   const w = el.w || 0;
@@ -183,11 +219,12 @@ function nearMidEdgeHandle(el, canvasX, canvasY) {
  * Corner rotate zone (outside resize handle, near corner) — legacy `_nearCorner`.
  * @returns {{x,y,id,tangent}|null}
  */
-export function nearCornerRot(el, canvasX, canvasY) {
+export function nearCornerRot(el, canvasX, canvasY, scale = 1) {
   if (!el) return null;
-  if (nearMidEdgeHandle(el, canvasX, canvasY)) return null;
-  const R = 22;
-  const HANDLE_R = 10;
+  const safeScale = Math.max(0.001, Number(scale) || 1);
+  if (nearMidEdgeHandle(el, canvasX, canvasY, safeScale)) return null;
+  const R = 22 / safeScale;
+  const HANDLE_R = 10 / safeScale;
   const corners = elRotCorners(el);
   const deg = (elRotationDeg(el) * Math.PI) / 180;
   const cosr = Math.cos(-deg);
@@ -198,7 +235,7 @@ export function nearCornerRot(el, canvasX, canvasY) {
   const h = el.h || 0;
   const ecx = x + w / 2;
   const ecy = y + h / 2;
-  const inset = Math.min(20, w * 0.35, h * 0.35);
+  const inset = Math.min(20 / safeScale, w * 0.35, h * 0.35);
   for (const c of corners) {
     const dist = Math.hypot(canvasX - c.x, canvasY - c.y);
     if (dist > R || dist < HANDLE_R) continue;

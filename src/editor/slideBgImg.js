@@ -17,8 +17,13 @@ export const SBG_ANCHORS = [
   { id: 'br', label: '↘', titleRu: 'Нижний правый', titleEn: 'Bottom right' },
 ];
 
+/** CSS url() safe inside both React style objects and HTML style="..." attributes. */
 export function cssUrl(src) {
-  return `url(${JSON.stringify(String(src || ''))})`;
+  const s = String(src || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/[\r\n\f]/g, '');
+  return `url('${s}')`;
 }
 
 export function bgImgSrc(bg) {
@@ -142,25 +147,24 @@ export function slideBgImgLayer(bg, canvasW = DEFAULT_CANVAS_W, canvasH = DEFAUL
       th = tileSize;
       tw = tileSize * imgAr;
     }
-    // FIXED: compute cols/rows once based on tileSize (no gap) so they don't jump
-    // when gap slider is dragged. This keeps the DOM stable for CSS transitions.
-    const cellWNoGap = tw;
-    const cellHNoGap = th;
-    const diag = Math.sqrt(canvasW * canvasW + canvasH * canvasH) * 2;
-    const cols = Math.ceil(diag / cellWNoGap) + 4;
-    const rows = Math.ceil(diag / cellHNoGap) + 4;
     const cellW = tw + gap;
     const cellH = th + gap;
-    // Match legacy v7.1 centering: integer-based, symmetric from center
-    const startX = -Math.ceil(cols / 2) * cellW;
-    const startY = -Math.ceil(rows / 2) * cellH;
+    const diag = Math.sqrt(canvasW * canvasW + canvasH * canvasH);
+    let cols = Math.ceil(diag / cellW) + 4;
+    let rows = Math.ceil(diag / cellH) + 4;
+    if (cols % 2 === 0) cols += 1;
+    if (rows % 2 === 0) rows += 1;
+    const colRadius = Math.floor(cols / 2);
+    const rowRadius = Math.floor(rows / 2);
     // Build tile positions
     const tiles = [];
-    for (let row = 0; row < rows; row++) {
-      for (let col = 0; col < cols; col++) {
+    for (let row = -rowRadius; row <= rowRadius; row++) {
+      for (let col = -colRadius; col <= colRadius; col++) {
         tiles.push({
-          x: startX + col * cellW,
-          y: startY + row * cellH,
+          row,
+          col,
+          x: col * cellW - tw / 2 + gap / 2,
+          y: row * cellH - th / 2 + gap / 2,
           w: tw,
           h: th,
         });
@@ -223,7 +227,11 @@ export function slideBgImgLayer(bg, canvasW = DEFAULT_CANVAS_W, canvasH = DEFAUL
 function styleAttr(obj) {
   return Object.entries(obj || {})
     .filter(([, v]) => v != null && v !== '' && v !== false)
-    .map(([k, v]) => `${k.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`)}:${v}`)
+    .map(([k, v]) => {
+      // Values go into style="..."; strip raw " so attributes cannot break (cssUrl uses ').
+      const val = String(v).replace(/"/g, '');
+      return `${k.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`)}:${val}`;
+    })
     .join(';');
 }
 
@@ -232,10 +240,11 @@ export function slideBgImgExportHtml(bg, canvasW = DEFAULT_CANVAS_W, canvasH = D
   if (!layer) return '';
   // Tile mode: render individual tile elements
   if (layer.mode === 'tile' && layer.tiles && layer.tiles.length > 0) {
+    const tileBg = cssUrl(layer.tileSrc);
     const innerHtml = layer.tiles
       .map(
         (t) =>
-          `<div style="position:absolute;left:${t.x}px;top:${t.y}px;width:${t.w}px;height:${t.h}px;background-image:url(${JSON.stringify(layer.tileSrc)});background-size:100% 100%;background-repeat:no-repeat"></div>`
+          `<div style="position:absolute;left:${t.x}px;top:${t.y}px;width:${t.w}px;height:${t.h}px;background-image:${tileBg};background-size:100% 100%;background-repeat:no-repeat"></div>`
       )
       .join('');
     return `<div class="sbg-img" style="${styleAttr(layer.wrap)}"><div style="${styleAttr(layer.inner)}">${innerHtml}</div></div>`;

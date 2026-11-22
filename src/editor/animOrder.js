@@ -9,12 +9,24 @@ export const EL_SPECIFIC_ANIMS = new Set([
   'cosmosTitle',
   'splitHalf',
   'typewriter',
+  'transform',
   'langFade',
   'inkDraw',
+  'uncrop',
 ]);
 
 export function isElSpecificAnim(name) {
   return EL_SPECIFIC_ANIMS.has(name);
+}
+
+/**
+ * Elements that should play a slide anim together.
+ * Non–el-specific anims (entrance/exit/emphasis/live/motion) run on the whole group.
+ */
+export function animPlayTargets(el, slide, animName) {
+  if (!el) return [];
+  if (animName && isElSpecificAnim(animName)) return [el];
+  return slideGroupMembers(el, slide);
 }
 
 export function newAnimBlockId(prefix = 'blk') {
@@ -22,13 +34,32 @@ export function newAnimBlockId(prefix = 'blk') {
 }
 
 export function slideAnimLeader(d, slide) {
-  if (!d || !d.groupId || !slide?.els) return d;
-  const members = slide.els.filter((x) => x && x.groupId === d.groupId);
+  if (!d || d.groupId == null || d.groupId === '' || !slide?.els) return d;
+  const gid = String(d.groupId);
+  const members = slide.els.filter(
+    (x) => x && x.groupId != null && x.groupId !== '' && String(x.groupId) === gid
+  );
   if (members.length <= 1) return d;
   for (let i = 0; i < slide.els.length; i++) {
     if (members.some((m) => m.id === slide.els[i].id)) return slide.els[i];
   }
   return d;
+}
+
+/** All members of a grouped object, or just `el` if it is not grouped. */
+export function slideGroupMembers(el, slide) {
+  if (!el) return [];
+  if (el.groupId == null || el.groupId === '' || !slide?.els) return [el];
+  const gid = String(el.groupId);
+  const members = slide.els.filter(
+    (x) => x && !x._isDecor && x.groupId != null && x.groupId !== '' && String(x.groupId) === gid
+  );
+  return members.length ? members : [el];
+}
+
+export function groupAnimOwner(el, slide, animName) {
+  const members = slideGroupMembers(el, slide);
+  return members.find((m) => (m.anims || []).some((a) => a && a.name === animName)) || el;
 }
 
 function animOrderKey(elId, ai) {
@@ -98,11 +129,11 @@ export function ensureAnimOrder(slide) {
     if (!a || !a.name) return null;
     const leader = slideAnimLeader(d, slide);
     let storeId = isElSpecificAnim(a.name) ? d.id : leader.id;
-    if (
-      (a.name === 'captionSlide' || a.name === 'cosmosTitle' || a.name === 'particles') &&
-      d.groupId
-    ) {
+    if ((a.name === 'captionSlide' || a.name === 'particles') && d.groupId) {
       storeId = leader.id;
+    }
+    if (a.name === 'cosmosTitle' && d.groupId) {
+      storeId = d.id;
     }
     const k = animOrderKey(storeId, ai);
     if (used.has(k)) return null;
@@ -166,12 +197,13 @@ export function ensureAnimOrder(slide) {
       (d.anims || []).forEach((a, ai) => {
         if (!a || !a.name) return;
         if (isElSpecificAnim(a.name)) {
-          if (
-            (a.name === 'captionSlide' || a.name === 'cosmosTitle' || a.name === 'particles') &&
-            d.groupId
-          ) {
+          if ((a.name === 'captionSlide' || a.name === 'particles') && d.groupId) {
             const leader = slideAnimLeader(d, slide);
             if (leader.id !== d.id) return;
+          }
+          if (a.name === 'cosmosTitle' && d.groupId) {
+            const owner = groupAnimOwner(d, slide, 'cosmosTitle');
+            if (owner.id !== d.id) return;
           }
           const leaf = makeEntry(d.id, ai);
           if (leaf) entries.push(leaf);
@@ -208,7 +240,7 @@ function pushPause(list, id, duration) {
   });
 }
 
-function pushLeaf(slide, list, e) {
+function pushLeaf(slide, list, e, meta = null) {
   if (!e || !slide) return;
   if (e.kind === 'camera') return; // cameras collected separately in React
   if (e.elId == null) return;
@@ -216,7 +248,15 @@ function pushLeaf(slide, list, e) {
   if (!d || !d.anims || !d.anims[e.ai]) return;
   const a = d.anims[e.ai];
   if (!a || !a.name) return;
-  list.push({ kind: 'el', elId: d.id, ai: e.ai, anim: a, el: d });
+  const row = { kind: 'el', elId: d.id, ai: e.ai, anim: a, el: d };
+  if (meta) {
+    if (meta.repeatLoop != null) row.repeatLoop = meta.repeatLoop;
+    if (meta.repeatId) row.repeatId = meta.repeatId;
+    if (meta.repeatCycleStart) row.repeatCycleStart = true;
+    if (meta.repeatInfinite) row.repeatInfinite = true;
+    if (meta.forceAuto) row.forceAuto = true;
+  }
+  list.push(row);
 }
 
 function pushCamera(slide, list, e) {
@@ -254,9 +294,32 @@ function expandEntry(slide, list, e, opts = {}) {
       }
       return;
     }
-    const loops = e.infinite ? 20 : Math.max(1, +(e.count || 1));
+    // Finite: unroll. Infinite: one cycle marked for runtime restart (see playNextAnimStep).
+    const loops = e.infinite ? 1 : Math.max(1, +(e.count || 1));
     for (let n = 0; n < loops; n++) {
-      (e.children || []).forEach((ch) => expandEntry(slide, list, ch, opts));
+      const startLen = list.length;
+      (e.children || []).forEach((ch, ci) => {
+        expandEntry(slide, list, ch, {
+          ...opts,
+          // Don't inherit outer cycleStart into nested repeats' bodies.
+          repeatCycleStart: false,
+          repeatLoop: n,
+          repeatId: e.id,
+          repeatInfinite: !!e.infinite,
+          // Later loops / later siblings auto-chain (no extra click).
+          forceAuto: n > 0 || ci > 0,
+        });
+      });
+      // First row of this iteration is the cycle boundary (reset motion here).
+      if (list.length > startLen) {
+        list[startLen].repeatCycleStart = true;
+        for (let i = startLen; i < list.length; i++) {
+          list[i].repeatLoop = n;
+          list[i].repeatId = e.id;
+          if (e.infinite) list[i].repeatInfinite = true;
+          if (n > 0 && !list[i].forceAuto) list[i].forceAuto = true;
+        }
+      }
     }
     return;
   }
@@ -264,7 +327,13 @@ function expandEntry(slide, list, e, opts = {}) {
     if (opts.includeCameras || opts.timeline) pushCamera(slide, list, e);
     return;
   }
-  pushLeaf(slide, list, e);
+  pushLeaf(slide, list, e, {
+    repeatLoop: opts.repeatLoop,
+    repeatId: opts.repeatId,
+    repeatCycleStart: opts.repeatCycleStart,
+    repeatInfinite: opts.repeatInfinite,
+    forceAuto: opts.forceAuto,
+  });
 }
 
 function cloneOrderProxy(slide) {
@@ -363,7 +432,7 @@ export function canPlaceInRepeat(entry, parentDepth) {
   return true;
 }
 
-function peekAnimOrderAt(root, from) {
+export function peekAnimOrderAt(root, from) {
   if (!from) return null;
   if (from.scope === 'top') {
     const list = root || [];
@@ -375,6 +444,44 @@ function peekAnimOrderAt(root, from) {
     return (parent.children || [])[from.index] || null;
   }
   return null;
+}
+
+/** Insert a new order entry after `loc` (or at the end). Does not call ensureAnimOrder. */
+export function insertAnimOrderAfter(slide, loc, entry) {
+  if (!slide || !entry) return false;
+  if (!Array.isArray(slide.animOrder)) slide.animOrder = [];
+  if (!loc || loc.scope === 'end') {
+    slide.animOrder.push(entry);
+    return true;
+  }
+  if (loc.scope === 'top') {
+    const i = Math.min(slide.animOrder.length, Math.max(0, (loc.index != null ? loc.index : -1) + 1));
+    slide.animOrder.splice(i, 0, entry);
+    return true;
+  }
+  if (loc.scope === 'child') {
+    return insertAnimOrderAt(
+      slide.animOrder,
+      { scope: 'child', parentId: loc.parentId, index: (loc.index != null ? loc.index : -1) + 1 },
+      entry
+    );
+  }
+  return false;
+}
+
+export function collectAnimOrderTargets(entry, acc = { leaves: [], cams: [], blocks: [] }) {
+  if (!entry) return acc;
+  if (entry.kind === 'repeat' || entry.kind === 'pause') {
+    if (entry.id) acc.blocks.push(entry.id);
+    (entry.children || []).forEach((ch) => collectAnimOrderTargets(ch, acc));
+    return acc;
+  }
+  if (entry.kind === 'camera') {
+    if (entry.camId) acc.cams.push(entry.camId);
+    return acc;
+  }
+  if (entry.elId != null) acc.leaves.push({ elId: entry.elId, ai: +entry.ai });
+  return acc;
 }
 
 function takeAnimOrderAt(root, from) {
