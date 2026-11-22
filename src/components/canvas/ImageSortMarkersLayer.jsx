@@ -102,11 +102,13 @@ export default function ImageSortMarkersLayer({
         const label = normalizeImageSortAnswer(labelRaw);
         const on = selectedId === String(m.id);
         const hint = resultHints && resultHints[m.id];
+        // Label sits to the right of the pin; flip left near the slide's right edge.
+        const labelLeft = label && +m.x > Math.max(120, (+canvasW || 0) - 190);
         return (
           <button
             key={m.id}
             type="button"
-            className={`react-imagesort-pin${on ? ' is-selected' : ''}${hint === 'ok' ? ' is-ok' : ''}${hint === 'bad' ? ' is-bad' : ''}`}
+            className={`react-imagesort-pin${on ? ' is-selected' : ''}${hint === 'ok' ? ' is-ok' : ''}${hint === 'bad' ? ' is-bad' : ''}${labelLeft ? ' is-label-left' : ''}`}
             style={{ left: m.x, top: m.y }}
             title={mode === 'edit' ? label || '…' : undefined}
             onPointerDown={(e) => onPinPointerDown(e, m)}

@@ -1,11 +1,11 @@
 /** Bump a key when that React module’s user-facing behavior changes. */
-export const APP_VERSION = '8.2.350';
+export const APP_VERSION = '8.2.351';
 
 export const COMPONENT_VERSIONS = {
   AppShell: '1.26.0',
   Ribbon: '1.90.1',
   RibbonBody: '1.50.0',
-  SlideCanvas: '1.173.0',
+  SlideCanvas: '1.174.0',
   ThumbStrip: '1.30.2',
   ColorBar: '1.17.0',
   RightPanel: '1.37.0',
@@ -41,7 +41,7 @@ export const COMPONENT_VERSIONS = {
   ThemeModal: '1.3.0',
   LayoutModal: '1.1.0',
   AutoPlacePreviewModal: '1.0.0',
-  PreviewOverlay: '1.139.0',
+  PreviewOverlay: '1.140.0',
   PresenterView: '1.1.0',
   AlignBar: '1.10.0',
   Toast: '1.0.0',
